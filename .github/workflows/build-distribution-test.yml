@@ -1,15 +1,23 @@
 name: Fineract Fiter Distribution
 
 on:
-  push:
-    branches:
-      - develop
+  pull_request:
+    types: [closed]
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'CI environment'
+        required: true
+        default: 'uat'
+
+permissions:
+  id-token: write
+  contents: read
 jobs:
-  demo_deployment:
+  ci_process:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4
