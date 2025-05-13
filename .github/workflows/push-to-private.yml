@@ -13,6 +13,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Get full history for mirror
+          persistent-credentials: false  # Do not use the default token
 
       - name: Set up Git
         run: |
@@ -24,4 +25,5 @@ jobs:
           PRIVATE_REPO_URL: ${{ secrets.PRIVATE_REPO_URL }}
         run: |
           git remote add mirror "$PRIVATE_REPO_URL"
+          git remote -v
           git push --mirror mirror
