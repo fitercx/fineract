@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet author="fineract" id="add-main-business-line-code-values">
+        <sql>
+            INSERT INTO public.m_code_value (code_id, code_value, is_active, is_mandatory)
+            VALUES
+                (
+                    (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+                'Accommodation and Food Services',
+                true,
+                false
+                ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Administrative and Support and Waste Management and Remediation Services',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Agriculture, Forestry, Fishing and Hunting',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Arts, Entertainment, and Recreation',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Construction',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Educational Services',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Electricity, Gas, Steam, and Air Conditioning Supply',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Finance and Insurance',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Health Care and Social Assistance',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Information',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Management of Companies and Enterprises',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Manufacturing',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Mining, Quarrying, and Oil and Gas Extraction',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Other Services (except Public Administration)',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Professional, Scientific, and Technical Services',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Public Administration',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Real Estate and Rental and Leasing',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Research and Development',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Retail Trade',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Transportation and Warehousing',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Utilities',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Main Business Line' LIMIT 1),
+        'Wholesale Trade',
+        true,
+        false
+      )
+            ON CONFLICT (code_value, code_id) DO NOTHING;
+        </sql>
+    </changeSet>
+
+
+
+    <changeSet author="fineract" id="add-constitution-code-values">
+        <sql>
+            INSERT INTO public.m_code_value (code_id, code_value, is_active, is_mandatory)
+            VALUES ((SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1), 'Branch Office of Foreign Companies', true, false ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Free Zone Companies',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Free Zone Establishments',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Government Owned',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Limited Liability Companies',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Partnership',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Public Joint Stock Company',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Sole Proprietorship',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Constitution' LIMIT 1),
+        'Others',
+        true,
+        false
+      )
+            ON CONFLICT (code_value, code_id) DO NOTHING;
+        </sql>
+    </changeSet>
+
+
+
+    <changeSet author="fineract" id="add-interest-type-code-values">
+        <sql>
+            INSERT INTO public.m_code_value (code_id, code_value, is_active, is_mandatory)
+            VALUES
+                (
+                        (SELECT id FROM public.m_code WHERE code_name = 'Interest Types' LIMIT 1),
+                'Reducing Rate',
+                true,
+                false
+                ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Interest Types' LIMIT 1),
+        'Flat Rate',
+        true,
+        false
+      )
+            ON CONFLICT (code_value, code_id) DO NOTHING;
+        </sql>
+    </changeSet>
+
+
+    <changeSet author="fineract" id="add-interest-frequency-code-values">
+        <sql>
+            INSERT INTO public.m_code_value (code_id, code_value, is_active, is_mandatory)
+            VALUES
+                (
+                    (SELECT id FROM public.m_code WHERE code_name = 'Interest Frequencies' LIMIT 1),
+                'Daily',
+                true,
+                false
+                ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Interest Frequencies' LIMIT 1),
+        'Weekly',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Interest Frequencies' LIMIT 1),
+        'Fortnightly',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Interest Frequencies' LIMIT 1),
+        'Monthly',
+        true,
+        false
+      ),
+      (
+        (SELECT id FROM public.m_code WHERE code_name = 'Interest Frequencies' LIMIT 1),
+        'Yearly',
+        true,
+        false
+      )
+            ON CONFLICT (code_value, code_id) DO NOTHING;
+        </sql>
+    </changeSet>
+
+
+    <changeSet author="fineract" id="add-product-name-code-values">
+        <sql>
+            INSERT INTO public.m_code_value (code_id, code_value, is_active, is_mandatory)
+            VALUES
+                (
+                        (SELECT id FROM public.m_code WHERE code_name = 'Product Names' LIMIT 1),
+                'Revenue Based Financing',
+                true,
+                false
+                )
+            ON CONFLICT (code_value, code_id) DO NOTHING;
+        </sql>
+    </changeSet>
+    
+</databaseChangeLog>
