@@ -1,0 +1,13 @@
+plugins {
+    id 'java'
+}
+
+description = 'CredibleX Fineract Infrastructure Service'
+
+group = 'com.crediblex.fineract'
+
+base {
+    archivesName = 'crediblex-fineract-infrastructure-service'
+}
+
+apply from: 'dependencies.gradle'
