@@ -161,7 +161,7 @@ public final class ClientDataValidator {
         }  else {
             baseDataValidator.reset()
                     .parameter(ClientApiConstants.externalIdParamName)
-                    .failWithCode("missing");
+                    .failWithCode("missing externalId");
         }
 
         if (this.fromApiJsonHelper.parameterExists(ClientApiConstants.mobileNoParamName, element)) {
