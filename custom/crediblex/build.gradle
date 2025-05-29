@@ -1,0 +1,20 @@
+subprojects {
+    apply plugin: 'java'
+
+    dependencies {
+        // Common dependencies for all crediblex modules
+        implementation(project(':fineract-core'))
+        implementation('org.springframework.boot:spring-boot-starter')
+        compileOnly('org.springframework.boot:spring-boot-autoconfigure')
+
+        // Add Spring Data JPA to all modules that need it
+        implementation('org.springframework.boot:spring-boot-starter-data-jpa') {
+            exclude group: 'org.hibernate'
+        }
+
+        implementation('org.eclipse.persistence:org.eclipse.persistence.jpa')
+
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+    }
+}
