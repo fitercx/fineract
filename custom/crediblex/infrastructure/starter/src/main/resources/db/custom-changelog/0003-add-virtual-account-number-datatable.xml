@@ -8,11 +8,11 @@
     <changeSet author="fineract" id="1" >
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <not>
-                <tableExists tableName="virtual_account_number"/>
+                <tableExists tableName="dt_client_virtual_account_number"/>
             </not>
         </preConditions>
 
-        <createTable tableName="virtual_account_number" >
+        <createTable tableName="dt_client_virtual_account_number" >
             <column name="client_id" type="BIGINT">
                 <constraints nullable="false" primaryKey="true"/>
             </column>
@@ -24,7 +24,7 @@
         </createTable>
 
         <addForeignKeyConstraint
-                baseTableName="virtual_account_number"
+                baseTableName="dt_client_virtual_account_number"
                 baseColumnNames="client_id"
                 constraintName="fk_virtual_account_number_client_id"
                 referencedTableName="m_client"
@@ -34,12 +34,12 @@
     <changeSet author="fineract" id="2">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <sqlCheck expectedResult="0">
-                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'virtual_account_number'
+                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'dt_client_virtual_account_number'
             </sqlCheck>
         </preConditions>
 
         <insert tableName="x_registered_table">
-            <column name="registered_table_name" value="virtual_account_number"/>
+            <column name="registered_table_name" value="dt_client_virtual_account_number"/>
             <column name="application_table_name" value="m_client"/>
             <column name="entity_subtype" value="Entity"/>
         </insert>
@@ -49,13 +49,13 @@
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM m_entity_datatable_check
-                WHERE application_table_name = 'm_client' AND x_registered_table_name = 'virtual_account_number'
+                WHERE application_table_name = 'm_client' AND x_registered_table_name = 'dt_client_virtual_account_number'
             </sqlCheck>
         </preConditions>
 
         <insert tableName="m_entity_datatable_check">
             <column name="application_table_name" value="m_client"/>
-            <column name="x_registered_table_name" value="virtual_account_number"/>
+            <column name="x_registered_table_name" value="dt_client_virtual_account_number"/>
             <column name="status_enum" valueNumeric="100"/>
             <column name="system_defined" valueBoolean="false"/>
         </insert>

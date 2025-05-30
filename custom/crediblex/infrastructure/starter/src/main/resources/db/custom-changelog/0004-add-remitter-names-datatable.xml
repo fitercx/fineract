@@ -8,11 +8,11 @@
     <changeSet author="fineract" id="1" >
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <not>
-                <tableExists tableName="remitter_names"/>
+                <tableExists tableName="dt_client_remitter_names"/>
             </not>
         </preConditions>
 
-        <createTable tableName="remitter_names" >
+        <createTable tableName="dt_client_remitter_names" >
             <column name="client_id" type="BIGINT">
                 <constraints nullable="false" primaryKey="true"/>
             </column>
@@ -24,7 +24,7 @@
         </createTable>
 
         <addForeignKeyConstraint
-                baseTableName="remitter_names"
+                baseTableName="dt_client_remitter_names"
                 baseColumnNames="client_id"
                 constraintName="fk_remitter_names_client_id"
                 referencedTableName="m_client"
@@ -34,12 +34,12 @@
     <changeSet author="fineract" id="2">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <sqlCheck expectedResult="0">
-                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'remitter_names'
+                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'dt_client_remitter_names'
             </sqlCheck>
         </preConditions>
 
         <insert tableName="x_registered_table">
-            <column name="registered_table_name" value="remitter_names"/>
+            <column name="registered_table_name" value="dt_client_remitter_names"/>
             <column name="application_table_name" value="m_client"/>
             <column name="entity_subtype" value="Entity"/>
         </insert>
@@ -49,13 +49,13 @@
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM m_entity_datatable_check
-                WHERE application_table_name = 'm_client' AND x_registered_table_name = 'remitter_names'
+                WHERE application_table_name = 'm_client' AND x_registered_table_name = 'dt_client_remitter_names'
             </sqlCheck>
         </preConditions>
 
         <insert tableName="m_entity_datatable_check">
             <column name="application_table_name" value="m_client"/>
-            <column name="x_registered_table_name" value="remitter_names"/>
+            <column name="x_registered_table_name" value="dt_client_remitter_names"/>
             <column name="status_enum" valueNumeric="100"/>
             <column name="system_defined" valueBoolean="false"/>
         </insert>
