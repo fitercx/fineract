@@ -41,6 +41,15 @@ jib {
         ]
     }
 
+    // Add this to ensure local build
+    dockerClient {
+        // Force local Docker daemon
+        environment = [:]
+    }
+
+    // Ensure it builds to Docker daemon, not registry
+    allowInsecureRegistries = false
+
     container {
         creationTime = 'USE_CURRENT_TIMESTAMP'
         mainClass = 'org.apache.fineract.ServerApplication'
@@ -62,7 +71,7 @@ jib {
         implementation project(':fineract-provider')
         // NOTE: dynamically load all custom modules
         file("${rootDir}/custom").eachDir { companyDir ->
-            if('build' != companyDir.name && 'docker' != companyDir.name) {
+            if('build' != companyDir.name && 'docker' != companyDir.name && 'acme' != companyDir.name) {
                 file("${rootDir}/custom/${companyDir.name}").eachDir { categoryDir ->
                     if('build' != categoryDir.name) {
                         file("${rootDir}/custom/${companyDir.name}/${categoryDir.name}").eachDir { moduleDir ->
@@ -76,7 +85,7 @@ jib {
         }
         // NOTE: other custom dependencies
         implementation 'org.mariadb.jdbc:mariadb-java-client'
-        implementation 'mysql:mysql-connector-java:8.0.33'
+        implementation 'com.mysql:mysql-connector-j'
         implementation 'org.postgresql:postgresql'
         annotationProcessor('org.springframework.boot:spring-boot-autoconfigure-processor')
         annotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
@@ -92,6 +101,12 @@ jib {
                     }
                 }
             }
+        }
+    }
+
+    tasks.jibDockerBuild {
+        doFirst {
+            println "Building to local Docker daemon: fineract-custom:latest"
         }
     }
 }

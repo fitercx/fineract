@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet author="fineract" id="add-interest-type-code" failOnError="false">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(*) FROM public.m_code WHERE code_name = 'Interest Types'
+                </sqlCheck>
+            
+        </preConditions>
+        <insert tableName="m_code" schemaName="public">
+            <column name="code_name" value="Interest Types"/>
+            <column name="is_system_defined" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="add-interest-frequency-code" failOnError="false">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(*) FROM public.m_code WHERE code_name = 'Interest Frequencies'
+                </sqlCheck>
+            
+        </preConditions>
+        <insert tableName="m_code" schemaName="public">
+            <column name="code_name" value="Interest Frequencies"/>
+            <column name="is_system_defined" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="add-product-name-code" failOnError="false">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            
+                <sqlCheck expectedResult="0">
+                    SELECT COUNT(*) FROM public.m_code WHERE code_name = 'Product Names'
+                </sqlCheck>
+            
+        </preConditions>
+        <insert tableName="m_code" schemaName="public">
+            <column name="code_name" value="Product Names"/>
+            <column name="is_system_defined" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>
