@@ -100,7 +100,7 @@ jobs:
           ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
           IMAGE_URI="$ECR_REGISTRY:$IMAGE_TAG"
           echo "Tagging image with URI: $IMAGE_URI"
-          docker tag fineract:custom "$IMAGE_URI"
+          docker tag fineract-custom:latest "$IMAGE_URI"
           echo "Pushing image to ECR..."
           docker push "$IMAGE_URI"
         env:
