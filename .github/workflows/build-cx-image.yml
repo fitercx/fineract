@@ -95,12 +95,12 @@ jobs:
       - name: Build, tag, and push the image to Amazon ECR
         run: |
           echo "Building image $IMAGE_URI"
-          ./gradlew --no-daemon --console=plain :fineract-provider:clean :fineract-provider:build :fineract-provider:jibDockerBuild -x test -x cucumber
+          ./gradlew --no-daemon --console=plain :custom:docker:jibDockerBuild
           IMAGE_TAG="${{ env.NEW_VERSION }}"
           ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
           IMAGE_URI="$ECR_REGISTRY:$IMAGE_TAG"
           echo "Tagging image with URI: $IMAGE_URI"
-          docker tag fineract:latest "$IMAGE_URI"
+          docker tag fineract-custom:latest "$IMAGE_URI"
           echo "Pushing image to ECR..."
           docker push "$IMAGE_URI"
         env:
