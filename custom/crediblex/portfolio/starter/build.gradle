@@ -1,0 +1,13 @@
+plugins {
+    id 'java'
+}
+
+description = 'CredibleX Fineract portfolio Service'
+
+group = 'com.crediblex.fineract'
+
+base {
+    archivesName = 'crediblex-fineract-portfolio-service'
+}
+
+apply from: 'dependencies.gradle'
