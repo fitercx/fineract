@@ -71,7 +71,7 @@ jib {
         implementation project(':fineract-provider')
         // NOTE: dynamically load all custom modules
         file("${rootDir}/custom").eachDir { companyDir ->
-            if('build' != companyDir.name && 'docker' != companyDir.name && 'acme' != companyDir.name) {
+            if('build' != companyDir.name && 'docker' != companyDir.name && 'acme' != companyDir.name && 'integration-tests' != companyDir.name) {
                 file("${rootDir}/custom/${companyDir.name}").eachDir { categoryDir ->
                     if('build' != categoryDir.name) {
                         file("${rootDir}/custom/${companyDir.name}/${categoryDir.name}").eachDir { moduleDir ->

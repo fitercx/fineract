@@ -17,7 +17,13 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-}
+package com.crediblex.fineract.integrationtests;
+
+import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.runner.RunWith;
+
+@RunWith(Cucumber.class)
+@CucumberOptions(features = "src/test/resources/features", glue = "com.crediblex.fineract.integrationtests", plugin = { "pretty",
+        "html:build/reports/cucumber-html-report", "json:build/reports/cucumber-json-report.json" })
+public class CucumberRunnerClassic {}

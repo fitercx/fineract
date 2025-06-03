@@ -18,6 +18,10 @@
  */
 
 dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
+    implementation(project(':fineract-provider'))
+    implementation(project(':fineract-client'))
+    implementation(project(':fineract-savings'))
     implementation(project(':custom:crediblex:portfolio:accountdetails'))
+
+    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
 }

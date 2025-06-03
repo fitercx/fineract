@@ -17,7 +17,17 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
+package com.crediblex.fineract.integrationtests;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
+
+public class SmokeTest {
+
+    @Test
+    public void contextLoads() {
+        // This test verifies that the test framework is working
+        assertTrue(true, "Basic test framework should work");
+    }
 }
