@@ -17,16 +17,18 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
+package com.crediblex.fineract.integrationtests;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.context.annotation.ComponentScan;
+
+@SpringBootApplication(exclude = { DataSourceAutoConfiguration.class })
+@ComponentScan(basePackages = "com.crediblex.fineract.integrationtests")
+public class TestApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(TestApplication.class, args);
+    }
 }
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'

@@ -84,19 +84,19 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ClientsApiResource {
 
-    private final PlatformSecurityContext context;
-    private final ClientReadPlatformService clientReadPlatformService;
-    private final ClientTemplateReadPlatformService clientTemplateReadPlatformService;
-    private final ToApiJsonSerializer<ClientData> toApiJsonSerializer;
-    private final ToApiJsonSerializer<AccountSummaryCollectionData> clientAccountSummaryToApiJsonSerializer;
-    private final ApiRequestParameterHelper apiRequestParameterHelper;
-    private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
-    private final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
-    private final SavingsAccountReadPlatformService savingsAccountReadPlatformService;
-    private final BulkImportWorkbookService bulkImportWorkbookService;
-    private final BulkImportWorkbookPopulatorService bulkImportWorkbookPopulatorService;
-    private final GuarantorReadPlatformService guarantorReadPlatformService;
-    private final SqlValidator sqlValidator;
+    protected final PlatformSecurityContext context;
+    protected final ClientReadPlatformService clientReadPlatformService;
+    protected final ClientTemplateReadPlatformService clientTemplateReadPlatformService;
+    protected final ToApiJsonSerializer<ClientData> toApiJsonSerializer;
+    protected final ToApiJsonSerializer<AccountSummaryCollectionData> clientAccountSummaryToApiJsonSerializer;
+    protected final ApiRequestParameterHelper apiRequestParameterHelper;
+    protected final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
+    protected final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
+    protected final SavingsAccountReadPlatformService savingsAccountReadPlatformService;
+    protected final BulkImportWorkbookService bulkImportWorkbookService;
+    protected final BulkImportWorkbookPopulatorService bulkImportWorkbookPopulatorService;
+    protected final GuarantorReadPlatformService guarantorReadPlatformService;
+    protected final SqlValidator sqlValidator;
 
     @GET
     @Path("template")
@@ -471,7 +471,7 @@ public class ClientsApiResource {
         return clientData;
     }
 
-    private Long getResolvedClientId(final Long clientId, final ExternalId clientExternalId) {
+    protected Long getResolvedClientId(final Long clientId, final ExternalId clientExternalId) {
         Long resolvedClientId = clientId;
         if (resolvedClientId == null) {
             clientExternalId.throwExceptionIfEmpty();
@@ -562,7 +562,7 @@ public class ClientsApiResource {
         return toApiJsonSerializer.serialize(result);
     }
 
-    private String retrieveClientAccounts(Long clientId, final String externalId, final UriInfo uriInfo) {
+    protected String retrieveClientAccounts(Long clientId, final String externalId, final UriInfo uriInfo) {
         context.authenticatedUser().validateHasReadPermission(ClientApiConstants.CLIENT_RESOURCE_NAME);
         ExternalId clientExternalId = ExternalIdFactory.produce(externalId);
         clientId = getResolvedClientId(clientId, clientExternalId);

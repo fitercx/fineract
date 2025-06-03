@@ -17,16 +17,6 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
+dependencies {
+    implementation(project(':custom:crediblex:portfolio:accountdetails'))
 }
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'
