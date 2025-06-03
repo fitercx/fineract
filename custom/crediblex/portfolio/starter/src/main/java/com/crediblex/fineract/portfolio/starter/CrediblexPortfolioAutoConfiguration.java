@@ -17,16 +17,14 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
+package com.crediblex.fineract.portfolio.starter;
+
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.ComponentScans;
+
+@AutoConfiguration
+@ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio"), })
+public class CrediblexPortfolioAutoConfiguration {
+
 }
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'

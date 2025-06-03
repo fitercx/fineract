@@ -17,16 +17,14 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
+package com.crediblex.fineract.portfolio.accountdetails.data;
+
+public class AccountDataAdditionalProperties {
+
+    public static String TOTAL_LATE_FEES = "totalLateFees";
+    public static String EFFECTIVE_INSTALLMENT_AMOUNT = "effectiveInstallmentAmount";
+
+    public static String LINKED_LOAN_ACCOUNT_NUMBER = "linkedLoanAccountNumber";
+    public static String LINKED_LOAN_ACCOUNT_ID = "linkedLoanAccountId";
+
 }
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'

@@ -54,10 +54,10 @@ import org.springframework.stereotype.Service;
 @AllArgsConstructor
 public class AccountDetailsReadPlatformServiceJpaRepositoryImpl implements AccountDetailsReadPlatformService {
 
-    private final JdbcTemplate jdbcTemplate;
-    private final ClientReadPlatformService clientReadPlatformService;
-    private final GroupReadPlatformService groupReadPlatformService;
-    private final ColumnValidator columnValidator;
+    protected final JdbcTemplate jdbcTemplate;
+    protected final ClientReadPlatformService clientReadPlatformService;
+    protected final GroupReadPlatformService groupReadPlatformService;
+    protected final ColumnValidator columnValidator;
 
     @Override
     public AccountSummaryCollectionData retrieveClientAccountDetails(final Long clientId) {
@@ -176,7 +176,7 @@ public class AccountDetailsReadPlatformServiceJpaRepositoryImpl implements Accou
         return retrieveLoanAccountDetails(loanWhereClause, new Object[] { groupId });
     }
 
-    private List<LoanAccountSummaryData> retrieveLoanAccountDetails(final String loanwhereClause, final Object[] inputs) {
+    protected List<LoanAccountSummaryData> retrieveLoanAccountDetails(final String loanwhereClause, final Object[] inputs) {
         final LoanAccountSummaryDataMapper rm = new LoanAccountSummaryDataMapper();
         final String sql = "select " + rm.loanAccountSummarySchema() + loanwhereClause;
         this.columnValidator.validateSqlInjection(rm.loanAccountSummarySchema(), loanwhereClause);
@@ -187,7 +187,7 @@ public class AccountDetailsReadPlatformServiceJpaRepositoryImpl implements Accou
      * @param entityId
      * @return
      */
-    private List<SavingsAccountSummaryData> retrieveAccountDetails(final String savingswhereClause, final Object[] inputs) {
+    protected List<SavingsAccountSummaryData> retrieveAccountDetails(final String savingswhereClause, final Object[] inputs) {
         final SavingsAccountSummaryDataMapper savingsAccountSummaryDataMapper = new SavingsAccountSummaryDataMapper();
         final String savingsSql = "select " + savingsAccountSummaryDataMapper.schema() + savingswhereClause;
         this.columnValidator.validateSqlInjection(savingsAccountSummaryDataMapper.schema(), savingswhereClause);

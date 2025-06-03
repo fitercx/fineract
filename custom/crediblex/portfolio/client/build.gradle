@@ -16,17 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+description = 'CredibleX Fineract Cleint'
 
-plugins {
-    id 'java'
-}
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
+group = 'com.crediblex.fineract.client'
 
 base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
+    archivesName = 'crediblex-fineract-client'
 }
 
 apply from: 'dependencies.gradle'

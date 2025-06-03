@@ -17,16 +17,13 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
-}
+package com.crediblex.fineract.integrationtests;
 
-description = 'CredibleX Fineract Infrastructure Service'
+import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.runner.RunWith;
 
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'
+@RunWith(Cucumber.class)
+@CucumberOptions(features = "src/test/resources/features", glue = "com.crediblex.fineract.integrationtests", plugin = { "pretty",
+        "html:build/reports/cucumber-html-report", "json:build/reports/cucumber-json-report.json" })
+public class CucumberRunnerClassic {}

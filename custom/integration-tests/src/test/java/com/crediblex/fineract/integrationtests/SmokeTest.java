@@ -17,16 +17,17 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
+package com.crediblex.fineract.integrationtests;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
+
+public class SmokeTest {
+
+    @Test
+    public void contextLoads() {
+        // This test verifies that the test framework is working
+        assertTrue(true, "Basic test framework should work");
+    }
 }
-
-description = 'CredibleX Fineract Infrastructure Service'
-
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'

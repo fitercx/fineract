@@ -17,16 +17,13 @@
  * under the License.
  */
 
-plugins {
-    id 'java'
-}
+package com.crediblex.fineract.integrationtests;
 
-description = 'CredibleX Fineract Infrastructure Service'
+import io.cucumber.spring.CucumberContextConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ContextConfiguration;
 
-group = 'com.crediblex.fineract'
-
-base {
-    archivesName = 'crediblex-fineract-infrastructure-service'
-}
-
-apply from: 'dependencies.gradle'
+@CucumberContextConfiguration
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(classes = { TestApplication.class, TestApplicationConfig.class })
+public class CucumberSpringConfiguration {}
