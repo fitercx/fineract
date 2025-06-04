@@ -396,11 +396,23 @@ task devRun(type: org.springframework.boot.gradle.tasks.run.BootRun) {
         }
     }
 
-    // Inherit all bootRun settings
-    classpath = bootRun.classpath
+
+    // Add custom modules to the classpath.
+    //this allows us to do ./gradlew devRun and run the application with all custom modules
+    def newCp = file("${rootDir}/custom")
+            .listFiles().toList()// companies
+            .findAll { it.name !in ['build', 'docker', 'acme', 'integration-tests'] && it.isDirectory() }
+            .collectMany { coDir -> coDir.listFiles().toList() } //company categories unfiltered
+            .findAll { it.name != 'build' && it.isDirectory() }
+            .collectMany { catDir -> catDir.listFiles().toList() } // category module projects
+            .collect { modDir -> "${modDir}/build/classes/java/main" } // projects' classes directories
+            .inject(bootRun.classpath) { acc, dir -> acc + files(dir.toString()) }
+
+    classpath = newCp
+
     mainClass = bootRun.mainClass
     jvmArgs = bootRun.jvmArgs
-    
+
     doFirst {
         println "Running in development mode - quality checks are disabled"
     }
