@@ -16,8 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+description = 'CredibleX Fineract Account'
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
+group = 'com.crediblex.fineract.account'
+
+base {
+    archivesName = 'crediblex-fineract-account'
 }
+
+apply from: 'dependencies.gradle'
