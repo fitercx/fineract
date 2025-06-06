@@ -59,6 +59,7 @@ import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrappe
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.configuration.service.TemporaryConfigurationServiceContainer;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
@@ -284,6 +285,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     private final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
     private final LoanMapper loanMapper;
     private final LoanTransactionProcessingService loanTransactionProcessingService;
+    private final FineractProperties fineractProperties;
 
     @Transactional
     @Override
@@ -573,11 +575,18 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         final Money interestApplied = Money.of(loan.getCurrency(), loan.getSummary().getTotalInterestCharged());
 
         /*
-         * Add an interest applied transaction of the interest is accrued upfront (Up front accrual), no accounting or
-         * cash based accounting is selected
+         * Add an interest applied transaction if the interest is accrued upfront (Up front accrual)
          */
-        if (((loan.isMultiDisburmentLoan() && loan.getDisbursedLoanDisbursementDetails().size() == 1) || !loan.isMultiDisburmentLoan())
-                && loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct()) {
+
+        boolean isSingleDisbursement = loan.isMultiDisburmentLoan() && loan.getDisbursedLoanDisbursementDetails().size() == 1;
+        boolean isUpfrontAccrual = loan.isUpfrontAccrualAccountingEnabledOnLoanProduct();
+        boolean isCashOrDisabledAccounting = loan.isCashBasedAccountingEnabledOnLoanProduct() || loan.isAccountingDisabledOnLoanProduct();
+        boolean allowCashAndNonCashAccrual = fineractProperties.getLoan().isAllowCashAndNonCashAccrual();
+
+        boolean shouldApplyAccrualInterest = (isSingleDisbursement || !loan.isMultiDisburmentLoan())
+                && (isUpfrontAccrual || (isCashOrDisabledAccounting && allowCashAndNonCashAccrual) && interestApplied.isGreaterThanZero());
+
+        if (shouldApplyAccrualInterest) {
             ExternalId externalId = ExternalId.empty();
             if (TemporaryConfigurationServiceContainer.isExternalIdAutoGenerationEnabled()) {
                 externalId = ExternalId.generate();
