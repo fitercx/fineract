@@ -665,6 +665,9 @@ configure(project.fineractJavaProjects) {
         compileOnly 'org.projectlombok:lombok'
         annotationProcessor 'org.projectlombok:lombok'
 
+        implementation("io.github.kayr:ezy-query-core:0.0.20")
+
+
         testImplementation( 'org.mockito:mockito-core',
                 'org.mockito:mockito-junit-jupiter',
                 'org.junit.jupiter:junit-jupiter-api',
