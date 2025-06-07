@@ -2,7 +2,6 @@ package com.crediblex.fineract.portfolio.loan;
 
 import com.crediblex.fineract.portfolio.loan.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loan.queries.LoanQueries.RapaymentStatusQuery;
-import io.github.kayr.ezyquery.EzySql;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
