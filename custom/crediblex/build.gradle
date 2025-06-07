@@ -17,8 +17,13 @@
  * under the License.
  */
 
+plugins{
+    id 'io.github.kayr.gradle.ezyquery' version '0.0.20' apply false
+}
+
 subprojects {
     apply plugin: 'java'
+    apply plugin: 'io.github.kayr.gradle.ezyquery'
 
     ext {
         lombokVersion = '1.18.30'
@@ -48,4 +53,7 @@ subprojects {
         testImplementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}")
         testImplementation ("org.jacoco:org.jacoco.agent:0.8.12:runtime")
     }
+
 }
+
+
