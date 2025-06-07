@@ -46,7 +46,6 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImpl {
 
-    private final EzySql ezySql;
     private final CredXLoanTransactionRepository credXLoanTransactionRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
@@ -65,7 +64,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
-            EzySql ezySql, CredXLoanTransactionRepository credXLoanTransactionRepository) {
+                                            CredXLoanTransactionRepository credXLoanTransactionRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -74,7 +73,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 columnValidator, sqlGenerator, delinquencyReadPlatformService, loanTransactionRepository, loanChargePaidByReadService,
                 loanTransactionRelationReadService, loanForeclosureValidator, loanTransactionMapper, loanMapper,
                 loadTransactionProcessingService);
-        this.ezySql = ezySql;
         this.credXLoanTransactionRepository = credXLoanTransactionRepository;
     }
 
