@@ -1,34 +1,44 @@
-package com.crediblex.fineract.portfolio.loan;
+package com.crediblex.fineract.portfolio.loan.service;
 
+import com.crediblex.fineract.portfolio.loan.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loan.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loan.repository.CredXLoanTransactionRepository;
-import io.github.kayr.ezyquery.EzySql;
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class CredXLoanReadPlatformServiceImplTest {
 
+
     @Mock
     private CredXLoanTransactionRepository credXLoanTransactionRepository;
+
+    @Mock
+    private ConfigurationDomainService configurationDomainService;
+
+
 
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
@@ -39,6 +49,13 @@ public class CredXLoanReadPlatformServiceImplTest {
 
     @BeforeEach
     public void setup() {
+
+        MoneyHelper moneyHelper = new MoneyHelper();
+        when(configurationDomainService.getRoundingMode()).thenReturn(BigDecimal.ROUND_HALF_UP);
+        ReflectionTestUtils.setField(moneyHelper, "configurationDomainService", configurationDomainService);
+        moneyHelper.initialize();
+
+
         loanId = 1L;
         transactionDate = LocalDate.of(2025, 6, 7); // Using current date
 
@@ -68,7 +85,7 @@ public class CredXLoanReadPlatformServiceImplTest {
         LoanTransactionData result = credXLoanReadPlatformService.retrieveLoanTransactionTemplate(loanId);
 
         // Then
-        assertNotNull(result);
+        Assertions.assertNotNull(result);
 
         // Verify transaction details
         assertEquals(LoanEnumerations.transactionType(LoanTransactionType.REPAYMENT).getId(), result.getType().getId());
@@ -97,7 +114,50 @@ public class CredXLoanReadPlatformServiceImplTest {
 
         // Verify other properties
         assertEquals(BigDecimal.valueOf(500.00), result.getNetDisbursalAmount());
-        assertFalse(result.isManuallyReversed());
+        Assertions.assertFalse(result.isManuallyReversed());
         assertEquals(ExternalId.empty(), result.getExternalId());
     }
+
+    @Test
+    public void testResolvePeriodStatus() {
+        // Given: Mock CurrencyData
+        CurrencyData currency = new CurrencyData("USD", "US Dollar", 2, 1, "$", "currency.USD");
+        LocalDate dueDate = LocalDate.now().plusDays(3);
+
+        // Status: PAID
+        LoanSchedulePeriodData paidPeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(1, null, dueDate, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        when(paidPeriod.getComplete()).thenReturn(true);
+
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.PAID, credXLoanReadPlatformService.resolvePeriodStatus(currency, paidPeriod));
+
+        // Status: LATE_FEE_APPLIED
+        LoanSchedulePeriodData lateFeePeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(2, null, dueDate, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.TEN, BigDecimal.ZERO);
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.LATE_FEE_APPLIED, credXLoanReadPlatformService.resolvePeriodStatus(currency, lateFeePeriod));
+
+        // Status: PARTIAL_PAID
+        LoanSchedulePeriodData partialPaidPeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(3, null, dueDate, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        when(partialPaidPeriod.totalOutstandingForPeriod()).thenReturn(BigDecimal.TEN);
+        when(partialPaidPeriod.getTotalPaidForPeriod()).thenReturn(BigDecimal.ONE);
+
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.PARTIAL_PAID, credXLoanReadPlatformService.resolvePeriodStatus(currency, partialPaidPeriod));
+
+        // Status: OVERDUE
+        LoanSchedulePeriodData overduePeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(4, null, LocalDate.now().minusDays(1),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.OVERDUE, credXLoanReadPlatformService.resolvePeriodStatus(currency, overduePeriod));
+
+        // Status: DUE
+        LoanSchedulePeriodData duePeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(5, null, LocalDate.now(), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.DUE, credXLoanReadPlatformService.resolvePeriodStatus(currency, duePeriod));
+
+        // Status: SCHEDULED
+        LoanSchedulePeriodData scheduledPeriod = LoanSchedulePeriodData.repaymentOnlyPeriod(6, null, LocalDate.now().plusDays(5),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        assertEquals(ExtendedLoanSchedulePeriodData.Status.SCHEDULED, credXLoanReadPlatformService.resolvePeriodStatus(currency, scheduledPeriod));
+    }
+
 }

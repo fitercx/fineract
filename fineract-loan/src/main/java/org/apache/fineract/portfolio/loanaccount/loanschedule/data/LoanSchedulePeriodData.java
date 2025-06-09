@@ -21,6 +21,8 @@ package org.apache.fineract.portfolio.loanaccount.loanschedule.data;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
+
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
@@ -33,7 +35,8 @@ import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
  */
 @Getter
 @Builder
-public final class LoanSchedulePeriodData {
+@AllArgsConstructor
+public class LoanSchedulePeriodData {
 
     private final Integer period;
     private final LocalDate fromDate;

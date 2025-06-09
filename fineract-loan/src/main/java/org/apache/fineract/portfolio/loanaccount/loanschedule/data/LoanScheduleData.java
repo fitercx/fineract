@@ -20,7 +20,11 @@ package org.apache.fineract.portfolio.loanaccount.loanschedule.data;
 
 import java.math.BigDecimal;
 import java.util.Collection;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.With;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 
 /**
@@ -33,6 +37,8 @@ import org.apache.fineract.organisation.monetary.data.CurrencyData;
  * </ul>
  */
 @Getter
+@With
+@AllArgsConstructor
 public class LoanScheduleData {
 
     /**
