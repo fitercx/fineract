@@ -133,8 +133,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return ExtendedLoanSchedulePeriodData.Status.LATE_FEE_APPLIED;
         }
 
-        if (Money.of(currencyData, period.getTotalOutstandingForPeriod())
-                .isLessThan(Money.of(currencyData, period.getTotalPaidForPeriod()))) {
+        if (Money.of(currencyData, period.getTotalOutstandingForPeriod()).isGreaterThanZero()
+                && Money.of(currencyData, period.getTotalPaidForPeriod()).isGreaterThanZero()) {
             return ExtendedLoanSchedulePeriodData.Status.PARTIAL_PAID;
         }
 
