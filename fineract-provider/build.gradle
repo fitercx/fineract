@@ -400,7 +400,7 @@ task devRun(type: org.springframework.boot.gradle.tasks.run.BootRun) {
     classpath = bootRun.classpath
     mainClass = bootRun.mainClass
     jvmArgs = bootRun.jvmArgs
-
+    
     doFirst {
         println "Running in development mode - quality checks are disabled"
     }
