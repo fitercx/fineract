@@ -11,17 +11,17 @@ WITH pending_installments
                     sum(coalesce(principal_writtenoff_derived, 0))       as principal_written_off,
                     sum(coalesce(principal_completed_derived, 0))        as principal_completed,
 
-                    sum(interest_amount)                                 as interest,
+                    sum(coalesce(interest_amount, 0))                    as interest,
                     sum(coalesce(interest_writtenoff_derived, 0))        as interest_written_off,
                     sum(coalesce(interest_waived_derived, 0))            as interest_waived,
                     sum(coalesce(fee_charges_completed_derived, 0))      as interest_completed,
 
-                    sum(fee_charges_amount)                              as fees,
+                    sum(coalesce(fee_charges_amount, 0))                 as fees,
                     sum(coalesce(fee_charges_writtenoff_derived, 0))     as fees_written_off,
                     sum(coalesce(fee_charges_waived_derived, 0))         as fees_waived,
                     sum(coalesce(fee_charges_completed_derived, 0))      as fees_completed,
 
-                    sum(penalty_charges_amount)                          as penalties,
+                    sum(coalesce(penalty_charges_amount,0))                          as penalties,
                     sum(coalesce(penalty_charges_writtenoff_derived, 0)) as penalties_written_off,
                     sum(coalesce(penalty_charges_waived_derived, 0))     as penalties_waived,
                     sum(coalesce(principal_completed_derived, 0))        as penalties_completed
