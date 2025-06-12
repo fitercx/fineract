@@ -16,12 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-description = 'Crediblex Fineract Portfolio Starter'
 
-group = 'com.crediblex.fineract.portfolio'
-
-base {
-    archivesName = 'crediblex-fineract-portfolio-starter'
+dependencies {
 }
-
-apply from: 'dependencies.gradle'
