@@ -1,4 +1,4 @@
-package com.creciblex.fineract.portfolio.client;
+package com.crediblex.fineract.portfolio.client;
 
 import org.apache.fineract.commands.service.CommandProcessingService;
 import org.apache.fineract.infrastructure.accountnumberformat.domain.AccountNumberFormatRepositoryWrapper;

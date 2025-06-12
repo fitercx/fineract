@@ -24,6 +24,6 @@ dependencies {
     implementation(project(':fineract-loan'))
     implementation(project(':fineract-savings'))
     implementation(project(':custom:crediblex:portfolio:accountdetails'))
-
+    implementation('org.springframework.boot:spring-boot-starter-data-jpa')
     implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
 }
