@@ -30,7 +30,7 @@ import lombok.Setter;
  */
 @AllArgsConstructor
 @Getter
-public final class AuditData implements Serializable {
+public class AuditData implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
