@@ -2,23 +2,15 @@ package com.crediblex.fineract.commands;
 
 import com.crediblex.fineract.commands.data.ExtendedAuditData;
 import com.crediblex.fineract.commands.repository.EzySqlLoanChargeWaiverRepository;
+import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.data.AuditData;
+import org.apache.fineract.commands.data.AuditSearchData;
+import org.apache.fineract.commands.service.AuditReadPlatformService;
 import org.apache.fineract.commands.service.AuditReadPlatformServiceImpl;
-import org.apache.fineract.infrastructure.core.data.PaginationParametersDataValidator;
-import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
-import org.apache.fineract.infrastructure.core.service.PaginationHelper;
-import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
-import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
-import org.apache.fineract.infrastructure.security.service.SqlValidator;
-import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
+import org.apache.fineract.infrastructure.core.data.PaginationParameters;
+import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.security.utils.SQLBuilder;
-import org.apache.fineract.organisation.office.service.OfficeReadPlatformService;
-import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
-import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
-import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
-import org.apache.fineract.useradministration.service.AppUserReadPlatformService;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -30,33 +22,41 @@ import static java.util.stream.Collectors.toMap;
 
 @Primary
 @Service
-public class CredXAuditReadPlatformService extends AuditReadPlatformServiceImpl {
+@RequiredArgsConstructor
+public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
+    private final AuditReadPlatformServiceImpl originalAuditReadPlatformService;
     private final EzySqlLoanChargeWaiverRepository loanChargeWaiverRepository;
 
-    public CredXAuditReadPlatformService(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
-                                         FromJsonHelper fromApiJsonHelper, AppUserReadPlatformService appUserReadPlatformService,
-                                         OfficeReadPlatformService officeReadPlatformService, ClientReadPlatformService clientReadPlatformService,
-                                         LoanProductReadPlatformService loanProductReadPlatformService, StaffReadPlatformService staffReadPlatformService,
-                                         PaginationHelper paginationHelper, DatabaseSpecificSQLGenerator sqlGenerator,
-                                         PaginationParametersDataValidator paginationParametersDataValidator,
-                                         org.apache.fineract.portfolio.savings.service.SavingsProductReadPlatformService savingsProductReadPlatformService,
-                                         org.apache.fineract.portfolio.savings.service.DepositProductReadPlatformService depositProductReadPlatformService,
-                                         ColumnValidator columnValidator, SqlValidator sqlValidator,
-                                         EzySqlLoanChargeWaiverRepository loanChargeWaiverRepository) {
-        super(jdbcTemplate, context, fromApiJsonHelper, appUserReadPlatformService, officeReadPlatformService,
-                clientReadPlatformService, loanProductReadPlatformService, staffReadPlatformService,
-                paginationHelper, sqlGenerator, paginationParametersDataValidator,
-                savingsProductReadPlatformService, depositProductReadPlatformService, columnValidator, sqlValidator);
-        this.loanChargeWaiverRepository = loanChargeWaiverRepository;
+
+    @Override
+    public List<AuditData> retrieveAuditEntries(SQLBuilder extraCriteria, boolean includeJson) {
+        return originalAuditReadPlatformService.retrieveAuditEntries(extraCriteria, includeJson);
     }
 
+    @Override
+    public Page<AuditData> retrievePaginatedAuditEntries(SQLBuilder extraCriteria, boolean includeJson, PaginationParameters parameters) {
+        return originalAuditReadPlatformService.retrievePaginatedAuditEntries(extraCriteria, includeJson, parameters);
+    }
 
+    @Override
+    public AuditData retrieveAuditEntry(Long auditId) {
+        return originalAuditReadPlatformService.retrieveAuditEntry(auditId);
+    }
+
+    @Override
+    public AuditSearchData retrieveSearchTemplate(String useType) {
+        return originalAuditReadPlatformService.retrieveSearchTemplate(useType);
+    }
+
+    private static boolean isWaiveCharge(AuditData data) {
+        return "WAIVE".equals(data.getActionName()) && "LOANCHARGE".equals(data.getEntityName());
+    }
 
     public List<AuditData> retrieveAllEntriesToBeChecked(SQLBuilder extraCriteria, boolean includeJson) {
         //the optimal solution for this would have been to modify the query downstream
         //however, to minimize changes, let us enhance the data after it has been fetched
-        List<AuditData> auditData = super.retrieveAllEntriesToBeChecked(extraCriteria, includeJson);
+        List<AuditData> auditData = originalAuditReadPlatformService.retrieveAllEntriesToBeChecked(extraCriteria, includeJson);
         List<AuditData> enhancedAuditData = new ArrayList<>();
 
         // Collect all charge IDs that need enhancement
@@ -105,9 +105,6 @@ public class CredXAuditReadPlatformService extends AuditReadPlatformServiceImpl 
         return enhancedAuditData;
     }
 
-    private static boolean isWaiveCharge(AuditData data) {
-        return "WAIVE".equals(data.getActionName()) && "LOANCHARGE".equals(data.getEntityName());
-    }
 
 }
 

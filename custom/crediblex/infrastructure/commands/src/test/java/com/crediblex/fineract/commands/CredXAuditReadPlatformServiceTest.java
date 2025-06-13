@@ -4,6 +4,7 @@ import com.crediblex.fineract.commands.data.ExtendedAuditData;
 import com.crediblex.fineract.commands.queries.AuditQueries;
 import com.crediblex.fineract.commands.repository.EzySqlLoanChargeWaiverRepository;
 import org.apache.fineract.commands.data.AuditData;
+import org.apache.fineract.commands.service.AuditReadPlatformServiceImpl;
 import org.apache.fineract.infrastructure.security.utils.SQLBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,8 @@ public class CredXAuditReadPlatformServiceTest {
 
     @Mock
     private EzySqlLoanChargeWaiverRepository loanChargeWaiverRepository;
+    @Mock
+    private AuditReadPlatformServiceImpl auditReadPlatformService;
 
     @InjectMocks
     private CredXAuditReadPlatformService credXAuditReadPlatformService;
@@ -40,7 +43,6 @@ public class CredXAuditReadPlatformServiceTest {
     @BeforeEach
     void setUp() {
         // We need to spy the service to mock the super.retrieveAllEntriesToBeChecked call
-        credXAuditReadPlatformService = spy(credXAuditReadPlatformService);
     }
 
     @Test
@@ -51,7 +53,7 @@ public class CredXAuditReadPlatformServiceTest {
         originalList.add(createAuditData(1L, "CREATE", "CLIENT", 100L));
         originalList.add(createAuditData(2L, "UPDATE", "LOAN", 200L));
         
-        doReturn(originalList).when(credXAuditReadPlatformService).retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class));
+        when(auditReadPlatformService.retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class))).thenReturn(originalList);
         
         // Act
         List<AuditData> result = credXAuditReadPlatformService.retrieveAllEntriesToBeChecked(sqlBuilder, true);
@@ -74,8 +76,8 @@ public class CredXAuditReadPlatformServiceTest {
         waiveDetails.add(createWaiveDetail(100L, "Client 1", 1000L, new BigDecimal("50.00")));
         waiveDetails.add(createWaiveDetail(200L, "Client 2", 2000L, new BigDecimal("75.50")));
         
-        doReturn(originalList).when(credXAuditReadPlatformService)
-            .retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class));
+        when(auditReadPlatformService.retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class)))
+            .thenReturn(originalList);
         when(loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(anyList()))
             .thenReturn(waiveDetails);
         
@@ -120,8 +122,8 @@ public class CredXAuditReadPlatformServiceTest {
         when(loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(anyList()))
             .thenReturn(Collections.emptyList());
         
-        doReturn(originalList).when(credXAuditReadPlatformService)
-            .retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class));
+        when(auditReadPlatformService.retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class)))
+            .thenReturn(originalList);
         
         // Act
         List<AuditData> result = credXAuditReadPlatformService.retrieveAllEntriesToBeChecked(sqlBuilder, true);
@@ -149,9 +151,9 @@ public class CredXAuditReadPlatformServiceTest {
         List<AuditQueries.LoanChargeWaiveDetails.Result> waiveDetails = new ArrayList<>();
         waiveDetails.add(createWaiveDetail(100L, "Client 1", 1000L, new BigDecimal("50.00")));
         
-        doReturn(originalList).when(credXAuditReadPlatformService)
-            .retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class));
-        when(loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(anyList()))
+        when(auditReadPlatformService.retrieveAllEntriesToBeChecked(any(SQLBuilder.class), any(Boolean.class)))
+            .thenReturn(originalList);
+        when(loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(List.of(100L,200L)))
             .thenReturn(waiveDetails);
         
         // Act
