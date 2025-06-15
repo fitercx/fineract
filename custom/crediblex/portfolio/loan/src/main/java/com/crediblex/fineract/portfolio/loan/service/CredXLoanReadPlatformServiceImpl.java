@@ -50,6 +50,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Objects;
 
 @Service
 @Primary
@@ -124,7 +125,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     ExtendedLoanSchedulePeriodData.Status resolvePeriodStatus(CurrencyData currencyData, LoanSchedulePeriodData period) {
-        // Placeholder logic for determining the status of the period
+        if(Objects.isNull(period.getPeriod())){
+            // This is a disbursement period has null period value
+            return ExtendedLoanSchedulePeriodData.Status.DISBURSEMENT;
+        }
+
         if (Boolean.TRUE.equals(period.getComplete())) {
             return ExtendedLoanSchedulePeriodData.Status.PAID;
         }
