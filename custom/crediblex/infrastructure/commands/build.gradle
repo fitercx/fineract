@@ -17,14 +17,17 @@
  * under the License.
  */
 
-package com.crediblex.fineract.portfolio.starter;
-
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
-
-@AutoConfiguration
-@ComponentScans({ @ComponentScan("com.crediblex.fineract"), })
-public class CrediblexPortfolioAutoConfiguration {
-
+plugins {
+    id 'io.github.kayr.gradle.ezyquery' version '0.0.21' apply false
 }
+
+description = 'CredibleX Fineract Commands'
+
+group = 'com.crediblex.fineract.commands'
+
+
+base {
+    archivesName = 'crediblex-fineract-commands'
+}
+
+apply from: 'dependencies.gradle'
