@@ -187,7 +187,7 @@ public class CredXAuditReadPlatformServiceTest {
     private AuditQueries.LoanChargeWaiveDetails.Result createWaiveDetail(
             Long chargeId, String clientName, Long loanId, BigDecimal waiveAmount) {
         AuditQueries.LoanChargeWaiveDetails.Result result = new AuditQueries.LoanChargeWaiveDetails.Result();
-        result.setField("laonChargeId", chargeId);
+        result.setField("loanChargeId", chargeId);
         result.setField("clientName", clientName);
         result.setField("loanId", loanId);
         result.setField("waiveOffAmount", waiveAmount);

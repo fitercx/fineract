@@ -3,7 +3,7 @@ SELECT
     c.display_name as clientName_string,
     l.id as loanId_long,
     lc.amount as waiveOffAmount_decimal,
-    lc.id as laonChargeId_long
+    lc.id as loanChargeId_long
 FROM 
     m_loan_charge lc
 JOIN 

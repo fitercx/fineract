@@ -25,7 +25,7 @@ public class EzySqlLoanChargeWaiverRepository  {
         LoanChargeWaiveDetails Q = loanChargeWaiveDetails();
         return ezySql
                     .from(Q)
-                    .where(Q.LAON_CHARGE_ID.in(chargeIds))
+                    .where(Q.LOAN_CHARGE_ID.in(chargeIds))
                     .list();
             
     }

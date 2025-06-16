@@ -70,9 +70,11 @@ import org.apache.fineract.useradministration.domain.AppUser;
 import org.apache.fineract.useradministration.service.AppUserReadPlatformService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Service;
 
 @RequiredArgsConstructor
 @Slf4j
+@Service
 public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
 
     private static final Set<String> supportedOrderByValues = new HashSet<>(Arrays.asList("id", "actionName", "entityName", "resourceId",

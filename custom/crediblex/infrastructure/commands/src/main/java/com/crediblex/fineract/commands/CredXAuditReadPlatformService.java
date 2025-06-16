@@ -76,7 +76,7 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
         // Create a lookup map for quick access
         @SuppressWarnings("Convert2MethodRef")
         Map<Long, LoanChargeWaiveDetails.Result> detailsMap = waiveDetails.stream()
-                .collect(toMap(c -> c.getLaonChargeId(), c -> c));
+                .collect(toMap(c -> c.getLoanChargeId(), c -> c));
 
         // Enhance the audit data
         for (AuditData data : auditData) {
@@ -104,7 +104,6 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
         return enhancedAuditData;
     }
-
 
 }
 
