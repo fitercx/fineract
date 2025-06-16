@@ -18,7 +18,7 @@
  */
 description = 'Crediblex Fineract Portfolio Starter'
 
-group = 'com.crediblex.fineract'
+group = 'com.crediblex.fineract.portfolio'
 
 base {
     archivesName = 'crediblex-fineract-portfolio-starter'

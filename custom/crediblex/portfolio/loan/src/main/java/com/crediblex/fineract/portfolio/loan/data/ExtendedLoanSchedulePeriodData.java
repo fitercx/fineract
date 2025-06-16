@@ -9,7 +9,7 @@ import java.time.LocalDate;
 public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
 
     public enum Status {
-        SCHEDULED, DUE, OVERDUE, LATE_FEE_APPLIED, PAID, PARTIAL_PAID;
+        DISBURSEMENT,SCHEDULED, DUE, OVERDUE, LATE_FEE_APPLIED, PAID, PARTIAL_PAID
     }
 
     private final Status status;

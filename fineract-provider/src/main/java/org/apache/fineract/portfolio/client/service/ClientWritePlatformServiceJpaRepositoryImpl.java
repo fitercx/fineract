@@ -101,29 +101,29 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class ClientWritePlatformServiceJpaRepositoryImpl implements ClientWritePlatformService {
 
-    private final PlatformSecurityContext context;
-    private final ClientRepositoryWrapper clientRepository;
-    private final ClientNonPersonRepositoryWrapper clientNonPersonRepository;
-    private final OfficeRepositoryWrapper officeRepositoryWrapper;
-    private final NoteRepository noteRepository;
-    private final GroupRepository groupRepository;
-    private final ClientDataValidator fromApiJsonDeserializer;
-    private final AccountNumberGenerator accountNumberGenerator;
-    private final StaffRepositoryWrapper staffRepository;
-    private final CodeValueRepositoryWrapper codeValueRepository;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final SavingsAccountRepositoryWrapper savingsRepositoryWrapper;
-    private final SavingsProductRepository savingsProductRepository;
-    private final SavingsApplicationProcessWritePlatformService savingsApplicationProcessWritePlatformService;
-    private final CommandProcessingService commandProcessingService;
-    private final ConfigurationDomainService configurationDomainService;
-    private final AccountNumberFormatRepositoryWrapper accountNumberFormatRepository;
-    private final FromJsonHelper fromApiJsonHelper;
-    private final AddressWritePlatformService addressWritePlatformService;
-    private final ClientFamilyMembersWritePlatformService clientFamilyMembersWritePlatformService;
-    private final BusinessEventNotifierService businessEventNotifierService;
-    private final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
-    private final ExternalIdFactory externalIdFactory;
+    protected final PlatformSecurityContext context;
+    protected final ClientRepositoryWrapper clientRepository;
+    protected final ClientNonPersonRepositoryWrapper clientNonPersonRepository;
+    protected final OfficeRepositoryWrapper officeRepositoryWrapper;
+    protected final NoteRepository noteRepository;
+    protected final GroupRepository groupRepository;
+    protected final ClientDataValidator fromApiJsonDeserializer;
+    protected final AccountNumberGenerator accountNumberGenerator;
+    protected final StaffRepositoryWrapper staffRepository;
+    protected final CodeValueRepositoryWrapper codeValueRepository;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final SavingsAccountRepositoryWrapper savingsRepositoryWrapper;
+    protected final SavingsProductRepository savingsProductRepository;
+    protected final SavingsApplicationProcessWritePlatformService savingsApplicationProcessWritePlatformService;
+    protected final CommandProcessingService commandProcessingService;
+    protected final ConfigurationDomainService configurationDomainService;
+    protected final AccountNumberFormatRepositoryWrapper accountNumberFormatRepository;
+    protected final FromJsonHelper fromApiJsonHelper;
+    protected final AddressWritePlatformService addressWritePlatformService;
+    protected final ClientFamilyMembersWritePlatformService clientFamilyMembersWritePlatformService;
+    protected final BusinessEventNotifierService businessEventNotifierService;
+    protected final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
+    protected final ExternalIdFactory externalIdFactory;
 
     @Transactional
     @Override

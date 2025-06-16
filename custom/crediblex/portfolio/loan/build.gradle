@@ -17,10 +17,6 @@
  * under the License.
  */
 
-plugins {
-    id 'io.github.kayr.gradle.ezyquery' version '0.0.20' apply false
-}
-
 description = 'CredibleX Fineract Loan'
 
 group = 'com.crediblex.fineract.loan'

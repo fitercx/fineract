@@ -17,8 +17,16 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':fineract-core'))
-    implementation(project(':fineract-provider'))
-    implementation 'org.liquibase:liquibase-core'
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract Infrastructure Datatables'
+
+group = 'com.crediblex.fineract'
+
+base {
+    archivesName = 'crediblex-fineract-infrastructure-datatables'
+}
+
+apply from: 'dependencies.gradle'

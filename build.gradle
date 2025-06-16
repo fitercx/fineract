@@ -665,7 +665,7 @@ configure(project.fineractJavaProjects) {
         compileOnly 'org.projectlombok:lombok'
         annotationProcessor 'org.projectlombok:lombok'
 
-        implementation("io.github.kayr:ezy-query-core:0.0.20")
+        implementation("io.github.kayr:ezy-query-core:0.0.21")
 
 
         testImplementation( 'org.mockito:mockito-core',
