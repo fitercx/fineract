@@ -20,6 +20,10 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.portfolio.charge.service.ChargeDropdownReadPlatformService;
 import org.apache.fineract.portfolio.common.service.DropdownReadPlatformService;
@@ -31,18 +35,15 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
 @Service
 @Primary
 public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatformServiceImpl {
 
     private final CustomLoanChargeRepository loanChargeRepository;
 
-    public CustomLoanChargeReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService, LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
+    public CustomLoanChargeReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
+            ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
+            LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
         super(jdbcTemplate, chargeDropdownReadPlatformService, dropdownReadPlatformService, loanChargeRepository);
         this.loanChargeRepository = customLoanChargeRepository;
     }
@@ -56,43 +57,21 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
             BigDecimal availableForAdjustment = calculateAvailableAmountForChargeAdjustment(lc);
 
             // Gather all required fields from LoanCharge and related entities
-            EnumOptionData chargeTimeTypeData = new EnumOptionData((long) lc.getChargeTimeType().ordinal(), lc.getChargeTimeType().getCode(),
-                    String.valueOf(lc.getChargeTimeType().getValue()));
+            EnumOptionData chargeTimeTypeData = new EnumOptionData((long) lc.getChargeTimeType().ordinal(),
+                    lc.getChargeTimeType().getCode(), String.valueOf(lc.getChargeTimeType().getValue()));
             EnumOptionData chargeCalculationTypeData = new EnumOptionData((long) lc.getChargeCalculation().ordinal(),
                     lc.getChargeCalculation().getCode(), String.valueOf(lc.getChargeCalculation().getValue()));
-            EnumOptionData chargePaymentModeData = new EnumOptionData((long) lc.getChargePaymentMode().ordinal(), lc.getChargePaymentMode().getCode(),
-                    String.valueOf(lc.getChargePaymentMode().getValue()));
-            List<LoanInstallmentChargeData> loanInstallmentChargeDataList = lc.installmentCharges().stream().map(LoanInstallmentCharge::toData)
-                    .toList();
+            EnumOptionData chargePaymentModeData = new EnumOptionData((long) lc.getChargePaymentMode().ordinal(),
+                    lc.getChargePaymentMode().getCode(), String.valueOf(lc.getChargePaymentMode().getValue()));
+            List<LoanInstallmentChargeData> loanInstallmentChargeDataList = lc.installmentCharges().stream()
+                    .map(LoanInstallmentCharge::toData).toList();
 
-            LoanChargeData data = new LoanChargeData(
-                    lc.getId(),
-                    lc.getCharge().getId(),
-                    lc.getCharge().getName(),
-                    lc.getCharge().toData().getCurrency(),
-                    lc.amount(),
-                    lc.getAmountPaid(),
-                    lc.getAmountWaived(),
-                    lc.getAmountWrittenOff(),
-                    availableForAdjustment,
-                    chargeTimeTypeData,
-                    lc.getSubmittedOnDate(),
-                    lc.getDueDate(),
-                    chargeCalculationTypeData,
-                    lc.getPercentage(),
-                    lc.getAmountPercentageAppliedTo(),
-                    lc.isPenaltyCharge(),
-                    chargePaymentModeData,
-                    lc.isPaid(),
-                    lc.isWaived(),
-                    lc.getLoan().getId(),
-                    lc.getLoan().getExternalId(),
-                    lc.getMinCap(),
-                    lc.getMaxCap(),
-                    lc.getAmountOrPercentage(),
-                    loanInstallmentChargeDataList,
-                    lc.getExternalId()
-            );
+            LoanChargeData data = new LoanChargeData(lc.getId(), lc.getCharge().getId(), lc.getCharge().getName(),
+                    lc.getCharge().toData().getCurrency(), lc.amount(), lc.getAmountPaid(), lc.getAmountWaived(), lc.getAmountWrittenOff(),
+                    availableForAdjustment, chargeTimeTypeData, lc.getSubmittedOnDate(), lc.getDueDate(), chargeCalculationTypeData,
+                    lc.getPercentage(), lc.getAmountPercentageAppliedTo(), lc.isPenaltyCharge(), chargePaymentModeData, lc.isPaid(),
+                    lc.isWaived(), lc.getLoan().getId(), lc.getLoan().getExternalId(), lc.getMinCap(), lc.getMaxCap(),
+                    lc.getAmountOrPercentage(), loanInstallmentChargeDataList, lc.getExternalId());
             result.add(data);
         }
         return result;

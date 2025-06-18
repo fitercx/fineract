@@ -19,28 +19,27 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.repository;
 
+import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-
 public interface CustomLoanChargeRepository extends LoanChargeRepository {
 
     @Query("""
-    SELECT lc FROM LoanCharge lc
-    LEFT JOIN FETCH lc.loan l
-    LEFT JOIN FETCH lc.charge c
-    LEFT JOIN FETCH lc.loanTrancheDisbursementCharge dc
-    LEFT JOIN FETCH dc.loanDisbursementDetails dd
-    WHERE lc.loan.id = :loanId AND lc.active = true
-    ORDER BY 
-        COALESCE(lc.dueDate, COALESCE(dd.actualDisbursementDate, dd.expectedDisbursementDate)),
-        lc.chargeTime ASC,
-        lc.dueDate ASC,
-        lc.penaltyCharge ASC
-""")
+                SELECT lc FROM LoanCharge lc
+                LEFT JOIN FETCH lc.loan l
+                LEFT JOIN FETCH lc.charge c
+                LEFT JOIN FETCH lc.loanTrancheDisbursementCharge dc
+                LEFT JOIN FETCH dc.loanDisbursementDetails dd
+                WHERE lc.loan.id = :loanId AND lc.active = true
+                ORDER BY
+                    COALESCE(lc.dueDate, COALESCE(dd.actualDisbursementDate, dd.expectedDisbursementDate)),
+                    lc.chargeTime ASC,
+                    lc.dueDate ASC,
+                    lc.penaltyCharge ASC
+            """)
     List<LoanCharge> findActiveByLoanIdWithOrder(@Param("loanId") Long loanId);
 
 }
