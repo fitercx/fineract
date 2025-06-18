@@ -1,5 +1,28 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package com.crediblex.fineract.portfolio.tax.service;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.*;
 import org.apache.fineract.accounting.common.AccountingDropdownReadPlatformService;
 import org.apache.fineract.accounting.common.AccountingEnumerations;
 import org.apache.fineract.accounting.glaccount.data.GLAccountData;
@@ -14,20 +37,15 @@ import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.LocalDate;
-import java.util.*;
-
 @Service
 @Primary
 public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl {
+
     private static final CustomTaxComponentMapper TAX_COMPONENT_MAPPER = new CustomTaxComponentMapper();
     private final JdbcTemplate jdbcTemplate;
 
-
-    public CustomTaxReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, AccountingDropdownReadPlatformService accountingDropdownReadPlatformService) {
+    public CustomTaxReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
+            AccountingDropdownReadPlatformService accountingDropdownReadPlatformService) {
         super(jdbcTemplate, accountingDropdownReadPlatformService);
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -115,15 +133,18 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
                 builder.debitAccount = new GLAccountData().setId(debitAccountId).setName(debitAccountName).setGlCode(debitAccountGlCode);
             }
             final Integer creditAccountTypeEnum = JdbcSupport.getIntegerDefaultToNullIfZero(rs, "creditAccountTypeEnum");
-            builder.creditAccountType = (creditAccountTypeEnum != null) ? AccountingEnumerations.gLAccountType(creditAccountTypeEnum) : null;
+            builder.creditAccountType = (creditAccountTypeEnum != null) ? AccountingEnumerations.gLAccountType(creditAccountTypeEnum)
+                    : null;
             if (creditAccountTypeEnum != null && creditAccountTypeEnum > 0) {
                 final Long creditAccountId = rs.getLong("creditAccountId");
                 final String creditAccountName = rs.getString("creditAccountName");
                 final String creditAccountGlCode = rs.getString("creditAccountGlCode");
-                builder.creditAccount = new GLAccountData().setId(creditAccountId).setName(creditAccountName).setGlCode(creditAccountGlCode);
+                builder.creditAccount = new GLAccountData().setId(creditAccountId).setName(creditAccountName)
+                        .setGlCode(creditAccountGlCode);
             }
             builder.startDate = JdbcSupport.getLocalDate(rs, "startDate");
         }
+
         public String getSchema() {
             return this.schema;
         }
@@ -146,6 +167,7 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
     }
 
     private static class TaxComponentDataBuilder {
+
         private Long id;
         private String name;
         private BigDecimal percentage;
@@ -163,7 +185,8 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
         }
 
         TaxComponentData build() {
-            return TaxComponentData.instance(id, name, percentage, debitAccountType, debitAccount, creditAccountType, creditAccount, startDate, taxComponentHistories.isEmpty() ? null : taxComponentHistories);
+            return TaxComponentData.instance(id, name, percentage, debitAccountType, debitAccount, creditAccountType, creditAccount,
+                    startDate, taxComponentHistories.isEmpty() ? null : taxComponentHistories);
         }
     }
 
