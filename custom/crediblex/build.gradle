@@ -44,7 +44,7 @@ subprojects {
         }
 
         implementation("org.eclipse.persistence:org.eclipse.persistence.jpa:${eclipseLinkVersion}")
-
+        implementation ("org.slf4j:log4j-over-slf4j")
         compileOnly "org.projectlombok:lombok:${lombokVersion}"
         annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
@@ -52,6 +52,7 @@ subprojects {
         testImplementation("org.springframework.boot:spring-boot-starter-jdbc:${springBootVersion}")
         testImplementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}")
         testImplementation ("org.jacoco:org.jacoco.agent:0.8.12:runtime")
+        testImplementation ("org.slf4j:log4j-over-slf4j")
     }
 
 }
