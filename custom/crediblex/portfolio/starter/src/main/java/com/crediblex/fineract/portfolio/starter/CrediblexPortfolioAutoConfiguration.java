@@ -22,9 +22,11 @@ package com.crediblex.fineract.portfolio.starter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScans;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @AutoConfiguration
-@ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio"), })
+@ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio"),
+        @ComponentScan("com.crediblex.fineract.portfolio.loanaccount.repository"), })
 public class CrediblexPortfolioAutoConfiguration {
 
 }
