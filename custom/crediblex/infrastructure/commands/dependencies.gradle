@@ -17,13 +17,14 @@
  * under the License.
  */
 
-description = 'CredibleX Fineract Loan'
+dependencies {
+    implementation(project(':fineract-provider'))
+    implementation(project(':fineract-client'))
+    implementation(project(':fineract-loan'))
+    implementation(project(':fineract-savings'))
+    implementation(project(':fineract-rates'))
+    implementation(project(':fineract-charge'))
+    implementation(project(':custom:crediblex:portfolio:accountdetails'))
 
-group = 'com.crediblex.fineract.loan'
-
-
-base {
-    archivesName = 'crediblex-fineract-loan'
+    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
 }
-
-apply from: 'dependencies.gradle'
