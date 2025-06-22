@@ -63,4 +63,12 @@ public class TaxGroupMappingsData implements Serializable {
         }
         return endDate;
     }
+
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public LocalDate getEndDate() {
+        return endDate;
+    }
 }
