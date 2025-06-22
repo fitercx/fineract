@@ -30,6 +30,8 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.portfolio.tax.data.TaxComponentData;
 import org.apache.fineract.portfolio.tax.data.TaxComponentHistoryData;
+import org.apache.fineract.portfolio.tax.data.TaxGroupData;
+import org.apache.fineract.portfolio.tax.data.TaxGroupMappingsData;
 import org.apache.fineract.portfolio.tax.service.TaxReadPlatformServiceImpl;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,6 +44,7 @@ import org.springframework.stereotype.Service;
 public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl {
 
     private static final CustomTaxComponentMapper TAX_COMPONENT_MAPPER = new CustomTaxComponentMapper();
+    private static final CustomTaxGroupMapper TAX_GROUP_MAPPER = new CustomTaxGroupMapper();
     private final JdbcTemplate jdbcTemplate;
 
     public CustomTaxReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
@@ -61,6 +64,19 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
         String sql = "select " + TAX_COMPONENT_MAPPER.getSchema() + " where tc.id=?";
         return this.jdbcTemplate.query(sql, new TaxComponentResultSetExtractor(), id).stream().findFirst().orElse(null); // NOSONAR
     }
+
+    @Override
+    public List<TaxGroupData> retrieveAllTaxGroups() {
+        String sql = "select " + TAX_GROUP_MAPPER.getSchema();
+        return this.jdbcTemplate.query(sql, new TaxGroupResultSetExtractor());
+    }
+
+    @Override
+    public TaxGroupData retrieveTaxGroupData(final Long id) {
+        String sql = "select " + TAX_GROUP_MAPPER.getSchema() + " where tg.id=?";
+        return this.jdbcTemplate.query(sql, new TaxGroupResultSetExtractor(), id).stream().findFirst().orElse(null);
+    }
+
 
     private static final class TaxComponentResultSetExtractor implements ResultSetExtractor<List<TaxComponentData>> {
 
@@ -187,6 +203,106 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
         TaxComponentData build() {
             return TaxComponentData.instance(id, name, percentage, debitAccountType, debitAccount, creditAccountType, creditAccount,
                     startDate, taxComponentHistories.isEmpty() ? null : taxComponentHistories);
+        }
+    }
+
+    private static final class TaxGroupResultSetExtractor implements ResultSetExtractor<List<TaxGroupData>> {
+
+        private final CustomTaxGroupMappingsDataMapper taxGroupMappingsDataMapper = new CustomTaxGroupMappingsDataMapper();
+
+        @Override
+        public List<TaxGroupData> extractData(ResultSet rs) throws SQLException {
+            Map<Long, TaxGroupDataBuilder> groupMap = new LinkedHashMap<>();
+            while (rs.next()) {
+                Long groupId = rs.getLong("id");
+                String groupName = rs.getString("name");
+                TaxGroupDataBuilder builder = groupMap.get(groupId);
+                if (builder == null) {
+                    builder = new TaxGroupDataBuilder();
+                    builder.id = groupId;
+                    builder.name = groupName;
+                    groupMap.put(groupId, builder);
+                }
+                TaxGroupMappingsData mapping = taxGroupMappingsDataMapper.mapRow(rs, rs.getRow());
+                builder.addMapping(mapping);
+            }
+            List<TaxGroupData> result = new ArrayList<>();
+            for (TaxGroupDataBuilder builder : groupMap.values()) {
+                result.add(builder.build());
+            }
+            return result;
+        }
+    }
+
+    private static final class CustomTaxGroupMapper implements RowMapper<TaxGroupData> {
+
+        private final String schema;
+        private final CustomTaxGroupMappingsDataMapper taxGroupMappingsDataMapper = new CustomTaxGroupMappingsDataMapper();
+
+        CustomTaxGroupMapper() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("tg.id as id, tg.name as name,");
+            sb.append("tgm.id as mappingId,");
+            sb.append("tc.id as taxComponentId, tc.name as taxComponentName,");
+            sb.append("tgm.start_date as startDate, tgm.end_date as endDate ");
+            sb.append(" from m_tax_group tg ");
+            sb.append(" inner join m_tax_group_mappings tgm on tgm.tax_group_id = tg.id ");
+            sb.append(" inner join m_tax_component tc on tc.id = tgm.tax_component_id ");
+            this.schema = sb.toString();
+        }
+
+        @Override
+        public TaxGroupData mapRow(ResultSet rs, int rowNum) throws SQLException {
+            final Long id = rs.getLong("id");
+            final String name = rs.getString("name");
+            final Collection<TaxGroupMappingsData> taxAssociations = new ArrayList<>();
+            taxAssociations.add(this.taxGroupMappingsDataMapper.mapRow(rs, rowNum));
+            while (rs.next()) {
+                if (id.equals(rs.getLong("id"))) {
+                    taxAssociations.add(this.taxGroupMappingsDataMapper.mapRow(rs, rowNum));
+                } else {
+                    rs.previous();
+                    break;
+                }
+            }
+            return TaxGroupData.instance(id, name, taxAssociations);
+        }
+
+        public String getSchema() {
+            return this.schema;
+        }
+
+    }
+
+    private static final class CustomTaxGroupMappingsDataMapper implements RowMapper<TaxGroupMappingsData> {
+
+        @Override
+        public TaxGroupMappingsData mapRow(ResultSet rs, @SuppressWarnings("unused") int rowNum) throws SQLException {
+            final Long mappingId = rs.getLong("mappingId");
+            final Long id = rs.getLong("taxComponentId");
+            final String name = rs.getString("taxComponentName");
+            TaxComponentData componentData = TaxComponentData.lookup(id, name);
+
+            final LocalDate startDate = JdbcSupport.getLocalDate(rs, "startDate");
+            final LocalDate endDate = JdbcSupport.getLocalDate(rs, "endDate");
+            return new TaxGroupMappingsData(mappingId, componentData, startDate, endDate);
+        }
+
+    }
+
+    private static class TaxGroupDataBuilder {
+        private Long id;
+        private String name;
+        private final Collection<TaxGroupMappingsData> taxAssociations = new ArrayList<>();
+
+        void addMapping(TaxGroupMappingsData mapping) {
+            if (mapping != null) {
+                taxAssociations.add(mapping);
+            }
+        }
+
+        TaxGroupData build() {
+            return TaxGroupData.instance(id, name, taxAssociations.isEmpty() ? null : taxAssociations);
         }
     }
 
