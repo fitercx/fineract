@@ -26,5 +26,5 @@ public class AccountDataAdditionalProperties {
 
     public static String LINKED_LOAN_ACCOUNT_NUMBER = "linkedLoanAccountNumber";
     public static String LINKED_LOAN_ACCOUNT_ID = "linkedLoanAccountId";
-
+    public static String IS_FORCED_CLOSURE = "isForcedClosure";
 }
