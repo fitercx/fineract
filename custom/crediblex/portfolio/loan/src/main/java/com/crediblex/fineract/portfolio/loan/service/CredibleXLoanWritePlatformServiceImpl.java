@@ -81,10 +81,12 @@ public class CredibleXLoanWritePlatformServiceImpl extends LoanWritePlatformServ
 
         CommandProcessingResult result = super.forecloseLoan(loanId, cleanedCommand);
 
-        jdbcTemplate.update(
-                "UPDATE m_loan SET is_forced_closure = ? WHERE id = ?",
-                Boolean.TRUE.equals(isForcedClosure), loanId
-        );
+        if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
+            jdbcTemplate.update(
+                    "UPDATE m_loan SET is_forced_closure = ? WHERE id = ?",
+                    Boolean.TRUE.equals(isForcedClosure), loanId
+            );
+        }
 
         return result;
     }
