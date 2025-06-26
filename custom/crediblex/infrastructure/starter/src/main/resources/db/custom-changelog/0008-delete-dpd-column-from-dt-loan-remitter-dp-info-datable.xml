@@ -33,11 +33,7 @@
 
         <dropColumn tableName="dt_loan_remitter_dp_info" columnName="dpd"/>
 
-        <addColumn tableName="dt_loan_remitter_dp_info">
-            <column name="dpd" type="INT">
-                <constraints nullable="true"/>
-            </column>
-        </addColumn>
+        <comment>Removed 'dpd' column from dt_loan_remitter_dp_info as per updated requirements</comment>
     </changeSet>
 
 

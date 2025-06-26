@@ -165,8 +165,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" (SELECT SUM(lc.amount_outstanding_derived) FROM m_loan_charge lc ")
                     .append("  WHERE lc.loan_id = l.id AND lc.is_penalty = true AND lc.is_active = true and due_for_collection_as_of_date < CAST(:currentDate AS DATE)) as totalLateFees,")
                     .append(" dtri.remitter_name as remitterName,")
-                    .append(" dtri.dp_name as dpName,")
-                    .append(" dtri.dpd as dpd")
+                    .append(" dtri.dp_name as dpName")
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
@@ -264,9 +263,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final BigDecimal calculatedInstallmentAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "calculatedInstallmentAmount");
             final BigDecimal totalLateFees = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalLateFees");
             final BigDecimal netDisbursedAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "netDisbursedAmount");
-             final String remitterName = rs.getString("remitterName");
-             final String dpName = rs.getString("dpName");
-             final Integer dpd = JdbcSupport.getInteger(rs, "dpd");
+            final String remitterName = rs.getString("remitterName");
+            final String dpName = rs.getString("dpName");
 
 
             // Use calculated installment amount if fixed EMI is not set
@@ -295,7 +293,6 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NET_DISBURSED_AMOUNT, netDisbursedAmount);
              extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.REMITTER_NAME, remitterName);
              extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DP_NAME, dpName);
-             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DPD, dpd);
 
             return extendedLoanAccountSummaryData;
         }
