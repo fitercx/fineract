@@ -26,5 +26,8 @@ public class AccountDataAdditionalProperties {
 
     public static String LINKED_LOAN_ACCOUNT_NUMBER = "linkedLoanAccountNumber";
     public static String LINKED_LOAN_ACCOUNT_ID = "linkedLoanAccountId";
-
+    public static String NET_DISBURSED_AMOUNT = "netDisbursedAmount";
+    public static String REMITTER_NAME = "remitterName";
+    public static String DP_NAME = "dpName";
+    public static String DPD = "dpd";
 }
