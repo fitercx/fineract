@@ -120,7 +120,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
 
             final StringBuilder accountsSummary = new StringBuilder("l.id as id, l.account_no as accountNo, l.external_id as externalId,");
             accountsSummary.append(" l.product_id as productId, lp.name as productName, lp.short_name as shortProductName,")
-                    .append(" l.loan_status_id as statusId, l.loan_type_enum as loanType,")
+                    .append(" l.loan_status_id as statusId, l.loan_type_enum as loanType, l.is_forced_closure as isForcedClosure,")
 
                     .append(" glim.account_number as parentAccountNumber,")
 
@@ -257,6 +257,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final BigDecimal installmentAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "installmentAmount");
             final BigDecimal calculatedInstallmentAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "calculatedInstallmentAmount");
             final BigDecimal totalLateFees = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalLateFees");
+            final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
 
             // Use calculated installment amount if fixed EMI is not set
             final BigDecimal effectiveInstallmentAmount = (installmentAmount != null && installmentAmount.compareTo(BigDecimal.ZERO) > 0)
@@ -281,6 +282,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.EFFECTIVE_INSTALLMENT_AMOUNT,
                     effectiveInstallmentAmount);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.TOTAL_LATE_FEES, totalLateFees);
+            extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
 
             return extendedLoanAccountSummaryData;
         }
