@@ -22,4 +22,9 @@ dependencies {
     implementation(project(':fineract-client'))
     implementation(project(':fineract-loan'))
     implementation(project(':fineract-charge'))
+    implementation(project(':fineract-branch'))
+    implementation(project(':fineract-savings'))
+    implementation(project(':fineract-tax'))
+    implementation(project(':fineract-accounting'))
+    implementation('com.google.guava:guava')
 }
