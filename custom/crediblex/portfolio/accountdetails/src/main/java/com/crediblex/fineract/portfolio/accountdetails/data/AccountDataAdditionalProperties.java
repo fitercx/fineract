@@ -31,4 +31,5 @@ public class AccountDataAdditionalProperties {
     public static String DP_NAME = "dpName";
     public static String IS_FORCED_CLOSURE = "isForcedClosure";
     public static String IS_RESTRUCTURED = "isRestructured";
+    public static String DAYS_PAST_DUE = "daysPastDue";
 }

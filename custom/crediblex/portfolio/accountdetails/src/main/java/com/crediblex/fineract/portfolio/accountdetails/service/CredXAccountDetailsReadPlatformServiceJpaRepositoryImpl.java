@@ -38,6 +38,7 @@ import org.apache.fineract.portfolio.accountdetails.data.SavingsAccountSummaryDa
 import org.apache.fineract.portfolio.accountdetails.service.AccountDetailsReadPlatformServiceJpaRepositoryImpl;
 import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
+import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
 import org.apache.fineract.portfolio.group.service.GroupReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
@@ -51,18 +52,21 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.apache.fineract.portfolio.loanaccount.data.CollectionData;
 
 @Service
 @Primary
 public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends AccountDetailsReadPlatformServiceJpaRepositoryImpl {
 
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final DelinquencyReadPlatformService delinquencyReadPlatformService;
 
     public CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl(NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             ClientReadPlatformService clientReadPlatformService, GroupReadPlatformService groupReadPlatformService,
-            ColumnValidator columnValidator) {
+            ColumnValidator columnValidator, DelinquencyReadPlatformService delinquencyReadPlatformService) {
         super(namedParameterJdbcTemplate.getJdbcTemplate(), clientReadPlatformService, groupReadPlatformService, columnValidator);
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.delinquencyReadPlatformService = delinquencyReadPlatformService;
     }
 
     @Override
@@ -103,7 +107,17 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
         final String sql = "select " + rm.loanAccountSummarySchema() + namedWhereClause;
         super.columnValidator.validateSqlInjection(rm.loanAccountSummarySchema(), namedWhereClause);
 
-        return this.namedParameterJdbcTemplate.query(sql, params, rm);
+        List<LoanAccountSummaryData> result = this.namedParameterJdbcTemplate.query(sql, params, rm);
+        for (LoanAccountSummaryData loan : result) {
+            Long loanId = loan.getId();
+            CollectionData collectionData = this.delinquencyReadPlatformService.calculateLoanCollectionData(loanId);
+            Long daysPastDue = collectionData.getPastDueDays();
+
+            if (loan instanceof ExtendedLoanAccountSummaryData extendedLoanAccountSummaryData) {
+                extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DAYS_PAST_DUE, daysPastDue);
+            }
+        }
+        return result;
     }
 
     @Override
