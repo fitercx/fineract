@@ -27,4 +27,5 @@ dependencies {
     implementation(project(':fineract-tax'))
     implementation(project(':fineract-accounting'))
     implementation('com.google.guava:guava')
+    testImplementation('org.springframework.security:spring-security-core:5.8.0')
 }
