@@ -62,6 +62,7 @@ public class CredibleXLoanWritePlatformServiceImpl extends LoanWritePlatformServ
     public CommandProcessingResult forecloseLoan(Long loanId, JsonCommand command) {
 
         final Boolean isForcedClosure = command.booleanObjectValueOfParameterNamed("isForcedClosure");
+        final Boolean isRestructured = command.booleanObjectValueOfParameterNamed("isRestructured");
 
         if (isForcedClosure != null && !(isForcedClosure instanceof Boolean)) {
             ApiParameterError error = ApiParameterError.parameterError(
@@ -72,9 +73,19 @@ public class CredibleXLoanWritePlatformServiceImpl extends LoanWritePlatformServ
             throw new PlatformApiDataValidationException(Collections.singletonList(error));
         }
 
+        if (isRestructured != null && !(isRestructured instanceof Boolean)) {
+            ApiParameterError error = ApiParameterError.parameterError(
+                    "validation.msg.loan.isRestructured.invalid",
+                    "The parameter isRestructured must be a boolean value",
+                    "isRestructured", isRestructured
+            );
+            throw new PlatformApiDataValidationException(Collections.singletonList(error));
+        }
+
         JsonElement parsedJson = command.parsedJson();
         if (parsedJson != null && parsedJson.isJsonObject()) {
             parsedJson.getAsJsonObject().remove("isForcedClosure");
+            parsedJson.getAsJsonObject().remove("isRestructured");
         }
 
         JsonCommand cleanedCommand = JsonCommand.fromExistingCommand(command, parsedJson, null);
@@ -83,8 +94,10 @@ public class CredibleXLoanWritePlatformServiceImpl extends LoanWritePlatformServ
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
             jdbcTemplate.update(
-                    "UPDATE m_loan SET is_forced_closure = ? WHERE id = ?",
-                    Boolean.TRUE.equals(isForcedClosure), loanId
+                    "UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
+                    Boolean.TRUE.equals(isForcedClosure),
+                    Boolean.TRUE.equals(isRestructured),
+                    loanId
             );
         }
 

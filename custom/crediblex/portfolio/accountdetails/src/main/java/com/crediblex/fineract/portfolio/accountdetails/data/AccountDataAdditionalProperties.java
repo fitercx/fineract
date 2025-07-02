@@ -30,4 +30,5 @@ public class AccountDataAdditionalProperties {
     public static String REMITTER_NAME = "remitterName";
     public static String DP_NAME = "dpName";
     public static String IS_FORCED_CLOSURE = "isForcedClosure";
+    public static String IS_RESTRUCTURED = "isRestructured";
 }
