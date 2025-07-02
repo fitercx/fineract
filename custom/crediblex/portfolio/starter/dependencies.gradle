@@ -20,4 +20,5 @@
 dependencies {
     implementation(project(':custom:crediblex:portfolio:account'))
     implementation(project(':custom:crediblex:portfolio:accountdetails'))
+    implementation(project(':fineract-savings'))
 }
