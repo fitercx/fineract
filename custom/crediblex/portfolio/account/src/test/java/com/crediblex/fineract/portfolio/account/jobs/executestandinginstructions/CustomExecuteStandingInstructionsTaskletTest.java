@@ -24,10 +24,13 @@ import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.MonthDay;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
+import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
@@ -48,6 +51,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrap
 import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -80,79 +84,88 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
     @Test
     void testFullPaymentIsProcessed() throws Exception {
-        StandingInstructionData instruction = mock(StandingInstructionData.class);
-
-        // Set up enums
-        when(instruction.getRecurrenceType()).thenReturn(AccountTransferRecurrenceType.PERIODIC);
-        when(instruction.getInstructionType()).thenReturn(StandingInstructionType.FIXED);
-        when(instruction.getRecurrenceFrequency()).thenReturn(PeriodFrequencyType.MONTHS);
-        when(instruction.getFromAccountType()).thenReturn(PortfolioAccountType.SAVINGS);
-        when(instruction.getToAccountType()).thenReturn(PortfolioAccountType.LOAN);
-        when(instruction.getRecurrenceInterval()).thenReturn(1);
+        // Arrange
+        StandingInstructionData instruction = realStandingInstructionData(
+                10L, "Full Payment SI", new BigDecimal("100.00"),
+                PortfolioAccountType.SAVINGS, 1L,
+                PortfolioAccountType.LOAN, 2L,
+                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20)
+        );
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
-        when(instruction.getRecurrenceOnDay()).thenReturn(5);
+
+        // Act
         tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        // Assert
+        // Should call transferFunds with the full amount
+        ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
+        verify(accountTransfersWritePlatformService).transferFunds(transferCaptor.capture());
+        assertThat(transferCaptor.getValue().getTransactionAmount()).isEqualByComparingTo("100.00");
+
+        // Should update last_run_date
+        verify(jdbcTemplate).update(
+                eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(10L)
+        );
     }
 
     @Test
     void testPartialPaymentIsProcessedWhenInsufficientBalance() throws Exception {
+        // Arrange
         Long fromAccountId = 1L;
         BigDecimal requiredAmount = new BigDecimal("100.00");
         BigDecimal availableBalance = new BigDecimal("40.00");
-        StandingInstructionData instruction = mock(StandingInstructionData.class);
-
-        // Set up enums
-        when(instruction.getRecurrenceType()).thenReturn(AccountTransferRecurrenceType.PERIODIC);
-        when(instruction.getInstructionType()).thenReturn(StandingInstructionType.FIXED);
-        when(instruction.getRecurrenceFrequency()).thenReturn(PeriodFrequencyType.MONTHS);
-        when(instruction.getFromAccountType()).thenReturn(PortfolioAccountType.SAVINGS);
-        when(instruction.getToAccountType()).thenReturn(PortfolioAccountType.LOAN);
-        when(instruction.getRecurrenceInterval()).thenReturn(1);
-
+        StandingInstructionData instruction = realStandingInstructionData(
+                20L, "Partial Payment SI", requiredAmount,
+                PortfolioAccountType.SAVINGS, fromAccountId,
+                PortfolioAccountType.LOAN, 2L,
+                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20)
+        );
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
         // Simulate insufficient balance on first transfer, then partial transfer with available balance
-        doThrow(new InsufficientAccountBalanceException("amount", availableBalance, null, requiredAmount))
-                .when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+        doAnswer(invocation -> {
+            AccountTransferDTO dto = invocation.getArgument(0);
+            if (dto.getTransactionAmount().compareTo(requiredAmount) == 0) {
+                throw new InsufficientAccountBalanceException("amount", availableBalance, null, requiredAmount);
+            }
+            return null; // partial payment succeeds
+        }).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
 
         SavingsAccount savingsAccount = mock(SavingsAccount.class);
         when(savingsAccount.getWithdrawableBalance()).thenReturn(availableBalance);
         when(savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(fromAccountId)).thenReturn(savingsAccount);
-        when(instruction.getRecurrenceOnDay()).thenReturn(5);
+
+        // Act
         tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        // Assert
+        // Should attempt transfer twice: first with full, then with partial amount
+        ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
+        verify(accountTransfersWritePlatformService, times(2)).transferFunds(transferCaptor.capture());
+        assertThat(transferCaptor.getAllValues().get(0).getTransactionAmount()).isEqualByComparingTo("100.00");
+        assertThat(transferCaptor.getAllValues().get(1).getTransactionAmount()).isEqualByComparingTo("40.00");
+
+        // Should NOT update last_run_date (partial payment)
         verify(jdbcTemplate, never()).update(contains("UPDATE m_account_transfer_standing_instructions SET last_run_date"), any(), any());
     }
 
     @Test
     void testNoPaymentWhenNoFundsAvailable() {
+        // Arrange
         Long fromAccountId = 1L;
         Long toAccountId = 2L;
         BigDecimal requiredAmount = new BigDecimal("100.00");
-        LocalDate validFrom = DateUtils.parseLocalDate("2025-05-20");
+        LocalDate validFrom = LocalDate.of(2025, 5, 20);
 
-        StandingInstructionData instruction = mock(StandingInstructionData.class);
-
-        // Set up enums
-        when(instruction.getRecurrenceType()).thenReturn(AccountTransferRecurrenceType.PERIODIC);
-        when(instruction.getInstructionType()).thenReturn(StandingInstructionType.FIXED);
-        when(instruction.getRecurrenceFrequency()).thenReturn(PeriodFrequencyType.MONTHS);
-        when(instruction.getFromAccountType()).thenReturn(PortfolioAccountType.SAVINGS);
-        when(instruction.getToAccountType()).thenReturn(PortfolioAccountType.LOAN);
-        when(instruction.getRecurrenceOnDay()).thenReturn(20);
-        when(instruction.getRecurrenceInterval()).thenReturn(1);
-        when(instruction.getTransferType()).thenReturn(AccountTransferType.ACCOUNT_TRANSFER);
-
-        // *** Add these stubs ***
-        when(instruction.getAmount()).thenReturn(requiredAmount);
-        when(instruction.getFromAccount()).thenReturn(realPortfolioAccountData(fromAccountId));
-        when(instruction.getToAccount()).thenReturn(realPortfolioAccountData(toAccountId));
-        when(instruction.getName()).thenReturn("No Funds SI");
-        when(instruction.getId()).thenReturn(30L);
-        when(instruction.getValidFrom()).thenReturn(validFrom);
-        when(instruction.toTransferType()).thenReturn(1);
-
+        StandingInstructionData instruction = realStandingInstructionData(
+                30L, "No Funds SI", requiredAmount,
+                PortfolioAccountType.SAVINGS, fromAccountId,
+                PortfolioAccountType.LOAN, toAccountId,
+                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, validFrom
+        );
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
@@ -162,13 +175,48 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         when(savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(fromAccountId)).thenReturn(null);
 
+        // Act & Assert
         assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
-                .isInstanceOf(JobExecutionException.class);
+                .isInstanceOf(JobExecutionException.class)
+                .hasMessageContaining("No funds available for Standing Instruction id 30");
 
         verify(jdbcTemplate, never()).update(contains("UPDATE m_account_transfer_standing_instructions SET last_run_date"), any(), any());
     }
 
-    private PortfolioAccountData realPortfolioAccountData(Long id) {
-        return new PortfolioAccountData(id, "dummyAccountNo", null, null, null, null, null, null, null, null, null, null);
+    private EnumOptionData enumOptionData(int id, String code) {
+        return new EnumOptionData((long) id, code, null);
+    }
+
+    private StandingInstructionData realStandingInstructionData(
+            Long id, String name, BigDecimal amount,
+            PortfolioAccountType fromType, Long fromId,
+            PortfolioAccountType toType, Long toId,
+            StandingInstructionType instructionType, AccountTransferRecurrenceType recurrenceType,
+            PeriodFrequencyType frequencyType, Integer interval, Integer day, LocalDate validFrom
+    ) {
+        return StandingInstructionData.instance(
+                id, // id
+                null, // accountDetailId
+                name, // name
+                null, // fromOffice
+                null, // toOffice
+                null, // fromClient
+                null, // toClient
+                enumOptionData(fromType.getValue(), fromType.getCode()), // fromAccountType
+                new PortfolioAccountData(fromId, "fromAcc", null, null, null, null, null, null, null, null, null, null), // fromAccount
+                enumOptionData(toType.getValue(), toType.getCode()), // toAccountType
+                new PortfolioAccountData(toId, "toAcc", null, null, null, null, null, null, null, null, null, null), // toAccount
+                enumOptionData(AccountTransferType.ACCOUNT_TRANSFER.getValue(), AccountTransferType.ACCOUNT_TRANSFER.getCode()), // transferType
+                null, // priority
+                enumOptionData(instructionType.getValue(), instructionType.getCode()), // instructionType
+                null, // status
+                amount, // amount
+                validFrom, // validFrom
+                null, // validTill
+                enumOptionData(recurrenceType.getValue(), recurrenceType.getCode()), // recurrenceType
+                enumOptionData(frequencyType.getValue(), frequencyType.getCode()), // recurrenceFrequency
+                interval, // recurrenceInterval
+                MonthDay.of(5, day) // recurrenceOnMonthDay
+        );
     }
 }
