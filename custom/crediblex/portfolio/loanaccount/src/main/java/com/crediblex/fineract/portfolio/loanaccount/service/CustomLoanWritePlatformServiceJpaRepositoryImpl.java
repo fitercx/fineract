@@ -1,3 +1,22 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.ACTUAL_DISBURSEMENT_DATE;
@@ -5,6 +24,7 @@ import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS
 
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanChargeWrapper;
 import com.google.common.collect.Lists;
+import com.google.gson.JsonElement;
 import io.micrometer.common.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -77,6 +97,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -121,6 +142,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final LoanMapper loanMapper;
     private final FineractProperties fineractProperties;
 
+    private final JdbcTemplate jdbcTemplate;
+
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(final PlatformSecurityContext context,
             final LoanTransactionValidator loanTransactionValidator,
             final LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer,
@@ -158,7 +181,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final ReprocessLoanTransactionsService reprocessLoanTransactionsService, final LoanAccountService loanAccountService,
             final LoanJournalEntryPoster journalEntryPoster, final LoanAdjustmentService loanAdjustmentService,
             final LoanAccountingBridgeMapper loanAccountingBridgeMapper, final LoanMapper loanMapper,
-            final LoanTransactionProcessingService loanTransactionProcessingService, final FineractProperties fineractProperties) {
+            final LoanTransactionProcessingService loanTransactionProcessingService, final FineractProperties fineractProperties,JdbcTemplate jdbcTemplate) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -208,6 +231,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.journalEntryPoster = journalEntryPoster;
         this.loanMapper = loanMapper;
         this.fineractProperties = fineractProperties;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     private void disburseLoanToSavings(final Loan loan, final JsonCommand command, final Money amount, final PaymentDetail paymentDetail) {
@@ -488,6 +512,42 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .build();
     }
 
+    @Override
+    @Transactional
+    public CommandProcessingResult forecloseLoan(Long loanId, JsonCommand command) {
+
+        final Boolean isForcedClosure = command.booleanObjectValueOfParameterNamed("isForcedClosure");
+        final Boolean isRestructured = command.booleanObjectValueOfParameterNamed("isRestructured");
+
+        if (isForcedClosure != null && !(isForcedClosure instanceof Boolean)) {
+            ApiParameterError error = ApiParameterError.parameterError("validation.msg.loan.isForcedClosure.invalid",
+                    "The parameter isForcedClosure must be a boolean value", "isForcedClosure", isForcedClosure);
+            throw new PlatformApiDataValidationException(Collections.singletonList(error));
+        }
+
+        if (isRestructured != null && !(isRestructured instanceof Boolean)) {
+            ApiParameterError error = ApiParameterError.parameterError("validation.msg.loan.isRestructured.invalid",
+                    "The parameter isRestructured must be a boolean value", "isRestructured", isRestructured);
+            throw new PlatformApiDataValidationException(Collections.singletonList(error));
+        }
+
+        JsonElement parsedJson = command.parsedJson();
+        if (parsedJson != null && parsedJson.isJsonObject()) {
+            parsedJson.getAsJsonObject().remove("isForcedClosure");
+            parsedJson.getAsJsonObject().remove("isRestructured");
+        }
+
+        JsonCommand cleanedCommand = JsonCommand.fromExistingCommand(command, parsedJson, null);
+
+        CommandProcessingResult result = super.forecloseLoan(loanId, cleanedCommand);
+
+        if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
+            jdbcTemplate.update("UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
+                    Boolean.TRUE.equals(isForcedClosure), Boolean.TRUE.equals(isRestructured), loanId);
+        }
+
+        return result;
+    }
     private AppUser getAppUserIfPresent() {
         AppUser user = null;
         if (this.context != null) {

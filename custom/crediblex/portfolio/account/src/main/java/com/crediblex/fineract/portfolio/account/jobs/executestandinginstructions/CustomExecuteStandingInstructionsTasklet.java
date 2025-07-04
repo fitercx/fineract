@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformServiceUnavailableException;
@@ -51,6 +52,9 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet {
@@ -60,11 +64,12 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
+    private final PlatformTransactionManager transactionManager;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper) {
+            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper, PlatformTransactionManager transactionManager) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -72,6 +77,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.sqlGenerator = sqlGenerator;
         this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
         this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
+        this.transactionManager = transactionManager;
     }
 
     @Override
@@ -79,15 +85,28 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         Collection<StandingInstructionData> instructionData = standingInstructionReadPlatformService
                 .retrieveAll(StandingInstructionStatus.ACTIVE.getValue());
         List<Throwable> errors = new ArrayList<>();
+
+        log.info("Processing {} standing instructions", instructionData.size());
+
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+
+        int processedCount = 0;
+        AtomicInteger successCount = new AtomicInteger();
+        AtomicInteger failureCount = new AtomicInteger();
+        int dueCount = 0;
+
         for (StandingInstructionData data : instructionData) {
             boolean isDueForTransfer = false;
             AccountTransferRecurrenceType recurrenceType = data.getRecurrenceType();
             StandingInstructionType instructionType = data.getInstructionType();
             LocalDate transactionDate = DateUtils.getBusinessLocalDate();
+
             if (recurrenceType.isPeriodicRecurrence()) {
                 final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
                 PeriodFrequencyType frequencyType = data.getRecurrenceFrequency();
-                LocalDate startDate = DateUtils.parseLocalDate("2025-05-20");// data.getValidFrom();
+                LocalDate startDate = data.getValidFrom();
                 if (frequencyType.isMonthly()) {
                     startDate = startDate.withDayOfMonth(data.getRecurrenceOnDay());
                     if (DateUtils.isBefore(startDate, data.getValidFrom())) {
@@ -117,24 +136,43 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             }
 
             if (isDueForTransfer && transactionAmount != null && transactionAmount.compareTo(BigDecimal.ZERO) > 0) {
+                dueCount++;
                 final SavingsAccount fromSavingsAccount = null;
                 final boolean isRegularTransaction = true;
                 final boolean isExceptionForBalanceCheck = false;
                 AccountTransferDTO accountTransferDTO = new AccountTransferDTO(transactionDate, transactionAmount,
                         data.getFromAccountType(), data.getToAccountType(), data.getFromAccount().getId(), data.getToAccount().getId(),
-                        data.getName() + " Standing instruction trasfer ", null, null, null, null, data.toTransferType(), null, null,
+                        data.getName() + " Standing instruction transfer ", null, null, null, null, data.toTransferType(), null, null,
                         data.getTransferType().getValue(), null, null, ExternalId.empty(), null, null, fromSavingsAccount,
                         isRegularTransaction, isExceptionForBalanceCheck);
-                final boolean transferCompleted = transferAmountWithPartialPaymentSupport(errors, accountTransferDTO, data.getId(),
-                        transactionAmount);
 
-                if (transferCompleted) {
-                    final String updateQuery = "UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?";
-                    jdbcTemplate.update(updateQuery, transactionDate, data.getId());
+                try {
+                    BigDecimal finalTransactionAmount = transactionAmount;
+                    transactionTemplate.execute(status -> {
+                        final boolean transferCompleted = transferAmountWithPartialPaymentSupport(errors, accountTransferDTO, data.getId(),
+                                finalTransactionAmount);
+                        if (transferCompleted) {
+                            final String updateQuery = "UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?";
+                            jdbcTemplate.update(updateQuery, transactionDate, data.getId());
+                            successCount.getAndIncrement();
+                        } else {
+                            failureCount.getAndIncrement();
+                        }
+                        return null;
+                    });
+                    log.debug("Successfully processed standing instruction {} for amount {}", data.getId(), transactionAmount);
+                } catch (Exception e) {
+                    failureCount.getAndIncrement();
+                    log.error("Transfer failed for standing instruction {}: {}", data.getId(), e.getMessage(), e);
+                    errors.add(e);
                 }
-
+                processedCount++;
             }
         }
+
+        log.info("Standing instructions processing completed. Processed: {}, Success: {}, Failed: {}, Due: {}", processedCount,
+                successCount, failureCount, dueCount);
+
         if (!errors.isEmpty()) {
             throw new JobExecutionException(errors);
         }
@@ -191,8 +229,6 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     log.info("Standing Instruction {} executed as partial payment. Paid: {}, Unpaid: {}", instructionId, availableBalance,
                             unpaidAmount);
 
-                    errorLog.append("Partial payment executed. Paid: ").append(availableBalance).append(", Unpaid: ").append(unpaidAmount);
-
                 } else {
                     // No funds available at all
                     transferCompleted = false;
@@ -213,21 +249,21 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
         } catch (final PlatformApiDataValidationException e) {
             transferCompleted = false;
-            errors.add(new Exception("Validation exception while transfering funds for standing Instruction id" + instructionId + " from "
+            errors.add(new Exception("Validation exception while transferring funds for standing Instruction id" + instructionId + " from "
                     + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(), e));
-            errorLog.append("Validation exception while trasfering funds ").append(e.getDefaultUserMessage());
+            errorLog.append("Validation exception while transferring funds ").append(e.getDefaultUserMessage());
 
         } catch (final AbstractPlatformServiceUnavailableException e) {
             transferCompleted = false;
-            errors.add(new Exception("Platform exception while trasfering funds for standing Instruction id" + instructionId + " from "
+            errors.add(new Exception("Platform exception while transferring funds for standing Instruction id" + instructionId + " from "
                     + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(), e));
-            errorLog.append("Platform exception while trasfering funds ").append(e.getDefaultUserMessage());
+            errorLog.append("Platform exception while transferring funds ").append(e.getDefaultUserMessage());
 
         } catch (Exception e) {
             transferCompleted = false;
-            errors.add(new Exception("Unhandled System Exception while trasfering funds for standing Instruction id" + instructionId
+            errors.add(new Exception("Unhandled System Exception while transferring funds for standing Instruction id" + instructionId
                     + " from " + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(), e));
-            errorLog.append("Exception while trasfering funds ").append(e.getMessage());
+            errorLog.append("Exception while transferring funds ").append(e.getMessage());
         }
 
         // Log the transaction in history table

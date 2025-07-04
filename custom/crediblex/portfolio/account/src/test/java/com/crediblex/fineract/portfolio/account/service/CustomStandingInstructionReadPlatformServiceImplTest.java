@@ -30,7 +30,6 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.time.LocalDate;
-
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
@@ -82,14 +81,8 @@ public class CustomStandingInstructionReadPlatformServiceImplTest {
 
     @BeforeEach
     public void setUp() {
-        customService = new CustomStandingInstructionReadPlatformServiceImpl(
-                jdbcTemplate,
-                clientReadPlatformService,
-                officeReadPlatformService,
-                portfolioAccountReadPlatformService,
-                dropdownReadPlatformService,
-                columnValidator,
-                sqlGenerator,
+        customService = new CustomStandingInstructionReadPlatformServiceImpl(jdbcTemplate, clientReadPlatformService,
+                officeReadPlatformService, portfolioAccountReadPlatformService, dropdownReadPlatformService, columnValidator, sqlGenerator,
                 paginationHelper);
     }
 
@@ -100,14 +93,11 @@ public class CustomStandingInstructionReadPlatformServiceImplTest {
         LocalDate businessDate = LocalDate.of(2023, 6, 15);
         String expectedBusinessDateSql = "DATE '2023-06-15'";
 
-        StandingInstructionDuesData expectedDuesData = new StandingInstructionDuesData(
-                businessDate,
-                BigDecimal.valueOf(1000.00));
+        StandingInstructionDuesData expectedDuesData = new StandingInstructionDuesData(businessDate, BigDecimal.valueOf(1000.00));
 
         // When
         when(sqlGenerator.currentBusinessDate()).thenReturn(expectedBusinessDateSql);
-        when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(Object[].class)))
-                .thenReturn(expectedDuesData);
+        when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(expectedDuesData);
 
         // Execute
         StandingInstructionDuesData result = customService.retriveLoanDuesData(loanId);
@@ -123,6 +113,6 @@ public class CustomStandingInstructionReadPlatformServiceImplTest {
         String capturedSql = sqlCaptor.getValue();
         assertNotNull(capturedSql);
         // Verify SQL uses "completed_derived = false" instead of "completed_derived <> 1"
-        assert(capturedSql.contains("completed_derived = false"));
+        assert (capturedSql.contains("completed_derived = false"));
     }
 }

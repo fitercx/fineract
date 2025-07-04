@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
 public class CrediblexStandingInstructionsOverrideConfiguration {
@@ -40,9 +41,10 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     @Primary
     public ExecuteStandingInstructionsTasklet executeStandingInstructionsTasklet(
             StandingInstructionReadPlatformService standingInstructionReadPlatformService, JdbcTemplate jdbcTemplate,
-            DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService) {
+            DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
+            PlatformTransactionManager transactionManager) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper);
+                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper, transactionManager);
     }
 }

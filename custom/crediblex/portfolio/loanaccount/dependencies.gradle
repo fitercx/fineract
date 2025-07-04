@@ -26,6 +26,10 @@ dependencies {
     implementation(project(':fineract-savings'))
     implementation(project(':fineract-tax'))
     implementation(project(':fineract-accounting'))
+    implementation(project(':fineract-rates'))
+
     implementation('com.google.guava:guava')
+    implementation('com.google.code.gson:gson')
+
     testImplementation('org.springframework.security:spring-security-core:5.8.0')
 }

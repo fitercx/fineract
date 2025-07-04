@@ -25,10 +25,10 @@ import static org.mockito.Mockito.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.MonthDay;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
@@ -55,6 +55,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 
 class CustomExecuteStandingInstructionsTaskletTest {
 
@@ -64,6 +65,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
     private CustomExecuteStandingInstructionsTasklet tasklet;
+    private PlatformTransactionManager platformTransactionManager;
 
     @BeforeEach
     void setUp() {
@@ -72,6 +74,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         sqlGenerator = mock(DatabaseSpecificSQLGenerator.class);
         accountTransfersWritePlatformService = mock(AccountTransfersWritePlatformService.class);
         savingsAccountRepositoryWrapper = mock(SavingsAccountRepositoryWrapper.class);
+        platformTransactionManager = mock(PlatformTransactionManager.class);
 
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, DateUtils.parseLocalDate("2025-05-20"))));
@@ -79,18 +82,15 @@ class CustomExecuteStandingInstructionsTaskletTest {
         when(sqlGenerator.escape(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper);
+                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper, platformTransactionManager);
     }
 
     @Test
     void testFullPaymentIsProcessed() throws Exception {
         // Arrange
-        StandingInstructionData instruction = realStandingInstructionData(
-                10L, "Full Payment SI", new BigDecimal("100.00"),
-                PortfolioAccountType.SAVINGS, 1L,
-                PortfolioAccountType.LOAN, 2L,
-                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20)
-        );
+        StandingInstructionData instruction = realStandingInstructionData(10L, "Full Payment SI", new BigDecimal("100.00"),
+                PortfolioAccountType.SAVINGS, 1L, PortfolioAccountType.LOAN, 2L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
@@ -104,10 +104,8 @@ class CustomExecuteStandingInstructionsTaskletTest {
         assertThat(transferCaptor.getValue().getTransactionAmount()).isEqualByComparingTo("100.00");
 
         // Should update last_run_date
-        verify(jdbcTemplate).update(
-                eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
-                eq(LocalDate.of(2025, 5, 20)), eq(10L)
-        );
+        verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(10L));
     }
 
     @Test
@@ -116,12 +114,9 @@ class CustomExecuteStandingInstructionsTaskletTest {
         Long fromAccountId = 1L;
         BigDecimal requiredAmount = new BigDecimal("100.00");
         BigDecimal availableBalance = new BigDecimal("40.00");
-        StandingInstructionData instruction = realStandingInstructionData(
-                20L, "Partial Payment SI", requiredAmount,
-                PortfolioAccountType.SAVINGS, fromAccountId,
-                PortfolioAccountType.LOAN, 2L,
-                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20)
-        );
+        StandingInstructionData instruction = realStandingInstructionData(20L, "Partial Payment SI", requiredAmount,
+                PortfolioAccountType.SAVINGS, fromAccountId, PortfolioAccountType.LOAN, 2L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
@@ -160,12 +155,9 @@ class CustomExecuteStandingInstructionsTaskletTest {
         BigDecimal requiredAmount = new BigDecimal("100.00");
         LocalDate validFrom = LocalDate.of(2025, 5, 20);
 
-        StandingInstructionData instruction = realStandingInstructionData(
-                30L, "No Funds SI", requiredAmount,
-                PortfolioAccountType.SAVINGS, fromAccountId,
-                PortfolioAccountType.LOAN, toAccountId,
-                StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, validFrom
-        );
+        StandingInstructionData instruction = realStandingInstructionData(30L, "No Funds SI", requiredAmount, PortfolioAccountType.SAVINGS,
+                fromAccountId, PortfolioAccountType.LOAN, toAccountId, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, validFrom);
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
@@ -177,25 +169,73 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         // Act & Assert
         assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
-                .isInstanceOf(JobExecutionException.class)
-                .hasMessageContaining("No funds available for Standing Instruction id 30");
+                .isInstanceOf(JobExecutionException.class).hasMessageContaining("No funds available for Standing Instruction id 30");
 
         verify(jdbcTemplate, never()).update(contains("UPDATE m_account_transfer_standing_instructions SET last_run_date"), any(), any());
+    }
+
+    @Test
+    void testTransactionCommitmentWhenSomeTransfersFail() throws Exception {
+
+        StandingInstructionData successfulInstruction1 = realStandingInstructionData(40L, "Successful SI 1", new BigDecimal("50.00"),
+                PortfolioAccountType.SAVINGS, 1L, PortfolioAccountType.LOAN, 2L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+
+        StandingInstructionData successfulInstruction2 = realStandingInstructionData(41L, "Successful SI 2", new BigDecimal("75.00"),
+                PortfolioAccountType.SAVINGS, 3L, PortfolioAccountType.LOAN, 4L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+
+        StandingInstructionData failingInstruction = realStandingInstructionData(42L, "Failing SI", new BigDecimal("100.00"),
+                PortfolioAccountType.SAVINGS, 5L, PortfolioAccountType.LOAN, 6L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Arrays.asList(successfulInstruction1, successfulInstruction2, failingInstruction));
+
+        doAnswer(invocation -> {
+            AccountTransferDTO dto = invocation.getArgument(0);
+            Long instructionId = dto.getFromAccountId();
+
+            if (instructionId.equals(1L)) {
+                // Successful transfer for instruction 40
+                return null;
+            } else if (instructionId.equals(3L)) {
+                // Successful transfer for instruction 41
+                return null;
+            } else if (instructionId.equals(5L)) {
+                // Failing transfer for instruction 42
+                throw new RuntimeException("Simulated transfer failure");
+            }
+            return null;
+        }).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+
+        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
+                .isInstanceOf(JobExecutionException.class)
+                .hasMessageContaining("Unhandled System Exception while transferring funds for standing Instruction id42");
+
+        verify(accountTransfersWritePlatformService, times(3)).transferFunds(any(AccountTransferDTO.class));
+
+        verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(40L));
+        verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(41L));
+
+        verify(jdbcTemplate, never()).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(42L));
+
+        verify(jdbcTemplate, times(3)).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
+
     }
 
     private EnumOptionData enumOptionData(int id, String code) {
         return new EnumOptionData((long) id, code, null);
     }
 
-    private StandingInstructionData realStandingInstructionData(
-            Long id, String name, BigDecimal amount,
-            PortfolioAccountType fromType, Long fromId,
-            PortfolioAccountType toType, Long toId,
-            StandingInstructionType instructionType, AccountTransferRecurrenceType recurrenceType,
-            PeriodFrequencyType frequencyType, Integer interval, Integer day, LocalDate validFrom
-    ) {
-        return StandingInstructionData.instance(
-                id, // id
+    private StandingInstructionData realStandingInstructionData(Long id, String name, BigDecimal amount, PortfolioAccountType fromType,
+            Long fromId, PortfolioAccountType toType, Long toId, StandingInstructionType instructionType,
+            AccountTransferRecurrenceType recurrenceType, PeriodFrequencyType frequencyType, Integer interval, Integer day,
+            LocalDate validFrom) {
+        return StandingInstructionData.instance(id, // id
                 null, // accountDetailId
                 name, // name
                 null, // fromOffice

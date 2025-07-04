@@ -1,8 +1,15 @@
-package com.crediblex.fineract.portfolio.loan.service;
+package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loan.data.ExtendedLoanSchedulePeriodData;
-import com.crediblex.fineract.portfolio.loan.queries.LoanQueries.RapaymentStatusQuery;
-import com.crediblex.fineract.portfolio.loan.repository.CredXLoanTransactionRepository;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
+
+import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
+import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
+import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.util.HashMap;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
@@ -24,24 +31,14 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.time.LocalDate;
-import java.util.HashMap;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
-
 @ExtendWith(MockitoExtension.class)
 public class CredXLoanReadPlatformServiceImplTest {
-
 
     @Mock
     private CredXLoanTransactionRepository credXLoanTransactionRepository;
 
     @Mock
     private ConfigurationDomainService configurationDomainService;
-
 
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
@@ -61,7 +58,6 @@ public class CredXLoanReadPlatformServiceImplTest {
         HashMap<BusinessDateType, LocalDate> businessDates = new HashMap<>();
         businessDates.put(BusinessDateType.BUSINESS_DATE, LocalDate.now());
         ThreadLocalContextUtil.setBusinessDates(businessDates);
-
 
         loanId = 1L;
         transactionDate = LocalDate.of(2025, 6, 7); // Using current date
