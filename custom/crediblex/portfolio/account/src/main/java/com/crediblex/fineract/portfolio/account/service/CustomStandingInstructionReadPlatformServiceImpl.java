@@ -19,6 +19,10 @@
 
 package com.crediblex.fineract.portfolio.account.service;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
@@ -34,11 +38,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.LocalDate;
-
 @Service
 @Primary
 public class CustomStandingInstructionReadPlatformServiceImpl extends StandingInstructionReadPlatformServiceImpl {
@@ -47,10 +46,10 @@ public class CustomStandingInstructionReadPlatformServiceImpl extends StandingIn
     private final DatabaseSpecificSQLGenerator sqlGenerator;
 
     public CustomStandingInstructionReadPlatformServiceImpl(final JdbcTemplate jdbcTemplate,
-                                                            final ClientReadPlatformService clientReadPlatformService, final OfficeReadPlatformService officeReadPlatformService,
-                                                            final PortfolioAccountReadPlatformService portfolioAccountReadPlatformService,
-                                                            final DropdownReadPlatformService dropdownReadPlatformService, final ColumnValidator columnValidator,
-                                                            DatabaseSpecificSQLGenerator sqlGenerator, PaginationHelper paginationHelper) {
+            final ClientReadPlatformService clientReadPlatformService, final OfficeReadPlatformService officeReadPlatformService,
+            final PortfolioAccountReadPlatformService portfolioAccountReadPlatformService,
+            final DropdownReadPlatformService dropdownReadPlatformService, final ColumnValidator columnValidator,
+            DatabaseSpecificSQLGenerator sqlGenerator, PaginationHelper paginationHelper) {
         super(jdbcTemplate, clientReadPlatformService, officeReadPlatformService, portfolioAccountReadPlatformService,
                 dropdownReadPlatformService, columnValidator, sqlGenerator, paginationHelper);
         this.jdbcTemplate = jdbcTemplate;
