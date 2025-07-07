@@ -47,7 +47,7 @@ import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatfo
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
-import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountAssembler;
 import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,9 +63,9 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private JdbcTemplate jdbcTemplate;
     private DatabaseSpecificSQLGenerator sqlGenerator;
     private AccountTransfersWritePlatformService accountTransfersWritePlatformService;
-    private SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
     private CustomExecuteStandingInstructionsTasklet tasklet;
     private PlatformTransactionManager platformTransactionManager;
+    private SavingsAccountAssembler savingsAccountAssembler;
 
     @BeforeEach
     void setUp() {
@@ -73,7 +73,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         jdbcTemplate = mock(JdbcTemplate.class);
         sqlGenerator = mock(DatabaseSpecificSQLGenerator.class);
         accountTransfersWritePlatformService = mock(AccountTransfersWritePlatformService.class);
-        savingsAccountRepositoryWrapper = mock(SavingsAccountRepositoryWrapper.class);
+        savingsAccountAssembler = mock(SavingsAccountAssembler.class);
         platformTransactionManager = mock(PlatformTransactionManager.class);
 
         ThreadLocalContextUtil
@@ -82,7 +82,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         when(sqlGenerator.escape(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper, platformTransactionManager);
+                accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager);
     }
 
     @Test
@@ -93,6 +93,10 @@ class CustomExecuteStandingInstructionsTaskletTest {
                 AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
+
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(1L, false)).thenReturn(savingsAccount);
 
         // Act
         tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
@@ -120,7 +124,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
                 .thenReturn(Collections.singletonList(instruction));
 
-        // Simulate insufficient balance on first transfer, then partial transfer with available balance
+        // Simulate insufficient balance on transfer with available balance
         doAnswer(invocation -> {
             AccountTransferDTO dto = invocation.getArgument(0);
             if (dto.getTransactionAmount().compareTo(requiredAmount) == 0) {
@@ -131,24 +135,23 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         SavingsAccount savingsAccount = mock(SavingsAccount.class);
         when(savingsAccount.getWithdrawableBalance()).thenReturn(availableBalance);
-        when(savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(fromAccountId)).thenReturn(savingsAccount);
+        when(savingsAccountAssembler.assembleFrom(fromAccountId, false)).thenReturn(savingsAccount);
 
         // Act
         tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
 
         // Assert
-        // Should attempt transfer twice: first with full, then with partial amount
         ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
-        verify(accountTransfersWritePlatformService, times(2)).transferFunds(transferCaptor.capture());
-        assertThat(transferCaptor.getAllValues().get(0).getTransactionAmount()).isEqualByComparingTo("100.00");
-        assertThat(transferCaptor.getAllValues().get(1).getTransactionAmount()).isEqualByComparingTo("40.00");
+        verify(accountTransfersWritePlatformService).transferFunds(transferCaptor.capture());
+        AccountTransferDTO capturedTransferDTO = transferCaptor.getValue();
+        assertThat(capturedTransferDTO.getTransactionAmount()).isEqualByComparingTo("40.00");
 
         // Should NOT update last_run_date (partial payment)
         verify(jdbcTemplate, never()).update(contains("UPDATE m_account_transfer_standing_instructions SET last_run_date"), any(), any());
     }
 
     @Test
-    void testNoPaymentWhenNoFundsAvailable() {
+    void testNoPaymentWhenNoFundsAvailable() throws Exception {
         // Arrange
         Long fromAccountId = 1L;
         Long toAccountId = 2L;
@@ -164,29 +167,36 @@ class CustomExecuteStandingInstructionsTaskletTest {
         // Simulate insufficient balance on first transfer, and no funds available for partial
         doThrow(new InsufficientAccountBalanceException("amount", BigDecimal.ZERO, null, requiredAmount))
                 .when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(BigDecimal.ZERO);
+        when(savingsAccountAssembler.assembleFrom(fromAccountId, false)).thenReturn(savingsAccount);
 
-        when(savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(fromAccountId)).thenReturn(null);
+        // Act
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
 
-        // Act & Assert
-        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
-                .isInstanceOf(JobExecutionException.class).hasMessageContaining("No funds available for Standing Instruction id 30");
-
+        // Assert
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any(AccountTransferDTO.class));
         verify(jdbcTemplate, never()).update(contains("UPDATE m_account_transfer_standing_instructions SET last_run_date"), any(), any());
     }
 
     @Test
     void testTransactionCommitmentWhenSomeTransfersFail() throws Exception {
-
+        Long fromAccountId1 = 1L;
+        Long fromAccountId2 = 3L;
+        Long fromAccountId3 = 5L;
+        Long toAccountId1 = 2L;
+        Long toAccountId2 = 4L;
+        Long toAccountId3 = 6L;
         StandingInstructionData successfulInstruction1 = realStandingInstructionData(40L, "Successful SI 1", new BigDecimal("50.00"),
-                PortfolioAccountType.SAVINGS, 1L, PortfolioAccountType.LOAN, 2L, StandingInstructionType.FIXED,
+                PortfolioAccountType.SAVINGS, fromAccountId1, PortfolioAccountType.LOAN, toAccountId1, StandingInstructionType.FIXED,
                 AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
 
         StandingInstructionData successfulInstruction2 = realStandingInstructionData(41L, "Successful SI 2", new BigDecimal("75.00"),
-                PortfolioAccountType.SAVINGS, 3L, PortfolioAccountType.LOAN, 4L, StandingInstructionType.FIXED,
+                PortfolioAccountType.SAVINGS, fromAccountId2, PortfolioAccountType.LOAN, toAccountId2, StandingInstructionType.FIXED,
                 AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
 
         StandingInstructionData failingInstruction = realStandingInstructionData(42L, "Failing SI", new BigDecimal("100.00"),
-                PortfolioAccountType.SAVINGS, 5L, PortfolioAccountType.LOAN, 6L, StandingInstructionType.FIXED,
+                PortfolioAccountType.SAVINGS, fromAccountId3, PortfolioAccountType.LOAN, toAccountId3, StandingInstructionType.FIXED,
                 AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
 
         when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
@@ -208,6 +218,19 @@ class CustomExecuteStandingInstructionsTaskletTest {
             }
             return null;
         }).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+
+        // Mock accounts and balances
+        SavingsAccount savingsAccount1 = mock(SavingsAccount.class);
+        when(savingsAccount1.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId1, false)).thenReturn(savingsAccount1);
+
+        SavingsAccount savingsAccount2 = mock(SavingsAccount.class);
+        when(savingsAccount2.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId2, false)).thenReturn(savingsAccount2);
+
+        SavingsAccount savingsAccount3 = mock(SavingsAccount.class);
+        when(savingsAccount3.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId3, false)).thenReturn(savingsAccount3);
 
         assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
                 .isInstanceOf(JobExecutionException.class)
