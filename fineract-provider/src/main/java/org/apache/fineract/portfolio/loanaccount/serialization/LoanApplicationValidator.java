@@ -135,7 +135,7 @@ import org.springframework.util.CollectionUtils;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public final class LoanApplicationValidator {
+public class LoanApplicationValidator {
 
     /**
      * The parameters supported for this command.
@@ -178,22 +178,22 @@ public final class LoanApplicationValidator {
             LoanApiConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE, LoanApiConstants.daysInYearCustomStrategyParameterName));
     public static final String LOANAPPLICATION_UNDO = "loanapplication.undo";
 
-    private final FromJsonHelper fromApiJsonHelper;
-    private final LoanScheduleValidator loanScheduleValidator;
-    private final ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper;
-    private final LoanChargeApiJsonValidator loanChargeApiJsonValidator;
+    protected final FromJsonHelper fromApiJsonHelper;
+    protected final LoanScheduleValidator loanScheduleValidator;
+    protected final ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper;
+    protected final LoanChargeApiJsonValidator loanChargeApiJsonValidator;
     private final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
-    private final AdvancedPaymentAllocationsValidator advancedPaymentAllocationsValidator;
-    private final ConfigurationDomainService configurationDomainService;
-    private final LoanProductRepository loanProductRepository;
-    private final ClientRepositoryWrapper clientRepository;
-    private final GroupRepositoryWrapper groupRepository;
-    private final LoanReadPlatformService loanReadPlatformService;
-    private final LoanProductDataValidator loanProductDataValidator;
+    protected final AdvancedPaymentAllocationsValidator advancedPaymentAllocationsValidator;
+    protected final ConfigurationDomainService configurationDomainService;
+    protected final LoanProductRepository loanProductRepository;
+    protected final ClientRepositoryWrapper clientRepository;
+    protected final GroupRepositoryWrapper groupRepository;
+    protected final LoanReadPlatformService loanReadPlatformService;
+    protected final LoanProductDataValidator loanProductDataValidator;
     private final GlobalConfigurationRepositoryWrapper globalConfigurationRepository;
     private final FineractEntityToEntityMappingRepository entityMappingRepository;
     private final FineractEntityRelationRepository fineractEntityRelationRepository;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
     private final LoanProductReadPlatformService loanProductReadPlatformService;
     private final LoanCollateralAssembler collateralAssembler;
     private final WorkingDaysRepositoryWrapper workingDaysRepository;
@@ -249,7 +249,7 @@ public final class LoanApplicationValidator {
         validateForCreate(element);
     }
 
-    private void validateForCreate(final JsonElement element) {
+    protected void validateForCreate(final JsonElement element) {
         boolean isMeetingMandatoryForJLGLoans = configurationDomainService.isMeetingMandatoryForJLGLoans();
 
         final Long productId = this.fromApiJsonHelper.extractLongNamed(LoanApiConstants.productIdParameterName, element);
@@ -797,7 +797,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void fixedLengthValidations(final JsonElement element) {
+    protected void fixedLengthValidations(final JsonElement element) {
         validateOrThrow("loan", baseDataValidator -> {
             boolean isInterestBearing = false;
             final String transactionProcessingStrategy = this.fromApiJsonHelper
@@ -815,7 +815,7 @@ public final class LoanApplicationValidator {
         });
     }
 
-    private void validateBorrowerCycle(JsonElement element, LoanProduct loanProduct, Long clientId, Long groupId,
+    protected void validateBorrowerCycle(JsonElement element, LoanProduct loanProduct, Long clientId, Long groupId,
             DataValidatorBuilder baseDataValidator) {
         if (loanProduct.isUseBorrowerCycle()) {
             Integer cycleNumber = 0;
@@ -830,7 +830,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void validateDisbursementDateIsOnNonWorkingDay(final LocalDate expectedDisbursementDate) {
+    protected void validateDisbursementDateIsOnNonWorkingDay(final LocalDate expectedDisbursementDate) {
         final WorkingDays workingDays = this.workingDaysRepository.findOne();
         final boolean allowTransactionsOnNonWorkingDay = this.configurationDomainService.allowTransactionsOnNonWorkingDayEnabled();
         if (expectedDisbursementDate != null && !allowTransactionsOnNonWorkingDay
@@ -840,7 +840,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void validateDisbursementDateIsOnHoliday(final LocalDate expectedDisbursementDate, final Long officeId) {
+    protected void validateDisbursementDateIsOnHoliday(final LocalDate expectedDisbursementDate, final Long officeId) {
         final List<Holiday> holidays = this.holidayRepository.findByOfficeIdAndGreaterThanDate(officeId, expectedDisbursementDate,
                 HolidayStatusType.ACTIVE.getValue());
 
@@ -851,7 +851,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void validateCollateral(JsonElement element) {
+    protected void validateCollateral(JsonElement element) {
         final BigDecimal amount = this.fromApiJsonHelper
                 .extractBigDecimalWithLocaleNamed(LoanApiConstants.disbursementPrincipalParameterName, element);
         final String loanTypeStr = this.fromApiJsonHelper.extractStringNamed(LoanApiConstants.loanTypeParameterName, element);
@@ -1487,7 +1487,7 @@ public final class LoanApplicationValidator {
         });
     }
 
-    private void validateClientOrGroup(Client client, Group group, Long productId) {
+    protected void validateClientOrGroup(Client client, Group group, Long productId) {
         validateOrThrow("loan", baseDataValidator -> {
             if (client == null && group == null) {
                 baseDataValidator.reset().parameter(LoanApiConstants.clientIdParameterName).value(client).notNull();
@@ -1514,7 +1514,7 @@ public final class LoanApplicationValidator {
         });
     }
 
-    private void validateDisbursementDetails(LoanProduct loanProduct, JsonElement element) {
+    protected void validateDisbursementDetails(LoanProduct loanProduct, JsonElement element) {
         if (loanProduct.isMultiDisburseLoan()) {
             final JsonArray disbursementDataArray = this.fromApiJsonHelper
                     .extractJsonArrayNamed(LoanApiConstants.disbursementDataParameterName, element);
@@ -1751,7 +1751,7 @@ public final class LoanApplicationValidator {
         });
     }
 
-    private void validatePartialPeriodSupport(final Integer interestCalculationPeriodType, final DataValidatorBuilder baseDataValidator,
+    protected void validatePartialPeriodSupport(final Integer interestCalculationPeriodType, final DataValidatorBuilder baseDataValidator,
             final JsonElement element, final LoanProduct loanProduct) {
         if (interestCalculationPeriodType != null) {
             final InterestCalculationPeriodMethod interestCalculationPeriodMethod = InterestCalculationPeriodMethod
@@ -1815,7 +1815,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void validateTransactionProcessingStrategy(final String transactionProcessingStrategy, final LoanProduct loanProduct) {
+    protected void validateTransactionProcessingStrategy(final String transactionProcessingStrategy, final LoanProduct loanProduct) {
 
         // TODO: Review exceptions
         if (!AdvancedPaymentScheduleTransactionProcessor.ADVANCED_PAYMENT_ALLOCATION_STRATEGY
@@ -1876,7 +1876,7 @@ public final class LoanApplicationValidator {
         }
     }
 
-    private void validateSubmittedOnDate(final JsonElement element, LocalDate originalSubmittedOnDate,
+    protected void validateSubmittedOnDate(final JsonElement element, LocalDate originalSubmittedOnDate,
             LocalDate originalExpectedDisbursementDate, LoanProduct loanProduct) {
         final LocalDate startDate = loanProduct.getStartDate();
         final LocalDate closeDate = loanProduct.getCloseDate();
@@ -2199,7 +2199,7 @@ public final class LoanApplicationValidator {
         return null;
     }
 
-    private void throwMandatoryParameterError(final String parameterName) {
+    protected void throwMandatoryParameterError(final String parameterName) {
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         dataValidationErrors
                 .add(DataValidatorBuilder.buildValidationParameterApiError("loans", parameterName, ".cannot.be.blank", "is mandatory.", 0));
