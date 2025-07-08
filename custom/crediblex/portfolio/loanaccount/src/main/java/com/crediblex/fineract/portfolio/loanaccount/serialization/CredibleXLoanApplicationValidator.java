@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.serialization;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanRepositoryWrapper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -60,6 +61,8 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CredibleXLoanApplicationValidator extends LoanApplicationValidator {
 
+    private final CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper;
+
     public CredibleXLoanApplicationValidator(FromJsonHelper fromApiJsonHelper, LoanScheduleValidator loanScheduleValidator,
             ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper,
             LoanChargeApiJsonValidator loanChargeApiJsonValidator,
@@ -69,7 +72,7 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
             LoanReadPlatformService loanReadPlatformService, LoanProductDataValidator loanProductDataValidator,
             GlobalConfigurationRepositoryWrapper globalConfigurationRepository,
             FineractEntityToEntityMappingRepository entityMappingRepository,
-            FineractEntityRelationRepository fineractEntityRelationRepository, LoanRepositoryWrapper loanRepositoryWrapper,
+            FineractEntityRelationRepository fineractEntityRelationRepository, CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper,
             LoanProductReadPlatformService loanProductReadPlatformService, LoanCollateralAssembler collateralAssembler,
             WorkingDaysRepositoryWrapper workingDaysRepository, HolidayRepository holidayRepository,
             SavingsAccountRepositoryWrapper savingsAccountRepository, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
@@ -78,10 +81,12 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
         super(fromApiJsonHelper, loanScheduleValidator, clientCollateralManagementRepositoryWrapper, loanChargeApiJsonValidator,
                 loanRepaymentScheduleTransactionProcessorFactory, advancedPaymentAllocationsValidator, configurationDomainService,
                 loanProductRepository, clientRepository, groupRepository, loanReadPlatformService, loanProductDataValidator,
-                globalConfigurationRepository, entityMappingRepository, fineractEntityRelationRepository, loanRepositoryWrapper,
+                globalConfigurationRepository, entityMappingRepository, fineractEntityRelationRepository, credibleXLoanRepositoryWrapper,
                 loanProductReadPlatformService, collateralAssembler, workingDaysRepository, holidayRepository, savingsAccountRepository,
                 defaultLoanLifecycleStateMachine, calendarInstanceRepository, loanUtilService, entityDatatableChecksWritePlatformService,
                 loanMapper);
+
+        this.credibleXLoanRepositoryWrapper = credibleXLoanRepositoryWrapper;
     }
 
     protected void validateForCreate(final JsonElement element) {
@@ -571,7 +576,7 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
             ExternalId externalId = ExternalIdFactory.produce(externalIdStr);
 
             if (!externalId.isEmpty()) {
-                final Loan existingLoanWithSameExternalId = this.loanRepositoryWrapper.findOneWithNotFoundDetection(externalId);
+                final Loan existingLoanWithSameExternalId = this.credibleXLoanRepositoryWrapper.findOneWithoutNotFoundDetection(externalId);
                 // Only throw error if the externalId belongs to a different loan
                 if (existingLoanWithSameExternalId != null && !existingLoanWithSameExternalId.getAccountNumber().equals(accountNo)) {
                     throw new GeneralPlatformDomainRuleException("error.msg.loan.with.externalId.already.used",

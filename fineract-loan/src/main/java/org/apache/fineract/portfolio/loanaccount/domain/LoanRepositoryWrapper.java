@@ -50,7 +50,7 @@ public class LoanRepositoryWrapper {
             Arrays.asList(LoanStatus.SUBMITTED_AND_PENDING_APPROVAL, LoanStatus.APPROVED, LoanStatus.ACTIVE,
                     LoanStatus.TRANSFER_IN_PROGRESS, LoanStatus.TRANSFER_ON_HOLD, LoanStatus.OVERPAID));
 
-    private final LoanRepository repository;
+    protected final LoanRepository repository;
     private final FineractProperties fineractProperties;
 
     @Transactional(readOnly = true)
