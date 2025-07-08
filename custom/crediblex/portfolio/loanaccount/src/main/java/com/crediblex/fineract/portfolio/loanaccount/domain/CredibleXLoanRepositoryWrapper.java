@@ -9,8 +9,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Service()
-@Primary()
+@Service
+@Primary
 public class CredibleXLoanRepositoryWrapper extends LoanRepositoryWrapper {
     public CredibleXLoanRepositoryWrapper(LoanRepository repository, FineractProperties fineractProperties) {
         super(repository, fineractProperties);
