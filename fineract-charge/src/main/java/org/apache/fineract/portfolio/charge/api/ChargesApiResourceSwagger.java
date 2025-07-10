@@ -139,6 +139,8 @@ final class ChargesApiResourceSwagger {
         public String monthDayFormat;
         @Schema(example = "false")
         public boolean penalty;
+        @Schema(example = "1")
+        public Integer taxGroupId;
     }
 
     @Schema(description = "PostChargesResponse")

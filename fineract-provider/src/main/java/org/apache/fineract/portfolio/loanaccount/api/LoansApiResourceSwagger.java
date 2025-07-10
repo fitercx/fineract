@@ -1321,6 +1321,8 @@ final class LoansApiResourceSwagger {
         public String capitalizedIncomeCalculationType;
         @Schema(example = "EQUAL_AMORTIZATION", allowableValues = "EQUAL_AMORTIZATION")
         public String capitalizedIncomeStrategy;
+        @Schema(example = "1")
+        public Long linkAccountId;
 
         public List<PostLoansRequestChargeData> charges;
 

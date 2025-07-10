@@ -48,5 +48,6 @@ public class ChargeRequest implements Serializable {
     private String feeFrequency;
     private Long paymentTypeId;
     private Boolean enablePaymentType;
+    private Long taxGroupId;
 
 }
