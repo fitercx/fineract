@@ -166,7 +166,6 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
                     break;
                 }
             } while (rs.next());
-
             return LoanRescheduleRequestData.instance(id, loanId, statusEnum, rescheduleFromInstallment, rescheduleFromDate,
                     rescheduleReasonCodeValue, rescheduleReasonComment, timeline, clientName, loanAccountNumber, clientId,
                     recalculateInterest, rescheduleReasons, loanTermVariations);
@@ -194,11 +193,25 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
             sqlBuilder.append("lrr.id as id, lrr.status_enum as statusEnum, lrr.reschedule_from_date as rescheduleFromDate, ");
             sqlBuilder.append("cv.id as rescheduleReasonCvId, cv.code_value as rescheduleReasonCvValue, ");
             sqlBuilder.append(
-                    " loan.id as loanId, loan.account_no as loanAccountNumber, client.id as clientId, client.display_name as clientName ");
+                    " loan.id as loanId, loan.account_no as loanAccountNumber, client.id as clientId, client.display_name as clientName, ");
+            
+            // Add loan term variations fields
+            sqlBuilder.append("tv.id as termId, ");
+            sqlBuilder.append("tv.term_type as termType, ");
+            sqlBuilder.append("tv.applicable_date as variationApplicableFrom, ");
+            sqlBuilder.append("tv.decimal_value as decimalValue, ");
+            sqlBuilder.append("tv.date_value as dateValue, ");
+            sqlBuilder.append("tv.is_specific_to_installment as isSpecificToInstallment ");
+            
             sqlBuilder.append("from m_loan_reschedule_request lrr ");
             sqlBuilder.append("left join m_loan loan on loan.id = lrr.loan_id ");
             sqlBuilder.append("left join m_client client on client.id = loan.client_id ");
             sqlBuilder.append("left join m_code_value cv on cv.id = lrr.reschedule_reason_cv_id ");
+            
+            // Add loan term variations joins
+            sqlBuilder.append("left join m_loan_reschedule_request_term_variations_mapping rrtvm on lrr.id = rrtvm.loan_reschedule_request_id ");
+            sqlBuilder.append("left join m_loan_term_variations tv on tv.id = rrtvm.loan_term_variations_id and tv.parent_id is null");
+            
             return sqlBuilder.toString();
         }
 
@@ -215,8 +228,91 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
             final Long rescheduleReasonCvId = JdbcSupport.getLong(rs, "rescheduleReasonCvId");
             final String rescheduleReasonCvValue = rs.getString("rescheduleReasonCvValue");
             final CodeValueData rescheduleReasonCodeValue = CodeValueData.instance(rescheduleReasonCvId, rescheduleReasonCvValue);
+            
+            // Handle loan term variations data - collect current row's variation if it exists
+            Collection<LoanTermVariationsData> loanTermVariations = new ArrayList<>();
+            
+            // Check if term variations data exists in current row
+            Long termId = JdbcSupport.getLong(rs, "termId");
+            if (termId != null && termId != 0) {
+                loanTermVariations.add(fetchLoanTermVariationForBulkApproval(rs));
+            }
+            
             return LoanRescheduleRequestData.instance(id, loanId, statusEnum, clientName, loanAccountNumber, clientId, rescheduleFromDate,
-                    rescheduleReasonCodeValue);
+                    rescheduleReasonCodeValue, loanTermVariations);
+        }
+        
+        private LoanTermVariationsData fetchLoanTermVariationForBulkApproval(final ResultSet rs) throws SQLException {
+            final Long id = rs.getLong("termId");
+            final LocalDate variationApplicableFrom = JdbcSupport.getLocalDate(rs, "variationApplicableFrom");
+            final BigDecimal decimalValue = rs.getBigDecimal("decimalValue");
+            final LocalDate dateValue = JdbcSupport.getLocalDate(rs, "dateValue");
+            final boolean isSpecificToInstallment = rs.getBoolean("isSpecificToInstallment");
+            final int termType = rs.getInt("termType");
+
+            return new LoanTermVariationsData(id, LoanEnumerations.loanVariationType(termType), variationApplicableFrom, decimalValue,
+                    dateValue, isSpecificToInstallment);
+        }
+    }
+
+    private static final class LoanRescheduleRequestRowMapperForBulkApprovalBasic implements RowMapper<LoanRescheduleRequestData> {
+        public String schema() {
+            final StringBuilder sqlBuilder = new StringBuilder(200);
+
+            sqlBuilder.append("lrr.id as id, lrr.status_enum as statusEnum, lrr.reschedule_from_date as rescheduleFromDate, ");
+            sqlBuilder.append("cv.id as rescheduleReasonCvId, cv.code_value as rescheduleReasonCvValue, ");
+            sqlBuilder.append("loan.id as loanId, loan.account_no as loanAccountNumber, client.id as clientId, client.display_name as clientName, ");
+            
+            sqlBuilder.append("lrr.reschedule_from_installment as rescheduleFromInstallment, ");
+            sqlBuilder.append("lrr.recalculate_interest as recalculateInterest, ");
+            sqlBuilder.append("lrr.reschedule_reason_comment as rescheduleReasonComment, ");
+
+            sqlBuilder.append("lrr.submitted_on_date as submittedOnDate, ");
+            sqlBuilder.append("sbu.username as submittedByUsername, ");
+            sqlBuilder.append("sbu.firstname as submittedByFirstname, ");
+            sqlBuilder.append("sbu.lastname as submittedByLastname, ");
+
+            sqlBuilder.append("lrr.approved_on_date as approvedOnDate, ");
+            sqlBuilder.append("abu.username as approvedByUsername, ");
+            sqlBuilder.append("abu.firstname as approvedByFirstname, ");
+            sqlBuilder.append("abu.lastname as approvedByLastname, ");
+
+            sqlBuilder.append("lrr.rejected_on_date as rejectedOnDate, ");
+            sqlBuilder.append("rbu.username as rejectedByUsername, ");
+            sqlBuilder.append("rbu.firstname as rejectedByFirstname, ");
+            sqlBuilder.append("rbu.lastname as rejectedByLastname ");
+
+            sqlBuilder.append("from m_loan_reschedule_request lrr ");
+            sqlBuilder.append("left join m_code_value cv on cv.id = lrr.reschedule_reason_cv_id ");
+            sqlBuilder.append("left join m_appuser sbu on sbu.id = lrr.submitted_by_user_id ");
+            sqlBuilder.append("left join m_appuser abu on abu.id = lrr.approved_by_user_id ");
+            sqlBuilder.append("left join m_appuser rbu on rbu.id = lrr.rejected_by_user_id ");
+            sqlBuilder.append("left join m_loan loan on loan.id = lrr.loan_id ");
+            sqlBuilder.append("left join m_client client on client.id = loan.client_id ");
+            
+            return sqlBuilder.toString();
+        }
+
+        @Override
+        public LoanRescheduleRequestData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final Long id = rs.getLong("id");
+            final Long loanId = rs.getLong("loanId");
+            final Integer statusEnumId = JdbcSupport.getInteger(rs, "statusEnum");
+            final LoanRescheduleRequestStatusEnumData statusEnum = LoanRescheduleRequestEnumerations.status(statusEnumId);
+            final String clientName = rs.getString("clientName");
+            final String loanAccountNumber = rs.getString("loanAccountNumber");
+            final Long clientId = rs.getLong("clientId");
+            final LocalDate rescheduleFromDate = JdbcSupport.getLocalDate(rs, "rescheduleFromDate");
+            final Long rescheduleReasonCvId = JdbcSupport.getLong(rs, "rescheduleReasonCvId");
+            final String rescheduleReasonCvValue = rs.getString("rescheduleReasonCvValue");
+            final CodeValueData rescheduleReasonCodeValue = CodeValueData.instance(rescheduleReasonCvId, rescheduleReasonCvValue);
+            final String rescheduleReasonComment = rs.getString("rescheduleReasonComment");
+            final Boolean recalculateInterest = rs.getBoolean("recalculateInterest");
+            final Integer rescheduleFromInstallment = JdbcSupport.getInteger(rs, "rescheduleFromInstallment");
+
+            return LoanRescheduleRequestData.instance(id, loanId, statusEnum, rescheduleFromInstallment, rescheduleFromDate,
+                    rescheduleReasonCodeValue, rescheduleReasonComment, null, clientName, loanAccountNumber, clientId, recalculateInterest,
+                    null, null);
         }
     }
 
@@ -274,8 +370,9 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
 
     @Override
     public List<LoanRescheduleRequestData> retrieveAllRescheduleRequests(String command, Long loanId) {
-        LoanRescheduleRequestRowMapperForBulkApproval loanRescheduleRequestRowMapperForBulkApproval = new LoanRescheduleRequestRowMapperForBulkApproval();
-        String sql = "select " + loanRescheduleRequestRowMapperForBulkApproval.schema();
+        // First, get the basic reschedule request data without term variations
+        LoanRescheduleRequestRowMapperForBulkApprovalBasic basicMapper = new LoanRescheduleRequestRowMapperForBulkApprovalBasic();
+        String sql = "select " + basicMapper.schema();
         List<String> extraFilters = new ArrayList<>();
         List<Object> extraParams = new ArrayList<>();
 
@@ -299,6 +396,50 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
         if (isNotEmpty(extraFilters)) {
             sql += " where " + String.join(" AND ", extraFilters);
         }
-        return jdbcTemplate.query(sql, loanRescheduleRequestRowMapperForBulkApproval, extraParams.toArray()); // NOSONAR
+        
+        
+        // Execute the query and get basic reschedule request data
+        List<LoanRescheduleRequestData> basicResults = jdbcTemplate.query(sql, basicMapper, extraParams.toArray()); // NOSONAR
+        
+        // Now get loan term variations for each reschedule request
+        List<LoanRescheduleRequestData> finalResults = new ArrayList<>();
+        for (LoanRescheduleRequestData basicData : basicResults) {
+            Collection<LoanTermVariationsData> loanTermVariations = getLoanTermVariationsForRescheduleRequest(basicData.getId());
+            
+            // Create the final data object with loan term variations
+            LoanRescheduleRequestData finalData = LoanRescheduleRequestData.instance(
+                basicData.getId(), 
+                basicData.getLoanId(), 
+                basicData.getStatusEnum(), 
+                basicData.getClientName(), 
+                basicData.getLoanAccountNumber(), 
+                basicData.getClientId(), 
+                basicData.getRescheduleFromDate(),
+                basicData.getRescheduleReasonCodeValueId(), 
+                loanTermVariations
+            );
+            finalResults.add(finalData);
+        }
+        return finalResults;
+    }
+    
+    private Collection<LoanTermVariationsData> getLoanTermVariationsForRescheduleRequest(Long rescheduleRequestId) {
+        String sql = "select tv.id as termId, tv.term_type as termType, tv.applicable_date as variationApplicableFrom, " +
+                     "tv.decimal_value as decimalValue, tv.date_value as dateValue, tv.is_specific_to_installment as isSpecificToInstallment " +
+                     "from m_loan_term_variations tv " +
+                     "join m_loan_reschedule_request_term_variations_mapping rrtvm on tv.id = rrtvm.loan_term_variations_id " +
+                     "where rrtvm.loan_reschedule_request_id = ? and tv.parent_id is null";
+        
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            final Long id = rs.getLong("termId");
+            final LocalDate variationApplicableFrom = JdbcSupport.getLocalDate(rs, "variationApplicableFrom");
+            final BigDecimal decimalValue = rs.getBigDecimal("decimalValue");
+            final LocalDate dateValue = JdbcSupport.getLocalDate(rs, "dateValue");
+            final boolean isSpecificToInstallment = rs.getBoolean("isSpecificToInstallment");
+            final int termType = rs.getInt("termType");
+
+            return new LoanTermVariationsData(id, LoanEnumerations.loanVariationType(termType), variationApplicableFrom, decimalValue,
+                    dateValue, isSpecificToInstallment);
+        }, rescheduleRequestId);
     }
 }
