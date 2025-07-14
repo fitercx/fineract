@@ -18,10 +18,12 @@
  */
 package org.apache.fineract.portfolio.loanaccount.api;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.data.StringEnumOptionData;
@@ -1324,6 +1326,9 @@ final class LoansApiResourceSwagger {
         @Schema(example = "1")
         public Long linkAccountId;
 
+        @Schema(description = "Set of table data associated with the loan request")
+        public Set<TableData> datatables;
+
         public List<PostLoansRequestChargeData> charges;
 
         static final class PostLoansRequestChargeData {
@@ -1336,6 +1341,18 @@ final class LoansApiResourceSwagger {
             @Schema(example = "1.0")
             public BigDecimal amount;
         }
+
+        static final class TableData {
+
+            @JsonProperty("registeredTableName")
+            @Schema(description = "The name of the registered table", example = "loan_custom_data")
+            public String registeredTableName;
+
+            @Schema(description = "Dynamic data object whose structure depends on the registeredTableName", type = "object")
+            public Map<String, Object> data;
+
+        }
+
     }
 
     @Schema(description = "PostLoansResponse")

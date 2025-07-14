@@ -20,6 +20,7 @@ package com.crediblex.fineract.test.stepdef;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import com.crediblex.fineract.test.factory.CustomLoanProductsRequestFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -28,9 +29,12 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.fineract.client.models.ChargeData;
 import org.apache.fineract.client.models.ChargeRequest;
 import org.apache.fineract.client.models.GetLoanProductsResponse;
@@ -52,6 +56,7 @@ import org.apache.fineract.client.models.PostTaxesComponentsResponse;
 import org.apache.fineract.client.models.PostTaxesGroupRequest;
 import org.apache.fineract.client.models.PostTaxesGroupResponse;
 import org.apache.fineract.client.models.PostTaxesGroupTaxComponents;
+import org.apache.fineract.client.models.TableData;
 import org.apache.fineract.client.services.ChargesApi;
 import org.apache.fineract.client.services.LoanProductsApi;
 import org.apache.fineract.client.services.LoansApi;
@@ -188,7 +193,9 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             .loanType("individual")
             .transactionProcessingStrategyCode("mifos-standard-strategy")
                 .linkAccountId(((Response<PostSavingsAccountsResponse>)testContext().get(TestContextKey.EUR_SAVINGS_ACCOUNT_CREATE_RESPONSE))
-                        .body().getResourceId());
+                        .body().getResourceId())
+                .datatables(Set.of(new TableData().registeredTableName("dt_loan_remitter_dp_info")
+                        .data(createLoanRemitterInfo())));;
         
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
         
@@ -224,10 +231,15 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             .locale(DEFAULT_LOCALE)
             .loanType("individual")
             .transactionProcessingStrategyCode("mifos-standard-strategy")
+                .linkAccountId(((Response<PostSavingsAccountsResponse>)testContext().get(TestContextKey.EUR_SAVINGS_ACCOUNT_CREATE_RESPONSE))
+                        .body().getResourceId())
             .charges(List.of(new PostLoansRequestChargeData()
                 .chargeId(disbursementChargeId)
-                .amount(new BigDecimal(100))));
-        
+                .amount(new BigDecimal(100))))
+                .datatables(Set.of(new TableData().registeredTableName("dt_loan_remitter_dp_info")
+                        .data(createLoanRemitterInfo())));
+
+
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
         
         if (!loanResponse.isSuccessful()) {
@@ -236,6 +248,15 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         
         testContext().set(TestContextKey.LOAN_CREATE_RESPONSE, loanResponse);
         log.info("Created loan with charge, ID: {}", loanResponse.body().getLoanId());
+    }
+
+    private static Map<String, Object> createLoanRemitterInfo() {
+        Map<String, Object> remitterInfo = new HashMap<>();
+        remitterInfo.put("locale", "en");
+        remitterInfo.put("remitter_name", RandomStringUtils.insecure().nextAscii(10));
+        remitterInfo.put("dp_name",RandomStringUtils.insecure().nextAscii(10));
+
+        return remitterInfo;
     }
     
     @And("Admin approves the loan on {string} date and principal amount of {int}")
