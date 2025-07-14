@@ -31,7 +31,6 @@ import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidati
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
-import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.StandingInstructionData;
 import org.apache.fineract.portfolio.account.data.StandingInstructionDuesData;
@@ -45,9 +44,8 @@ import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
-import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountAssembler;
 import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
-import org.apache.fineract.portfolio.savings.exception.SavingsAccountNotFoundException;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
@@ -63,21 +61,21 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
-    private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
+    private final SavingsAccountAssembler savingsAccountAssembler;
     private final PlatformTransactionManager transactionManager;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
-            AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper, PlatformTransactionManager transactionManager) {
+            AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
+            PlatformTransactionManager transactionManager) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
         this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
-        this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
         this.transactionManager = transactionManager;
+        this.savingsAccountAssembler = savingsAccountAssembler;
     }
 
     @Override
@@ -184,75 +182,53 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
      */
     private boolean transferAmountWithPartialPaymentSupport(final List<Throwable> errors, final AccountTransferDTO accountTransferDTO,
             final Long instructionId, final BigDecimal originalAmount) {
-        boolean transferCompleted = true;
-        StringBuilder errorLog = new StringBuilder();
-        BigDecimal actualTransferAmount = accountTransferDTO.getTransactionAmount();
+        boolean transferCompleted = false;
         boolean isPartialPayment = false;
 
+        BigDecimal availableBalance = getAvailableBalance(accountTransferDTO.getFromAccountId());
+        if (availableBalance.compareTo(BigDecimal.ZERO) <= 0) {
+            return transferCompleted;
+        }
+
+        BigDecimal amount = accountTransferDTO.getTransactionAmount();
+        if (amount.compareTo(availableBalance) > 0) {
+            amount = availableBalance;
+            isPartialPayment = true;
+        }
+
+        AccountTransferDTO updatedDTO = new AccountTransferDTO(accountTransferDTO.getTransactionDate(), amount,
+                accountTransferDTO.getFromAccountType(), accountTransferDTO.getToAccountType(), accountTransferDTO.getFromAccountId(),
+                accountTransferDTO.getToAccountId(), accountTransferDTO.getDescription() + (isPartialPayment ? " (Partial Payment)" : ""),
+                accountTransferDTO.getLocale(), accountTransferDTO.getFmt(), accountTransferDTO.getPaymentDetail(),
+                accountTransferDTO.getFromTransferType(), accountTransferDTO.getToTransferType(), accountTransferDTO.getChargeId(),
+                accountTransferDTO.getLoanInstallmentNumber(), accountTransferDTO.getTransferType(),
+                accountTransferDTO.getAccountTransferDetails(), accountTransferDTO.getNoteText(), accountTransferDTO.getTxnExternalId(),
+                accountTransferDTO.getLoan(), accountTransferDTO.getToSavingsAccount(), accountTransferDTO.getFromSavingsAccount(),
+                accountTransferDTO.isRegularTransaction(), accountTransferDTO.isExceptionForBalanceCheck());
+
+        transferCompleted = true;
+        StringBuilder errorLog = new StringBuilder();
         StringBuilder updateQuery = new StringBuilder(
                 "INSERT INTO m_account_transfer_standing_instructions_history (standing_instruction_id, " + sqlGenerator.escape("status")
                         + ", amount, execution_time, error_log) VALUES (");
 
         try {
-            // First attempt: try the full transfer
-            accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
-            log.info("Standing Instruction {} executed successfully for full amount: {}", instructionId, actualTransferAmount);
-
-        } catch (final InsufficientAccountBalanceException e) {
-            // Handle insufficient balance with partial payment logic
-            log.info("Insufficient balance for Standing Instruction {}. Attempting partial payment.", instructionId);
-
-            try {
-                // Get available balance from source account
-                BigDecimal availableBalance = getAvailableBalance(accountTransferDTO.getFromAccountId(),
-                        accountTransferDTO.getFromAccountType());
-
-                if (availableBalance.compareTo(BigDecimal.ZERO) > 0) {
-                    AccountTransferDTO partialTransferDTO = new AccountTransferDTO(accountTransferDTO.getTransactionDate(),
-                            availableBalance, accountTransferDTO.getFromAccountType(), accountTransferDTO.getToAccountType(),
-                            accountTransferDTO.getFromAccountId(), accountTransferDTO.getToAccountId(),
-                            accountTransferDTO.getDescription() + " (Partial Payment)", accountTransferDTO.getLocale(),
-                            accountTransferDTO.getFmt(), accountTransferDTO.getPaymentDetail(), accountTransferDTO.getFromTransferType(),
-                            accountTransferDTO.getToTransferType(), accountTransferDTO.getChargeId(),
-                            accountTransferDTO.getLoanInstallmentNumber(), accountTransferDTO.getTransferType(),
-                            accountTransferDTO.getAccountTransferDetails(), accountTransferDTO.getNoteText(),
-                            accountTransferDTO.getTxnExternalId(), accountTransferDTO.getLoan(), accountTransferDTO.getToSavingsAccount(),
-                            accountTransferDTO.getFromSavingsAccount(), accountTransferDTO.isRegularTransaction(),
-                            accountTransferDTO.isExceptionForBalanceCheck());
-
-                    // Attempt partial transfer
-                    accountTransfersWritePlatformService.transferFunds(partialTransferDTO);
-                    actualTransferAmount = availableBalance;
-                    isPartialPayment = true;
-
-                    BigDecimal unpaidAmount = originalAmount.subtract(availableBalance);
-                    log.info("Standing Instruction {} executed as partial payment. Paid: {}, Unpaid: {}", instructionId, availableBalance,
-                            unpaidAmount);
-
-                } else {
-                    // No funds available at all
-                    transferCompleted = false;
-                    errors.add(new Exception("No funds available for Standing Instruction id " + instructionId + " from account "
-                            + accountTransferDTO.getFromAccountId(), e));
-                    errorLog.append("No funds available for transfer");
-                }
-
-            } catch (Exception partialTransferException) {
-                // Partial transfer also failed
-                transferCompleted = false;
-                errors.add(new Exception(
-                        "Partial payment failed for Standing Instruction id " + instructionId + " from "
-                                + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(),
-                        partialTransferException));
-                errorLog.append("Partial payment failed: ").append(partialTransferException.getMessage());
+            accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            if (isPartialPayment) {
+                BigDecimal unpaidAmount = originalAmount.subtract(amount);
+                errorLog.append("Partial payment executed. Paid: ").append(amount).append(", Unpaid: ").append(unpaidAmount);
             }
-
         } catch (final PlatformApiDataValidationException e) {
             transferCompleted = false;
             errors.add(new Exception("Validation exception while transferring funds for standing Instruction id" + instructionId + " from "
                     + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(), e));
             errorLog.append("Validation exception while transferring funds ").append(e.getDefaultUserMessage());
 
+        } catch (final InsufficientAccountBalanceException e) {
+            transferCompleted = false;
+            errorLog.append("Insufficient balance for Standing Instruction " + instructionId + ". Attempted "
+                    + (isPartialPayment ? "partial" : "full") + " payment, from " + accountTransferDTO.getFromAccountId() + " to "
+                    + accountTransferDTO.getToAccountId() + ". ");
         } catch (final AbstractPlatformServiceUnavailableException e) {
             transferCompleted = false;
             errors.add(new Exception("Platform exception while transferring funds for standing Instruction id" + instructionId + " from "
@@ -277,7 +253,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         } else {
             updateQuery.append("'failed'").append(",");
         }
-        updateQuery.append(actualTransferAmount.doubleValue());
+        updateQuery.append(amount.doubleValue());
         updateQuery.append(", now(),");
         updateQuery.append("'").append(errorLog).append("')");
         jdbcTemplate.update(updateQuery.toString());
@@ -288,17 +264,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     /**
      * Fetches the available balance from the source account. Uses getWithdrawableBalance() for SAVINGS account type.
      */
-    private BigDecimal getAvailableBalance(Long fromAccountId, PortfolioAccountType fromAccountType) {
-        if (fromAccountType != null && fromAccountType.isSavingsAccount()) {
-            try {
-                SavingsAccount savingsAccount = savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(fromAccountId);
-                if (savingsAccount != null) {
-                    return savingsAccount.getWithdrawableBalance();
-                }
-            } catch (SavingsAccountNotFoundException ex) {
-                log.warn("Savings account not found for id {}", fromAccountId);
-            }
-        }
-        return BigDecimal.ZERO;
+    public BigDecimal getAvailableBalance(Long savingsAccountId) {
+        SavingsAccount account = savingsAccountAssembler.assembleFrom(savingsAccountId, false);
+        return account.getWithdrawableBalance();
     }
 }

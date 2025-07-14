@@ -23,7 +23,7 @@ import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecific
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
-import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountAssembler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,7 +35,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 public class CrediblexStandingInstructionsOverrideConfiguration {
 
     @Autowired
-    private SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
+    private SavingsAccountAssembler savingsAccountAssembler;
 
     @Bean
     @Primary
@@ -45,6 +45,6 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
             PlatformTransactionManager transactionManager) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountRepositoryWrapper, transactionManager);
+                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager);
     }
 }
