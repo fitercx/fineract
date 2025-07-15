@@ -21,10 +21,10 @@ WITH pending_installments
                     sum(coalesce(fee_charges_waived_derived, 0))         as fees_waived,
                     sum(coalesce(fee_charges_completed_derived, 0))      as fees_completed,
 
-                    sum(coalesce(penalty_charges_amount,0))                          as penalties,
+                    sum(coalesce(penalty_charges_amount, 0))             as penalties,
                     sum(coalesce(penalty_charges_writtenoff_derived, 0)) as penalties_written_off,
                     sum(coalesce(penalty_charges_waived_derived, 0))     as penalties_waived,
-                    sum(coalesce(principal_completed_derived, 0))        as penalties_completed
+                    sum(coalesce(penalty_charges_completed_derived, 0))  as penalties_completed
              from pending_installments
              group by loan_id),
      due_amounts
