@@ -22,10 +22,11 @@ package com.crediblex.fineract.portfolio.loanaccount.repository;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface CustomLoanChargeRepository extends LoanChargeRepository {
+public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Long> {
 
     @Query("""
                 SELECT lc FROM LoanCharge lc
