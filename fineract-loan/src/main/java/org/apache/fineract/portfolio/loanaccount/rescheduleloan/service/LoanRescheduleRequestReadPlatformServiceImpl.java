@@ -185,35 +185,6 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
 
     }
 
-    @Override
-    public List<LoanRescheduleRequestData> readLoanRescheduleRequests(Long loanId) {
-        this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-        final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.loan_id = ?";
-
-        return this.jdbcTemplate.query(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, loanId); // NOSONAR
-    }
-
-    @Override
-    public LoanRescheduleRequestData readLoanRescheduleRequest(Long requestId) {
-
-        try {
-            final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.id = ?";
-
-            return this.jdbcTemplate.queryForObject(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, requestId); // NOSONAR
-        }
-
-        catch (final EmptyResultDataAccessException e) {
-            return null;
-        }
-    }
-
-    @Override
-    public List<LoanRescheduleRequestData> readLoanRescheduleRequests(Long loanId, Integer statusEnum) {
-        this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-        final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.loan_id = ?" + " and lr.status_enum = ?";
-        return this.jdbcTemplate.query(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, loanId, statusEnum); // NOSONAR
-    }
-
 
     protected static final class LoanRescheduleRequestRowMapperForBulkApproval implements RowMapper<LoanRescheduleRequestData> {
 
@@ -249,6 +220,34 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
         }
     }
 
+    @Override
+    public List<LoanRescheduleRequestData> readLoanRescheduleRequests(Long loanId) {
+        this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.loan_id = ?";
+
+        return this.jdbcTemplate.query(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, loanId); // NOSONAR
+    }
+
+    @Override
+    public LoanRescheduleRequestData readLoanRescheduleRequest(Long requestId) {
+
+        try {
+            final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.id = ?";
+
+            return this.jdbcTemplate.queryForObject(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, requestId); // NOSONAR
+        }
+
+        catch (final EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public List<LoanRescheduleRequestData> readLoanRescheduleRequests(Long loanId, Integer statusEnum) {
+        this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        final String sql = "select " + LOAN_RESCHEDULE_REQUEST_ROW_MAPPER.schema() + " where lr.loan_id = ?" + " and lr.status_enum = ?";
+        return this.jdbcTemplate.query(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, loanId, statusEnum); // NOSONAR
+    }
 
     @Override
     public LoanRescheduleRequestData retrieveAllRescheduleReasons(String loanRescheduleReason) {
@@ -277,7 +276,6 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
     public List<LoanRescheduleRequestData> retrieveAllRescheduleRequests(String command, Long loanId) {
         LoanRescheduleRequestRowMapperForBulkApproval loanRescheduleRequestRowMapperForBulkApproval = new LoanRescheduleRequestRowMapperForBulkApproval();
         String sql = "select " + loanRescheduleRequestRowMapperForBulkApproval.schema();
-
         List<String> extraFilters = new ArrayList<>();
         List<Object> extraParams = new ArrayList<>();
 
@@ -302,6 +300,5 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
             sql += " where " + String.join(" AND ", extraFilters);
         }
         return jdbcTemplate.query(sql, loanRescheduleRequestRowMapperForBulkApproval, extraParams.toArray()); // NOSONAR
-
     }
 }
