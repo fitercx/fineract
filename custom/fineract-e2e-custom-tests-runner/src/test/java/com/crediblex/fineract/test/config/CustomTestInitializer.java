@@ -16,18 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.test.config;
 
-plugins {
-    id 'io.github.kayr.gradle.ezyquery' version '0.0.23' apply false
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+@Slf4j
+@Component
+public class CustomTestInitializer {
+    
+    public CustomTestInitializer() {
+        log.info("CustomTestInitializer created - no pre-initialization of products");
+    }
+    
+    public void init() {
+        log.info("CustomTestInitializer.init() called - intentionally doing nothing");
+        // This is intentionally empty - we don't want to pre-create any products
+        // Products should be created on-demand within test scenarios
+    }
 }
-
-description = 'CredibleX Fineract Commands'
-
-group = 'com.crediblex.fineract.commands'
-
-
-base {
-    archivesName = 'crediblex-fineract-commands'
-}
-
-apply from: 'dependencies.gradle'

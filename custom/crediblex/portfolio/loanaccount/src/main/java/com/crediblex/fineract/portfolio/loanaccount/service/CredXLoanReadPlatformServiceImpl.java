@@ -26,6 +26,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
+
+import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
@@ -64,6 +66,7 @@ import org.apache.fineract.portfolio.loanaccount.service.*;
 import org.apache.fineract.portfolio.loanproduct.service.LoanDropdownReadPlatformService;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
+import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -74,6 +77,8 @@ import org.springframework.stereotype.Service;
 public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImpl {
 
     private final CredXLoanTransactionRepository credXLoanTransactionRepository;
+
+    private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -101,6 +106,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 loanTransactionRelationReadService, loanForeclosureValidator, loanTransactionMapper, loanMapper,
                 loadTransactionProcessingService);
         this.credXLoanTransactionRepository = credXLoanTransactionRepository;
+        this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
     }
 
     @Override
@@ -119,9 +125,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue);
         final BigDecimal netDisbursalAmount = result.getNetDisbursalAmount();
         boolean manuallyReversed = false;
-        return new LoanTransactionData(null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
-                principalPortion, interestDue, feeDue, penaltyDue, null, ExternalId.empty(), null, null, null, null, manuallyReversed,
-                loanId, ExternalId.empty());
+        final Collection<PaymentTypeData> paymentTypeOptions = paymentTypeReadPlatformService.retrieveAllPaymentTypes();
+
+        return new LoanTransactionData(
+                null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
+                principalPortion, interestDue, feeDue, penaltyDue, null, null, paymentTypeOptions,
+                ExternalId.empty(), null, null, null, manuallyReversed, loanId, ExternalId.empty()
+        );
     }
 
     @Override
@@ -138,7 +148,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         Collection<LoanSchedulePeriodData> periodDataCollection = new ArrayList<>(periodDataWithStatus);
         return loanScheduleData.withPeriods(periodDataCollection);
-
     }
 
     ExtendedLoanSchedulePeriodData.Status resolvePeriodStatus(CurrencyData currencyData, LoanSchedulePeriodData period) {

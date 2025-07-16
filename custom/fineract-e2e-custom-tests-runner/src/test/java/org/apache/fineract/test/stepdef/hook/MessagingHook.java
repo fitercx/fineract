@@ -16,18 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.fineract.test.stepdef.hook;
 
-plugins {
-    id 'io.github.kayr.gradle.ezyquery' version '0.0.23' apply false
+import io.cucumber.java.Before;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * This class overrides the base MessagingHook to prevent dependency issues
+ * The package name must match exactly to override the base class
+ */
+@Slf4j
+@SuppressWarnings({ "HideUtilityClassConstructor" })
+public class MessagingHook {
+
+    @Before
+    public void emptyEventStore() {
+        log.info("Custom MessagingHook.emptyEventStore() - Skipping event store reset");
+        // Do nothing - we don't want to use event store in custom tests
+    }
 }
-
-description = 'CredibleX Fineract Commands'
-
-group = 'com.crediblex.fineract.commands'
-
-
-base {
-    archivesName = 'crediblex-fineract-commands'
-}
-
-apply from: 'dependencies.gradle'

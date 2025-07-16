@@ -16,18 +16,23 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.fineract.test.stepdef.hook;
 
-plugins {
-    id 'io.github.kayr.gradle.ezyquery' version '0.0.23' apply false
+import io.cucumber.java.After;
+import io.cucumber.java.Scenario;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * This class overrides the base TestRailLifecycleHook to prevent dependency issues
+ * The package name must match exactly to override the base class
+ */
+@Slf4j
+@SuppressWarnings({ "HideUtilityClassConstructor" })
+public class TestRailLifecycleHook {
+
+    @After
+    public void tearDown(Scenario scenario) {
+        log.info("Custom TestRailLifecycleHook.tearDown() - Skipping TestRail integration");
+        // Do nothing - we don't want TestRail integration in custom tests
+    }
 }
-
-description = 'CredibleX Fineract Commands'
-
-group = 'com.crediblex.fineract.commands'
-
-
-base {
-    archivesName = 'crediblex-fineract-commands'
-}
-
-apply from: 'dependencies.gradle'
