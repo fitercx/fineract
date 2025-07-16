@@ -214,6 +214,42 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
         return this.jdbcTemplate.query(sql, LOAN_RESCHEDULE_REQUEST_ROW_MAPPER, loanId, statusEnum); // NOSONAR
     }
 
+
+    protected static final class LoanRescheduleRequestRowMapperForBulkApproval implements RowMapper<LoanRescheduleRequestData> {
+
+        public String schema() {
+            final StringBuilder sqlBuilder = new StringBuilder(200);
+
+            sqlBuilder.append("lrr.id as id, lrr.status_enum as statusEnum, lrr.reschedule_from_date as rescheduleFromDate, ");
+            sqlBuilder.append("cv.id as rescheduleReasonCvId, cv.code_value as rescheduleReasonCvValue, ");
+            sqlBuilder.append(
+                    " loan.id as loanId, loan.account_no as loanAccountNumber, client.id as clientId, client.display_name as clientName ");
+            sqlBuilder.append("from m_loan_reschedule_request lrr ");
+            sqlBuilder.append("left join m_loan loan on loan.id = lrr.loan_id ");
+            sqlBuilder.append("left join m_client client on client.id = loan.client_id ");
+            sqlBuilder.append("left join m_code_value cv on cv.id = lrr.reschedule_reason_cv_id ");
+            return sqlBuilder.toString();
+        }
+
+        @Override
+        public LoanRescheduleRequestData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final Long id = rs.getLong("id");
+            final Long loanId = rs.getLong("loanId");
+            final Integer statusEnumId = JdbcSupport.getInteger(rs, "statusEnum");
+            final LoanRescheduleRequestStatusEnumData statusEnum = LoanRescheduleRequestEnumerations.status(statusEnumId);
+            final String clientName = rs.getString("clientName");
+            final String loanAccountNumber = rs.getString("loanAccountNumber");
+            final Long clientId = rs.getLong("clientId");
+            final LocalDate rescheduleFromDate = JdbcSupport.getLocalDate(rs, "rescheduleFromDate");
+            final Long rescheduleReasonCvId = JdbcSupport.getLong(rs, "rescheduleReasonCvId");
+            final String rescheduleReasonCvValue = rs.getString("rescheduleReasonCvValue");
+            final CodeValueData rescheduleReasonCodeValue = CodeValueData.instance(rescheduleReasonCvId, rescheduleReasonCvValue);
+            return LoanRescheduleRequestData.instance(id, loanId, statusEnum, clientName, loanAccountNumber, clientId, rescheduleFromDate,
+                    rescheduleReasonCodeValue);
+        }
+    }
+
+
     @Override
     public LoanRescheduleRequestData retrieveAllRescheduleReasons(String loanRescheduleReason) {
         final List<CodeValueData> rescheduleReasons = new ArrayList<>(
@@ -239,13 +275,8 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
 
     @Override
     public List<LoanRescheduleRequestData> retrieveAllRescheduleRequests(String command, Long loanId) {
-        final String sql = "select lrr.id as id, lrr.status_enum as statusEnum, lrr.reschedule_from_date as rescheduleFromDate, "
-                + "cv.id as rescheduleReasonCvId, cv.code_value as rescheduleReasonCvValue, "
-                + " loan.id as loanId, loan.account_no as loanAccountNumber, client.id as clientId, client.display_name as clientName "
-                + " from m_loan_reschedule_request lrr "
-                + " left join m_loan loan on loan.id = lrr.loan_id "
-                + " left join m_client client on client.id = loan.client_id "
-                + " left join m_code_value cv on cv.id = lrr.reschedule_reason_cv_id ";
+        LoanRescheduleRequestRowMapperForBulkApproval loanRescheduleRequestRowMapperForBulkApproval = new LoanRescheduleRequestRowMapperForBulkApproval();
+        String sql = "select " + loanRescheduleRequestRowMapperForBulkApproval.schema();
 
         List<String> extraFilters = new ArrayList<>();
         List<Object> extraParams = new ArrayList<>();
@@ -267,26 +298,10 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
             extraParams.add(loanId);
         }
 
-        String sqlBuilder = sql;
         if (isNotEmpty(extraFilters)) {
-            sqlBuilder += " where " + String.join(" AND ", extraFilters);
+            sql += " where " + String.join(" AND ", extraFilters);
         }
+        return jdbcTemplate.query(sql, loanRescheduleRequestRowMapperForBulkApproval, extraParams.toArray()); // NOSONAR
 
-        return jdbcTemplate.query(sqlBuilder, (rs, rowNum) -> {
-            final Long id = rs.getLong("id");
-            final Long lId = rs.getLong("loanId");
-            final Integer statusEnumId = JdbcSupport.getInteger(rs, "statusEnum");
-            final LoanRescheduleRequestStatusEnumData statusEnum = LoanRescheduleRequestEnumerations.status(statusEnumId);
-            final String clientName = rs.getString("clientName");
-            final String loanAccountNumber = rs.getString("loanAccountNumber");
-            final Long clientId = rs.getLong("clientId");
-            final LocalDate rescheduleFromDate = JdbcSupport.getLocalDate(rs, "rescheduleFromDate");
-            final Long rescheduleReasonCvId = JdbcSupport.getLong(rs, "rescheduleReasonCvId");
-            final String rescheduleReasonCvValue = rs.getString("rescheduleReasonCvValue");
-            final CodeValueData rescheduleReasonCodeValue = CodeValueData.instance(rescheduleReasonCvId, rescheduleReasonCvValue);
-
-            return LoanRescheduleRequestData.instance(id, lId, statusEnum, clientName, loanAccountNumber, clientId, rescheduleFromDate,
-                    rescheduleReasonCodeValue);
-        }, extraParams.toArray()); // NOSONAR
     }
 }
