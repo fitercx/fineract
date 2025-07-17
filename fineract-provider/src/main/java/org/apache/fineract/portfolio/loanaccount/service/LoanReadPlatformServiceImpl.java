@@ -151,7 +151,7 @@ import org.springframework.util.CollectionUtils;
 @Transactional(readOnly = true)
 public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, LoanReadPlatformServiceCommon {
 
-    private final JdbcTemplate jdbcTemplate;
+    protected final JdbcTemplate jdbcTemplate;
     private final PlatformSecurityContext context;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
@@ -172,14 +172,14 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     private final ConfigurationDomainService configurationDomainService;
     private final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
     private final ColumnValidator columnValidator;
-    private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final DelinquencyReadPlatformService delinquencyReadPlatformService;
+    protected final DatabaseSpecificSQLGenerator sqlGenerator;
+    protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
     private final LoanTransactionRepository loanTransactionRepository;
     private final LoanChargePaidByReadService loanChargePaidByReadService;
     private final LoanTransactionRelationReadService loanTransactionRelationReadService;
     private final LoanForeclosureValidator loanForeclosureValidator;
     private final LoanTransactionMapper loanTransactionMapper;
-    private final org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper;
+    protected final org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper;
     private final LoanTransactionProcessingService loadTransactionProcessingService;
 
     @Override
@@ -204,7 +204,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
         }
     }
 
-    private String getHierarchyString() {
+    protected String getHierarchyString() {
         AppUser currentUser = null;
         if (this.context != null) {
             currentUser = this.context.getAuthenticatedUserIfPresent();
