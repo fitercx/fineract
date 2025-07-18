@@ -14,7 +14,7 @@ WITH pending_installments
                     sum(coalesce(interest_amount, 0))                    as interest,
                     sum(coalesce(interest_writtenoff_derived, 0))        as interest_written_off,
                     sum(coalesce(interest_waived_derived, 0))            as interest_waived,
-                    sum(coalesce(fee_charges_completed_derived, 0))      as interest_completed,
+                    sum(coalesce(interest_completed_derived, 0))         as interest_completed,
 
                     sum(coalesce(fee_charges_amount, 0))                 as fees,
                     sum(coalesce(fee_charges_writtenoff_derived, 0))     as fees_written_off,
@@ -68,6 +68,6 @@ SELECT (CASE
 FROM m_loan l
          JOIN m_currency rc on rc."code" = l.currency_code
          JOIN due_amounts ls ON ls.loan_id = l.id
-         JOIN earliest_due_schedule ed on ed.loan_id = ls.loan_id
+         LEFT JOIN earliest_due_schedule ed on ed.loan_id = ls.loan_id
          LEFT JOIN latest_transaction lt on lt.loan_id = l.id
 WHERE l.id = :loanId;
