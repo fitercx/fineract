@@ -901,8 +901,8 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         }
     }
 
-    private LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,
-            final LocalDate transactionDate, final ExternalId txnExternalId, PaymentDetail paymentDetail) {
+    protected LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,
+                                                    final LocalDate transactionDate, final ExternalId txnExternalId, PaymentDetail paymentDetail) {
         businessEventNotifierService.notifyPreBusinessEvent(new LoanChargeAdjustmentPreBusinessEvent(loan));
         final List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
         final List<Long> existingReversedTransactionIds = new ArrayList<>(loan.findExistingReversedTransactionIds());
@@ -1310,7 +1310,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         this.journalEntryWritePlatformService.createJournalEntriesForLoan(accountingBridgeData);
     }
 
-    private LoanCharge retrieveLoanChargeBy(final Long loanId, final Long loanChargeId) {
+    protected LoanCharge retrieveLoanChargeBy(final Long loanId, final Long loanChargeId) {
         final LoanCharge loanCharge = this.loanChargeRepository.findById(loanChargeId)
                 .orElseThrow(() -> new LoanChargeNotFoundException(loanChargeId));
 
@@ -1368,7 +1368,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         return installmentChargeEntry;
     }
 
-    private void loanChargeAdjustmentEntranceValidation(final LoanCharge loanCharge, final BigDecimal transactionAmount) {
+    protected void loanChargeAdjustmentEntranceValidation(final LoanCharge loanCharge, final BigDecimal transactionAmount) {
         final Loan loan = loanCharge.getLoan();
         if (!(loan.isOpen() || loan.getStatus().isClosedObligationsMet() || loan.getStatus().isOverpaid())) {
             final String errorCode = "loan.charge.adjustment.invalid.status";
