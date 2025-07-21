@@ -68,7 +68,7 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
 
             LoanChargeData data = new LoanChargeData(lc.getId(), lc.getCharge().getId(), lc.getCharge().getName(),
                     lc.getCharge().toData().getCurrency(), lc.amount(), lc.getAmountPaid(), lc.getAmountWaived(), lc.getAmountWrittenOff(),
-                    availableForAdjustment, chargeTimeTypeData, lc.getSubmittedOnDate(), lc.getDueDate(), chargeCalculationTypeData,
+                    lc.getAmountOutstanding(), chargeTimeTypeData, lc.getSubmittedOnDate(), lc.getDueDate(), chargeCalculationTypeData,
                     lc.getPercentage(), lc.getAmountPercentageAppliedTo(), lc.isPenaltyCharge(), chargePaymentModeData, lc.isPaid(),
                     lc.isWaived(), lc.getLoan().getId(), lc.getLoan().getExternalId(), lc.getMinCap(), lc.getMaxCap(),
                     lc.getAmountOrPercentage(), loanInstallmentChargeDataList, lc.getExternalId());
