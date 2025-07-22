@@ -328,37 +328,19 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             BigDecimal currentOutstanding = loanCharge.getAmountOutstanding(loan.getCurrency()).getAmount();
             loanCharge.setOutstandingAmount(currentOutstanding.subtract(installmentAmountWaived.getAmount()));
             
-            // Debug logging
-            System.out.println("Installment fee - determineIfFullyPaid: " + loanCharge.determineIfFullyPaid());
-            System.out.println("Installment fee - amount: " + loanCharge.getAmount(loan.getCurrency()).getAmount());
-            System.out.println("Installment fee - amountPaid: " + loanCharge.getAmountPaid(loan.getCurrency()).getAmount());
-            System.out.println("Installment fee - amountWaived: " + loanCharge.getAmountWaived(loan.getCurrency()).getAmount());
-            System.out.println("Installment fee - amountOutstanding: " + loanCharge.getAmountOutstanding(loan.getCurrency()).getAmount());
-            
             // Use updatePaidAmountBy with zero to trigger the waived flag setting logic
             // This will call the logic that sets this.waived = true when waivedAmount.isGreaterThanZero()
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
             
-            // Double-check the flags are set correctly
-            System.out.println("After updatePaidAmountBy - paid: " + loanCharge.isPaid() + ", waived: " + loanCharge.isWaived());
         } else {
             // For non-installment fees, manually set the values to preserve amountPaid
             // Set the waived amount to the outstanding amount only (not the total amount)
             loanCharge.setAmountWaived(amountOutstanding.getAmount());
             loanCharge.setOutstandingAmount(BigDecimal.ZERO);
             
-            // Debug logging
-            System.out.println("Non-installment fee - amount: " + loanCharge.getAmount(loan.getCurrency()).getAmount());
-            System.out.println("Non-installment fee - amountPaid: " + loanCharge.getAmountPaid(loan.getCurrency()).getAmount());
-            System.out.println("Non-installment fee - amountWaived: " + loanCharge.getAmountWaived(loan.getCurrency()).getAmount());
-            System.out.println("Non-installment fee - amountOutstanding: " + loanCharge.getAmountOutstanding(loan.getCurrency()).getAmount());
-            
             // Use updatePaidAmountBy with zero to trigger the waived flag setting logic
             // This will call the logic that sets this.waived = true when waivedAmount.isGreaterThanZero()
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
-            
-            // Double-check the flags are set correctly
-            System.out.println("After updatePaidAmountBy - paid: " + loanCharge.isPaid() + ", waived: " + loanCharge.isWaived());
         }
         
         Money amountWaived = loanCharge.getAmountWaived(loan.getCurrency());
@@ -420,10 +402,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         waiveLoanChargeTransaction.getLoanChargesPaid().add(loanChargePaidBy);
         loan.addLoanTransaction(waiveLoanChargeTransaction);
         
-        // Final check to ensure the waived flag is set correctly
-        System.out.println("Final check - paid: " + loanCharge.isPaid() + ", waived: " + loanCharge.isWaived());
-        System.out.println("Final check - amountWaived: " + loanCharge.getAmountWaived(loan.getCurrency()).getAmount());
-        
         // Handle schedule regeneration and transaction reprocessing manually
         if (loan.isCumulativeSchedule() && loan.isInterestBearingAndInterestRecalculationEnabled()
                 && DateUtils.isBefore(loanCharge.getDueLocalDate(), businessDate)) {
@@ -436,9 +414,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             loan.updateLoanSummaryDerivedFields();
             loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
         }
-        
-        // Final check after loan updates
-        System.out.println("After loan updates - paid: " + loanCharge.isPaid() + ", waived: " + loanCharge.isWaived());
         
         return waiveLoanChargeTransaction;
     }
