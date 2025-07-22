@@ -437,6 +437,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         PostTaxesComponentsRequest componentRequest = new PostTaxesComponentsRequest()
             .name(taxGroupName)
             .locale(DEFAULT_LOCALE)
+                .dateFormat(DATE_FORMAT)
             .percentage((float) vatPercent)
                 .startDate("01 January 1977");
 

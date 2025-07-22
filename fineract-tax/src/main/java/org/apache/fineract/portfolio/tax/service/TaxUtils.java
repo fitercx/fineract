@@ -126,4 +126,28 @@ public final class TaxUtils {
         }
         return totalAmount;
     }
+
+    public static BigDecimal addTaxToAmount(final BigDecimal amount, final LocalDate date, final Set<TaxGroupMappings> taxGroupMappings,
+            final int scale) {
+        BigDecimal totalAmount = null;
+        if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal percentageVal = BigDecimal.ZERO;
+
+            for (TaxGroupMappings groupMappings : taxGroupMappings) {
+                if (groupMappings.occursOnDayFromAndUpToAndIncluding(date)) {
+                    TaxComponent component = groupMappings.getTaxComponent();
+                    BigDecimal percentage = component.getApplicablePercentage(date);
+                    if (percentage != null) {
+                        percentageVal = percentageVal.add(percentage);
+                    }
+                }
+            }
+
+            BigDecimal multiplier = BigDecimal.ONE
+                    .add(percentageVal.divide(BigDecimal.valueOf(100), scale + 2, MoneyHelper.getRoundingMode()));
+            totalAmount = amount.multiply(multiplier).setScale(scale, MoneyHelper.getRoundingMode());
+        }
+
+        return totalAmount;
+    }
 }

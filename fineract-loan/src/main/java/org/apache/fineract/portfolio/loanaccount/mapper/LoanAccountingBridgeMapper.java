@@ -166,7 +166,8 @@ public class LoanAccountingBridgeMapper {
         return transactionDTO;
     }
 
-    private void classifyTransactionsBasedOnChargeOffDate(final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff,
+    protected void classifyTransactionsBasedOnChargeOffDate(
+            final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff,
             final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsAfterChargeOff, final List<Long> existingTransactionIds,
             final List<Long> existingReversedTransactionIds, final String currencyCode, final Loan loan) {
         // Before

@@ -226,6 +226,12 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
                 paymentDate, externalId);
     }
 
+    public static LoanTransaction vatDeductionAtDisbursement(final Office office, final Money amount, final PaymentDetail paymentDetail,
+            final LocalDate paymentDate, final ExternalId externalId) {
+        return new LoanTransaction(null, office, LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT, paymentDetail, amount.getAmount(),
+                paymentDate, externalId);
+    }
+
     public static LoanTransaction waiver(final Office office, final Loan loan, final Money amount, final LocalDate waiveDate,
             final Money waived, final Money unrecognizedPortion, final ExternalId externalId) {
         LoanTransaction loanTransaction = new LoanTransaction(loan, office, LoanTransactionType.WAIVE_INTEREST, amount.getAmount(),

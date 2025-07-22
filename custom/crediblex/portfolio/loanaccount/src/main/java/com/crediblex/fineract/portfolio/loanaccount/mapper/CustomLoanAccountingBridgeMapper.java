@@ -1,27 +1,57 @@
 package com.crediblex.fineract.portfolio.loanaccount.mapper;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeDataDTO;
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanWrapper;
+import com.crediblex.fineract.portfolio.loanaccount.data.CustomLoanChargePaidByDTO;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Predicate;
-import lombok.RequiredArgsConstructor;
-import org.apache.fineract.infrastructure.core.service.DateUtils;
+
+import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
 import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeLoanTransactionDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.*;
+import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
-public class CustomLoanAccountingBridgeMapper {
+@Primary
+public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper {
 
-    public CustomAccountingBridgeDataDTO deriveAccountingBridgeData(final String currencyCode, final List<Long> existingTransactionIds,
-            final List<Long> existingReversedTransactionIds, final boolean isAccountTransfer, final Loan loan) {
+    @Override
+    public List<AccountingBridgeDataDTO> deriveAccountingBridgeDataForChargeOff(final String currencyCode,
+                                                                                final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds, final boolean isAccountTransfer,
+                                                                                final Loan loan) {
+        final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff = new ArrayList<>();
+        final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsAfterChargeOff = new ArrayList<>();
+
+        // split the transactions according charge-off date
+        classifyTransactionsBasedOnChargeOffDate(newLoanTransactionsBeforeChargeOff, newLoanTransactionsAfterChargeOff,
+                existingTransactionIds, existingReversedTransactionIds, currencyCode, loan);
+
+        CustomAccountingBridgeDataDTO beforeChargeOff = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(),
+                currencyCode, loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
+                loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
+                isAccountTransfer, false, loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactionsBeforeChargeOff, null);
+
+        CustomAccountingBridgeDataDTO afterChargeOff = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(),
+                currencyCode, loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
+                loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
+                isAccountTransfer, true, loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactionsAfterChargeOff, null);
+
+        List<AccountingBridgeDataDTO> result = new ArrayList<>();
+        result.add(beforeChargeOff);
+        result.add(afterChargeOff);
+        return result;
+    }
+
+    @Override
+    public AccountingBridgeDataDTO deriveAccountingBridgeData(final String currencyCode, final List<Long> existingTransactionIds,
+                                                              final List<Long> existingReversedTransactionIds, final boolean isAccountTransfer, final Loan loan) {
         final List<AccountingBridgeLoanTransactionDTO> newLoanTransactions = new ArrayList<>();
         for (final LoanTransaction transaction : loan.getLoanTransactions()) {
             if (transaction.isReversed() && existingTransactionIds.contains(transaction.getId())
@@ -32,36 +62,21 @@ public class CustomLoanAccountingBridgeMapper {
             }
         }
 
-        CustomAccountingBridgeDataDTO dto = new CustomAccountingBridgeDataDTO();
-        dto.setNewLoanTransactions(newLoanTransactions);
-        dto.setLoanId(loan.getId());
-        dto.setLoanProductId(loan.loanProduct().getId());
-        dto.setOfficeId(loan.getOfficeId());
-        dto.setCurrencyCode(currencyCode);
-        dto.setCashBasedAccountingEnabled(loan.isCashBasedAccountingEnabledOnLoanProduct());
-        dto.setUpfrontAccrualBasedAccountingEnabled(loan.isUpfrontAccrualAccountingEnabledOnLoanProduct());
-        dto.setPeriodicAccrualBasedAccountingEnabled(loan.isPeriodicAccrualAccountingEnabledOnLoanProduct());
-        dto.setAccountTransfer(isAccountTransfer);
-        dto.setChargeOff(loan.isChargedOff());
-        dto.setFraud(loan.isFraud());
-        dto.setChargeOffReasonCodeValue(loan.getChargeOffReason() != null ? loan.getChargeOffReason().getId() : null);
+        BigDecimal netAmountForLiabilityTransfer = ((loan.getNetDisbursalAmount() != null)
+                && (loan.getNetDisbursalAmount().compareTo(BigDecimal.ZERO) < 0))
+                ? loan.getApprovedPrincipal().add(loan.getNetDisbursalAmount())
+                : loan.getApprovedPrincipal();
 
-        // Calculate breakdowns
-        LoanWrapper loanWrapper = new LoanWrapper(loan);
-        BigDecimal principal = loan.getPrincipal().getAmount();
-        BigDecimal fees = loanWrapper.deriveTotalFeeChargesDueAtDisbursement();
-        BigDecimal vat = loanWrapper.deriveTotalVATChargesDueAtDisbursement(); // Assume this method exists or implement
-                                                                               // accordingly
-        BigDecimal netDisbursal = loan.getNetDisbursalAmount();
-
-        dto.setPrincipalPortion(principal);
-        dto.setFeesPortion(fees);
-        dto.setVatPortion(vat);
-        dto.setNetDisbursalAmount(netDisbursal);
-
-        return dto;
+        return new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(), currencyCode,
+                loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
+                loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
+                isAccountTransfer, loan.isChargedOff(), loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactions,
+                netAmountForLiabilityTransfer);
     }
 
+
+
+    @Override
     public AccountingBridgeLoanTransactionDTO mapToLoanTransactionData(final LoanTransaction transaction, final String currencyCode) {
         final AccountingBridgeLoanTransactionDTO transactionDTO = new AccountingBridgeLoanTransactionDTO();
 
@@ -97,12 +112,29 @@ public class CustomLoanAccountingBridgeMapper {
         if (!transaction.getLoanChargesPaid().isEmpty()) {
             List<LoanChargePaidByDTO> loanChargesPaidData = new ArrayList<>();
             for (final LoanChargePaidBy chargePaidBy : transaction.getLoanChargesPaid()) {
-                final LoanChargePaidByDTO loanChargePaidData = new LoanChargePaidByDTO();
-                loanChargePaidData.setChargeId(chargePaidBy.getLoanCharge().getCharge().getId());
-                loanChargePaidData.setIsPenalty(chargePaidBy.getLoanCharge().isPenaltyCharge());
-                loanChargePaidData.setLoanChargeId(chargePaidBy.getLoanCharge().getId());
+                final CustomLoanChargePaidByDTO loanChargePaidData = new CustomLoanChargePaidByDTO();
+                final LoanCharge loanCharge = chargePaidBy.getLoanCharge();
+
+                loanChargePaidData.setChargeId(loanCharge.getCharge().getId());
+                loanChargePaidData.setIsPenalty(loanCharge.isPenaltyCharge());
+                loanChargePaidData.setLoanChargeId(loanCharge.getId());
                 loanChargePaidData.setAmount(chargePaidBy.getAmount());
                 loanChargePaidData.setInstallmentNumber(chargePaidBy.getInstallmentNumber());
+
+                if (loanCharge.hasTax() && loanCharge.isDisbursementCharge()) {
+                    // For now only covering this because we are sure all taxes have been paid
+                    // We need to have transactions adjusted to actually give breakdown of tax by component
+                    loanChargePaidData.setTaxGroupId(loanCharge.getCharge().getTaxGroup().getId());
+                    loanChargePaidData.setTaxGroupName(loanCharge.getCharge().getTaxGroup().getName());
+
+                    loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream().findFirst().ifPresent(mapping -> {
+                        loanChargePaidData.setTaxGLAccountId(mapping.getTaxComponent().getDebitAcount().getId());
+                        loanChargePaidData.setIncomeGLAccountId(mapping.getTaxComponent().getCreditAcount().getId());
+                    });
+
+                    loanChargePaidData.setBaseAmount(loanCharge.getAmount());
+                    loanChargePaidData.setTaxAmount(Money.of(loanCharge.getLoan().getCurrency(), loanCharge.getTaxAmount()).getAmount());
+                }
 
                 loanChargesPaidData.add(loanChargePaidData);
             }
@@ -140,122 +172,6 @@ public class CustomLoanAccountingBridgeMapper {
         transactionDTO.setLoanToLoanTransfer(false);
 
         return transactionDTO;
-    }
-
-    public List<CustomAccountingBridgeDataDTO> deriveAccountingBridgeDataForChargeOff(final String currencyCode,
-            final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds, final boolean isAccountTransfer,
-            final Loan loan) {
-        final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff = new ArrayList<>();
-        final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsAfterChargeOff = new ArrayList<>();
-
-        // split the transactions according charge-off date
-        classifyTransactionsBasedOnChargeOffDate(newLoanTransactionsBeforeChargeOff, newLoanTransactionsAfterChargeOff,
-                existingTransactionIds, existingReversedTransactionIds, currencyCode, loan);
-
-        LoanWrapper loanWrapper = new LoanWrapper(loan);
-        BigDecimal principal = loan.getPrincipal().getAmount();
-        BigDecimal fees = loanWrapper.deriveTotalFeeChargesDueAtDisbursement();
-        BigDecimal vat = loanWrapper.deriveTotalVATChargesDueAtDisbursement();
-        BigDecimal netDisbursal = loan.getNetDisbursalAmount();
-
-        CustomAccountingBridgeDataDTO beforeChargeOff = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(),
-                loan.getOfficeId(), currencyCode, loan.getSummary().getTotalInterestCharged(),
-                loan.isCashBasedAccountingEnabledOnLoanProduct(), loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(),
-                loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(), isAccountTransfer, false, loan.isFraud(),
-                loan.fetchChargeOffReasonId(), newLoanTransactionsBeforeChargeOff, principal, fees, vat, netDisbursal);
-
-        CustomAccountingBridgeDataDTO afterChargeOff = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(),
-                currencyCode, loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
-                loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
-                isAccountTransfer, true, loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactionsAfterChargeOff, principal, fees,
-                vat, netDisbursal);
-
-        List<CustomAccountingBridgeDataDTO> result = new ArrayList<>();
-        result.add(beforeChargeOff);
-        result.add(afterChargeOff);
-        return result;
-    }
-
-    private void classifyTransactionsBasedOnChargeOffDate(final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff,
-            final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsAfterChargeOff, final List<Long> existingTransactionIds,
-            final List<Long> existingReversedTransactionIds, final String currencyCode, final Loan loan) {
-        // Before
-        filterTransactionsByChargeOffDate(newLoanTransactionsBeforeChargeOff, currencyCode, existingTransactionIds,
-                existingReversedTransactionIds,
-                transaction -> DateUtils.isBefore(transaction.getTransactionDate(), loan.getChargedOffOnDate()), loan);
-        // On
-        filterTransactionsByChargeOffDate(newLoanTransactionsBeforeChargeOff, newLoanTransactionsAfterChargeOff, currencyCode,
-                existingTransactionIds, existingReversedTransactionIds,
-                transaction -> DateUtils.isEqual(transaction.getTransactionDate(), loan.getChargedOffOnDate()), loan);
-        // After
-        filterTransactionsByChargeOffDate(newLoanTransactionsAfterChargeOff, currencyCode, existingTransactionIds,
-                existingReversedTransactionIds,
-                transaction -> DateUtils.isAfter(transaction.getTransactionDate(), loan.getChargedOffOnDate()), loan);
-    }
-
-    private void filterTransactionsByChargeOffDate(final List<AccountingBridgeLoanTransactionDTO> filteredTransactions,
-            final String currencyCode, final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds,
-            final Predicate<LoanTransaction> chargeOffDateCriteria, final Loan loan) {
-        filteredTransactions.addAll(loan.getLoanTransactions().stream() //
-                .filter(chargeOffDateCriteria) //
-                .filter(transaction -> {
-                    boolean isExistingTransaction = existingTransactionIds.contains(transaction.getId());
-                    boolean isExistingReversedTransaction = existingReversedTransactionIds.contains(transaction.getId());
-
-                    if (transaction.isReversed() && isExistingTransaction && !isExistingReversedTransaction) {
-                        return true;
-                    } else {
-                        return !isExistingTransaction;
-                    }
-                }) //
-                .map(transaction -> mapToLoanTransactionData(transaction, currencyCode)).toList());
-    }
-
-    private void filterTransactionsByChargeOffDate(final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsBeforeChargeOff,
-            final List<AccountingBridgeLoanTransactionDTO> newLoanTransactionsAfterChargeOff, final String currencyCode,
-            final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds,
-            final Predicate<LoanTransaction> chargeOffDateCriteria, final Loan loan) {
-        final Optional<LoanTransaction> chargeOffTransactionOptional = loan.getLoanTransactions().stream() //
-                .filter(LoanTransaction::isChargeOff) //
-                .filter(LoanTransaction::isNotReversed) //
-                .findFirst();
-
-        if (chargeOffTransactionOptional.isEmpty()) {
-            return;
-        }
-
-        final LoanTransaction chargeOffTransaction = chargeOffTransactionOptional.get();
-        final LoanTransaction originalChargeOffTransaction = getOriginalTransactionIfReverseReplayed(chargeOffTransaction);
-
-        loan.getLoanTransactions().stream().filter(chargeOffDateCriteria).forEach(transaction -> {
-            boolean isExistingTransaction = existingTransactionIds.contains(transaction.getId());
-            boolean isExistingReversedTransaction = existingReversedTransactionIds.contains(transaction.getId());
-            List<AccountingBridgeLoanTransactionDTO> targetList = null;
-            if ((transaction.isReversed() && isExistingTransaction && !isExistingReversedTransaction)) {
-                // reversed transactions
-                LoanTransaction originalTransaction = getOriginalTransactionIfReverseReplayed(transaction);
-                targetList = originalTransaction.happenedBefore(originalChargeOffTransaction) ? newLoanTransactionsBeforeChargeOff
-                        : newLoanTransactionsAfterChargeOff;
-
-            } else if (!isExistingTransaction) {
-                // new and replayed transactions
-                targetList = transaction.happenedBefore(chargeOffTransaction) ? newLoanTransactionsBeforeChargeOff
-                        : newLoanTransactionsAfterChargeOff;
-            }
-            if (targetList != null) {
-                targetList.add(mapToLoanTransactionData(transaction, currencyCode));
-            }
-        });
-    }
-
-    private LoanTransaction getOriginalTransactionIfReverseReplayed(final LoanTransaction loanTransaction) {
-        if (!loanTransaction.getLoanTransactionRelations().isEmpty()) {
-            return loanTransaction.getLoanTransactionRelations().stream()
-                    .filter(tr -> LoanTransactionRelationTypeEnum.REPLAYED.equals(tr.getRelationType()))
-                    .map(LoanTransactionRelation::getToTransaction).toList().stream().min(Comparator.comparingLong(LoanTransaction::getId))
-                    .orElse(loanTransaction);
-        }
-        return loanTransaction;
     }
 
 }
