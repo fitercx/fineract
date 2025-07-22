@@ -128,8 +128,8 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
                     loanChargePaidData.setTaxGroupName(loanCharge.getCharge().getTaxGroup().getName());
 
                     loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream().findFirst().ifPresent(mapping -> {
-                        loanChargePaidData.setTaxGLAccountId(mapping.getTaxComponent().getDebitAcount().getId());
-                        loanChargePaidData.setIncomeGLAccountId(mapping.getTaxComponent().getCreditAcount().getId());
+                        loanChargePaidData.setTaxGLAccountId(mapping.getTaxComponent().getDebitAcount() != null ? mapping.getTaxComponent().getDebitAcount().getId(): null);
+                        loanChargePaidData.setIncomeGLAccountId(mapping.getTaxComponent().getCreditAcount() != null ? mapping.getTaxComponent().getCreditAcount().getId() : null);
                     });
 
                     loanChargePaidData.setBaseAmount(loanCharge.getAmount());

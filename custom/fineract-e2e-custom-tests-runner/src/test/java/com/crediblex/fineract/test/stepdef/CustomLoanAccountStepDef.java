@@ -20,7 +20,6 @@ package com.crediblex.fineract.test.stepdef;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import com.crediblex.fineract.test.factory.CustomLoanProductsRequestFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -62,6 +61,7 @@ import org.apache.fineract.client.services.LoanProductsApi;
 import org.apache.fineract.client.services.LoansApi;
 import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;
+import org.apache.fineract.test.data.ChargeCalculationType;
 import org.apache.fineract.test.data.ChargeTimeType;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
@@ -144,7 +144,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
                 .name(chargeName)
                 .chargeAppliesTo(1)
                 .chargeTimeType(ChargeTimeType.DISBURSEMENT.value)
-                .chargeCalculationType(type) // Flat
+                .chargeCalculationType(ChargeCalculationType.PERCENTAGE_AMOUNT.ordinal()) // Flat
                 .chargePaymentMode(0) // Regular
                 .amount(chargeAmount)
                 .active(true)
@@ -235,11 +235,11 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
                         .body().getResourceId())
             .charges(List.of(new PostLoansRequestChargeData()
                 .chargeId(disbursementChargeId)
-                .amount(new BigDecimal(100))))
+                .amount(new BigDecimal(10))))
                 .datatables(Set.of(new TableData().registeredTableName("dt_loan_remitter_dp_info")
                         .data(createLoanRemitterInfo())));
 
-
+        log.info("Request data {}", loanRequest);
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
         
         if (!loanResponse.isSuccessful()) {
@@ -269,6 +269,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         PostLoansLoanIdRequest approveRequest = new PostLoansLoanIdRequest()
             .approvedOnDate(approvalDate)
             .approvedLoanAmount(new BigDecimal(principal))
+             .expectedDisbursementDate(approvalDate)
             .dateFormat(DATE_FORMAT)
             .locale(DEFAULT_LOCALE);
         
@@ -439,7 +440,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             .locale(DEFAULT_LOCALE)
                 .dateFormat(DATE_FORMAT)
             .percentage((float) vatPercent)
-                .startDate("01 January 1977");
+                .startDate("01 January 2020");
 
         Response<PostTaxesComponentsResponse> componentResponse = taxComponentsApi.createTaxComponent(componentRequest).execute();
 
@@ -450,10 +451,12 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         PostTaxesGroupRequest taxGroupRequest = new PostTaxesGroupRequest()
             .name(taxGroupName)
             .locale(DEFAULT_LOCALE)
+            .dateFormat(DATE_FORMAT)
             .taxComponents(Set.of(
                 new PostTaxesGroupTaxComponents()
                     .taxComponentId(componentResponse.body().getResourceId())
-            ));
+                        .startDate("01 January 2020"))
+            );
         
         Response<PostTaxesGroupResponse> createResponse = taxGroupApi.createTaxGroup(taxGroupRequest).execute();
         
