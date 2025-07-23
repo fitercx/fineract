@@ -153,15 +153,15 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     private final LoanAssembler loanAssembler;
     private final ChargeRepositoryWrapper chargeRepository;
     private final BusinessEventNotifierService businessEventNotifierService;
-    private final LoanTransactionRepository loanTransactionRepository;
+    protected final LoanTransactionRepository loanTransactionRepository;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final LoanAccountDomainService loanAccountDomainService;
     private final LoanChargeRepository loanChargeRepository;
     private final LoanWritePlatformService loanWritePlatformService;
-    private final LoanUtilService loanUtilService;
-    private final LoanChargeReadPlatformService loanChargeReadPlatformService;
+    protected final LoanUtilService loanUtilService;
+    protected final LoanChargeReadPlatformService loanChargeReadPlatformService;
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     private final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
     private final FromJsonHelper fromApiJsonHelper;
@@ -1300,8 +1300,8 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         return refundableAmount;
     }
 
-    private void postJournalEntries(final Loan loan, final List<Long> existingTransactionIds,
-            final List<Long> existingReversedTransactionIds) {
+    protected void postJournalEntries(final Loan loan, final List<Long> existingTransactionIds,
+                                      final List<Long> existingReversedTransactionIds) {
 
         final MonetaryCurrency currency = loan.getCurrency();
         boolean isAccountTransfer = false;
@@ -1418,7 +1418,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         throw new LoanChargeRefundException(errorMessage, "dueDate: " + dueDateValue + "  installmentNumber: " + installmentNumberValue);
     }
 
-    private void checkClientOrGroupActive(final Loan loan) {
+    protected void checkClientOrGroupActive(final Loan loan) {
         final Client client = loan.client();
         if (client != null) {
             if (client.isNotActive()) {
