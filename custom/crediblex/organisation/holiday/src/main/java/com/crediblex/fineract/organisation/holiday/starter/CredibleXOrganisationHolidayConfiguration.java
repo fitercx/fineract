@@ -18,7 +18,7 @@
  */
 package com.crediblex.fineract.organisation.holiday.starter;
 
-import com.crediblex.fineract.organisation.holiday.service.CredibleXHolidayWritePlatformServiceJpaRepositoryImpl;
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.data.HolidayDataValidator;
@@ -26,10 +26,16 @@ import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
 import org.apache.fineract.organisation.holiday.service.HolidayWritePlatformService;
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
+/**
+ * Auto-configuration for CredibleX Organisation Holiday module.
+ */
 @AutoConfiguration
 public class CredibleXOrganisationHolidayConfiguration {
 
@@ -37,8 +43,11 @@ public class CredibleXOrganisationHolidayConfiguration {
     @Primary
     public HolidayWritePlatformService holidayWritePlatformService(HolidayDataValidator fromApiJsonDeserializer,
             HolidayRepositoryWrapper holidayRepository, PlatformSecurityContext context, OfficeRepositoryWrapper officeRepositoryWrapper,
-            FromJsonHelper fromApiJsonHelper, WorkingDaysRepositoryWrapper daysRepositoryWrapper) {
-        return new CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper,
-                context, officeRepositoryWrapper, fromApiJsonHelper);
+            FromJsonHelper fromApiJsonHelper, WorkingDaysRepositoryWrapper daysRepositoryWrapper,
+            LoanRepositoryWrapper loanRepositoryWrapper, LoanScheduleService loanScheduleService, LoanUtilService loanUtilService,
+            ConfigurationDomainService configurationDomainService) {
+        return new com.crediblex.fineract.organisation.holiday.service.CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(
+                fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper,
+                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService);
     }
 }

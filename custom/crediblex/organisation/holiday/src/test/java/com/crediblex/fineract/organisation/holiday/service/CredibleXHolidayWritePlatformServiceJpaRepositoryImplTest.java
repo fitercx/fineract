@@ -20,12 +20,16 @@ package com.crediblex.fineract.organisation.holiday.service;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.data.HolidayDataValidator;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -52,11 +56,24 @@ class CredibleXHolidayWritePlatformServiceJpaRepositoryImplTest {
     @Mock
     private FromJsonHelper fromApiJsonHelper;
 
+    @Mock
+    private LoanRepositoryWrapper loanRepositoryWrapper;
+
+    @Mock
+    private LoanScheduleService loanScheduleService;
+
+    @Mock
+    private LoanUtilService loanUtilService;
+
+    @Mock
+    private ConfigurationDomainService configurationDomainService;
+
     @Test
     void testCredibleXHolidayWritePlatformServiceJpaRepositoryImplCreation() {
         // Test that the custom implementation can be instantiated
         CredibleXHolidayWritePlatformServiceJpaRepositoryImpl service = new CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(
-                fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper);
+                fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper,
+                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService);
 
         assertNotNull(service, "CredibleX holiday service should be created successfully");
     }
