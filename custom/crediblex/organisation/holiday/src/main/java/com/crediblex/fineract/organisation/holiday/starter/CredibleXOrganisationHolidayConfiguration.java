@@ -27,14 +27,14 @@ import org.apache.fineract.organisation.holiday.service.HolidayWritePlatformServ
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 
 @AutoConfiguration
 public class CredibleXOrganisationHolidayConfiguration {
 
     @Bean
-    @ConditionalOnMissingBean(HolidayWritePlatformService.class)
+    @Primary
     public HolidayWritePlatformService holidayWritePlatformService(HolidayDataValidator fromApiJsonDeserializer,
             HolidayRepositoryWrapper holidayRepository, PlatformSecurityContext context, OfficeRepositoryWrapper officeRepositoryWrapper,
             FromJsonHelper fromApiJsonHelper, WorkingDaysRepositoryWrapper daysRepositoryWrapper) {

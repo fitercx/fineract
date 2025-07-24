@@ -145,7 +145,7 @@ public class HolidayWritePlatformServiceJpaRepositoryImpl implements HolidayWrit
         return new CommandProcessingResultBuilder().withEntityId(holidayId).build();
     }
 
-    private Set<Office> getSelectedOffices(final JsonCommand command) {
+    protected Set<Office> getSelectedOffices(final JsonCommand command) {
         Set<Office> offices = null;
         final JsonObject topLevelJsonElement = this.fromApiJsonHelper.parse(command.json()).getAsJsonObject();
         if (topLevelJsonElement.has(HolidayApiConstants.officesParamName)
@@ -163,7 +163,7 @@ public class HolidayWritePlatformServiceJpaRepositoryImpl implements HolidayWrit
         return offices;
     }
 
-    private void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
+    protected void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
         if (realCause.getMessage().contains("holiday_name")) {
             final String name = command.stringValueOfParameterNamed("name");
             throw new PlatformDataIntegrityException("error.msg.holiday.duplicate.name", "Holiday with name `" + name + "` already exists",
@@ -191,7 +191,7 @@ public class HolidayWritePlatformServiceJpaRepositoryImpl implements HolidayWrit
         }
     }
 
-    private void validateInputDates(final LocalDate fromDate, final LocalDate toDate, final LocalDate repaymentsRescheduledTo) {
+    protected void validateInputDates(final LocalDate fromDate, final LocalDate toDate, final LocalDate repaymentsRescheduledTo) {
         String defaultUserMessage = "";
 
         if (DateUtils.isBefore(toDate, fromDate)) {
