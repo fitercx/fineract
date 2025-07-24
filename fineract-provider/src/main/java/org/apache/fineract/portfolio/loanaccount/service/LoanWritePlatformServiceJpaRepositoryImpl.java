@@ -229,58 +229,58 @@ import org.springframework.transaction.annotation.Transactional;
 public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatformService {
 
     private final PlatformSecurityContext context;
-    private final LoanTransactionValidator loanTransactionValidator;
+    protected final LoanTransactionValidator loanTransactionValidator;
     private final LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer;
     protected final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final LoanAccountDomainService loanAccountDomainService;
+    protected final LoanAccountDomainService loanAccountDomainService;
     private final NoteRepository noteRepository;
-    private final LoanTransactionRepository loanTransactionRepository;
+    protected final LoanTransactionRepository loanTransactionRepository;
     private final LoanTransactionRelationRepository loanTransactionRelationRepository;
-    private final LoanAssembler loanAssembler;
+    protected final LoanAssembler loanAssembler;
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final CalendarInstanceRepository calendarInstanceRepository;
-    private final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
+    protected final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
     private final HolidayRepositoryWrapper holidayRepository;
-    private final ConfigurationDomainService configurationDomainService;
+    protected final ConfigurationDomainService configurationDomainService;
     private final WorkingDaysRepositoryWrapper workingDaysRepository;
-    private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
+    protected final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
-    private final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
+    protected final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
     private final LoanReadPlatformService loanReadPlatformService;
     protected final FromJsonHelper fromApiJsonHelper;
     private final CalendarRepository calendarRepository;
     private final LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService;
-    private final LoanApplicationValidator loanApplicationValidator;
+    protected final LoanApplicationValidator loanApplicationValidator;
     private final AccountAssociationsRepository accountAssociationRepository;
     private final AccountTransferDetailRepository accountTransferDetailRepository;
-    private final BusinessEventNotifierService businessEventNotifierService;
+    protected final BusinessEventNotifierService businessEventNotifierService;
     private final GuarantorDomainService guarantorDomainService;
-    private final LoanUtilService loanUtilService;
+    protected final LoanUtilService loanUtilService;
     private final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
     private final CodeValueRepositoryWrapper codeValueRepository;
-    private final CashierTransactionDataValidator cashierTransactionDataValidator;
+    protected final CashierTransactionDataValidator cashierTransactionDataValidator;
     private final GLIMAccountInfoRepository glimRepository;
     private final LoanRepository loanRepository;
-    private final RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler;
+    protected final RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler;
     private final PostDatedChecksRepository postDatedChecksRepository;
     private final LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository;
     private final LoanLifecycleStateMachine loanLifecycleStateMachine;
     private final LoanAccountLockService loanAccountLockService;
-    private final ExternalIdFactory externalIdFactory;
-    private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
+    protected final ExternalIdFactory externalIdFactory;
+    protected final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final ErrorHandler errorHandler;
-    private final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
+    protected final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
     private final LoanTransactionAssembler loanTransactionAssembler;
-    private final LoanAccrualsProcessingService loanAccrualsProcessingService;
+    protected final LoanAccrualsProcessingService loanAccrualsProcessingService;
     private final LoanOfficerValidator loanOfficerValidator;
-    private final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
-    private final LoanDisbursementService loanDisbursementService;
+    protected final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
+    protected final LoanDisbursementService loanDisbursementService;
     private final LoanScheduleService loanScheduleService;
     private final LoanChargeValidator loanChargeValidator;
     private final LoanOfficerService loanOfficerService;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
     private final LoanAccountService loanAccountService;
-    private final LoanJournalEntryPoster journalEntryPoster;
+    protected final LoanJournalEntryPoster journalEntryPoster;
     private final LoanAdjustmentService loanAdjustmentService;
     private final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
     private final LoanMapper loanMapper;
@@ -536,7 +536,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
                 .build();
     }
 
-    private void createNote(Loan loan, JsonCommand command, Map<String, Object> changes) {
+    protected void createNote(Loan loan, JsonCommand command, Map<String, Object> changes) {
         final String noteText = command.stringValueOfParameterNamed("note");
         if (StringUtils.isNotBlank(noteText)) {
             changes.put("note", noteText);
@@ -545,7 +545,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private void disburseLoan(JsonCommand command, boolean isPaymentTypeApplicableForDisbursementCharge, PaymentDetail paymentDetail,
+    protected void disburseLoan(JsonCommand command, boolean isPaymentTypeApplicableForDisbursementCharge, PaymentDetail paymentDetail,
             Loan loan, AppUser currentUser, Map<String, Object> changes, ScheduleGeneratorDTO scheduleGeneratorDTO) {
         final PaymentDetail paymentDetail1 = isPaymentTypeApplicableForDisbursementCharge ? paymentDetail : null;
         final LocalDate actualDisbursementDate1 = command.localDateValueOfParameterNamed(ACTUAL_DISBURSEMENT_DATE);
@@ -608,11 +608,11 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         changes.put(PARAM_STATUS, LoanEnumerations.status(loan.getLoanStatus()));
     }
 
-    private void updatePostDatedChecks(Set<PostDatedChecks> postDatedChecks) {
+    protected void updatePostDatedChecks(Set<PostDatedChecks> postDatedChecks) {
         this.postDatedChecksRepository.saveAll(postDatedChecks);
     }
 
-    private void createAndSaveLoanScheduleArchive(final Loan loan, ScheduleGeneratorDTO scheduleGeneratorDTO) {
+    protected void createAndSaveLoanScheduleArchive(final Loan loan, ScheduleGeneratorDTO scheduleGeneratorDTO) {
         LoanRescheduleRequest loanRescheduleRequest = null;
         LoanScheduleModel loanScheduleModel = loanMapper.regenerateScheduleModel(scheduleGeneratorDTO, loan);
         List<LoanRepaymentScheduleInstallment> installments = retrieveRepaymentScheduleFromModel(loanScheduleModel);
@@ -625,7 +625,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
      * @param loan
      *            the disbursed loan
      **/
-    private void createStandingInstruction(Loan loan) {
+    protected void createStandingInstruction(Loan loan) {
 
         if (loan.shouldCreateStandingInstructionAtDisbursement()) {
             AccountAssociations accountAssociations = this.accountAssociationRepository.findByLoanIdAndType(loan.getId(),
@@ -661,7 +661,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private void updateRecurringCalendarDatesForInterestRecalculation(final Loan loan) {
+    protected void updateRecurringCalendarDatesForInterestRecalculation(final Loan loan) {
 
         if (loan.isInterestBearingAndInterestRecalculationEnabled()
                 && loan.loanInterestRecalculationDetails().getRestFrequencyType().isSameAsRepayment()) {
@@ -676,7 +676,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
 
     }
 
-    private Loan saveAndFlushLoanWithDataIntegrityViolationChecks(final Loan loan) {
+    protected Loan saveAndFlushLoanWithDataIntegrityViolationChecks(final Loan loan) {
         /*
          * Due to the "saveAndFlushLoanWithDataIntegrityViolationChecks" method the loan is saved and flushed in the
          * middle of the transaction. EclipseLink is in some situations are saving inconsistently the newly created
@@ -1786,7 +1786,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
                 .build();
     }
 
-    private void disburseLoanToLoan(final Loan loan, final JsonCommand command, final BigDecimal amount) {
+    protected void disburseLoanToLoan(final Loan loan, final JsonCommand command, final BigDecimal amount) {
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
         final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
@@ -2142,7 +2142,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
 
     }
 
-    private void updateLoanCounters(final Loan loan, final LocalDate actualDisbursementDate) {
+    protected void updateLoanCounters(final Loan loan, final LocalDate actualDisbursementDate) {
 
         if (loan.isGroupLoan()) {
             final List<Loan> loansToUpdateForLoanCounter = this.loanRepositoryWrapper.getGroupLoansDisbursedAfter(actualDisbursementDate,
@@ -2260,7 +2260,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         this.loanRepositoryWrapper.save(loansToUpdate);
     }
 
-    private void checkClientOrGroupActive(final Loan loan) {
+    protected void checkClientOrGroupActive(final Loan loan) {
         final Client client = loan.client();
         if (client != null && client.isNotActive()) {
             throw new ClientNotActiveException(client.getId());
@@ -2544,7 +2544,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
 
     }
 
-    private void regenerateScheduleOnDisbursement(final JsonCommand command, final Loan loan, final boolean recalculateSchedule,
+    protected void regenerateScheduleOnDisbursement(final JsonCommand command, final Loan loan, final boolean recalculateSchedule,
             final ScheduleGeneratorDTO scheduleGeneratorDTO, final LocalDate nextPossibleRepaymentDate,
             final LocalDate rescheduledRepaymentDate) {
         final LocalDate actualDisbursementDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
@@ -2735,7 +2735,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private AppUser getAppUserIfPresent() {
+    protected AppUser getAppUserIfPresent() {
         AppUser user = null;
         if (this.context != null) {
             user = this.context.getAuthenticatedUserIfPresent();
@@ -3125,7 +3125,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private void syncExpectedDateWithActualDisbursementDate(final Loan loan, LocalDate actualDisbursementDate) {
+    protected void syncExpectedDateWithActualDisbursementDate(final Loan loan, LocalDate actualDisbursementDate) {
         if (!loan.getExpectedDisbursedOnLocalDate().equals(actualDisbursementDate)) {
             throw new DateMismatchException(actualDisbursementDate, loan.getExpectedDisbursedOnLocalDate());
         }

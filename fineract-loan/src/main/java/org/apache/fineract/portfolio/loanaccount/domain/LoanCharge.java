@@ -60,6 +60,7 @@ import org.apache.fineract.portfolio.charge.exception.LoanChargeWithoutMandatory
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidDetail;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 
 @Getter
 @Entity
@@ -137,6 +138,9 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @Column(name = "external_id")
     private ExternalId externalId;
+
+    @Column(name = "tax_amount", scale = 6, precision = 19)
+    private BigDecimal taxAmount;
 
     @OneToOne(mappedBy = "loancharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private LoanOverdueInstallmentCharge overdueInstallmentCharge;
@@ -226,7 +230,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 } else {
                     this.amount = chargeAmount;
                 }
-                this.amountOutstanding = this.amount;
+                this.updateTaxAmount();
+                this.amountOutstanding = getAmountWithTaxes();
                 this.amountWaived = null;
                 this.amountWrittenOff = null;
             break;
@@ -241,6 +246,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 }
                 this.amount = minimumAndMaximumCap(loanCharge);
                 this.amountPaid = null;
+                this.updateTaxAmount();
                 this.amountOutstanding = calculateOutstanding();
                 this.amountWaived = null;
                 this.amountWrittenOff = null;
@@ -254,6 +260,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public void markAsFullyPaid() {
         this.amountPaid = this.amount;
+        this.amountOutstanding = BigDecimal.ZERO;
+        this.paid = true;
+    }
+
+    public void markAsFullyPaidWithTaxes() {
+        this.amountPaid = this.getAmountWithTaxes();
         this.amountOutstanding = BigDecimal.ZERO;
         this.paid = true;
     }
@@ -311,7 +323,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     }
 
     private BigDecimal calculateAmountOutstanding(final MonetaryCurrency currency) {
-        return getAmount(currency).minus(getAmountWaived(currency)).minus(getAmountPaid(currency)).getAmount();
+        return getAmount(currency).add(getTaxAmount(currency)).minus(getAmountWaived(currency)).minus(getAmountPaid(currency)).getAmount();
     }
 
     public void update(final Loan loan) {
@@ -351,6 +363,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 break;
             }
             this.amountOrPercentage = amount;
+            this.updateTaxAmount();
             this.amountOutstanding = calculateOutstanding();
             if (this.loan != null && isInstalmentFee()) {
                 updateInstallmentCharges();
@@ -424,6 +437,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     } else {
                         this.amount = newValue;
                     }
+                    this.updateTaxAmount();
                     this.amountOutstanding = calculateOutstanding();
                 break;
                 case PERCENT_OF_AMOUNT:
@@ -441,6 +455,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         loanCharge = percentageOf(this.amountPercentageAppliedTo);
                     }
                     this.amount = minimumAndMaximumCap(loanCharge);
+                    this.updateTaxAmount();
                     this.amountOutstanding = calculateOutstanding();
                 break;
             }
@@ -540,8 +555,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
 
         final BigDecimal totalAccountedFor = amountPaidLocal.add(amountWaivedLocal).add(amountWrittenOffLocal);
-
-        return this.amount.subtract(totalAccountedFor);
+        final BigDecimal taxAmountTotal = this.taxAmount != null ? this.taxAmount : BigDecimal.ZERO;
+        return this.amount.add(taxAmountTotal).subtract(totalAccountedFor);
     }
 
     public BigDecimal percentageOf(final BigDecimal value) {
@@ -657,6 +672,14 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public Money getAmountWrittenOff(final MonetaryCurrency currency) {
         return Money.of(currency, this.amountWrittenOff);
+    }
+
+    public Money getTaxAmount(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxAmount);
+    }
+
+    public BigDecimal getAmountWithTaxes() {
+        return this.hasTax() ? this.amount.add(this.taxAmount) : this.amount;
     }
 
     /**
@@ -985,4 +1008,25 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 .chargePaymentMode(chargePaymentModeData).paid(paid).waived(waived).loanId(loan.getId()).minCap(minCap).maxCap(maxCap)
                 .installmentChargeData(loanInstallmentChargeDataList).externalId(externalId).build();
     }
+
+    /**
+     * Checks if a charge has an associated tax group
+     *
+     * @return true if the charge has a tax group, false otherwise
+     */
+    public boolean hasTax() {
+        return this.getCharge().getTaxGroup() != null && !this.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty();
+    }
+
+    public void updateTaxAmount() {
+        if (this.hasTax() && this.amount != null && this.amount.compareTo(BigDecimal.ZERO) > 0) {
+            LocalDate chargeDate = this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate();
+            this.taxAmount = TaxUtils
+                    .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())
+                    .subtract(this.amount);
+        } else {
+            this.taxAmount = BigDecimal.ZERO;
+        }
+    }
+
 }

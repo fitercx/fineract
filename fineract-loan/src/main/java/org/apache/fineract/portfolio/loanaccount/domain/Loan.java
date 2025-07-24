@@ -617,7 +617,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public BigDecimal deriveSumTotalOfChargesDueAtDisbursement() {
         return getActiveCharges().stream() //
                 .filter(LoanCharge::isDueAtDisbursement) //
-                .map(LoanCharge::amount) //
+                .map(LoanCharge::getAmountWithTaxes) //
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -1266,11 +1266,15 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(), null);
         chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
         final Money zero = Money.zero(getCurrency());
-        chargesPayment.updateComponents(zero, zero, charge.getAmount(getCurrency()), zero);
+        final Money chargeAmount = chargesPayment.getTypeOf().equals(LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT)
+                ? charge.getTaxAmount(getCurrency())
+                : charge.getAmount(getCurrency());
+        chargesPayment.updateComponentsAndTotal(zero, zero, chargeAmount, zero);
         chargesPayment.updateLoan(this);
         addLoanTransaction(chargesPayment);
         updateLoanOutstandingBalances();
-        charge.markAsFullyPaid();
+        // Doesn't matter since the tax transaction still gets run immediately
+        charge.markAsFullyPaidWithTaxes();
     }
 
     public void removePostDatedChecks() {

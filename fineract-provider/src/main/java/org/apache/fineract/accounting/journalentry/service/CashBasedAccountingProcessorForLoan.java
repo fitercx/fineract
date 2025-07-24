@@ -42,8 +42,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class CashBasedAccountingProcessorForLoan implements AccountingProcessorForLoan {
 
-    private final AccountingProcessorHelper helper;
-    private final JournalEntryWritePlatformService journalEntryWritePlatformService;
+    protected final AccountingProcessorHelper helper;
+    protected final JournalEntryWritePlatformService journalEntryWritePlatformService;
 
     @Override
     public void createJournalEntriesForLoan(final LoanDTO loanDTO) {
@@ -128,7 +128,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
         }
     }
 
-    private void createJournalEntriesForChargeOff(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
+    protected void createJournalEntriesForChargeOff(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -208,7 +208,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
         return accountEntry;
     }
 
-    private void createJournalEntriesForChargeAdjustment(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
+    protected void createJournalEntriesForChargeAdjustment(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
         final boolean isMarkedAsChargeOff = loanDTO.isMarkedAsChargeOff();
         if (isMarkedAsChargeOff) {
             createJournalEntriesForChargeOffLoanChargeAdjustment(loanDTO, loanTransactionDTO, office);
@@ -422,7 +422,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
      * @param loanTransactionDTO
      * @param office
      */
-    private void createJournalEntriesForChargeback(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
+    protected void createJournalEntriesForChargeback(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -445,7 +445,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
      * @param loanTransactionDTO
      * @param office
      */
-    private void createJournalEntriesForDisbursements(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForDisbursements(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
@@ -488,7 +488,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
      * @param loanTransactionDTO
      * @param office
      */
-    private void createJournalEntriesForRefund(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO, final Office office) {
+    protected void createJournalEntriesForRefund(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO, final Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -516,7 +516,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
      * Interest on loans for interest repayments, Income from fees for fees payment and Income from penalties for
      * penalty payment)
      */
-    private void createJournalEntriesForRepayments(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForRepayments(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office) {
 
         final boolean isMarkedChargeOff = loanDTO.isMarkedAsChargeOff();
@@ -728,7 +728,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
         }
     }
 
-    private void createJournalEntriesForLoanRepayments(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
+    protected void createJournalEntriesForLoanRepayments(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -832,7 +832,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
         }
     }
 
-    private void populateDebitAccountEntry(Long loanProductId, BigDecimal transactionPartAmount, Integer debitAccountType,
+    protected void populateDebitAccountEntry(Long loanProductId, BigDecimal transactionPartAmount, Integer debitAccountType,
             Map<Integer, BigDecimal> accountMapForDebit, Long paymentTypeId) {
         Integer accountDebit = returnExistingDebitAccountInMapMatchingGLAccount(loanProductId, paymentTypeId, debitAccountType,
                 accountMapForDebit);
@@ -847,7 +847,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
     /**
      * Create a single Debit to fund source and a single credit to "Income from Recovery"
      */
-    private void createJournalEntriesForRecoveryRepayments(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForRecoveryRepayments(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
@@ -877,7 +877,8 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
      * @param loanTransactionDTO
      * @param office
      */
-    private void createJournalEntriesForTransfers(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO, final Office office) {
+    protected void createJournalEntriesForTransfers(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+            final Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -900,7 +901,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
         }
     }
 
-    private void createJournalEntriesForCreditBalanceRefund(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForCreditBalanceRefund(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
@@ -932,7 +933,7 @@ public class CashBasedAccountingProcessorForLoan implements AccountingProcessorF
                 loanId, transactionId, transactionDate);
     }
 
-    private void createJournalEntriesForRefundForActiveLoan(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
+    protected void createJournalEntriesForRefundForActiveLoan(LoanDTO loanDTO, LoanTransactionDTO loanTransactionDTO, Office office) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();

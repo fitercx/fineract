@@ -60,7 +60,7 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 public class LoanDisbursementService {
 
     private final LoanChargeValidator loanChargeValidator;
-    private final LoanDisbursementValidator loanDisbursementValidator;
+    protected final LoanDisbursementValidator loanDisbursementValidator;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
 
     public void updateDisbursementDetails(final Loan loan, final JsonCommand jsonCommand, final Map<String, Object> actualChanges) {

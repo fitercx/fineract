@@ -94,6 +94,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final CredXLoanTransactionRepository credXLoanTransactionRepository;
 
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
+    private final JdbcTemplate jdbcTemplate;
+    private final DatabaseSpecificSQLGenerator sqlGenerator;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -122,6 +124,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 loadTransactionProcessingService);
         this.credXLoanTransactionRepository = credXLoanTransactionRepository;
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
+        this.jdbcTemplate = jdbcTemplate;
+        this.sqlGenerator = sqlGenerator;
     }
 
     @Override
@@ -194,6 +198,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         return ExtendedLoanSchedulePeriodData.Status.SCHEDULED;
     }
+
 
     @Override
     public LoanAccountData retrieveOne(final Long loanId) {
@@ -729,4 +734,55 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
     }
     
+
+
+    @Override
+    public Collection<DisbursementData> retrieveLoanDisbursementDetails(final Long loanId) {
+        final CredXLoanDisbursementDetailMapper rm = new CredXLoanDisbursementDetailMapper(sqlGenerator);
+        final String sql = "select " + rm.schema()
+                + " where dd.loan_id=? and dd.is_reversed=false group by dd.id, lc.amount_waived_derived order by dd.expected_disburse_date,dd.disbursedon_date,dd.id";
+        return this.jdbcTemplate.query(sql, rm, loanId); // NOSONAR
+    }
+
+    private static final class CredXLoanDisbursementDetailMapper implements RowMapper<DisbursementData> {
+
+        private final DatabaseSpecificSQLGenerator sqlGenerator;
+
+        CredXLoanDisbursementDetailMapper(DatabaseSpecificSQLGenerator sqlGenerator) {
+            this.sqlGenerator = sqlGenerator;
+        }
+
+        public String schema() {
+            return "dd.id as id,dd.expected_disburse_date as expectedDisbursementdate, dd.disbursedon_date as actualDisbursementdate,dd.principal as principal,dd.net_disbursal_amount as netDisbursalAmount,sum(lc.amount) chargeAmount, lc.amount_waived_derived waivedAmount, sum(lc.tax_amount) as taxAmount, "
+                    + sqlGenerator.groupConcat("lc.id") + " loanChargeId "
+                    + "from m_loan l inner join m_loan_disbursement_detail dd on dd.loan_id = l.id left join m_loan_tranche_disbursement_charge tdc on tdc.disbursement_detail_id=dd.id "
+                    + "left join m_loan_charge lc on  lc.id=tdc.loan_charge_id and lc.is_active=true";
+        }
+
+        @Override
+        public DisbursementData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final Long id = rs.getLong("id");
+            final LocalDate expectedDisbursementdate = JdbcSupport.getLocalDate(rs, "expectedDisbursementdate");
+            final LocalDate actualDisbursementdate = JdbcSupport.getLocalDate(rs, "actualDisbursementdate");
+            final BigDecimal principal = rs.getBigDecimal("principal");
+            final String loanChargeId = rs.getString("loanChargeId");
+            final BigDecimal netDisbursalAmount = rs.getBigDecimal("netDisbursalAmount");
+            BigDecimal chargeAmount = rs.getBigDecimal("chargeAmount");
+            final BigDecimal waivedAmount = rs.getBigDecimal("waivedAmount");
+            final BigDecimal taxAmount = rs.getBigDecimal("taxAmount");
+            if (chargeAmount != null && waivedAmount != null) {
+                chargeAmount = chargeAmount.subtract(waivedAmount);
+            }
+
+            if (chargeAmount != null && taxAmount != null) {
+                // Assumption is that tax is not waivable, so we add it to the charge amount
+                chargeAmount = chargeAmount.add(taxAmount);
+            }
+            return new DisbursementData(id, expectedDisbursementdate, actualDisbursementdate, principal, netDisbursalAmount, loanChargeId,
+                    chargeAmount, waivedAmount);
+        }
+
+    }
+
+
 }

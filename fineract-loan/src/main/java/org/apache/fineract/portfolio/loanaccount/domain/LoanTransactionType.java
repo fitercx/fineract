@@ -67,7 +67,7 @@ public enum LoanTransactionType {
     ACCRUAL_ACTIVITY(32, "loanTransactionType.accrualActivity"), //
     INTEREST_REFUND(33, "loanTransactionType.interestRefund"), //
     ACCRUAL_ADJUSTMENT(34, "loanTransactionType.accrualAdjustment"), //
-    ;
+    VAT_DEDUCTION_AT_DISBURSEMENT(35, "loanTransactionType.vatDeductionAtDisbursement"); //
 
     private final Integer value;
     private final String code;
@@ -117,6 +117,7 @@ public enum LoanTransactionType {
             case 32 -> LoanTransactionType.ACCRUAL_ACTIVITY;
             case 33 -> LoanTransactionType.INTEREST_REFUND;
             case 34 -> LoanTransactionType.ACCRUAL_ADJUSTMENT;
+            case 35 -> LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT;
             default -> LoanTransactionType.INVALID;
         };
     }
@@ -232,5 +233,9 @@ public enum LoanTransactionType {
 
     public boolean isAccrualAdjustment() {
         return this == LoanTransactionType.ACCRUAL_ADJUSTMENT;
+    }
+
+    public boolean isVatDeductionAtDisbursement() {
+        return this.equals(LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT);
     }
 }

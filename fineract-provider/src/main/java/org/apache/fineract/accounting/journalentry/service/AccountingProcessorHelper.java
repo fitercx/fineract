@@ -89,10 +89,10 @@ public class AccountingProcessorHelper {
     private final ProductToGLAccountMappingRepository accountMappingRepository;
     private final FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository;
     private final GLClosureRepository closureRepository;
-    private final GLAccountRepository glAccountRepository;
+    protected final GLAccountRepository glAccountRepository;
     private final OfficeRepository officeRepository;
-    private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
-    private final ChargeRepositoryWrapper chargeRepositoryWrapper;
+    protected final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
+    protected final ChargeRepositoryWrapper chargeRepositoryWrapper;
     private final BusinessEventNotifierService businessEventNotifierService;
 
     public LoanDTO populateLoanDtoFromDTO(
@@ -844,8 +844,8 @@ public class AccountingProcessorHelper {
         persistJournalEntry(journalEntry);
     }
 
-    private void createCreditJournalEntryForLoan(final Office office, final String currencyCode, final GLAccount account, final Long loanId,
-            final String transactionId, final LocalDate transactionDate, final BigDecimal amount) {
+    protected void createCreditJournalEntryForLoan(final Office office, final String currencyCode, final GLAccount account,
+            final Long loanId, final String transactionId, final LocalDate transactionDate, final BigDecimal amount) {
         final boolean manualEntry = false;
         Long loanTransactionId = null;
         String modifiedTransactionId = transactionId;
@@ -879,8 +879,8 @@ public class AccountingProcessorHelper {
         persistJournalEntry(journalEntry);
     }
 
-    private void createDebitJournalEntryForLoan(final Office office, final String currencyCode, final GLAccount account, final Long loanId,
-            final String transactionId, final LocalDate transactionDate, final BigDecimal amount) {
+    protected void createDebitJournalEntryForLoan(final Office office, final String currencyCode, final GLAccount account,
+            final Long loanId, final String transactionId, final LocalDate transactionDate, final BigDecimal amount) {
         final boolean manualEntry = false;
         Long loanTransactionId = null;
         String modifiedTransactionId = transactionId;

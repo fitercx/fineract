@@ -100,18 +100,18 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
 
     private static final String ACCRUAL_ON_CHARGE_SUBMITTED_ON_DATE = "submitted-date";
     private final ExternalIdFactory externalIdFactory;
-    private final BusinessEventNotifierService businessEventNotifierService;
+    protected final BusinessEventNotifierService businessEventNotifierService;
     private final ConfigurationDomainService configurationDomainService;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
-    private final JournalEntryWritePlatformService journalEntryWritePlatformService;
-    private final LoanTransactionRepository loanTransactionRepository;
+    protected final JournalEntryWritePlatformService journalEntryWritePlatformService;
+    protected final LoanTransactionRepository loanTransactionRepository;
     private final LoanScheduleGeneratorFactory loanScheduleFactory;
 
     @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME)
     private final ThreadPoolTaskExecutor taskExecutor;
     private final TransactionTemplate transactionTemplate;
-    private final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
+    protected final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
 
     /**
      * method adds accrual for batch job "Add Periodic Accrual Transactions" and add accruals api for Loan
@@ -328,7 +328,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
 
     // PeriodicAccruals
 
-    private void addAccruals(@NotNull final Loan loan, @NotNull LocalDate tillDate, final boolean periodic, final boolean isFinal,
+    protected void addAccruals(@NotNull final Loan loan, @NotNull LocalDate tillDate, final boolean periodic, final boolean isFinal,
             final boolean addJournal, final boolean chargeOnDueDate) {
         if ((!isFinal && !loan.isOpen()) || loan.isNpa() || loan.isChargedOff()
                 || !loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()) {
@@ -444,8 +444,8 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         }
     }
 
-    private AccrualPeriodsData calculateAccrualAmounts(@NotNull final Loan loan, @NotNull final LocalDate tillDate, final boolean periodic,
-            final boolean isFinal, final boolean chargeOnDueDate) {
+    protected AccrualPeriodsData calculateAccrualAmounts(@NotNull final Loan loan, @NotNull final LocalDate tillDate,
+            final boolean periodic, final boolean isFinal, final boolean chargeOnDueDate) {
         final LoanProductRelatedDetail productDetail = loan.getLoanProductRelatedDetail();
         final MonetaryCurrency currency = productDetail.getCurrency();
         final LoanScheduleGenerator scheduleGenerator = loanScheduleFactory.create(productDetail.getLoanScheduleType(),
@@ -658,7 +658,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
                 : isInPeriod(loanCharge.getSubmittedOnDate(), fromDate, toDate, isFirstPeriod);
     }
 
-    private LoanTransaction createOrMergeAccrualTransaction(@NotNull final Loan loan, LoanTransaction transaction,
+    protected LoanTransaction createOrMergeAccrualTransaction(@NotNull final Loan loan, LoanTransaction transaction,
             final LocalDate transactionDate, final AccrualPeriodData accrualPeriod, final List<LoanTransaction> accrualTransactions,
             final Money interest, final Money fee, final Money penalty, final boolean adjustment) {
         if (transaction == null) {
@@ -672,7 +672,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         return transaction;
     }
 
-    private LoanTransaction addAccrualTransaction(@NotNull Loan loan, @NotNull LocalDate transactionDate, AccrualPeriodData accrualPeriod,
+    protected LoanTransaction addAccrualTransaction(@NotNull Loan loan, @NotNull LocalDate transactionDate, AccrualPeriodData accrualPeriod,
             Money interestPortion, Money feePortion, Money penaltyPortion, boolean adjustment) {
         interestPortion = MathUtil.negativeToZero(interestPortion);
         BigDecimal interest = MathUtil.toBigDecimal(interestPortion);
@@ -1138,7 +1138,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         journalEntryWritePlatformService.createJournalEntriesForLoan(accountingBridgeData);
     }
 
-    private void ensureAccrualTransactionMappings(final Loan loan, final List<LoanTransaction> existingAccrualTransactions,
+    protected void ensureAccrualTransactionMappings(final Loan loan, final List<LoanTransaction> existingAccrualTransactions,
             final boolean chargeOnDueDate) {
         final List<LoanTransaction> transactions = existingAccrualTransactions.stream()
                 .filter(t -> !MathUtil.isEmpty(t.getFeeChargesPortion()) || !MathUtil.isEmpty(t.getPenaltyChargesPortion())).toList();
@@ -1162,7 +1162,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         }
     }
 
-    private List<LoanTransaction> retrieveListOfAccrualTransactions(final Loan loan) {
+    protected List<LoanTransaction> retrieveListOfAccrualTransactions(final Loan loan) {
         return loan.getLoanTransactions().stream().filter(ACCRUAL_PREDICATE).sorted(LoanTransactionComparator.INSTANCE)
                 .collect(Collectors.toList());
     }
@@ -1253,7 +1253,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         }
     }
 
-    private void reverseTransactionsAfter(final List<LoanTransaction> accrualTransactions, final LocalDate effectiveDate,
+    protected void reverseTransactionsAfter(final List<LoanTransaction> accrualTransactions, final LocalDate effectiveDate,
             final boolean addEvent) {
         for (LoanTransaction accrualTransaction : accrualTransactions) {
             if (!accrualTransaction.isReversed() && DateUtils.isAfter(accrualTransaction.getTransactionDate(), effectiveDate)) {
@@ -1278,7 +1278,7 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         }
     }
 
-    private LocalDate getFinalAccrualTransactionDate(final Loan loan) {
+    protected LocalDate getFinalAccrualTransactionDate(final Loan loan) {
         return switch (loan.getStatus()) {
             case CLOSED_OBLIGATIONS_MET -> loan.getClosedOnDate();
             case OVERPAID -> loan.getOverpaidOnDate();

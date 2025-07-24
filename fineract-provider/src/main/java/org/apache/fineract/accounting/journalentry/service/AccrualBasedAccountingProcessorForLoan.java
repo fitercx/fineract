@@ -45,8 +45,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AccrualBasedAccountingProcessorForLoan implements AccountingProcessorForLoan {
 
-    private final AccountingProcessorHelper helper;
-    private final JournalEntryWritePlatformService journalEntryWritePlatformService;
+    protected final AccountingProcessorHelper helper;
+    protected final JournalEntryWritePlatformService journalEntryWritePlatformService;
 
     @Override
     public void createJournalEntriesForLoan(final LoanDTO loanDTO) {
@@ -604,7 +604,7 @@ public class AccrualBasedAccountingProcessorForLoan implements AccountingProcess
      * @param loanTransactionDTO
      * @param office
      */
-    private void createJournalEntriesForDisbursements(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForDisbursements(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office) {
 
         // loan properties
@@ -917,7 +917,7 @@ public class AccrualBasedAccountingProcessorForLoan implements AccountingProcess
 
     }
 
-    private void createJournalEntriesForLoansRepaymentAndWriteOffs(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+    protected void createJournalEntriesForLoansRepaymentAndWriteOffs(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
             final Office office, final boolean writeOff, final boolean isIncomeFromFee) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
@@ -1085,7 +1085,7 @@ public class AccrualBasedAccountingProcessorForLoan implements AccountingProcess
         }
     }
 
-    private void populateDebitAccountEntry(Long loanProductId, BigDecimal transactionPartAmount, Integer debitAccountType,
+    protected void populateDebitAccountEntry(Long loanProductId, BigDecimal transactionPartAmount, Integer debitAccountType,
             Map<Integer, BigDecimal> accountMapForDebit, Long paymentTypeId) {
         Integer accountDebit = returnExistingDebitAccountInMapMatchingGLAccount(loanProductId, paymentTypeId, debitAccountType,
                 accountMapForDebit);

@@ -325,6 +325,9 @@ public final class LoanEnumerations {
                     LoanTransactionType.INTEREST_REFUND.getCode(), "Interest Refund");
             case ACCRUAL_ADJUSTMENT -> new LoanTransactionEnumData(LoanTransactionType.ACCRUAL_ADJUSTMENT.getValue().longValue(),
                     LoanTransactionType.ACCRUAL_ADJUSTMENT.getCode(), "Accrual Adjustment");
+            case VAT_DEDUCTION_AT_DISBURSEMENT ->
+                new LoanTransactionEnumData(LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT.getValue().longValue(),
+                        LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT.getCode(), "VAT Deduction at Disbursement");
         };
     }
 

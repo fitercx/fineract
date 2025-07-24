@@ -129,35 +129,35 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
     private final LoanAssembler loanAccountAssembler;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final LoanTransactionRepository loanTransactionRepository;
-    private final ConfigurationDomainService configurationDomainService;
-    private final HolidayRepository holidayRepository;
-    private final WorkingDaysRepositoryWrapper workingDaysRepository;
+    protected final ConfigurationDomainService configurationDomainService;
+    protected final HolidayRepository holidayRepository;
+    protected final WorkingDaysRepositoryWrapper workingDaysRepository;
 
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
-    private final NoteRepository noteRepository;
-    private final BusinessEventNotifierService businessEventNotifierService;
+    protected final NoteRepository noteRepository;
+    protected final BusinessEventNotifierService businessEventNotifierService;
     private final LoanUtilService loanUtilService;
     private final StandingInstructionRepository standingInstructionRepository;
     private final PostDatedChecksRepository postDatedChecksRepository;
     private final LoanCollateralManagementRepository loanCollateralManagementRepository;
     private final DelinquencyWritePlatformService delinquencyWritePlatformService;
-    private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
+    protected final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     private final ExternalIdFactory externalIdFactory;
-    private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
+    protected final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper;
     private final DelinquencyReadPlatformService delinquencyReadPlatformService;
-    private final LoanAccrualsProcessingService loanAccrualsProcessingService;
+    protected final LoanAccrualsProcessingService loanAccrualsProcessingService;
     private final LoanRepaymentScheduleTransactionProcessorFactory transactionProcessorFactory;
     private final InterestRefundServiceDelegate interestRefundServiceDelegate;
-    private final LoanTransactionValidator loanTransactionValidator;
+    protected final LoanTransactionValidator loanTransactionValidator;
     private final LoanForeclosureValidator loanForeclosureValidator;
-    private final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
-    private final LoanChargeService loanChargeService;
+    protected final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
+    protected final LoanChargeService loanChargeService;
     private final LoanScheduleService loanScheduleService;
     private final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
     private final LoanChargeValidator loanChargeValidator;
     private final LoanRefundService loanRefundService;
-    private final LoanAccountService loanAccountService;
+    protected final LoanAccountService loanAccountService;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
     private final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
 
@@ -442,7 +442,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         return newPaymentTransaction;
     }
 
-    private void postJournalEntries(final Loan loanAccount, final List<Long> existingTransactionIds,
+    protected void postJournalEntries(final Loan loanAccount, final List<Long> existingTransactionIds,
             final List<Long> existingReversedTransactionIds, boolean isAccountTransfer) {
         postJournalEntries(loanAccount, existingTransactionIds, existingReversedTransactionIds, isAccountTransfer, false);
     }
@@ -474,7 +474,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         }
     }
 
-    private void checkClientOrGroupActive(final Loan loan) {
+    protected void checkClientOrGroupActive(final Loan loan) {
         final Client client = loan.client();
         if (client != null) {
             if (client.isNotActive()) {

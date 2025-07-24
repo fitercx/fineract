@@ -62,6 +62,7 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDis
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 
 public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanScheduleGenerator {
 
@@ -1967,6 +1968,10 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         for (final LoanCharge loanCharge : loanCharges) {
             if (loanCharge.isDueAtDisbursement()) {
                 chargesDueAtTimeOfDisbursement = chargesDueAtTimeOfDisbursement.add(loanCharge.amount());
+
+                if (loanCharge.hasTax()) {
+                    chargesDueAtTimeOfDisbursement = chargesDueAtTimeOfDisbursement.add(loanCharge.getTaxAmount());
+                }
             }
         }
         return chargesDueAtTimeOfDisbursement;
@@ -2098,6 +2103,10 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 } else if (isDue) {
                     cumulative = cumulative.plus(loanCharge.amount());
                 }
+
+                if (loanCharge.hasTax()) {
+                    cumulative = cumulative.plus(loanCharge.getTaxAmount());
+                }
             }
         }
 
@@ -2160,6 +2169,18 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 } else if (isDue) {
                     cumulative = cumulative.plus(loanCharge.amount());
                 }
+                LocalDate chargeDate = loanCharge.getDueLocalDate() != null ? loanCharge.getDueLocalDate()
+                        : DateUtils.getBusinessLocalDate();
+
+                if (!Objects.isNull(loanCharge.getCharge().getTaxGroup())
+                        && !Objects.isNull(loanCharge.getCharge().getTaxGroup().getTaxGroupMappings())
+                        && !loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty()) {
+
+                    BigDecimal tax = TaxUtils.addTaxToAmount(loanCharge.getAmount(), chargeDate,
+                            loanCharge.getCharge().getTaxGroup().getTaxGroupMappings(), loanCharge.getAmount().scale());
+                    cumulative = cumulative.add(tax);
+                }
+
             }
         }
 
