@@ -2171,9 +2171,16 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 }
                 LocalDate chargeDate = loanCharge.getDueLocalDate() != null ? loanCharge.getDueLocalDate()
                         : DateUtils.getBusinessLocalDate();
-                BigDecimal tax = TaxUtils.addTaxToAmount(loanCharge.getAmount(), chargeDate,
-                        loanCharge.getCharge().getTaxGroup().getTaxGroupMappings(), loanCharge.getAmount().scale());
-                cumulative = cumulative.add(tax);
+
+                if (!Objects.isNull(loanCharge.getCharge().getTaxGroup())
+                        && !Objects.isNull(loanCharge.getCharge().getTaxGroup().getTaxGroupMappings())
+                        && !loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty()) {
+
+                    BigDecimal tax = TaxUtils.addTaxToAmount(loanCharge.getAmount(), chargeDate,
+                            loanCharge.getCharge().getTaxGroup().getTaxGroupMappings(), loanCharge.getAmount().scale());
+                    cumulative = cumulative.add(tax);
+                }
+
             }
         }
 
