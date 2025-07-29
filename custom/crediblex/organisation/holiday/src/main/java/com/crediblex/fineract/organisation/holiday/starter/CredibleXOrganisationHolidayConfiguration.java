@@ -27,6 +27,8 @@ import org.apache.fineract.organisation.holiday.service.HolidayWritePlatformServ
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
+import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -34,7 +36,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
 /**
- * Auto-configuration for CredibleX Organisation Holiday module.
+ * Autoconfiguration for CredibleX Organisation Holiday module.
  */
 @AutoConfiguration
 public class CredibleXOrganisationHolidayConfiguration {
@@ -45,9 +47,9 @@ public class CredibleXOrganisationHolidayConfiguration {
             HolidayRepositoryWrapper holidayRepository, PlatformSecurityContext context, OfficeRepositoryWrapper officeRepositoryWrapper,
             FromJsonHelper fromApiJsonHelper, WorkingDaysRepositoryWrapper daysRepositoryWrapper,
             LoanRepositoryWrapper loanRepositoryWrapper, LoanScheduleService loanScheduleService, LoanUtilService loanUtilService,
-            ConfigurationDomainService configurationDomainService) {
+            ConfigurationDomainService configurationDomainService, LoanTermVariationsMapper loanTermVariationsMapper) {
         return new com.crediblex.fineract.organisation.holiday.service.CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(
                 fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper,
-                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService);
+                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService, loanTermVariationsMapper);
     }
 }
