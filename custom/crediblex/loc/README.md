@@ -16,13 +16,21 @@ custom/crediblex/loc/
                 └── crediblex/
                     └── fineract/
                         └── loc/
-                            ├── LocModule.java                    # Placeholder class
+                            ├── api/
+                            │   └── LineOfCreditApiResource.java
+                            ├── data/
+                            │   ├── LineOfCreditData.java
+                            │   └── LineOfCreditTransactionData.java
                             ├── domain/
-                            │   ├── LineOfCredit.java             # Line of Credit entity
-                            │   └── LineOfCreditTransaction.java  # Transaction entity
-                            └── repository/
-                                ├── LineOfCreditRepository.java           # Repository interface
-                                └── LineOfCreditTransactionRepository.java # Transaction repository
+                            │   ├── LineOfCredit.java
+                            │   └── LineOfCreditTransaction.java
+                            ├── repository/
+                            │   ├── LineOfCreditRepository.java
+                            │   └── LineOfCreditTransactionRepository.java
+                            └── service/
+                                ├── LineOfCreditDataValidator.java
+                                ├── LineOfCreditReadPlatformService.java
+                                └── LineOfCreditWritePlatformServiceImpl.java
 ```
 
 ## Database Schema
@@ -64,6 +72,38 @@ custom/crediblex/loc/
 - `idx_line_of_credit_transactions_transaction_date` - On transaction_date for date range queries
 - `idx_line_of_credit_transactions_transaction_type` - On transaction_type for filtering
 
+## Features
+
+### Complete CRUD Operations
+- **Create** - Create new line of credit for clients
+- **Read** - Retrieve line of credit details and lists
+- **Update** - Modify line of credit parameters
+- **Delete** - Remove line of credit records
+
+### Transaction Management
+- **Activate/Deactivate** - Change line of credit status
+- **Draw Amount** - Withdraw funds from line of credit
+- **Repay Amount** - Return funds to line of credit
+- **Transaction History** - Complete audit trail of all operations
+
+### API Endpoints
+
+#### Line of Credit Management
+- `GET /v1/lineofcredit` - List all line of credits (with optional clientId filter)
+- `GET /v1/lineofcredit/template` - Get template for creating line of credit
+- `GET /v1/lineofcredit/{id}` - Get specific line of credit details
+- `POST /v1/lineofcredit` - Create new line of credit
+- `PUT /v1/lineofcredit/{id}` - Update line of credit
+- `DELETE /v1/lineofcredit/{id}` - Delete line of credit
+
+#### Line of Credit Operations
+- `POST /v1/lineofcredit/{id}` - Activate line of credit
+- `POST /v1/lineofcredit/{id}/draw` - Draw amount from line of credit
+- `POST /v1/lineofcredit/{id}/repay` - Repay amount to line of credit
+
+#### Transaction History
+- `GET /v1/lineofcredit/{id}/transactions` - Get transaction history for line of credit
+
 ## Dependencies
 
 The module depends on:
@@ -72,6 +112,9 @@ The module depends on:
 - `fineract-client`
 - Spring Boot Data JPA
 - Jakarta WS RS API
+- Gson for JSON processing
+- Apache Commons Lang
+- Swagger annotations
 
 ## Database Migration
 
@@ -99,4 +142,49 @@ Or from the root directory:
 
 ```bash
 ./gradlew :custom:crediblex:loc:build
-``` 
+```
+
+## Example API Usage
+
+### Create Line of Credit
+```json
+POST /v1/lineofcredit
+{
+  "clientId": 1,
+  "name": "Business Credit Line",
+  "productType": "BUSINESS",
+  "maximumAmount": 50000.00,
+  "startDate": "2024-01-01",
+  "endDate": "2024-12-31"
+}
+```
+
+### Draw Amount
+```json
+POST /v1/lineofcredit/1/draw
+{
+  "amount": 10000.00,
+  "referenceNumber": "DRAW-001",
+  "description": "Business expansion funding"
+}
+```
+
+### Repay Amount
+```json
+POST /v1/lineofcredit/1/repay
+{
+  "amount": 5000.00,
+  "referenceNumber": "REPAY-001",
+  "description": "Monthly repayment"
+}
+```
+
+## Transaction Logging
+
+Every operation on the line of credit is automatically logged in the `m_line_of_credit_transactions` table, providing a complete audit trail of:
+- Balance changes
+- Transaction types
+- Amounts involved
+- Before and after balances
+- Reference numbers and descriptions
+- Timestamps and user information 

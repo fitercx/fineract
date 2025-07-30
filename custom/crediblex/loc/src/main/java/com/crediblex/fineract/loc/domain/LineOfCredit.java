@@ -22,11 +22,14 @@ package com.crediblex.fineract.loc.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
 import org.apache.fineract.portfolio.client.domain.Client;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Line of Credit entity representing a credit line for a client.
@@ -87,6 +90,87 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.activationStatus = ActivationStatus.INACTIVE;
         this.startDate = startDate;
         this.endDate = endDate;
+    }
+
+    /**
+     * Activate the line of credit.
+     */
+    public void activate() {
+        this.activationStatus = ActivationStatus.ACTIVE;
+    }
+
+    /**
+     * Deactivate the line of credit.
+     */
+    public void deactivate() {
+        this.activationStatus = ActivationStatus.INACTIVE;
+    }
+
+    /**
+     * Draw amount from the line of credit.
+     */
+    public void drawAmount(BigDecimal amount) {
+        if (this.activationStatus != ActivationStatus.ACTIVE) {
+            throw new IllegalStateException("Line of credit must be active to draw amount");
+        }
+        if (amount.compareTo(this.availableBalance) > 0) {
+            throw new IllegalArgumentException("Insufficient available balance");
+        }
+        this.availableBalance = this.availableBalance.subtract(amount);
+        this.consumedAmount = this.consumedAmount.add(amount);
+    }
+
+    /**
+     * Repay amount to the line of credit.
+     */
+    public void repayAmount(BigDecimal amount) {
+        if (this.activationStatus != ActivationStatus.ACTIVE) {
+            throw new IllegalStateException("Line of credit must be active to repay amount");
+        }
+        if (this.consumedAmount.compareTo(amount) < 0) {
+            throw new IllegalArgumentException("Repayment amount cannot exceed consumed amount");
+        }
+        this.availableBalance = this.availableBalance.add(amount);
+        this.consumedAmount = this.consumedAmount.subtract(amount);
+    }
+
+    /**
+     * Update the line of credit with changes from command.
+     */
+    public Map<String, Object> update(JsonCommand command) {
+        final Map<String, Object> actualChanges = new LinkedHashMap<>();
+
+        if (command.isChangeInStringParameterNamed("name", this.name)) {
+            final String newValue = command.stringValueOfParameterNamed("name");
+            actualChanges.put("name", newValue);
+            this.name = newValue;
+        }
+
+        if (command.isChangeInStringParameterNamed("productType", this.productType)) {
+            final String newValue = command.stringValueOfParameterNamed("productType");
+            actualChanges.put("productType", newValue);
+            this.productType = newValue;
+        }
+
+        if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("maximumAmount");
+            actualChanges.put("maximumAmount", newValue);
+            this.maximumAmount = newValue;
+        }
+
+        if (command.isChangeInLocalDateParameterNamed("startDate", this.startDate)) {
+            final LocalDate newValue = command.localDateValueOfParameterNamed("startDate");
+            actualChanges.put("startDate", newValue);
+            this.startDate = newValue;
+        }
+
+        if (command.isChangeInLocalDateParameterNamed("endDate", this.endDate)) {
+            final LocalDate newValue = command.localDateValueOfParameterNamed("endDate");
+            actualChanges.put("endDate", newValue);
+            this.endDate = newValue;
+        }
+
+        return actualChanges;
     }
 
     /**

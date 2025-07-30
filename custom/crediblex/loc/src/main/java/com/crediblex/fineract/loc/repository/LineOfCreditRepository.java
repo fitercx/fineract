@@ -68,4 +68,13 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
      * @return true if exists, false otherwise
      */
     boolean existsByClientIdAndName(Long clientId, String name);
+
+    /**
+     * Find all line of credits by client ID and activation status.
+     *
+     * @param clientId the client ID
+     * @param activationStatus the activation status
+     * @return list of line of credits
+     */
+    List<LineOfCredit> findByClientIdAndActivationStatus(Long clientId, LineOfCredit.ActivationStatus activationStatus);
 } 

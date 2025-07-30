@@ -17,19 +17,18 @@
  * under the License.
  */
 
-package com.crediblex.fineract.loc;
+package com.crediblex.fineract.loc.starter;
 
-/**
- * CredibleX Fineract Loc module.
- * 
- * This module contains the Line of Credit (Loc) functionality for the CredibleX Fineract platform.
- */
-public class LocModule {
-    
-    /**
-     * Default constructor.
-     */
-    public LocModule() {
-        // Placeholder class for the Loc module
-    }
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.ComponentScans;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+
+@AutoConfiguration
+@ComponentScans({ 
+    @ComponentScan("com.crediblex.fineract.loc"),
+    @ComponentScan("com.crediblex.fineract.loc.commands")
+})
+@EnableJpaRepositories(basePackages = "com.crediblex.fineract.loc.repository")
+public class CrediblexLocAutoConfiguration {
 } 

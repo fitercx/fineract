@@ -23,4 +23,9 @@ dependencies {
     implementation(project(':fineract-client'))
     implementation('org.springframework.boot:spring-boot-starter-data-jpa')
     implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    implementation('com.google.code.gson:gson')
+    implementation('org.apache.commons:commons-lang3')
+    implementation('io.swagger.core.v3:swagger-annotations')
+    implementation('org.springframework:spring-context')
+    implementation('org.springframework:spring-tx')
 } 
