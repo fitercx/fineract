@@ -110,7 +110,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @Primary
 public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePlatformServiceJpaRepositoryImpl {
@@ -358,6 +360,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
         loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
 
+        // Update line of credit balances if loan is linked to a line of credit and product has LOC enabled
+        updateLineOfCreditBalancesOnDisbursement(loan, amountToDisburse);
+
         return new CommandProcessingResultBuilder() //
                 .withCommandId(command.commandId()) //
                 .withEntityId(loan.getId()) //
@@ -571,6 +576,75 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         String sql = "SELECT COUNT(*) FROM m_line_of_credit WHERE id = ?";
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
         return count != null && count > 0;
+    }
+
+    private void updateLineOfCreditBalancesOnDisbursement(Loan loan, Money disbursedAmount) {
+        try {
+            // Check if loan has a line of credit ID
+            Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
+            if (lineOfCreditId == null) {
+                return; // No line of credit linked to this loan
+            }
+
+            // Check if the loan product has LOC enabled
+            boolean isLocEnabled = getLocEnableField(loan.getLoanProduct().getId());
+            if (!isLocEnabled) {
+                return; // Product doesn't have LOC enabled
+            }
+
+            // Update the line of credit balances
+            BigDecimal amount = disbursedAmount.getAmount();
+            String sql = "UPDATE m_line_of_credit SET " +
+                        "available_balance = available_balance - ?, " +
+                        "consumed_amount = consumed_amount + ? " +
+                        "WHERE id = ? AND available_balance >= ?";
+
+            int updatedRows = jdbcTemplate.update(sql, amount, amount, lineOfCreditId, amount);
+            
+            if (updatedRows == 0) {
+                // Check if it's because of insufficient balance
+                String checkSql = "SELECT available_balance FROM m_line_of_credit WHERE id = ?";
+                BigDecimal availableBalance = jdbcTemplate.queryForObject(checkSql, BigDecimal.class, lineOfCreditId);
+                
+                if (availableBalance != null && availableBalance.compareTo(amount) < 0) {
+                    throw new PlatformApiDataValidationException("error.msg.line.of.credit.insufficient.balance",
+                        "Insufficient available balance in line of credit. Available: " + availableBalance + ", Required: " + amount,
+                        "lineOfCreditId", lineOfCreditId);
+                }
+            }
+
+            // Log the transaction
+            logLineOfCreditTransaction(lineOfCreditId, "LOAN_DISBURSEMENT", amount, 
+                                     "Loan disbursement for loan ID: " + loan.getId());
+
+        } catch (Exception e) {
+            log.error("Error updating line of credit balances for loan disbursement", e);
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed",
+                "Failed to update line of credit balances: " + e.getMessage());
+        }
+    }
+
+    private Long getLineOfCreditIdForLoan(Long loanId) {
+        String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
+        return jdbcTemplate.queryForObject(sql, Long.class, loanId);
+    }
+
+    private boolean getLocEnableField(Long loanProductId) {
+        String sql = "SELECT is_loc_enable FROM m_product_loan WHERE id = ?";
+        Boolean result = jdbcTemplate.queryForObject(sql, Boolean.class, loanProductId);
+        return result != null ? result : false;
+    }
+
+    private void logLineOfCreditTransaction(Long lineOfCreditId, String transactionType, BigDecimal amount, String description) {
+        String sql = "INSERT INTO m_line_of_credit_transactions " +
+                    "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
+                    "transaction_date, description, created_on_utc, created_by) " +
+                    "SELECT ?, ?, ?, available_balance + ?, available_balance, " +
+                    "NOW(), ?, NOW(), ? " +
+                    "FROM m_line_of_credit WHERE id = ?";
+        
+        jdbcTemplate.update(sql, lineOfCreditId, transactionType, amount, amount, description, 
+                          getAppUserIfPresent().getId(), lineOfCreditId);
     }
 
     @Override

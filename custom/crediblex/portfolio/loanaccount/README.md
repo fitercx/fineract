@@ -14,6 +14,33 @@ A foreign key field that links a loan to a specific Line of Credit, allowing loa
 
 **Automatic Handling**: The `line_of_credit_id` field is automatically processed by the custom services when included in API requests. No additional integration code is required - simply include the field in your JSON payload and it will be validated and stored appropriately.
 
+**Line of Credit Balance Updates**: When a loan is disbursed and the loan product has `is_loc_enable=true`, the system automatically updates the linked line of credit balances:
+- **Available Balance**: Reduced by the disbursed amount
+- **Consumed Amount**: Increased by the disbursed amount
+- **Transaction Logging**: All balance changes are logged in `m_line_of_credit_transactions` table
+
+## Functionality
+
+### Loan Disbursement with Line of Credit Integration
+
+When a loan is disbursed, the system automatically checks if:
+1. The loan is linked to a line of credit (`line_of_credit_id` is not null)
+2. The loan product has line of credit enabled (`is_loc_enable = true`)
+
+If both conditions are met, the system:
+1. **Validates Available Balance**: Ensures the line of credit has sufficient available balance
+2. **Updates Balances**: 
+   - Reduces `available_balance` by the disbursed amount
+   - Increases `consumed_amount` by the disbursed amount
+3. **Logs Transaction**: Records the transaction in `m_line_of_credit_transactions` table
+4. **Error Handling**: Throws appropriate exceptions for insufficient balance or other errors
+
+### Error Scenarios
+
+- **Insufficient Balance**: If the line of credit doesn't have enough available balance, the disbursement fails with a clear error message
+- **Invalid Line of Credit**: If the referenced line of credit doesn't exist, the disbursement fails
+- **Product Not LOC Enabled**: If the loan product doesn't have `is_loc_enable=true`, no balance updates occur
+
 ## Database Schema
 
 ### Table Relationships
