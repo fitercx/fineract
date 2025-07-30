@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.List;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.portfolio.charge.service.ChargeDropdownReadPlatformService;
+import org.apache.fineract.portfolio.charge.service.ChargeEnumerations;
 import org.apache.fineract.portfolio.common.service.DropdownReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
@@ -42,8 +43,8 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
     private final CustomLoanChargeRepository loanChargeRepository;
 
     public CustomLoanChargeReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
-            ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
-            LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
+                                                   ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
+                                                   LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
         super(jdbcTemplate, chargeDropdownReadPlatformService, dropdownReadPlatformService, loanChargeRepository);
         this.loanChargeRepository = customLoanChargeRepository;
     }
@@ -56,13 +57,10 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
         for (LoanCharge lc : loanCharges) {
             BigDecimal availableForAdjustment = calculateAvailableAmountForChargeAdjustment(lc);
 
-            // Gather all required fields from LoanCharge and related entities
-            EnumOptionData chargeTimeTypeData = new EnumOptionData((long) lc.getChargeTimeType().ordinal(),
-                    lc.getChargeTimeType().getCode(), String.valueOf(lc.getChargeTimeType().getValue()));
-            EnumOptionData chargeCalculationTypeData = new EnumOptionData((long) lc.getChargeCalculation().ordinal(),
-                    lc.getChargeCalculation().getCode(), String.valueOf(lc.getChargeCalculation().getValue()));
-            EnumOptionData chargePaymentModeData = new EnumOptionData((long) lc.getChargePaymentMode().ordinal(),
-                    lc.getChargePaymentMode().getCode(), String.valueOf(lc.getChargePaymentMode().getValue()));
+            EnumOptionData chargeTimeTypeData = ChargeEnumerations.chargeTimeType(lc.getChargeTimeType().getValue());
+            EnumOptionData chargeCalculationTypeData = ChargeEnumerations.chargeCalculationType(lc.getChargeCalculation().getValue());
+            EnumOptionData chargePaymentModeData = ChargeEnumerations.chargePaymentMode(lc.getChargePaymentMode().getValue());
+
             List<LoanInstallmentChargeData> loanInstallmentChargeDataList = lc.installmentCharges().stream()
                     .map(LoanInstallmentCharge::toData).toList();
 
@@ -90,5 +88,4 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
         }
         return availableAmountForAdjustment;
     }
-
 }
