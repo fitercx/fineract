@@ -102,6 +102,7 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.Repaym
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.context.annotation.Primary;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -240,6 +241,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     scheduleGeneratorDTO);
             loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
 
+            // Update line of credit balances if loan is linked to a line of credit and product has LOC enabled
+            updateLineOfCreditBalancesOnDisbursement(loan, amountToDisburse);
+
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
             LocalDate firstInstallmentDueDate = loan.fetchRepaymentScheduleInstallment(1).getDueDate();
@@ -359,9 +363,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
         loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
-
-        // Update line of credit balances if loan is linked to a line of credit and product has LOC enabled
-        updateLineOfCreditBalancesOnDisbursement(loan, amountToDisburse);
 
         return new CommandProcessingResultBuilder() //
                 .withCommandId(command.commandId()) //
@@ -579,12 +580,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     private void updateLineOfCreditBalancesOnDisbursement(Loan loan, Money disbursedAmount) {
+        // Validate input parameters
+        if (loan == null || disbursedAmount == null) {
+            log.warn("Loan or disbursed amount is null, skipping line of credit balance update");
+            return;
+        }
+
+        // Check if loan has a line of credit ID
+        Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
+        if (lineOfCreditId == null) {
+            return; // No line of credit linked to this loan
+        }
+
         try {
-            // Check if loan has a line of credit ID
-            Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
-            if (lineOfCreditId == null) {
-                return; // No line of credit linked to this loan
-            }
 
             // Check if the loan product has LOC enabled
             boolean isLocEnabled = getLocEnableField(loan.getLoanProduct().getId());
@@ -617,10 +625,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             logLineOfCreditTransaction(lineOfCreditId, "LOAN_DISBURSEMENT", amount, 
                                      "Loan disbursement for loan ID: " + loan.getId());
 
+        } catch (PlatformApiDataValidationException e) {
+            // Re-throw validation exceptions as-is
+            throw e;
+        } catch (DataAccessException e) {
+            log.error("Database error updating line of credit balances for loan disbursement", e);
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.database.error",
+                "Database error occurred while updating line of credit balances", "lineOfCreditId", lineOfCreditId);
         } catch (Exception e) {
-            log.error("Error updating line of credit balances for loan disbursement", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed",
-                "Failed to update line of credit balances: " + e.getMessage());
+            log.error("Unexpected error updating line of credit balances for loan disbursement", e);
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.unexpected.error",
+                "An unexpected error occurred while updating line of credit balances", "lineOfCreditId", lineOfCreditId);
         }
     }
 
@@ -643,8 +658,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     "NOW(), ?, NOW(), ? " +
                     "FROM m_line_of_credit WHERE id = ?";
         
+        // Get current user ID safely using protected method from parent class
+        Long currentUserId = null;
+        try {
+            AppUser currentUser = getAppUserIfPresent();
+            currentUserId = currentUser != null ? currentUser.getId() : null;
+        } catch (Exception e) {
+            log.warn("Could not get current user for line of credit transaction logging", e);
+            currentUserId = null;
+        }
+        
         jdbcTemplate.update(sql, lineOfCreditId, transactionType, amount, amount, description, 
-                          getAppUserIfPresent().getId(), lineOfCreditId);
+                          currentUserId, lineOfCreditId);
     }
 
     @Override
