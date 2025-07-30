@@ -3,8 +3,7 @@ WITH pending_installments
          as (select *
              from m_loan_repayment_schedule
              where loan_id = :loanId
-               and duedate <= :now
-             order by duedate desc),
+               and duedate <= :now),
      aggregated_balances
          as (select loan_id,
                     sum(coalesce(principal_amount, 0))                   as principal,
@@ -75,8 +74,6 @@ WITH pending_installments
 SELECT (CASE
             WHEN coalesce(lt.max_date, DATE '1970-01-01') > eus.due_date THEN lt.max_date
             ELSE eus.due_date END)                   as transactionDate_date,
-    eus.due_date as eusDueDate_date,
-    eus.principal_due as eusPrincipal_decimal,
        coalesce(ls.principal_due, eus.principal_due) as principalDue_decimal,
        coalesce(ls.interest_due, eus.interest_due)   as interestDue_decimal,
        coalesce(ls.fee_due, eus.fees_due)            as feeDue_decimal,
