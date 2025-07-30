@@ -3,6 +3,14 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
+import java.util.Collections;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.List;
+import java.util.Map;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
@@ -544,10 +552,33 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
     }
 
+    private void updateLineOfCreditField(Long loanId, JsonCommand command) {
+        if (command.parameterExists("lineOfCreditId")) {
+            Long lineOfCreditId = command.longValueOfParameterNamed("lineOfCreditId");
+            
+            // Validate that the line of credit exists if provided
+            if (lineOfCreditId != null && !lineOfCreditExists(lineOfCreditId)) {
+                throw new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", 
+                    "Line of Credit with ID " + lineOfCreditId + " does not exist", "lineOfCreditId", lineOfCreditId);
+            }
+            
+            String sql = "UPDATE m_loan SET line_of_credit_id = ? WHERE id = ?";
+            jdbcTemplate.update(sql, lineOfCreditId, loanId);
+        }
+    }
+
+    private boolean lineOfCreditExists(Long lineOfCreditId) {
+        String sql = "SELECT COUNT(*) FROM m_line_of_credit WHERE id = ?";
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
+        return count != null && count > 0;
+    }
+
     @Override
     @Transactional
     public CommandProcessingResult forecloseLoan(Long loanId, JsonCommand command) {
-
+        // Handle line of credit field if provided
+        updateLineOfCreditField(loanId, command);
+        
         final Boolean isForcedClosure = command.booleanObjectValueOfParameterNamed("isForcedClosure");
         final Boolean isRestructured = command.booleanObjectValueOfParameterNamed("isRestructured");
 
