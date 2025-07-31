@@ -112,6 +112,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 
 @Slf4j
 @Service
@@ -719,6 +721,128 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         return result;
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult makeLoanRepayment(final LoanTransactionType repaymentTransactionType, final Long loanId,
+            final JsonCommand command, final boolean isRecoveryRepayment) {
+        final String chargeRefundChargeType = null;
+        return makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                chargeRefundChargeType);
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
+            final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+
+        this.loanUtilService.validateRepaymentTransactionType(repaymentTransactionType);
+        this.loanTransactionValidator.validateNewRepaymentTransaction(command.json());
+
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        final BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+        final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
+
+        final Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("transactionDate", command.stringValueOfParameterNamed("transactionDate"));
+        changes.put("transactionAmount", command.stringValueOfParameterNamed("transactionAmount"));
+        changes.put("locale", command.locale());
+        changes.put("dateFormat", command.dateFormat());
+        changes.put("paymentTypeId", command.longValueOfParameterNamed("paymentTypeId"));
+
+        final String noteText = command.stringValueOfParameterNamed("note");
+        if (StringUtils.isNotBlank(noteText)) {
+            changes.put("note", noteText);
+        }
+        if (!txnExternalId.isEmpty()) {
+            changes.put(LoanApiConstants.externalIdParameterName, txnExternalId);
+        }
+        Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final PaymentDetail paymentDetail = this.paymentDetailWritePlatformService.createAndPersistPaymentDetail(command, changes);
+        final Boolean isHolidayValidationDone = false;
+        final HolidayDetailDTO holidayDetailDto = null;
+        boolean isAccountTransfer = false;
+
+        LoanTransaction loanTransaction = this.loanAccountDomainService.makeRepayment(repaymentTransactionType, loan, transactionDate,
+                transactionAmount, paymentDetail, noteText, txnExternalId, isRecoveryRepayment, chargeRefundChargeType, isAccountTransfer,
+                holidayDetailDto, isHolidayValidationDone);
+        loan = loanTransaction.getLoan();
+        this.loanAccountDomainService.updateAndSaveLoanCollateralTransactionsForIndividualAccounts(loan, loanTransaction);
+
+        // Update line of credit balances if loan is linked to a line of credit and product has LOC enabled
+        updateLineOfCreditBalancesOnRepayment(loan, Money.of(loan.getCurrency(), transactionAmount), loanTransaction);
+
+        return new CommandProcessingResultBuilder().withCommandId(command.commandId()) //
+                .withLoanId(loan.getId()) //
+                .withEntityId(loanTransaction.getId()) //
+                .withEntityExternalId(loanTransaction.getExternalId()) //
+                .withOfficeId(loan.getOfficeId()) //
+                .withClientId(loan.getClientId()) //
+                .withGroupId(loan.getGroupId()) //
+                .with(changes) //
+                .build();
+    }
+
+    private void updateLineOfCreditBalancesOnRepayment(Loan loan, Money repaymentAmount, LoanTransaction loanTransaction) {
+        // Validate input parameters
+        if (loan == null || repaymentAmount == null || loanTransaction == null) {
+            log.warn("Loan, repayment amount, or loan transaction is null, skipping line of credit balance update");
+            return;
+        }
+
+        // Check if loan has a line of credit ID
+        Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
+        if (lineOfCreditId == null) {
+            return; // No line of credit linked to this loan
+        }
+
+        try {
+            // Check if the loan product has LOC enabled
+            boolean isLocEnabled = getLocEnableField(loan.getLoanProduct().getId());
+            if (!isLocEnabled) {
+                return; // Product doesn't have LOC enabled
+            }
+
+            // Update the line of credit balances - increase available balance by repayment amount
+            BigDecimal amount = repaymentAmount.getAmount();
+            String sql = "UPDATE m_line_of_credit SET " +
+                        "available_balance = available_balance + ?, " +
+                        "consumed_amount = consumed_amount - ? " +
+                        "WHERE id = ? AND consumed_amount >= ?";
+
+            int updatedRows = jdbcTemplate.update(sql, amount, amount, lineOfCreditId, amount);
+            
+            if (updatedRows == 0) {
+                // Check if it's because of insufficient consumed amount
+                String checkSql = "SELECT consumed_amount FROM m_line_of_credit WHERE id = ?";
+                BigDecimal consumedAmount = jdbcTemplate.queryForObject(checkSql, BigDecimal.class, lineOfCreditId);
+                
+                if (consumedAmount != null && consumedAmount.compareTo(amount) < 0) {
+                    log.warn("Repayment amount {} exceeds consumed amount {} for line of credit ID {}", 
+                            amount, consumedAmount, lineOfCreditId);
+                    // Adjust the amount to the consumed amount to avoid negative values
+                    amount = consumedAmount;
+                    if (amount.compareTo(BigDecimal.ZERO) > 0) {
+                        jdbcTemplate.update(sql, amount, amount, lineOfCreditId, amount);
+                    }
+                }
+            }
+
+            // Log the transaction
+            logLineOfCreditTransaction(lineOfCreditId, "LOAN_REPAYMENT", amount, 
+                                     "Loan repayment for loan ID: " + loan.getId() + 
+                                     ", Transaction ID: " + loanTransaction.getId());
+
+        } catch (DataAccessException e) {
+            log.error("Database error updating line of credit balances for loan repayment", e);
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.database.error",
+                "Database error occurred while updating line of credit balances", "lineOfCreditId", lineOfCreditId);
+        } catch (Exception e) {
+            log.error("Unexpected error updating line of credit balances for loan repayment", e);
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.unexpected.error",
+                "An unexpected error occurred while updating line of credit balances", "lineOfCreditId", lineOfCreditId);
+        }
     }
 
 }
