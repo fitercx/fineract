@@ -22,10 +22,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import com.google.gson.JsonElement;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformServiceUnavailableException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
@@ -280,11 +283,45 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
     private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount) {
         try {
-            // Construct the JsonCommand object
-            String jsonCommandString = String.format("{\"transactionAmount\":%s}", transactionAmount);
-            JsonElement parsedCommand = this.fromApiJsonHelper.parse(jsonCommandString);
+            // Format current date in the required format (dd MMMM yyyy)
+            String formattedDate = DateUtils.getBusinessLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy"));
+
+            // Construct the request part of the webhook payload
+            // Only this payload will go under "request" in final JSON
+            Map<String, Object> requestMap = new HashMap<>();
+            requestMap.put("note", "");
+            requestMap.put("paymentTypeId", "");
+            requestMap.put("dateFormat", "dd MMMM yyyy");
+            requestMap.put("transactionAmount", transactionAmount);
+            requestMap.put("externalId", "");
+            requestMap.put("locale", "en");
+            requestMap.put("transactionDate", formattedDate);
+
+            // Construct the response part of the webhook payload
+            Map<String, Object> changes = new HashMap<>();
+            changes.put("dateFormat", "dd MMMM yyyy");
+            changes.put("transactionAmount", transactionAmount.toString());
+            changes.put("locale", "en");
+            changes.put("transactionDate", formattedDate);
+
+
+            // Get client ID from the toClient object if available
+            Long clientId = (data.getToClient() != null) ? data.getToClient().getId() : 0L;
+            // Get office ID from the toOffice field or from toClient
+            Long officeId = 1L; // Default
+            if (data.getToClient() != null && data.getToClient().getOfficeId() != null) {
+                officeId = data.getToClient().getOfficeId();
+            }
+
+
+            // Convert the map to JSON string using Gson
+            String jsonCommandString = new com.google.gson.Gson().toJson(requestMap);
             
-            // Use JsonCommand.from() instead of fromExistingCommand()
+            JsonElement parsedCommand = this.fromApiJsonHelper.parse(jsonCommandString);
+
+            // Use JsonCommand.from() with complete payload
+            Long commandClientId = (data.getToClient() != null) ? data.getToClient().getId() : null;
+            
             JsonCommand command = JsonCommand.from(
                     jsonCommandString, 
                     parsedCommand, 
@@ -293,7 +330,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     data.getToAccount().getId(), 
                     null, // subresourceId
                     null, // groupId
-                    null, // clientId
+                    commandClientId, // clientId
                     data.getToAccount().getId(), // loanId
                     null, // savingsId
                     null, // transactionId
@@ -301,14 +338,36 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     null, // productId
                     null, // creditBureauId
                     null, // organisationCreditBureauId
-                    null, // jobName
+                    "ExecuteStandingInstructions", // jobName
                     ExternalId.empty() // loanExternalId
             );
 
-            Object result = null; // Construct the result object as needed
+            final Long loanId = data.getToAccount().getId();
+            CommandProcessingResult result = CommandProcessingResult.fromDetails(
+                    null, // commandId
+                    officeId,
+                    null, // groupId
+                    clientId,
+                    loanId, // loanId,
+                    null, // savingsId
+                    loanId.toString(), // resourceIdentifier
+                    loanId,
+                    null, // gsimId
+                    null, // glimId
+                    null, // creditBureauReportData
+                    null, // transactionId
+                    changes,
+                    null, // productId
+                    null, // rollbackTransaction
+                    null, // subResourceId
+                    ExternalId.empty(), // resourceExternalId
+                    ExternalId.empty(), // subResourceExternalId
+                    ExternalId.empty()  // loanExternalId
+            );
 
+            // Pass the full command as the result object as well to match UI webhook structure
             customCommandProcessingService.publishHookEvent("LOAN", "REPAYMENT", command, result);
-            log.info("Repayment webhook triggered for standing instruction ID: {}", data.getId());
+            log.info("Repayment webhook triggered for standing instruction ID: {} with amount {}", data.getId(), transactionAmount);
         } catch (Exception e) {
             log.error("Failed to trigger repayment webhook for standing instruction ID: {}", data.getId(), e);
         }
