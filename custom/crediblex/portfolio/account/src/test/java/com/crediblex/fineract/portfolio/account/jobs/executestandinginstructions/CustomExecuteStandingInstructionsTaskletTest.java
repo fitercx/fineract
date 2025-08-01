@@ -29,8 +29,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
@@ -66,6 +69,8 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private CustomExecuteStandingInstructionsTasklet tasklet;
     private PlatformTransactionManager platformTransactionManager;
     private SavingsAccountAssembler savingsAccountAssembler;
+    private CustomCommandProcessingService customCommandProcessingService;
+    private FromJsonHelper fromApiJsonHelper;
 
     @BeforeEach
     void setUp() {
@@ -82,7 +87,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         when(sqlGenerator.escape(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager);
+                accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService, fromApiJsonHelper);
     }
 
     @Test

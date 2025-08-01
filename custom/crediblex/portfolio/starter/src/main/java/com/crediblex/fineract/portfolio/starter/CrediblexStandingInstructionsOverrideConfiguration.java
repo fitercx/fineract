@@ -19,6 +19,8 @@
 package com.crediblex.fineract.portfolio.starter;
 
 import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions.CustomExecuteStandingInstructionsTasklet;
+import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
@@ -31,11 +33,18 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
+
 @Configuration
 public class CrediblexStandingInstructionsOverrideConfiguration {
 
     @Autowired
     private SavingsAccountAssembler savingsAccountAssembler;
+
+    @Autowired
+    private CustomCommandProcessingService customCommandProcessingService;
+
+    @Autowired
+    private FromJsonHelper fromApiJsonHelper;
 
     @Bean
     @Primary
@@ -45,6 +54,6 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
             PlatformTransactionManager transactionManager) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager);
+                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService, fromApiJsonHelper);
     }
 }

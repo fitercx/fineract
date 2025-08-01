@@ -20,14 +20,16 @@ package com.crediblex.fineract.portfolio.account.jobs.executestandinginstruction
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.google.gson.JsonElement;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformServiceUnavailableException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
@@ -53,6 +55,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 
 @Slf4j
 public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet {
@@ -63,11 +66,13 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final SavingsAccountAssembler savingsAccountAssembler;
     private final PlatformTransactionManager transactionManager;
+    private final CustomCommandProcessingService customCommandProcessingService;
+    private final FromJsonHelper fromApiJsonHelper;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, FromJsonHelper fromApiJsonHelper) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -76,6 +81,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
         this.transactionManager = transactionManager;
         this.savingsAccountAssembler = savingsAccountAssembler;
+        this.customCommandProcessingService = customCommandProcessingService;
+        this.fromApiJsonHelper = fromApiJsonHelper;
     }
 
     @Override
@@ -156,6 +163,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                         } else {
                             failureCount.getAndIncrement();
                         }
+                        // Trigger repayment webhook after successful transfer
+                        triggerRepaymentWebhook(data, finalTransactionAmount);
                         return null;
                     });
                     log.debug("Successfully processed standing instruction {} for amount {}", data.getId(), transactionAmount);
@@ -267,5 +276,41 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     public BigDecimal getAvailableBalance(Long savingsAccountId) {
         SavingsAccount account = savingsAccountAssembler.assembleFrom(savingsAccountId, false);
         return account.getWithdrawableBalance();
+    }
+
+    private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount) {
+        try {
+            // Construct the JsonCommand object
+            String jsonCommandString = String.format("{\"transactionAmount\":%s}", transactionAmount);
+            JsonElement parsedCommand = this.fromApiJsonHelper.parse(jsonCommandString);
+            
+            // Use JsonCommand.from() instead of fromExistingCommand()
+            JsonCommand command = JsonCommand.from(
+                    jsonCommandString, 
+                    parsedCommand, 
+                    fromApiJsonHelper,
+                    "LOAN", 
+                    data.getToAccount().getId(), 
+                    null, // subresourceId
+                    null, // groupId
+                    null, // clientId
+                    data.getToAccount().getId(), // loanId
+                    null, // savingsId
+                    null, // transactionId
+                    null, // url
+                    null, // productId
+                    null, // creditBureauId
+                    null, // organisationCreditBureauId
+                    null, // jobName
+                    ExternalId.empty() // loanExternalId
+            );
+
+            Object result = null; // Construct the result object as needed
+
+            customCommandProcessingService.publishHookEvent("LOAN", "REPAYMENT", command, result);
+            log.info("Repayment webhook triggered for standing instruction ID: {}", data.getId());
+        } catch (Exception e) {
+            log.error("Failed to trigger repayment webhook for standing instruction ID: {}", data.getId(), e);
+        }
     }
 }
