@@ -20,14 +20,19 @@ package com.crediblex.fineract.portfolio.account.jobs.executestandinginstruction
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.google.gson.JsonElement;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformServiceUnavailableException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
@@ -53,6 +58,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 
 @Slf4j
 public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet {
@@ -63,11 +69,13 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final SavingsAccountAssembler savingsAccountAssembler;
     private final PlatformTransactionManager transactionManager;
+    private final CustomCommandProcessingService customCommandProcessingService;
+    private final FromJsonHelper fromApiJsonHelper;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, FromJsonHelper fromApiJsonHelper) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -76,6 +84,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
         this.transactionManager = transactionManager;
         this.savingsAccountAssembler = savingsAccountAssembler;
+        this.customCommandProcessingService = customCommandProcessingService;
+        this.fromApiJsonHelper = fromApiJsonHelper;
     }
 
     @Override
@@ -156,6 +166,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                         } else {
                             failureCount.getAndIncrement();
                         }
+                        // Trigger repayment webhook after successful transfer
+                        triggerRepaymentWebhook(data, finalTransactionAmount);
                         return null;
                     });
                     log.debug("Successfully processed standing instruction {} for amount {}", data.getId(), transactionAmount);
@@ -267,5 +279,97 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     public BigDecimal getAvailableBalance(Long savingsAccountId) {
         SavingsAccount account = savingsAccountAssembler.assembleFrom(savingsAccountId, false);
         return account.getWithdrawableBalance();
+    }
+
+    private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount) {
+        try {
+            // Format current date in the required format (dd MMMM yyyy)
+            String formattedDate = DateUtils.getBusinessLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy"));
+
+            // Construct the request part of the webhook payload
+            // Only this payload will go under "request" in final JSON
+            Map<String, Object> requestMap = new HashMap<>();
+            requestMap.put("note", "");
+            requestMap.put("paymentTypeId", "");
+            requestMap.put("dateFormat", "dd MMMM yyyy");
+            requestMap.put("transactionAmount", transactionAmount);
+            requestMap.put("externalId", "");
+            requestMap.put("locale", "en");
+            requestMap.put("transactionDate", formattedDate);
+
+            // Construct the response part of the webhook payload
+            Map<String, Object> changes = new HashMap<>();
+            changes.put("dateFormat", "dd MMMM yyyy");
+            changes.put("transactionAmount", transactionAmount.toString());
+            changes.put("locale", "en");
+            changes.put("transactionDate", formattedDate);
+
+
+            // Get client ID from the toClient object if available
+            Long clientId = (data.getToClient() != null) ? data.getToClient().getId() : 0L;
+            // Get office ID from the toOffice field or from toClient
+            Long officeId = 1L; // Default
+            if (data.getToClient() != null && data.getToClient().getOfficeId() != null) {
+                officeId = data.getToClient().getOfficeId();
+            }
+
+
+            // Convert the map to JSON string using Gson
+            String jsonCommandString = new com.google.gson.Gson().toJson(requestMap);
+            
+            JsonElement parsedCommand = this.fromApiJsonHelper.parse(jsonCommandString);
+
+            // Use JsonCommand.from() with complete payload
+            Long commandClientId = (data.getToClient() != null) ? data.getToClient().getId() : null;
+            
+            JsonCommand command = JsonCommand.from(
+                    jsonCommandString, 
+                    parsedCommand, 
+                    fromApiJsonHelper,
+                    "LOAN", 
+                    data.getToAccount().getId(), 
+                    null, // subresourceId
+                    null, // groupId
+                    commandClientId, // clientId
+                    data.getToAccount().getId(), // loanId
+                    null, // savingsId
+                    null, // transactionId
+                    null, // url
+                    null, // productId
+                    null, // creditBureauId
+                    null, // organisationCreditBureauId
+                    "ExecuteStandingInstructions", // jobName
+                    ExternalId.empty() // loanExternalId
+            );
+
+            final Long loanId = data.getToAccount().getId();
+            CommandProcessingResult result = CommandProcessingResult.fromDetails(
+                    null, // commandId
+                    officeId,
+                    null, // groupId
+                    clientId,
+                    loanId, // loanId,
+                    null, // savingsId
+                    loanId.toString(), // resourceIdentifier
+                    loanId,
+                    null, // gsimId
+                    null, // glimId
+                    null, // creditBureauReportData
+                    null, // transactionId
+                    changes,
+                    null, // productId
+                    null, // rollbackTransaction
+                    null, // subResourceId
+                    ExternalId.empty(), // resourceExternalId
+                    ExternalId.empty(), // subResourceExternalId
+                    ExternalId.empty()  // loanExternalId
+            );
+
+            // Pass the full command as the result object as well to match UI webhook structure
+            customCommandProcessingService.publishHookEvent("LOAN", "REPAYMENT", command, result);
+            log.info("Repayment webhook triggered for standing instruction ID: {} with amount {}", data.getId(), transactionAmount);
+        } catch (Exception e) {
+            log.error("Failed to trigger repayment webhook for standing instruction ID: {}", data.getId(), e);
+        }
     }
 }
