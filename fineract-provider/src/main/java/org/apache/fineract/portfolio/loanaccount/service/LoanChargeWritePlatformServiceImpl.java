@@ -902,7 +902,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     }
 
     protected LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,
-                                                    final LocalDate transactionDate, final ExternalId txnExternalId, PaymentDetail paymentDetail) {
+            final LocalDate transactionDate, final ExternalId txnExternalId, PaymentDetail paymentDetail) {
         businessEventNotifierService.notifyPreBusinessEvent(new LoanChargeAdjustmentPreBusinessEvent(loan));
         final List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
         final List<Long> existingReversedTransactionIds = new ArrayList<>(loan.findExistingReversedTransactionIds());
@@ -1301,7 +1301,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     }
 
     protected void postJournalEntries(final Loan loan, final List<Long> existingTransactionIds,
-                                      final List<Long> existingReversedTransactionIds) {
+            final List<Long> existingReversedTransactionIds) {
 
         final MonetaryCurrency currency = loan.getCurrency();
         boolean isAccountTransfer = false;
