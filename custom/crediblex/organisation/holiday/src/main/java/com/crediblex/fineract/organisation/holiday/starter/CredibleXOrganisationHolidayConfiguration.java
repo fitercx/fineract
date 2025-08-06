@@ -19,6 +19,7 @@
 package com.crediblex.fineract.organisation.holiday.starter;
 
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
+import org.apache.fineract.infrastructure.core.config.TaskExecutorConstant;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.data.HolidayDataValidator;
@@ -31,9 +32,12 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplica
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Autoconfiguration for CredibleX Organisation Holiday module.
@@ -47,9 +51,12 @@ public class CredibleXOrganisationHolidayConfiguration {
             HolidayRepositoryWrapper holidayRepository, PlatformSecurityContext context, OfficeRepositoryWrapper officeRepositoryWrapper,
             FromJsonHelper fromApiJsonHelper, WorkingDaysRepositoryWrapper daysRepositoryWrapper,
             LoanRepositoryWrapper loanRepositoryWrapper, LoanScheduleService loanScheduleService, LoanUtilService loanUtilService,
-            ConfigurationDomainService configurationDomainService, LoanTermVariationsMapper loanTermVariationsMapper) {
+            ConfigurationDomainService configurationDomainService, LoanTermVariationsMapper loanTermVariationsMapper,
+            @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME) ThreadPoolTaskExecutor taskExecutor,
+            TransactionTemplate transactionTemplate) {
         return new com.crediblex.fineract.organisation.holiday.service.CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(
                 fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper,
-                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService, loanTermVariationsMapper);
+                loanRepositoryWrapper, loanScheduleService, loanUtilService, configurationDomainService, loanTermVariationsMapper,
+                taskExecutor, transactionTemplate);
     }
 }

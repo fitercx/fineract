@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -26,11 +26,16 @@ import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.n
 import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.officesParamName;
 import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.repaymentsRescheduledToParamName;
 import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.toDateParamName;
+import static org.apache.fineract.infrastructure.core.service.DateUtils.isDateWithinRange;
 
 import com.google.gson.JsonArray;
+
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -41,6 +46,10 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
+import org.apache.fineract.infrastructure.core.domain.FineractContext;
+import org.apache.fineract.infrastructure.core.config.TaskExecutorConstant;
+import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.api.HolidayApiConstants;
 import org.apache.fineract.organisation.holiday.data.HolidayDataValidator;
@@ -65,10 +74,13 @@ import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.jpa.JpaSystemException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * CredibleX implementation of {@link HolidayWritePlatformServiceJpaRepositoryImpl} that allows editing active holidays
@@ -90,14 +102,18 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     private final ConfigurationDomainService configurationDomainService;
     private final LoanTermVariationsMapper loanTermVariationsMapper;
 
+    @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME)
+    private final ThreadPoolTaskExecutor taskExecutor;
+    private final TransactionTemplate transactionTemplate;
+
     @Autowired
     public CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(HolidayDataValidator fromApiJsonDeserializer,
-            HolidayRepositoryWrapper holidayRepository, WorkingDaysRepositoryWrapper daysRepositoryWrapper, PlatformSecurityContext context,
-            OfficeRepositoryWrapper officeRepositoryWrapper, FromJsonHelper fromApiJsonHelper, LoanRepositoryWrapper loanRepositoryWrapper,
-            LoanScheduleService loanScheduleService, LoanUtilService loanUtilService,
-            ConfigurationDomainService configurationDomainService, LoanTermVariationsMapper loanTermVariationsMapper) {
+                                                                 HolidayRepositoryWrapper holidayRepository, WorkingDaysRepositoryWrapper daysRepositoryWrapper, PlatformSecurityContext context,
+                                                                 OfficeRepositoryWrapper officeRepositoryWrapper, FromJsonHelper fromApiJsonHelper, LoanRepositoryWrapper loanRepositoryWrapper,
+                                                                 LoanScheduleService loanScheduleService, LoanUtilService loanUtilService,
+                                                                 ConfigurationDomainService configurationDomainService, LoanTermVariationsMapper loanTermVariationsMapper,
+                                                                 ThreadPoolTaskExecutor taskExecutor, TransactionTemplate transactionTemplate) {
         super(fromApiJsonDeserializer, holidayRepository, daysRepositoryWrapper, context, officeRepositoryWrapper, fromApiJsonHelper);
-        log.info("CredibleX: Custom holiday service initialized successfully");
         this.fromApiJsonDeserializer = fromApiJsonDeserializer;
         this.holidayRepository = holidayRepository;
         this.daysRepositoryWrapper = daysRepositoryWrapper;
@@ -109,13 +125,13 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         this.loanUtilService = loanUtilService;
         this.configurationDomainService = configurationDomainService;
         this.loanTermVariationsMapper = loanTermVariationsMapper;
+        this.taskExecutor = taskExecutor;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Transactional
     @Override
     public CommandProcessingResult updateHoliday(final JsonCommand command) {
-        log.info("CredibleX: Updating holiday with custom implementation - allowing active holiday edits for holiday ID: {}",
-                command.entityId());
         try {
             this.context.authenticatedUser();
 
@@ -125,10 +141,10 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
             final LocalDate originalFromDate = holiday.getFromDate();
             final LocalDate originalToDate = holiday.getToDate();
 
+            validateInputDates(holiday.getFromDate(), holiday.getToDate(), holiday.getRepaymentsRescheduledTo());
+
             // Custom update logic that bypasses the active state restriction
             Map<String, Object> changes = updateHolidayBypassingActiveStateRestriction(holiday, command);
-
-            validateInputDates(holiday.getFromDate(), holiday.getToDate(), holiday.getRepaymentsRescheduledTo());
 
             // Handle office updates directly without calling the original holiday.update(offices) method
             if (changes.containsKey(officesParamName)) {
@@ -143,100 +159,310 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                 this.holidayRepository.saveAndFlush(holiday);
 
                 // Recalculate schedules for affected loans
-                recalculateAffectedLoanSchedules(holiday, originalFromDate, originalToDate, changes);
+                try {
+                    recalculateAffectedLoanSchedules(holiday, originalFromDate, originalToDate, changes);
+                } catch (JobExecutionException e) {
+                    log.error("Failed to recalculate loan schedules due to holiday changes", e);
+                    // Continue with the holiday update even if loan recalculation fails
+                    // The error is logged but doesn't prevent the holiday from being updated
+                }
             }
 
             return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(holiday.getId()).with(changes)
                     .build();
         } catch (final JpaSystemException | DataIntegrityViolationException dve) {
             final Throwable throwable = ExceptionUtils.getRootCause(dve.getCause());
-            log.error("CredibleX: Error updating holiday: {}", throwable.getMessage());
             throw new PlatformDataIntegrityException("error.msg.holiday.unknown.data.integrity.issue",
                     "Unknown data integrity issue with resource: " + throwable.getMessage(), dve);
         }
     }
 
     /**
-     * Recalculate schedules for loans affected by holiday date changes
+     * Recalculate schedules for loans affected by holiday date changes using pagination and threading
      */
     private void recalculateAffectedLoanSchedules(Holiday holiday, LocalDate originalFromDate, LocalDate originalToDate,
-            Map<String, Object> changes) {
+                                                  Map<String, Object> changes) throws JobExecutionException {
 
-        // Check if holiday dates were changed
+        // Check if holiday dates or reschedule date were changed
         boolean fromDateChanged = changes.containsKey(fromDateParamName);
         boolean toDateChanged = changes.containsKey(toDateParamName);
+        boolean repaymentsRescheduledToChanged = changes.containsKey(repaymentsRescheduledToParamName);
 
-        if (!fromDateChanged && !toDateChanged) {
-            log.info("CredibleX: No date changes detected, skipping loan schedule recalculation");
+        if (!fromDateChanged && !toDateChanged && !repaymentsRescheduledToChanged) {
             return;
         }
 
-        log.info("CredibleX: Holiday dates changed - recalculating affected loan schedules. Original: {} to {}, New: {} to {}",
-                originalFromDate, originalToDate, holiday.getFromDate(), holiday.getToDate());
+        // Get the new holiday dates
+        LocalDate newFromDate = holiday.getFromDate();
+        LocalDate newToDate = holiday.getToDate();
 
-        // Get all affected loans (both old and new date ranges)
-        Set<Loan> affectedLoans = new HashSet<>();
-
-        // Find loans affected by original dates
+        // Process loans affected by either the original or new holiday date ranges
+        // This ensures we catch all loans that might be affected by the change
+        Set<Office> offices = holiday.getOffices();
+        
+        // First, process loans affected by the original date range
         if (fromDateChanged || toDateChanged) {
-            affectedLoans.addAll(findLoansAffectedByHolidayDates(holiday.getOffices(), originalFromDate, originalToDate));
+            processAffectedLoansWithPagination(offices, originalFromDate, originalToDate, holiday);
         }
-
-        // Find loans affected by new dates
-        affectedLoans.addAll(findLoansAffectedByHolidayDates(holiday.getOffices(), holiday.getFromDate(), holiday.getToDate()));
-
-        log.info("CredibleX: Found {} loans affected by holiday date changes", affectedLoans.size());
-
-        // Recalculate schedules for affected loans
-        for (Loan loan : affectedLoans) {
-            try {
-                recalculateLoanSchedule(loan);
-                log.info("CredibleX: Successfully recalculated schedule for loan ID: {}", loan.getId());
-            } catch (Exception e) {
-                log.error("CredibleX: Error recalculating schedule for loan ID: {} - {}", loan.getId(), e.getMessage(), e);
-            }
+        
+        // Then, process loans affected by the new date range (if different)
+        if ((fromDateChanged || toDateChanged) && 
+            (!originalFromDate.equals(newFromDate) || !originalToDate.equals(newToDate))) {
+            processAffectedLoansWithPagination(offices, newFromDate, newToDate, holiday);
+        }
+        
+        // If only the reschedule date changed, process loans affected by the holiday date range
+        if (repaymentsRescheduledToChanged && !fromDateChanged && !toDateChanged) {
+            processAffectedLoansWithPagination(offices, newFromDate, newToDate, holiday);
         }
     }
 
     /**
-     * Find loans that are affected by the given holiday date range
+     * Process affected loans using pagination and threading to avoid memory issues and transaction deadlocks
      */
-    private List<Loan> findLoansAffectedByHolidayDates(Set<Office> offices, LocalDate fromDate, LocalDate toDate) {
+    private void processAffectedLoansWithPagination(Set<Office> offices, LocalDate fromDate, LocalDate toDate, Holiday holiday) throws JobExecutionException {
         if (offices == null || offices.isEmpty()) {
-            log.info("CredibleX: No offices found for holiday date range {}-{}", fromDate, toDate);
-            return new ArrayList<>();
+            return;
         }
 
+        // Configure thread pool for this operation
+        int threadPoolSize = 4; // Default thread pool size
+        int batchSize = 50; // Default batch size per thread
+        final int pageSize = batchSize * threadPoolSize;
+        
+        taskExecutor.setCorePoolSize(threadPoolSize);
+        taskExecutor.setMaxPoolSize(threadPoolSize);
+
+        Long maxLoanIdInList = 0L;
+        List<Long> loanIds = findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList);
+
+        do {
+            int totalFilteredRecords = loanIds.size();
+            log.debug("Starting holiday schedule recalculation - total filtered records - {}", totalFilteredRecords);
+            
+            if (!loanIds.isEmpty()) {
+                processLoanBatch(loanIds, threadPoolSize, fromDate, toDate, holiday);
+            }
+            
+            maxLoanIdInList += pageSize + 1;
+            loanIds = findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList);
+        } while (!loanIds.isEmpty());
+    }
+
+    /**
+     * Find loan IDs affected by holiday dates using pagination
+     */
+    private List<Long> findLoanIdsAffectedByHolidayDates(Set<Office> offices, LocalDate fromDate, LocalDate toDate, 
+                                                        Integer pageSize, Long maxLoanIdInList) {
+        return findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList, null);
+    }
+
+    /**
+     * Find loan IDs affected by holiday dates using pagination (with reschedule date for deletion)
+     */
+    private List<Long> findLoanIdsAffectedByHolidayDates(Set<Office> offices, LocalDate fromDate, LocalDate toDate, 
+                                                        Integer pageSize, Long maxLoanIdInList, LocalDate repaymentsRescheduledTo) {
         // Get office IDs
         Collection<Long> officeIds = new ArrayList<>();
         for (Office office : offices) {
             officeIds.add(office.getId());
         }
 
-        log.info("CredibleX: Looking for loans in offices {} for holiday date range {}-{}", officeIds, fromDate, toDate);
-
         // Define loan statuses to consider
         Collection<LoanStatus> loanStatuses = new ArrayList<>(
                 Arrays.asList(LoanStatus.SUBMITTED_AND_PENDING_APPROVAL, LoanStatus.APPROVED, LoanStatus.ACTIVE));
 
-        // Find loans by office
-        List<Loan> loans = new ArrayList<>();
-        loans.addAll(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(officeIds, loanStatuses));
-        loans.addAll(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(officeIds, loanStatuses));
+        // Find loans by office (using existing methods)
+        List<Loan> allLoans = new ArrayList<>();
+        allLoans.addAll(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(officeIds, loanStatuses));
+        allLoans.addAll(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(officeIds, loanStatuses));
 
-        log.info("CredibleX: Found {} total loans in offices {}", loans.size(), officeIds);
+        // Apply pagination manually since the repository methods don't support it
+        List<Loan> paginatedLoans = allLoans.stream()
+                .filter(loan -> loan.getId() > maxLoanIdInList)
+                .limit(pageSize)
+                .toList();
 
         // Filter loans that have repayment schedules overlapping with the holiday date range
-        List<Loan> affectedLoans = new ArrayList<>();
-        for (Loan loan : loans) {
-            if (hasRepaymentScheduleOverlapWithHoliday(loan, fromDate, toDate)) {
-                affectedLoans.add(loan);
-                log.info("CredibleX: Loan {} has repayment schedule overlap with holiday {}-{}", loan.getId(), fromDate, toDate);
+        List<Long> affectedLoanIds = new ArrayList<>();
+        for (Loan loan : paginatedLoans) {
+            boolean isAffected = false;
+            
+            if (repaymentsRescheduledTo != null) {
+                // For deletion, use the comprehensive check
+                isAffected = hasRepaymentScheduleAffectedByHolidayDeletion(loan, fromDate, toDate, repaymentsRescheduledTo);
+            } else {
+                // For updates, use the original check
+                isAffected = hasRepaymentScheduleOverlapWithHoliday(loan, fromDate, toDate);
+            }
+            
+            if (isAffected) {
+                affectedLoanIds.add(loan.getId());
             }
         }
 
-        log.info("CredibleX: Found {} loans with repayment schedule overlap", affectedLoans.size());
-        return affectedLoans;
+        return affectedLoanIds;
+    }
+
+    /**
+     * Check if a loan has repayment schedules that overlap with the holiday date range (by loan ID)
+     */
+    private boolean hasRepaymentScheduleOverlapWithHoliday(Long loanId, LocalDate holidayFromDate, LocalDate holidayToDate) {
+        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        return hasRepaymentScheduleOverlapWithHoliday(loan, holidayFromDate, holidayToDate);
+    }
+
+    /**
+     * Process a batch of loans using threading
+     */
+    private void processLoanBatch(List<Long> loanIds, int threadPoolSize, LocalDate fromDate, LocalDate toDate, Holiday holiday) throws JobExecutionException {
+        if (loanIds == null || loanIds.isEmpty()) {
+            return;
+        }
+
+        int actualBatchSize = (int) Math.ceil(loanIds.size() / (double) threadPoolSize);
+        List<List<Long>> batches = new ArrayList<>();
+        
+        for (int i = 0; i < loanIds.size(); i += actualBatchSize) {
+            int end = Math.min(i + actualBatchSize, loanIds.size());
+            batches.add(loanIds.subList(i, end));
+        }
+
+        List<Future<?>> loanTasks = new ArrayList<>();
+        FineractContext context = ThreadLocalContextUtil.getContext();
+
+        for (List<Long> batch : batches) {
+            if (!batch.isEmpty()) {
+                loanTasks.add(taskExecutor.submit(() -> {
+                    try {
+                        ThreadLocalContextUtil.init(context);
+                        for (Long loanId : batch) {
+                            transactionTemplate.executeWithoutResult(status -> {
+                                try {
+                                    log.debug("Applying holiday changes to loan '{}'", loanId);
+                                    Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+                                    applyHolidayChangesToLoan(loan, holiday);
+                                    log.debug("Successfully applied holiday changes to loan: '{}'", loanId);
+                                } catch (Exception e) {
+                                    log.error("Failed to recalculate schedule for loan {}", loanId, e);
+                                    throw new RuntimeException("Failed to recalculate schedule for loan " + loanId, e);
+                                }
+                            });
+                        }
+                    } finally {
+                        ThreadLocalContextUtil.reset();
+                    }
+                }));
+            }
+        }
+
+        // Wait for all tasks to complete
+        List<Throwable> errors = new ArrayList<>();
+        for (Future<?> task : loanTasks) {
+            try {
+                task.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                errors.add(e);
+            } catch (ExecutionException e) {
+                errors.add(e.getCause());
+            }
+        }
+        
+        if (!errors.isEmpty()) {
+            throw new JobExecutionException(errors);
+        }
+    }
+
+    /**
+     * Process affected loans for holiday deletion using pagination and threading
+     */
+    private void processAffectedLoansForDeletion(Set<Office> offices, LocalDate fromDate, LocalDate toDate, LocalDate repaymentsRescheduledTo) throws JobExecutionException {
+        if (offices == null || offices.isEmpty()) {
+            return;
+        }
+
+        // Configure thread pool for this operation
+        int threadPoolSize = 4;
+        int batchSize = 50;
+        final int pageSize = batchSize * threadPoolSize;
+        
+        taskExecutor.setCorePoolSize(threadPoolSize);
+        taskExecutor.setMaxPoolSize(threadPoolSize);
+
+        Long maxLoanIdInList = 0L;
+        List<Long> loanIds = findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList, repaymentsRescheduledTo);
+
+        do {
+            if (!loanIds.isEmpty()) {
+                processLoanBatchForHolidayDeletion(loanIds, threadPoolSize, fromDate, toDate, repaymentsRescheduledTo);
+            }
+            
+            maxLoanIdInList += pageSize + 1;
+            loanIds = findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList, repaymentsRescheduledTo);
+        } while (!loanIds.isEmpty());
+    }
+
+    /**
+     * Process a batch of loans for holiday deletion using threading
+     */
+    private void processLoanBatchForHolidayDeletion(List<Long> loanIds, int threadPoolSize, LocalDate fromDate, LocalDate toDate, LocalDate repaymentsRescheduledTo) throws JobExecutionException {
+        if (loanIds == null || loanIds.isEmpty()) {
+            return;
+        }
+
+        int actualBatchSize = (int) Math.ceil(loanIds.size() / (double) threadPoolSize);
+        List<List<Long>> batches = new ArrayList<>();
+        
+        for (int i = 0; i < loanIds.size(); i += actualBatchSize) {
+            int end = Math.min(i + actualBatchSize, loanIds.size());
+            batches.add(loanIds.subList(i, end));
+        }
+
+        List<Future<?>> loanTasks = new ArrayList<>();
+        FineractContext context = ThreadLocalContextUtil.getContext();
+
+        for (List<Long> batch : batches) {
+            if (!batch.isEmpty()) {
+                loanTasks.add(taskExecutor.submit(() -> {
+                    try {
+                        ThreadLocalContextUtil.init(context);
+                        for (Long loanId : batch) {
+                            transactionTemplate.executeWithoutResult(status -> {
+                                try {
+                                    Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+                                    int restoredForThisLoan = restoreInstallmentsDirectly(loan, fromDate, toDate, repaymentsRescheduledTo);
+                                    if (restoredForThisLoan > 0) {
+                                        loanRepositoryWrapper.saveAndFlush(loan);
+                                    }
+                                } catch (Exception e) {
+                                    throw new RuntimeException("Failed to process loan " + loanId + " for holiday deletion", e);
+                                }
+                            });
+                        }
+                    } finally {
+                        ThreadLocalContextUtil.reset();
+                    }
+                }));
+            }
+        }
+
+        // Wait for all tasks to complete
+        List<Throwable> errors = new ArrayList<>();
+        for (Future<?> task : loanTasks) {
+            try {
+                task.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                errors.add(e);
+            } catch (ExecutionException e) {
+                errors.add(e.getCause());
+            }
+        }
+        
+        if (!errors.isEmpty()) {
+            throw new JobExecutionException(errors);
+        }
     }
 
     /**
@@ -244,43 +470,197 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
      */
     private boolean hasRepaymentScheduleOverlapWithHoliday(Loan loan, LocalDate holidayFromDate, LocalDate holidayToDate) {
         if (loan.getRepaymentScheduleInstallments() == null) {
-            log.info("CredibleX: Loan {} has no repayment schedule installments", loan.getId());
             return false;
         }
 
-        log.info("CredibleX: Checking loan {} repayment schedule for overlap with holiday {}-{}", loan.getId(), holidayFromDate, holidayToDate);
-        
+        // Check if any installment has a due date that falls within the holiday period
         for (var installment : loan.getRepaymentScheduleInstallments()) {
             LocalDate dueDate = installment.getDueDate();
             if (dueDate != null && !dueDate.isBefore(holidayFromDate) && !dueDate.isAfter(holidayToDate)) {
-                log.info("CredibleX: Loan {} installment {} due date {} overlaps with holiday {}-{}", 
-                        loan.getId(), installment.getInstallmentNumber(), dueDate, holidayFromDate, holidayToDate);
-                return true;
+                // Only consider unpaid installments or installments that are not fully paid off
+                if (installment.isNotFullyPaidOff()) {
+                    return true;
+                }
             }
         }
 
-        log.info("CredibleX: Loan {} has no repayment schedule overlap with holiday {}-{}", loan.getId(), holidayFromDate, holidayToDate);
         return false;
     }
 
     /**
-     * Recalculate the schedule for a specific loan
+     * Check if a loan has repayment schedules that might be affected by holiday deletion
+     * This includes both loans with installments in the holiday date range and loans with installments
+     * on the reschedule date
      */
-    private void recalculateLoanSchedule(Loan loan) {
-        try {
-            // Build schedule generator DTO
-            var scheduleGeneratorDTO = loanUtilService.buildScheduleGeneratorDTO(loan, null);
+    private boolean hasRepaymentScheduleAffectedByHolidayDeletion(Loan loan, LocalDate holidayFromDate, LocalDate holidayToDate, LocalDate repaymentsRescheduledTo) {
+        if (loan.getRepaymentScheduleInstallments() == null) {
+            return false;
+        }
 
-            // Recalculate the schedule
-            loanScheduleService.recalculateSchedule(loan, scheduleGeneratorDTO);
+        for (var installment : loan.getRepaymentScheduleInstallments()) {
+            LocalDate dueDate = installment.getDueDate();
+            if (dueDate != null && installment.isNotFullyPaidOff()) {
+                
+                // Case 1: Installment due date is within the holiday period
+                if (!dueDate.isBefore(holidayFromDate) && !dueDate.isAfter(holidayToDate)) {
+                    return true;
+                }
+                
+                // Case 2: Installment due date matches the reschedule date
+                if (repaymentsRescheduledTo != null && dueDate.equals(repaymentsRescheduledTo)) {
+                    return true;
+                }
+                
+                // Case 3: For "reschedule to next repayment date" type, check if installment is after holiday
+                if (repaymentsRescheduledTo == null && dueDate.isAfter(holidayToDate)) {
+                    long daysDifference = ChronoUnit.DAYS.between(holidayToDate, dueDate);
+                    if (daysDifference <= 60) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Apply holiday changes directly to loan installments (similar to ApplyHolidaysToLoansTasklet)
+     */
+    private void applyHolidayChangesToLoan(Loan loan, Holiday holiday) {
+        try {
+            LocalDate adjustedRescheduleToDate = null;
+            boolean isResheduleToNextRepaymentDate = holiday.getReScheduleType().isResheduleToNextRepaymentDate();
+            
+            if (holiday.getReScheduleType().isResheduleToNextRepaymentDate()) {
+                adjustedRescheduleToDate = getNextRepaymentDate(loan, holiday);
+            } else {
+                adjustedRescheduleToDate = holiday.getRepaymentsRescheduledTo();
+            }
+
+            if (isRepaymentScheduleAdjustmentNeeded(adjustedRescheduleToDate)) {
+                if (isResheduleToNextRepaymentDate) {
+                    adjustAllRepaymentSchedules(loan, holiday, adjustedRescheduleToDate);
+                } else {
+                    adjustRepaymentSchedules(loan, holiday, adjustedRescheduleToDate);
+                }
+                log.debug("Applied holiday changes to loan: {}", loan.getId());
+            }
+
+            // Fix from dates to ensure consistency
+            fixFromDates(loan);
 
             // Save the loan
             loanRepositoryWrapper.saveAndFlush(loan);
 
         } catch (Exception e) {
-            log.error("CredibleX: Error recalculating schedule for loan {}: {}", loan.getId(), e.getMessage(), e);
+            log.error("Failed to apply holiday changes to loan: {}", loan.getId(), e);
             throw e;
         }
+    }
+
+    /**
+     * Check if repayment schedule adjustment is needed
+     */
+    private boolean isRepaymentScheduleAdjustmentNeeded(LocalDate adjustedRescheduleToDate) {
+        return adjustedRescheduleToDate != null;
+    }
+
+    /**
+     * Adjust repayment schedules for specific reschedule date type
+     */
+    private void adjustRepaymentSchedules(Loan loan, Holiday holiday, LocalDate adjustedRescheduleToDate) {
+        final DefaultScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
+        ScheduleGeneratorDTO scheduleGeneratorDTO = loanUtilService.buildScheduleGeneratorDTO(loan, holiday.getFromDate());
+        final LoanApplicationTerms loanApplicationTerms = loanTermVariationsMapper.constructLoanApplicationTerms(scheduleGeneratorDTO, loan);
+
+        // first repayment's from date is same as disbursement date.
+        LocalDate tmpFromDate = loan.getDisbursementDate();
+
+        // Loop through all loanRepayments
+        List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        for (final LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment : installments) {
+            final LocalDate oldDueDate = loanRepaymentScheduleInstallment.getDueDate();
+
+            // update from date if it's not same as previous installment's due date.
+            if (!DateUtils.isEqual(tmpFromDate, loanRepaymentScheduleInstallment.getFromDate())) {
+                loanRepaymentScheduleInstallment.updateFromDate(tmpFromDate);
+            }
+
+            if (isDateWithinRange(oldDueDate, holiday.getFromDate(), holiday.getToDate())) {
+                // Only adjust unpaid installments
+                if (loanRepaymentScheduleInstallment.isNotFullyPaidOff()) {
+                    adjustedRescheduleToDate = scheduledDateGenerator.generateNextRepaymentDateWhenHolidayApply(adjustedRescheduleToDate, loanApplicationTerms);
+                    loanRepaymentScheduleInstallment.updateDueDate(adjustedRescheduleToDate);
+                    log.debug("Updated installment {} due date from {} to {} for loan {}", 
+                             loanRepaymentScheduleInstallment.getInstallmentNumber(), oldDueDate, adjustedRescheduleToDate, loan.getId());
+                }
+            }
+            tmpFromDate = loanRepaymentScheduleInstallment.getDueDate();
+        }
+    }
+
+    /**
+     * Adjust all repayment schedules for "reschedule to next repayment date" type
+     */
+    private void adjustAllRepaymentSchedules(Loan loan, Holiday holiday, LocalDate adjustedRescheduleToDate) {
+        final DefaultScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
+        ScheduleGeneratorDTO scheduleGeneratorDTO = loanUtilService.buildScheduleGeneratorDTO(loan, holiday.getFromDate());
+        final LoanApplicationTerms loanApplicationTerms = loanTermVariationsMapper.constructLoanApplicationTerms(scheduleGeneratorDTO, loan);
+
+        // first repayment's from date is same as disbursement date.
+        LocalDate tmpFromDate = loan.getDisbursementDate();
+
+        // Loop through all loanRepayments
+        List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        for (final LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment : installments) {
+            final LocalDate oldDueDate = loanRepaymentScheduleInstallment.getDueDate();
+
+            // update from date if it's not same as previous installment's due date.
+            if (!DateUtils.isEqual(tmpFromDate, loanRepaymentScheduleInstallment.getFromDate())) {
+                loanRepaymentScheduleInstallment.updateFromDate(tmpFromDate);
+            }
+
+            if (!DateUtils.isBefore(oldDueDate, holiday.getFromDate())) {
+                // Only adjust unpaid installments
+                if (loanRepaymentScheduleInstallment.isNotFullyPaidOff()) {
+                    adjustedRescheduleToDate = scheduledDateGenerator.generateNextRepaymentDate(adjustedRescheduleToDate, loanApplicationTerms, false);
+                    loanRepaymentScheduleInstallment.updateDueDate(adjustedRescheduleToDate);
+                    log.debug("Updated installment {} due date from {} to {} for loan {}", 
+                             loanRepaymentScheduleInstallment.getInstallmentNumber(), oldDueDate, adjustedRescheduleToDate, loan.getId());
+                }
+            }
+            tmpFromDate = loanRepaymentScheduleInstallment.getDueDate();
+        }
+    }
+
+    /**
+     * Get next repayment date for "reschedule to next repayment date" type
+     */
+    private LocalDate getNextRepaymentDate(Loan loan, Holiday holiday) {
+        LocalDate adjustedRescheduleToDate = null;
+        final LocalDate rescheduleToDate = holiday.getToDate();
+        for (final LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment : loan.getRepaymentScheduleInstallments()) {
+            if (DateUtils.isEqual(rescheduleToDate, loanRepaymentScheduleInstallment.getDueDate())) {
+                adjustedRescheduleToDate = rescheduleToDate;
+                break;
+            } else {
+                adjustedRescheduleToDate = doStandardMonthlyCheck(adjustedRescheduleToDate, rescheduleToDate, loanRepaymentScheduleInstallment);
+            }
+        }
+        return adjustedRescheduleToDate;
+    }
+
+    /**
+     * Standard monthly check for next repayment date calculation
+     */
+    private LocalDate doStandardMonthlyCheck(LocalDate adjustedRescheduleToDate, LocalDate rescheduleToDate, LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment) {
+        // Standard Monthly Loan Holiday check
+        LocalDate dueDate = loanRepaymentScheduleInstallment.getDueDate();
+        if (DateUtils.isAfter(rescheduleToDate, dueDate) && DateUtils.isBefore(rescheduleToDate, dueDate.plusDays(30))) {
+            adjustedRescheduleToDate = dueDate;
+        }
+        return adjustedRescheduleToDate;
     }
 
     /**
@@ -352,7 +732,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     }
 
 
-
     /**
      * Fix fromDate issues by updating them to be the previous installment's due date
      */
@@ -362,8 +741,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         for (var installment : loan.getRepaymentScheduleInstallments()) {
             // Update from date to be the previous installment's due date
             if (!DateUtils.isEqual(tmpFromDate, installment.getFromDate())) {
-                log.info("CredibleX: Fixing fromDate for installment {} from {} to {}",
-                    installment.getInstallmentNumber(), installment.getFromDate(), tmpFromDate);
                 installment.updateFromDate(tmpFromDate);
             }
             tmpFromDate = installment.getDueDate();
@@ -401,8 +778,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     @Transactional
     @Override
     public CommandProcessingResult deleteHoliday(final Long holidayId) {
-        log.info("CredibleX: Deleting holiday with direct due date restoration - holiday ID: {}", holidayId);
-
         this.context.authenticatedUser();
         final Holiday holiday = this.holidayRepository.findOneWithNotFoundDetection(holidayId);
 
@@ -412,31 +787,16 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         final LocalDate repaymentsRescheduledTo = holiday.getRepaymentsRescheduledTo();
         final Set<Office> holidayOffices = holiday.getOffices();
 
-        log.info("CredibleX: Holiday details - From: {}, To: {}, Rescheduled to: {}",
-                holidayFromDate, holidayToDate, repaymentsRescheduledTo);
-
-        // Find loans affected by this holiday
-        List<Loan> affectedLoans = findLoansAffectedByHolidayDates(holidayOffices, holidayFromDate, holidayToDate);
-
-        log.info("CredibleX: Found {} loans affected by holiday deletion", affectedLoans.size());
-
-        // Process each affected loan
-        int totalRestoredInstallments = 0;
-        for (Loan loan : affectedLoans) {
-            int restoredForThisLoan = restoreInstallmentsDirectly(loan, holidayFromDate, holidayToDate, repaymentsRescheduledTo);
-            totalRestoredInstallments += restoredForThisLoan;
-
-            if (restoredForThisLoan > 0) {
-                loanRepositoryWrapper.saveAndFlush(loan);
-                log.info("CredibleX: Restored {} installments for loan ID: {}", restoredForThisLoan, loan.getId());
-            }
+        // Process affected loans with pagination and threading
+        try {
+            processAffectedLoansForDeletion(holidayOffices, holidayFromDate, holidayToDate, repaymentsRescheduledTo);
+        } catch (JobExecutionException e) {
+            log.debug("Failed to process affected loans for holiday deletion", e);
         }
 
         // Delete the holiday
         holiday.delete();
         this.holidayRepository.saveAndFlush(holiday);
-
-        log.info("CredibleX: Holiday deletion completed. Total installments restored: {}", totalRestoredInstallments);
 
         return new CommandProcessingResultBuilder().withEntityId(holidayId).build();
     }
@@ -447,16 +807,16 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     private int restoreInstallmentsDirectly(Loan loan, LocalDate holidayFromDate, LocalDate holidayToDate, LocalDate repaymentsRescheduledTo) {
         int restoredCount = 0;
 
-        log.info("CredibleX: Processing loan ID: {} for direct installment restoration", loan.getId());
+        log.debug("Checking loan {} for holiday deletion restoration. Holiday: {} to {}, reschedule: {}", 
+                 loan.getId(), holidayFromDate, holidayToDate, repaymentsRescheduledTo);
 
         for (var installment : loan.getRepaymentScheduleInstallments()) {
             if (installment.getInstallmentNumber() == 0) continue; // Skip disbursement
 
             LocalDate currentDueDate = installment.getDueDate();
 
-            log.info("CredibleX: Checking installment {} with due date {} against holiday {}-{} (reschedule type: {})",
-                    installment.getInstallmentNumber(), currentDueDate, holidayFromDate, holidayToDate,
-                    repaymentsRescheduledTo != null ? "specific date" : "next repayment date");
+            log.debug("Checking installment {} with due date {} (paid: {})", 
+                     installment.getInstallmentNumber(), currentDueDate, !installment.isNotFullyPaidOff());
 
             // Check if this installment was affected by the deleted holiday
             if (isInstallmentAffectedByDeletedHoliday(currentDueDate, holidayFromDate, holidayToDate, repaymentsRescheduledTo)) {
@@ -464,28 +824,23 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                 // Calculate the original due date based on holiday type
                 LocalDate originalDueDate = calculateOriginalDueDate(currentDueDate, holidayFromDate, holidayToDate, repaymentsRescheduledTo);
 
-                log.info("CredibleX: Loan {} Installment {} - Current due: {}, Restoring to: {}, Paid: {}",
-                        loan.getId(), installment.getInstallmentNumber(), currentDueDate, originalDueDate,
-                        !installment.isNotFullyPaidOff());
-
                 // Only restore unpaid installments to avoid data inconsistency
                 if (installment.isNotFullyPaidOff()) {
-                    log.info("CredibleX: Restoring unpaid installment {} from {} to {}",
-                            installment.getInstallmentNumber(), currentDueDate, originalDueDate);
-
                     installment.updateDueDate(originalDueDate);
                     restoredCount++;
-
+                    log.debug("Restored installment {} due date from {} to {} for loan {}", 
+                             installment.getInstallmentNumber(), currentDueDate, originalDueDate, loan.getId());
                 } else {
-                    log.warn("CredibleX: Installment {} already paid on {} - leaving as is (audit note: original should have been {})",
-                            installment.getInstallmentNumber(), currentDueDate, originalDueDate);
+                    log.debug("Skipping paid installment {} with due date {}", 
+                             installment.getInstallmentNumber(), currentDueDate);
                 }
             } else {
-                log.info("CredibleX: Installment {} with due date {} is NOT affected by holiday", 
-                        installment.getInstallmentNumber(), currentDueDate);
+                log.debug("Installment {} with due date {} not affected by holiday deletion", 
+                         installment.getInstallmentNumber(), currentDueDate);
             }
         }
 
+        log.debug("Restored {} installments for loan {}", restoredCount, loan.getId());
         return restoredCount;
     }
 
@@ -497,23 +852,33 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
 
         // Case 1: Holiday had a specific reschedule date and current due date matches it
         if (repaymentsRescheduledTo != null && currentDueDate.equals(repaymentsRescheduledTo)) {
-            log.info("CredibleX: Installment due {} matches holiday reschedule date - AFFECTED", currentDueDate);
+            log.debug("Installment due date {} matches reschedule date {}", currentDueDate, repaymentsRescheduledTo);
             return true;
         }
 
         // Case 2: Holiday was "reschedule to next repayment date" 
         if (repaymentsRescheduledTo == null) {
-            // For "reschedule to next repayment date", we need to be more specific
-            // The installment was originally due on the holiday date, but got rescheduled to a later date
-            // So we need to check if this installment's current due date is after the holiday date
-            // and could have been the result of the holiday rescheduling
-            
-            // Check if the current due date is after the holiday date
+            // For "reschedule to next repayment date", we need to check if this installment
+            // was originally due during the holiday period but got rescheduled
+            // The current due date should be after the holiday period
             if (currentDueDate.isAfter(holidayToDate)) {
-                log.info("CredibleX: Installment due {} is after holiday end date {} and could be affected by reschedule to next repayment - AFFECTED",
-                        currentDueDate, holidayToDate);
-                return true;
+                // Additional check: the installment should not be too far from the holiday period
+                // to avoid restoring installments that were naturally due after the holiday
+                long daysDifference = ChronoUnit.DAYS.between(holidayToDate, currentDueDate);
+                // Only consider installments within a reasonable range (e.g., 60 days) from the holiday
+                if (daysDifference <= 60) {
+                    log.debug("Installment due date {} is within {} days after holiday end date {}", 
+                             currentDueDate, daysDifference, holidayToDate);
+                    return true;
+                }
             }
+        }
+
+        // Case 3: Check if the current due date is exactly the holiday date (for edge cases)
+        if (currentDueDate.equals(holidayFromDate) || currentDueDate.equals(holidayToDate)) {
+            log.debug("Installment due date {} matches holiday date range {} to {}", 
+                     currentDueDate, holidayFromDate, holidayToDate);
+            return true;
         }
 
         return false;
@@ -523,25 +888,37 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
      * Calculate the original due date for an installment that was affected by a holiday
      */
     private LocalDate calculateOriginalDueDate(LocalDate currentDueDate, LocalDate holidayFromDate, LocalDate holidayToDate, LocalDate repaymentsRescheduledTo) {
-        
+
         // Case 1: Holiday had a specific reschedule date
         if (repaymentsRescheduledTo != null) {
-            // If current due date matches the reschedule date, the original was likely the holiday date
+            // If current due date matches the rescheduling date, the original was the holiday date
             if (currentDueDate.equals(repaymentsRescheduledTo)) {
+                log.debug("Restoring installment from reschedule date {} to original holiday date {}", 
+                         currentDueDate, holidayFromDate);
                 return holidayFromDate;
             }
         }
-        
+
         // Case 2: Holiday was "reschedule to next repayment date"
         if (repaymentsRescheduledTo == null) {
             // For this type, if the current due date is after the holiday date,
-            // the original due date was the holiday date itself
+            // the original due date was the holiday from date
             if (currentDueDate.isAfter(holidayToDate)) {
+                log.debug("Restoring installment from {} to original holiday date {} (next repayment type)", 
+                         currentDueDate, holidayFromDate);
                 return holidayFromDate;
             }
         }
-        
+
+        // Case 3: If the current due date is exactly the holiday date, keep it as is
+        if (currentDueDate.equals(holidayFromDate) || currentDueDate.equals(holidayToDate)) {
+            log.debug("Installment due date {} is already at holiday date, no change needed", currentDueDate);
+            return currentDueDate;
+        }
+
         // Fallback: use holiday from date as original
+        log.debug("Using fallback: restoring installment from {} to holiday from date {}", 
+                 currentDueDate, holidayFromDate);
         return holidayFromDate;
     }
 }
