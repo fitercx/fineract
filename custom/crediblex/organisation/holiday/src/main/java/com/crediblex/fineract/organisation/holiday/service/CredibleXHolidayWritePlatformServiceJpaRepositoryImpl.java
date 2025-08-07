@@ -163,8 +163,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                     recalculateAffectedLoanSchedules(holiday, originalFromDate, originalToDate, changes);
                 } catch (JobExecutionException e) {
                     log.error("Failed to recalculate loan schedules due to holiday changes", e);
-                    // Continue with the holiday update even if loan recalculation fails
-                    // The error is logged but doesn't prevent the holiday from being updated
                 }
             }
 
@@ -302,14 +300,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         }
 
         return affectedLoanIds;
-    }
-
-    /**
-     * Check if a loan has repayment schedules that overlap with the holiday date range (by loan ID)
-     */
-    private boolean hasRepaymentScheduleOverlapWithHoliday(Long loanId, LocalDate holidayFromDate, LocalDate holidayToDate) {
-        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-        return hasRepaymentScheduleOverlapWithHoliday(loan, holidayFromDate, holidayToDate);
     }
 
     /**
@@ -490,7 +480,7 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     /**
      * Check if a loan has repayment schedules that might be affected by holiday deletion
      * This includes both loans with installments in the holiday date range and loans with installments
-     * on the reschedule date
+     * on the rescheduling date
      */
     private boolean hasRepaymentScheduleAffectedByHolidayDeletion(Loan loan, LocalDate holidayFromDate, LocalDate holidayToDate, LocalDate repaymentsRescheduledTo) {
         if (loan.getRepaymentScheduleInstallments() == null) {
@@ -506,7 +496,7 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                     return true;
                 }
                 
-                // Case 2: Installment due date matches the reschedule date
+                // Case 2: Installment due date matches the rescheduling date
                 if (repaymentsRescheduledTo != null && dueDate.equals(repaymentsRescheduledTo)) {
                     return true;
                 }

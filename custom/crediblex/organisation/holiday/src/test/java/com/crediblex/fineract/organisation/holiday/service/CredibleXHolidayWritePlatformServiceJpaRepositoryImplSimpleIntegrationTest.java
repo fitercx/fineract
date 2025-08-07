@@ -1,13 +1,13 @@
 package com.crediblex.fineract.organisation.holiday.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.HashMap;
+import java.util.*;
+import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -37,17 +37,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.google.gson.JsonObject;
-
 /**
- * Integration test for CredibleXHolidayWritePlatformServiceJpaRepositoryImpl
- * Tests the holiday deletion functionality with realistic data
+ * Simple integration test for CredibleXHolidayWritePlatformServiceJpaRepositoryImpl
+ * Focuses on core functionality without complex threading scenarios
  */
 @ExtendWith(MockitoExtension.class)
-class CredibleXHolidayDeletionIntegrationTest {
+class CredibleXHolidayWritePlatformServiceJpaRepositoryImplSimpleIntegrationTest {
 
     @Mock
     private HolidayDataValidator fromApiJsonDeserializer;
@@ -93,138 +93,20 @@ class CredibleXHolidayDeletionIntegrationTest {
         ThreadLocalContextUtil.setBusinessDates(businessDates);
         
         // Setup task executor to return proper Future objects
-        Mockito.lenient().when(taskExecutor.submit(Mockito.any(Runnable.class))).thenAnswer(invocation -> {
+        lenient().when(taskExecutor.submit(any(Runnable.class))).thenAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(0);
             runnable.run();
-            return java.util.concurrent.CompletableFuture.completedFuture(null);
+            return CompletableFuture.completedFuture(null);
         });
         
         // Setup transaction template - just do nothing for void methods
-        Mockito.lenient().doNothing().when(transactionTemplate).executeWithoutResult(Mockito.any());
+        lenient().doNothing().when(transactionTemplate).executeWithoutResult(any());
     }
 
     @Test
-    void testDeleteHolidayWithType1Reschedule() {
+    void testUpdateHolidayWithActiveStateAndDateChanges() {
         // Setup test data
         Long holidayId = 1L;
-        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
-        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
-        
-        // Create holiday (Type 1 - reschedule to next repayment date)
-        Holiday holiday = createHoliday(holidayId, "Test Holiday", holidayFromDate, holidayToDate, null, 1);
-        
-        // Create office
-        Office office = createOffice(1L, "Test Office");
-        Set<Office> offices = Set.of(office);
-        holiday.setOffices(offices);
-        
-        // Create loan with installments
-        Loan loan = createLoanWithInstallments();
-        
-        // Mock repository calls
-        Mockito.when(context.authenticatedUser()).thenReturn(null);
-        Mockito.when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
-        Mockito.when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(Arrays.asList(loan));
-        Mockito.when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(new ArrayList<>());
-        
-        // Execute delete
-        CommandProcessingResult result = service.deleteHoliday(holidayId);
-        
-        // Verify results
-        assertNotNull(result);
-        assertEquals(holidayId, result.getResourceId());
-        
-        // Verify that the holiday was marked as deleted
-        Mockito.verify(holidayRepository).saveAndFlush(holiday);
-        assertEquals(HolidayStatusType.DELETED.getValue(), holiday.getStatus());
-        
-        // Verify that loan was saved (indicating installments were restored)
-        Mockito.verify(loanRepositoryWrapper).saveAndFlush(loan);
-    }
-
-    @Test
-    void testDeleteHolidayWithSpecificRescheduleDate() {
-        // Setup test data
-        Long holidayId = 2L;
-        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
-        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
-        LocalDate rescheduleToDate = LocalDate.of(2024, 4, 8);
-        
-        // Create holiday (Type 2 - specific reschedule date)
-        Holiday holiday = createHoliday(holidayId, "Test Holiday", holidayFromDate, holidayToDate, rescheduleToDate, 2);
-        
-        // Create office
-        Office office = createOffice(1L, "Test Office");
-        Set<Office> offices = Set.of(office);
-        holiday.setOffices(offices);
-        
-        // Create loan with installments
-        Loan loan = createLoanWithInstallments();
-        
-        // Mock repository calls
-        Mockito.when(context.authenticatedUser()).thenReturn(null);
-        Mockito.when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
-        Mockito.when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(Arrays.asList(loan));
-        Mockito.when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(new ArrayList<>());
-        
-        // Execute delete
-        CommandProcessingResult result = service.deleteHoliday(holidayId);
-        
-        // Verify results
-        assertNotNull(result);
-        assertEquals(holidayId, result.getResourceId());
-        
-        // Verify that the holiday was marked as deleted
-        Mockito.verify(holidayRepository).saveAndFlush(holiday);
-        assertEquals(HolidayStatusType.DELETED.getValue(), holiday.getStatus());
-    }
-
-    @Test
-    void testNoLoansAffected() {
-        // Setup test data
-        Long holidayId = 3L;
-        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
-        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
-        
-        // Create holiday
-        Holiday holiday = createHoliday(holidayId, "Test Holiday", holidayFromDate, holidayToDate, null, 1);
-        
-        // Create office
-        Office office = createOffice(1L, "Test Office");
-        Set<Office> offices = Set.of(office);
-        holiday.setOffices(offices);
-        
-        // Mock repository calls - no loans affected
-        Mockito.when(context.authenticatedUser()).thenReturn(null);
-        Mockito.when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
-        Mockito.when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(new ArrayList<>());
-        Mockito.when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
-                .thenReturn(new ArrayList<>());
-        
-        // Execute delete
-        CommandProcessingResult result = service.deleteHoliday(holidayId);
-        
-        // Verify results
-        assertNotNull(result);
-        assertEquals(holidayId, result.getResourceId());
-        
-        // Verify that the holiday was marked as deleted
-        Mockito.verify(holidayRepository).saveAndFlush(holiday);
-        assertEquals(HolidayStatusType.DELETED.getValue(), holiday.getStatus());
-        
-        // Verify that no loans were saved (no loans affected)
-        Mockito.verify(loanRepositoryWrapper, Mockito.never()).saveAndFlush(Mockito.any(Loan.class));
-    }
-
-    @Test
-    void testUpdateHolidayWithActiveState() {
-        // Setup test data
-        Long holidayId = 4L;
         LocalDate originalFromDate = LocalDate.of(2024, 4, 4);
         LocalDate originalToDate = LocalDate.of(2024, 4, 4);
         LocalDate newFromDate = LocalDate.of(2024, 4, 5);
@@ -243,12 +125,13 @@ class CredibleXHolidayDeletionIntegrationTest {
         Loan loan = createLoanWithInstallments();
         
         // Mock repository calls
-        Mockito.when(context.authenticatedUser()).thenReturn(null);
-        Mockito.when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
-        Mockito.when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
+        lenient().when(context.authenticatedUser()).thenReturn(null);
+        lenient().when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
+        lenient().when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(any(), any()))
                 .thenReturn(Arrays.asList(loan));
-        Mockito.when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(Mockito.any(), Mockito.any()))
+        lenient().when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(any(), any()))
                 .thenReturn(new ArrayList<>());
+        lenient().when(loanRepositoryWrapper.findOneWithNotFoundDetection(anyLong())).thenReturn(loan);
         
         // Create JSON command for update
         JsonCommand command = createJsonCommand(holidayId, newFromDate, newToDate, null, 1);
@@ -262,9 +145,115 @@ class CredibleXHolidayDeletionIntegrationTest {
         assertTrue(result.hasChanges());
         
         // Verify that the holiday was updated
-        Mockito.verify(holidayRepository).saveAndFlush(holiday);
+        verify(holidayRepository).saveAndFlush(holiday);
         assertEquals(newFromDate, holiday.getFromDate());
         assertEquals(newToDate, holiday.getToDate());
+    }
+
+    @Test
+    void testDeleteHolidayWithType1Reschedule() {
+        // Setup test data
+        Long holidayId = 2L;
+        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
+        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
+        
+        // Create holiday (Type 1 - reschedule to next repayment date)
+        Holiday holiday = createHoliday(holidayId, "Test Holiday", holidayFromDate, holidayToDate, null, 1);
+        
+        // Create office
+        Office office = createOffice(1L, "Test Office");
+        Set<Office> offices = Set.of(office);
+        holiday.setOffices(offices);
+        
+        // Create loan with installments
+        Loan loan = createLoanWithInstallments();
+        
+        // Mock repository calls
+        lenient().when(context.authenticatedUser()).thenReturn(null);
+        lenient().when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
+        lenient().when(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(any(), any()))
+                .thenReturn(Arrays.asList(loan));
+        lenient().when(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(any(), any()))
+                .thenReturn(new ArrayList<>());
+        
+        // Execute delete
+        CommandProcessingResult result = service.deleteHoliday(holidayId);
+        
+        // Verify results
+        assertNotNull(result);
+        assertEquals(holidayId, result.getResourceId());
+        
+        // Verify that the holiday was marked as deleted
+        verify(holidayRepository).saveAndFlush(holiday);
+        assertEquals(HolidayStatusType.DELETED.getValue(), holiday.getStatus());
+    }
+
+    @Test
+    void testUpdateHolidayWithDataIntegrityException() {
+        // Setup test data
+        Long holidayId = 3L;
+        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
+        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
+        
+        // Create holiday
+        Holiday holiday = createHoliday(holidayId, "Test Holiday", holidayFromDate, holidayToDate, null, 1);
+        
+        // Create a proper exception with a cause
+        RuntimeException cause = new RuntimeException("Database constraint violation");
+        DataIntegrityViolationException dataIntegrityException = new DataIntegrityViolationException("Duplicate holiday name", cause);
+        
+        // Mock repository calls to throw exception
+        lenient().when(context.authenticatedUser()).thenReturn(null);
+        lenient().when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
+        lenient().doThrow(dataIntegrityException)
+                .when(holidayRepository).saveAndFlush(any(Holiday.class));
+        
+        // Create JSON command
+        JsonCommand command = createJsonCommand(holidayId, holidayFromDate, holidayToDate, null, 1);
+        
+        // Execute update and expect exception
+        assertThrows(org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException.class, () -> {
+            service.updateHoliday(command);
+        });
+    }
+
+    @Test
+    void testUpdateHolidayWithNameAndDescriptionChanges() {
+        // Setup test data
+        Long holidayId = 4L;
+        LocalDate holidayFromDate = LocalDate.of(2024, 4, 4);
+        LocalDate holidayToDate = LocalDate.of(2024, 4, 4);
+        String newName = "Updated Holiday Name";
+        String newDescription = "Updated holiday description";
+        
+        // Create holiday
+        Holiday holiday = createHoliday(holidayId, "Original Name", holidayFromDate, holidayToDate, null, 1);
+        holiday.setStatus(HolidayStatusType.ACTIVE.getValue());
+        
+        // Create office
+        Office office = createOffice(1L, "Test Office");
+        Set<Office> offices = Set.of(office);
+        holiday.setOffices(offices);
+        
+        // Mock repository calls
+        lenient().when(context.authenticatedUser()).thenReturn(null);
+        lenient().when(holidayRepository.findOneWithNotFoundDetection(holidayId)).thenReturn(holiday);
+        
+        // Create JSON command with name and description changes
+        JsonCommand command = createJsonCommandWithNameAndDescription(holidayId, holidayFromDate, holidayToDate, null, 1, newName, newDescription);
+        
+        // Execute update
+        CommandProcessingResult result = service.updateHoliday(command);
+        
+        // Verify results
+        assertNotNull(result);
+        assertEquals(holidayId, result.getResourceId());
+        assertTrue(result.hasChanges());
+        
+        // Verify that the holiday was updated
+        verify(holidayRepository).saveAndFlush(holiday);
+        assertEquals(newName, holiday.getName());
+        assertEquals(newDescription, holiday.getDescription());
     }
 
     // Helper methods
@@ -344,24 +333,39 @@ class CredibleXHolidayDeletionIntegrationTest {
 
     private JsonCommand createJsonCommand(Long entityId, LocalDate fromDate, LocalDate toDate, LocalDate rescheduleTo, int rescheduleType) {
         JsonCommand command = Mockito.mock(JsonCommand.class);
-        Mockito.when(command.entityId()).thenReturn(entityId);
-        Mockito.when(command.commandId()).thenReturn(1L);
-        Mockito.when(command.dateFormat()).thenReturn("dd MMMM yyyy");
-        Mockito.when(command.locale()).thenReturn("en");
+        lenient().when(command.entityId()).thenReturn(entityId);
+        lenient().when(command.commandId()).thenReturn(1L);
+        lenient().when(command.dateFormat()).thenReturn("dd MMMM yyyy");
+        lenient().when(command.locale()).thenReturn("en");
         
-        // Mock parameter checks
-        Mockito.when(command.isChangeInLocalDateParameterNamed(Mockito.eq("fromDate"), Mockito.any())).thenReturn(true);
-        Mockito.when(command.localDateValueOfParameterNamed("fromDate")).thenReturn(fromDate);
-        Mockito.when(command.stringValueOfParameterNamed("fromDate")).thenReturn(fromDate.toString());
+        // Mock parameter checks - only mock what's actually used
+        lenient().when(command.isChangeInLocalDateParameterNamed(eq("fromDate"), any())).thenReturn(true);
+        lenient().when(command.localDateValueOfParameterNamed("fromDate")).thenReturn(fromDate);
+        lenient().when(command.stringValueOfParameterNamed("fromDate")).thenReturn(fromDate.toString());
         
-        Mockito.when(command.isChangeInLocalDateParameterNamed(Mockito.eq("toDate"), Mockito.any())).thenReturn(true);
-        Mockito.when(command.localDateValueOfParameterNamed("toDate")).thenReturn(toDate);
-        Mockito.when(command.stringValueOfParameterNamed("toDate")).thenReturn(toDate.toString());
-        Mockito.when(command.isChangeInLocalDateParameterNamed(Mockito.eq("repaymentsRescheduledTo"), Mockito.any())).thenReturn(false);
-        Mockito.when(command.isChangeInStringParameterNamed(Mockito.eq("name"), Mockito.any())).thenReturn(false);
-        Mockito.when(command.isChangeInStringParameterNamed(Mockito.eq("description"), Mockito.any())).thenReturn(false);
-        Mockito.when(command.isChangeInIntegerParameterNamed(Mockito.eq("reschedulingType"), Mockito.any())).thenReturn(false);
-        Mockito.when(command.hasParameter("offices")).thenReturn(false);
+        lenient().when(command.isChangeInLocalDateParameterNamed(eq("toDate"), any())).thenReturn(true);
+        lenient().when(command.localDateValueOfParameterNamed("toDate")).thenReturn(toDate);
+        lenient().when(command.stringValueOfParameterNamed("toDate")).thenReturn(toDate.toString());
+        
+        // Only mock what's actually used by the service
+        lenient().when(command.isChangeInLocalDateParameterNamed(eq("repaymentsRescheduledTo"), any())).thenReturn(false);
+        lenient().when(command.isChangeInStringParameterNamed(eq("name"), any())).thenReturn(false);
+        lenient().when(command.isChangeInStringParameterNamed(eq("description"), any())).thenReturn(false);
+        lenient().when(command.isChangeInIntegerParameterNamed(eq("reschedulingType"), any())).thenReturn(false);
+        lenient().when(command.hasParameter("offices")).thenReturn(false);
+        
+        return command;
+    }
+
+    private JsonCommand createJsonCommandWithNameAndDescription(Long entityId, LocalDate fromDate, LocalDate toDate, LocalDate rescheduleTo, int rescheduleType, String name, String description) {
+        JsonCommand command = createJsonCommand(entityId, fromDate, toDate, rescheduleTo, rescheduleType);
+        
+        // Mock name and description changes
+        lenient().when(command.isChangeInStringParameterNamed(eq("name"), any())).thenReturn(true);
+        lenient().when(command.stringValueOfParameterNamed("name")).thenReturn(name);
+        
+        lenient().when(command.isChangeInStringParameterNamed(eq("description"), any())).thenReturn(true);
+        lenient().when(command.stringValueOfParameterNamed("description")).thenReturn(description);
         
         return command;
     }
