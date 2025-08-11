@@ -28,12 +28,12 @@ import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.r
 import static org.apache.fineract.organisation.holiday.api.HolidayApiConstants.toDateParamName;
 import static org.apache.fineract.infrastructure.core.service.DateUtils.isDateWithinRange;
 
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanRepositoryWrapper;
 import com.google.gson.JsonArray;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
 
@@ -64,8 +64,6 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
-import org.apache.fineract.organisation.holiday.domain.HolidayStatusType;
-import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
@@ -76,6 +74,7 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -105,6 +104,11 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
     @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME)
     private final ThreadPoolTaskExecutor taskExecutor;
     private final TransactionTemplate transactionTemplate;
+    @Autowired
+    private Environment environment;
+
+    @Autowired
+    private CustomLoanRepositoryWrapper customLoanRepositoryWrapper;
 
     @Autowired
     public CredibleXHolidayWritePlatformServiceJpaRepositoryImpl(HolidayDataValidator fromApiJsonDeserializer,
@@ -223,16 +227,17 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
             return;
         }
 
+
         // Configure thread pool for this operation
-        int threadPoolSize = 4; // Default thread pool size
-        int batchSize = 50; // Default batch size per thread
+        int threadPoolSize = environment.getProperty("spring.task.scheduling.threadPoolSize", Integer.class, 4);
+        int batchSize = environment.getProperty("spring.task.scheduling.threadBatchSize", Integer.class, 50);
         final int pageSize = batchSize * threadPoolSize;
         
         taskExecutor.setCorePoolSize(threadPoolSize);
         taskExecutor.setMaxPoolSize(threadPoolSize);
 
         Long maxLoanIdInList = 0L;
-        List<Long> loanIds = findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList);
+        List<Long> loanIds =Collections.synchronizedList(findLoanIdsAffectedByHolidayDates(offices, fromDate, toDate, pageSize, maxLoanIdInList));
 
         do {
             int totalFilteredRecords = loanIds.size();
@@ -272,18 +277,18 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
 
         // Find loans by office (using existing methods)
         List<Loan> allLoans = new ArrayList<>();
-        allLoans.addAll(loanRepositoryWrapper.findByClientOfficeIdsAndLoanStatus(officeIds, loanStatuses));
-        allLoans.addAll(loanRepositoryWrapper.findByGroupOfficeIdsAndLoanStatus(officeIds, loanStatuses));
+        allLoans.addAll(Collections.synchronizedList(customLoanRepositoryWrapper.customFindByClientOfficeIdsAndLoanStatus(officeIds, loanStatuses, pageSize, maxLoanIdInList)));
+        allLoans.addAll(Collections.synchronizedList(customLoanRepositoryWrapper.customFindByGroupOfficeIdsAndLoanStatus(officeIds, loanStatuses, pageSize, maxLoanIdInList)));
 
-        // Apply pagination manually since the repository methods don't support it
-        List<Loan> paginatedLoans = allLoans.stream()
-                .filter(loan -> loan.getId() > maxLoanIdInList)
-                .limit(pageSize)
-                .toList();
+//        // Apply pagination manually since the repository methods don't support it
+//        List<Loan> paginatedLoans = allLoans.stream()
+//                .filter(loan -> loan.getId() > maxLoanIdInList)
+//                .limit(pageSize)
+//                .toList();
 
         // Filter loans that have repayment schedules overlapping with the holiday date range
         List<Long> affectedLoanIds = new ArrayList<>();
-        for (Loan loan : paginatedLoans) {
+        for (Loan loan : allLoans) {
             boolean isAffected = false;
             
             if (repaymentsRescheduledTo != null) {
@@ -372,11 +377,10 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
             return;
         }
 
-        // Configure thread pool for this operation
-        int threadPoolSize = 4;
-        int batchSize = 50;
+        int threadPoolSize = environment.getProperty("spring.task.scheduling.threadPoolSize", Integer.class, 4);
+        int batchSize = environment.getProperty("spring.task.scheduling.threadBatchSize", Integer.class, 50);
         final int pageSize = batchSize * threadPoolSize;
-        
+
         taskExecutor.setCorePoolSize(threadPoolSize);
         taskExecutor.setMaxPoolSize(threadPoolSize);
 
@@ -438,22 +442,42 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         }
 
         // Wait for all tasks to complete
+        checkTaskCompletion(loanTasks);
+    }
+
+    private void checkTaskCompletion(List<Future<?>> tasks) throws JobExecutionException {
         List<Throwable> errors = new ArrayList<>();
-        for (Future<?> task : loanTasks) {
-            try {
+        try {
+            for (Future<?> task : tasks) {
                 task.get();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                errors.add(e);
-            } catch (ExecutionException e) {
-                errors.add(e.getCause());
             }
+
+            boolean allTasksExecuted = false;
+            int executedTasksCount = 0;
+            for (Future<?> task : tasks) {
+                if (task.isDone()) {
+                    executedTasksCount++;
+                }
+            }
+
+            allTasksExecuted = executedTasksCount == tasks.size();
+            if (!allTasksExecuted) {
+                log.error("Not all tasks have completed execution.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            errors.add(e);
+            log.error("Thread interrupted during task execution.", e);
+        } catch (ExecutionException e) {
+            errors.add(e.getCause());
+            log.error("Execution exception occurred during task execution.", e);
         }
-        
+
         if (!errors.isEmpty()) {
             throw new JobExecutionException(errors);
         }
     }
+
 
     /**
      * Check if a loan has repayment schedules that overlap with the holiday date range

@@ -41,7 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
-public class LoanRepositoryWrapper {
+public abstract class LoanRepositoryWrapper {
 
     private static final Collection<LoanStatus> NON_CLOSED_LOAN_STATUSES = new ArrayList<>(
             Arrays.asList(LoanStatus.SUBMITTED_AND_PENDING_APPROVAL, LoanStatus.APPROVED, LoanStatus.ACTIVE,
@@ -231,6 +231,7 @@ public class LoanRepositoryWrapper {
         }
         return loans;
     }
+
 
     // Repayments Schedule
     public List<Loan> findByGroupOfficeIdsAndLoanStatus(@Param("officeIds") Collection<Long> officeIds,
