@@ -31,6 +31,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanRepositoryWrapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +42,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.core.env.Environment;
 
 /**
  * Simple integration test for CredibleXHolidayWritePlatformServiceJpaRepositoryImpl
@@ -75,6 +77,10 @@ class CredibleXHolidayWritePlatformServiceJpaRepositoryImplSimpleIntegrationTest
     private ThreadPoolTaskExecutor taskExecutor;
     @Mock
     private TransactionTemplate transactionTemplate;
+    @Mock
+    private Environment environment;
+    @Mock
+    private CustomLoanRepositoryWrapper customLoanRepositoryWrapper;
 
     private CredibleXHolidayWritePlatformServiceJpaRepositoryImpl service;
 
@@ -85,6 +91,19 @@ class CredibleXHolidayWritePlatformServiceJpaRepositoryImplSimpleIntegrationTest
                 officeRepositoryWrapper, fromApiJsonHelper, loanRepositoryWrapper, 
                 loanScheduleService, loanUtilService, configurationDomainService, loanTermVariationsMapper,
                 taskExecutor, transactionTemplate);
+        
+        // Set the environment field using reflection since it's @Autowired
+        try {
+            java.lang.reflect.Field environmentField = CredibleXHolidayWritePlatformServiceJpaRepositoryImpl.class.getDeclaredField("environment");
+            environmentField.setAccessible(true);
+            environmentField.set(service, environment);
+            
+            java.lang.reflect.Field customLoanRepositoryWrapperField = CredibleXHolidayWritePlatformServiceJpaRepositoryImpl.class.getDeclaredField("customLoanRepositoryWrapper");
+            customLoanRepositoryWrapperField.setAccessible(true);
+            customLoanRepositoryWrapperField.set(service, customLoanRepositoryWrapper);
+        } catch (Exception e) {
+            throw new RuntimeException("Error setting environment field", e);
+        }
         
         // Setup ThreadLocalContextUtil with business dates
         HashMap<org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType, LocalDate> businessDates = new HashMap<>();
@@ -101,6 +120,14 @@ class CredibleXHolidayWritePlatformServiceJpaRepositoryImplSimpleIntegrationTest
         
         // Setup transaction template - just do nothing for void methods
         lenient().doNothing().when(transactionTemplate).executeWithoutResult(any());
+        
+        // Setup environment properties
+        lenient().when(environment.getProperty("spring.task.scheduling.threadPoolSize", Integer.class, 4)).thenReturn(4);
+        lenient().when(environment.getProperty("spring.task.scheduling.threadBatchSize", Integer.class, 50)).thenReturn(50);
+        
+        // Setup custom loan repository wrapper
+        lenient().when(customLoanRepositoryWrapper.customFindByClientOfficeIdsAndLoanStatus(any(), any(), anyInt(), anyLong())).thenReturn(new ArrayList<>());
+        lenient().when(customLoanRepositoryWrapper.customFindByGroupOfficeIdsAndLoanStatus(any(), any(), anyInt(), anyLong())).thenReturn(new ArrayList<>());
     }
 
     @Test
