@@ -9,6 +9,7 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransact
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -21,6 +22,7 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,9 @@ public class CredXLoanReadPlatformServiceImplTest {
 
     @Mock
     private ConfigurationDomainService configurationDomainService;
+
+    @Mock
+    private PaymentTypeReadPlatformService paymentTypeReadPlatformService;
 
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
@@ -83,6 +88,7 @@ public class CredXLoanReadPlatformServiceImplTest {
     public void testRetrieveLoanTransactionTemplate() {
         // Given
         when(credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId)).thenReturn(mockResult);
+        when(paymentTypeReadPlatformService.retrieveAllPaymentTypes()).thenReturn(new ArrayList<>());
 
         // When
         LoanTransactionData result = credXLoanReadPlatformService.retrieveLoanTransactionTemplate(loanId);
@@ -153,21 +159,26 @@ public class CredXLoanReadPlatformServiceImplTest {
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, paidPeriod));
         }
 
-        // Test case: LATE_FEE_APPLIED status
+        // Test case: LATE_FEE_APPLIED status - overdue with outstanding penalties
         {
+            LocalDate pastDueDate = today.minusDays(1);
             BigDecimal principalAmount = BigDecimal.TEN;
             BigDecimal penaltyAmount = BigDecimal.valueOf(2);
+            BigDecimal penaltyPaid = BigDecimal.ZERO; // No penalties paid
 
             LoanSchedulePeriodData lateFeePeriod = Mockito.spy(LoanSchedulePeriodData.repaymentOnlyPeriod(
                     2,                  // period number
                     fromDate,           // from date
-                    dueDate,            // due date
+                    pastDueDate,        // due date in the past (overdue)
                     principalAmount,    // principal amount
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
-                    penaltyAmount       // penalty amount (positive value = late fee applied)
+                    penaltyAmount       // penalty amount due
             ));
+            
+            // Mock penalty charges outstanding (due - paid = 2 - 0 = 2)
+            Mockito.doReturn(penaltyAmount).when(lateFeePeriod).getPenaltyChargesOutstanding();
 
             assertEquals(ExtendedLoanSchedulePeriodData.Status.LATE_FEE_APPLIED,
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, lateFeePeriod));
@@ -194,20 +205,25 @@ public class CredXLoanReadPlatformServiceImplTest {
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, partialPaidPeriod));
         }
 
-        // Test case: OVERDUE status
+        // Test case: OVERDUE status - overdue with penalties fully paid
         {
             LocalDate pastDueDate = today.minusDays(1);
+            BigDecimal principalAmount = BigDecimal.TEN;
+            BigDecimal penaltyAmount = BigDecimal.valueOf(2);
 
             LoanSchedulePeriodData overduePeriod = Mockito.spy(LoanSchedulePeriodData.repaymentOnlyPeriod(
                     4,                  // period number
                     fromDate,           // from date
-                    pastDueDate,        // due date in the past
-                    BigDecimal.ZERO,    // principal amount
+                    pastDueDate,        // due date in the past (overdue)
+                    principalAmount,    // principal amount (still outstanding)
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
-                    BigDecimal.ZERO     // penalty amount
+                    penaltyAmount       // penalty amount due
             ));
+            
+            // Mock penalty charges outstanding as zero (penalties fully paid)
+            Mockito.doReturn(BigDecimal.ZERO).when(overduePeriod).getPenaltyChargesOutstanding();
 
             assertEquals(ExtendedLoanSchedulePeriodData.Status.OVERDUE,
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, overduePeriod));
@@ -247,6 +263,29 @@ public class CredXLoanReadPlatformServiceImplTest {
 
             assertEquals(ExtendedLoanSchedulePeriodData.Status.SCHEDULED,
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, scheduledPeriod));
+        }
+
+        // Test case: SCHEDULED status with penalty charges (not overdue)
+        {
+            LocalDate futureDueDate = today.plusDays(5);
+            BigDecimal penaltyAmount = BigDecimal.valueOf(2);
+
+            LoanSchedulePeriodData scheduledPeriodWithPenalties = Mockito.spy(LoanSchedulePeriodData.repaymentOnlyPeriod(
+                    7,                  // period number
+                    fromDate,           // from date
+                    futureDueDate,      // due date in the future
+                    BigDecimal.ZERO,    // principal amount
+                    BigDecimal.ZERO,    // outstanding loan balance
+                    BigDecimal.ZERO,    // interest amount
+                    BigDecimal.ZERO,    // fee amount
+                    penaltyAmount       // penalty amount (but not overdue)
+            ));
+            
+            // Mock penalty charges outstanding
+            Mockito.doReturn(penaltyAmount).when(scheduledPeriodWithPenalties).getPenaltyChargesOutstanding();
+
+            assertEquals(ExtendedLoanSchedulePeriodData.Status.SCHEDULED,
+                    credXLoanReadPlatformService.resolvePeriodStatus(currency, scheduledPeriodWithPenalties));
         }
     }
 }
