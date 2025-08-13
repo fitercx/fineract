@@ -179,19 +179,16 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return ExtendedLoanSchedulePeriodData.Status.PAID;
         }
 
-        // Check if the installment is overdue (due date has passed)
         boolean isOverdue = period.getDueDate().isBefore(DateUtils.getLocalDateOfTenant());
         
-        // Check if there are penalty charges outstanding (due - paid > 0)
-        boolean hasPenaltyChargesOutstanding = Money.of(currencyData, period.getPenaltyChargesOutstanding()).isGreaterThanZero();
+        Money penaltyAmount = Money.of(currencyData, period.getPenaltyChargesDue());
+        Money totalPaidAmount = Money.of(currencyData, period.getTotalPaidForPeriod());
 
-        // LATE_FEE_APPLIED: Installment is overdue AND penalties are outstanding (not fully paid)
-        if (isOverdue && hasPenaltyChargesOutstanding) {
+        if (isOverdue && totalPaidAmount.isLessThan(penaltyAmount)) {
             return ExtendedLoanSchedulePeriodData.Status.LATE_FEE_APPLIED;
         }
 
-        // OVERDUE: Installment is overdue AND penalties are fully paid (or no penalties), but principal/interest still outstanding
-        if (isOverdue && !hasPenaltyChargesOutstanding) {
+        if (isOverdue && totalPaidAmount.isGreaterThanOrEqualTo(penaltyAmount)) {
             return ExtendedLoanSchedulePeriodData.Status.OVERDUE;
         }
 
