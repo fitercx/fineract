@@ -63,12 +63,22 @@ public class LoanInterestVariationsData {
                     ? variations.get(i + 1).getTermVariationApplicableFrom()
                     : null;
 
-            // Find max fromDate in schedule that is < nextVariationDate
-            LocalDate toDate = schedule.stream()
-                    .map(LoanSchedulePeriodData::getFromDate)
-                    .filter(d -> nextVariationDate == null || d.isBefore(nextVariationDate))
-                    .max(LocalDate::compareTo)
-                    .orElse(null);
+            LocalDate toDate;
+
+            if (nextVariationDate != null) {
+                // Find max fromDate in schedule that is < nextVariationDate
+                toDate = schedule.stream()
+                        .map(LoanSchedulePeriodData::getFromDate)
+                        .filter(d -> d.isBefore(nextVariationDate))
+                        .max(LocalDate::compareTo)
+                        .orElse(null);
+            } else {
+                // Last variation → take the last repayment schedule due date
+                toDate = schedule.stream()
+                        .map(LoanSchedulePeriodData::getDueDate)
+                        .max(LocalDate::compareTo)
+                        .orElse(null);
+            }
 
             result.add(new LoanInterestVariationsData(
                     current.getTermVariationApplicableFrom(),
