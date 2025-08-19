@@ -22,15 +22,15 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
+import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Objects;
+import java.util.*;
+import java.sql.Date;
 
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
@@ -207,19 +207,124 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final String hierarchy = getHierarchyString();
             final String hierarchySearchString = hierarchy + "%";
 
-            final CredibleXLoanMapper rm = new CredibleXLoanMapper(sqlGenerator, delinquencyReadPlatformService);
+            final CredibleXLoanMapper loanRowMapper = new CredibleXLoanMapper(sqlGenerator, delinquencyReadPlatformService);
+            final LoanSchedulePeriodMapper loanSchedulePeriodRowMapper = new LoanSchedulePeriodMapper();
+            final LoanTermVariationsMapper loanTermsVariationsRowMapper = new LoanTermVariationsMapper();
 
+            final String loanTermsVariationSql = loanTermsVariationsRowMapper.loanTermVariationSchema();
+            final String loanSchedulePeriodSql = loanSchedulePeriodRowMapper.loanSchedulePeriodSchema();
             final StringBuilder sqlBuilder = new StringBuilder();
             sqlBuilder.append("select ");
-            sqlBuilder.append(rm.loanSchema());
+            sqlBuilder.append(loanRowMapper.loanSchema());
             sqlBuilder.append(" join m_office o on (o.id = c.office_id or o.id = g.office_id) ");
             sqlBuilder.append(" left join m_office transferToOffice on transferToOffice.id = c.transfer_to_office_id ");
             sqlBuilder.append(" where l.id=? and ( o.hierarchy like ? or transferToOffice.hierarchy like ?)");
 
-            return this.jdbcTemplate.queryForObject(sqlBuilder.toString(), rm, loanId, hierarchySearchString, hierarchySearchString);
+            final List<LoanTermVariationsData> loanTermVariationsData = this.jdbcTemplate.query(loanTermsVariationSql,loanTermsVariationsRowMapper, loanId);
+            final List<LoanSchedulePeriodData> loanSchedulePeriodData = this.jdbcTemplate.query(loanSchedulePeriodSql, loanSchedulePeriodRowMapper, loanId);
+            final LoanAccountData loanAccountData = this.jdbcTemplate.queryForObject(sqlBuilder.toString(), loanRowMapper, loanId, hierarchySearchString, hierarchySearchString);
+
+            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData);
+
+            if (loanAccountData instanceof ExtendedLoanAccountData extended) {
+                extended.addCustomParameter(
+                        LoanAccountAdditionalProperties.LOAN_INTEREST_VARIATIONS,
+                        loanInterestVariationsData
+                );
+            }
+            return loanAccountData;
         } catch (final EmptyResultDataAccessException e) {
             throw new LoanNotFoundException(loanId, e);
         }
+    }
+
+        private static final class LoanTermVariationsMapper implements RowMapper<LoanTermVariationsData> {
+
+        LoanTermVariationsMapper() {}
+            @Override
+            public LoanTermVariationsData mapRow(ResultSet rs, int rowNum) throws SQLException {
+                Date applicableSqlDate = rs.getDate("applicable_date");
+                LocalDate applicableDate = (applicableSqlDate != null) ? ((java.sql.Date) applicableSqlDate).toLocalDate() : null;
+
+                Date valueSqlDate = rs.getDate("date_value");
+                LocalDate dateValue = (valueSqlDate != null) ? ((java.sql.Date) valueSqlDate).toLocalDate() : null;
+
+                // Safe extraction for numeric
+                BigDecimal decimalValue = rs.getBigDecimal("decimal_value"); // getBigDecimal already returns null if column is null
+
+                // Safe extraction for boolean: use getObject to handle SQL NULL properly
+                Boolean isSpecificToInstallment = rs.getObject("is_specific_to_installment") != null
+                        ? rs.getBoolean("is_specific_to_installment")
+                        : null;
+                return new LoanTermVariationsData(
+                        rs.getLong("id"),
+                        rs.getInt("term_type"),
+                        applicableDate,
+                        decimalValue,
+                        dateValue,
+                        isSpecificToInstallment != null && isSpecificToInstallment // convert to primitive if your constructor needs boolean
+                );
+            }
+
+            public String loanTermVariationSchema() {
+                return """
+            WITH ranked_variations AS (
+                SELECT
+                    id,
+                    term_type,
+                    applicable_date,
+                    decimal_value,
+                    date_value,
+                    is_specific_to_installment,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY applicable_date
+                        ORDER BY created_on_utc DESC
+                    ) AS rn
+                FROM m_loan_term_variations
+                WHERE loan_id = ?
+                      AND term_type = 10
+            )
+            SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
+            FROM ranked_variations
+            WHERE rn = 1
+            ORDER BY applicable_date
+            """;
+            }
+    }
+
+    private static final class LoanSchedulePeriodMapper implements RowMapper<LoanSchedulePeriodData> {
+
+        LoanSchedulePeriodMapper() {}
+        @Override
+        public LoanSchedulePeriodData mapRow(ResultSet rs, int rowNum) throws SQLException {
+            return LoanSchedulePeriodData.repaymentOnlyPeriod(
+                    rs.getInt("installment"),
+                    toLocalDateSafe(rs.getDate("fromdate")),
+                    toLocalDateSafe(rs.getDate("duedate")),
+                    BigDecimal.ZERO,   // principalDue
+                    BigDecimal.ZERO,   // outstandingLoanBalance
+                    BigDecimal.ZERO,   // interestDue
+                    BigDecimal.ZERO,   // feeDue
+                    BigDecimal.ZERO    // penaltyDue
+            );
+        }
+
+        private LocalDate toLocalDateSafe(Date date) {
+            return date != null ? date.toLocalDate() : null;
+        }
+
+        public String loanSchedulePeriodSchema() {
+            return """
+        select
+            installment,
+            fromdate,
+            duedate
+        from m_loan_repayment_schedule mlrs 
+        where loan_id = ? 
+        order by installment asc
+        """;
+        }
+
     }
 
     private static final class CredibleXLoanMapper implements RowMapper<LoanAccountData> {
@@ -700,7 +805,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             // Adding new fields as per CredibleX requirements
             final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
             final Boolean isRestructured = rs.getBoolean("isRestructured");
-
 
             ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(
                     id, accountNo, status, externalId, clientId, clientAccountNo, clientName,
