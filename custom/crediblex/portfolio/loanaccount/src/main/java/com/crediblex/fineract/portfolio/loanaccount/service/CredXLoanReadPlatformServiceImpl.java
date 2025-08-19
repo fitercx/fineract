@@ -282,6 +282,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     ) AS rn
                 FROM m_loan_term_variations
                 WHERE loan_id = ?
+                      AND term_type = 10
             )
             SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
             FROM ranked_variations
