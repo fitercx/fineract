@@ -179,17 +179,22 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return ExtendedLoanSchedulePeriodData.Status.PAID;
         }
 
-        if (Money.of(currencyData, period.getPenaltyChargesDue()).isGreaterThanZero()) {
+        boolean isOverdue = period.getDueDate().isBefore(DateUtils.getLocalDateOfTenant());
+        
+        Money penaltyAmount = Money.of(currencyData, period.getPenaltyChargesDue());
+        Money totalPaidAmount = Money.of(currencyData, period.getTotalPaidForPeriod());
+
+        if (isOverdue && totalPaidAmount.isLessThan(penaltyAmount)) {
             return ExtendedLoanSchedulePeriodData.Status.LATE_FEE_APPLIED;
+        }
+
+        if (isOverdue && totalPaidAmount.isGreaterThanOrEqualTo(penaltyAmount)) {
+            return ExtendedLoanSchedulePeriodData.Status.OVERDUE;
         }
 
         if (Money.of(currencyData, period.getTotalOutstandingForPeriod()).isGreaterThanZero()
                 && Money.of(currencyData, period.getTotalPaidForPeriod()).isGreaterThanZero()) {
             return ExtendedLoanSchedulePeriodData.Status.PARTIAL_PAID;
-        }
-
-        if (period.getDueDate().isBefore(DateUtils.getLocalDateOfTenant())) {
-            return ExtendedLoanSchedulePeriodData.Status.OVERDUE;
         }
 
         if (period.getDueDate().equals(DateUtils.getLocalDateOfTenant())) {
