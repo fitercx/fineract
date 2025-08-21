@@ -594,13 +594,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Call the parent implementation to handle the core repayment logic
         CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
         
-        // Debug logging
-        log.info("Debugging CommandProcessingResult:");
-        log.info("- getSubResourceId(): {}", result.getSubResourceId());
-        log.info("- getResourceId(): {}", result.getResourceId());
-        log.info("- getTransactionId(): {}", result.getTransactionId());
-        log.info("- hasChanges(): {}", result.hasChanges());
-        
         // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
         if (result != null && result.hasChanges() && result.getResourceId() != null) {
             try {
