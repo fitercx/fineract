@@ -65,6 +65,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 
 @Slf4j
 public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet implements ApplicationContextAware {
@@ -337,45 +338,9 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     .max((t1, t2) -> t1.getId().compareTo(t2.getId()))
                     .orElse(null);
                 
-                if (recentTransaction != null && recentTransaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
-                    List<Map<String, Object>> affectedInstallments = new ArrayList<>();
-                    
-                    // Use the EXACT SAME logic as UI repayment - get from transaction mappings
-                    recentTransaction.getLoanTransactionToRepaymentScheduleMappings().forEach(mapping -> {
-                        LoanRepaymentScheduleInstallment installment = mapping.getLoanRepaymentScheduleInstallment();
-                        
-                        // Only include installments that had actual amounts applied in this transaction
-                        if (mapping.getAmount() != null && mapping.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                            Map<String, Object> installmentData = new HashMap<>();
-                            installmentData.put("installmentNumber", installment.getInstallmentNumber());
-                            installmentData.put("dueDate", installment.getDueDate());
-                            
-                            // Current installment state (after this transaction) - SAME AS UI
-                            installmentData.put("principalDue", installment.getPrincipal(loan.getCurrency()).getAmount());
-                            installmentData.put("principalPaid", installment.getPrincipalCompleted(loan.getCurrency()).getAmount());
-                            installmentData.put("principalOutstanding", installment.getPrincipalOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("interestDue", installment.getInterestCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("interestPaid", installment.getInterestPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("interestOutstanding", installment.getInterestOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesDue", installment.getFeeChargesCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesPaid", installment.getFeeChargesPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesOutstanding", installment.getFeeChargesOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesDue", installment.getPenaltyChargesCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesPaid", installment.getPenaltyChargesPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesOutstanding", installment.getPenaltyChargesOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("totalOutstanding", installment.getTotalOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("completed", installment.isObligationsMet());
-                            
-                            // Add the amounts that were specifically applied in this transaction - SAME AS UI
-                            installmentData.put("thisTransactionPrincipalPortion", mapping.getPrincipalPortion());
-                            installmentData.put("thisTransactionInterestPortion", mapping.getInterestPortion());
-                            installmentData.put("thisTransactionFeeChargesPortion", mapping.getFeeChargesPortion());
-                            installmentData.put("thisTransactionPenaltyChargesPortion", mapping.getPenaltyChargesPortion());
-                            installmentData.put("thisTransactionTotalAmount", mapping.getAmount());
-                            
-                            affectedInstallments.add(installmentData);
-                        }
-                    });
+                if (recentTransaction != null) {
+                    // Extract affected installments using the shared utility method (same logic as UI repayment)
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, recentTransaction);
                     
                     // Add affected installments and transaction details - SAME AS UI
                     if (!affectedInstallments.isEmpty()) {

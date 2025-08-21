@@ -89,6 +89,7 @@ import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLo
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -610,44 +611,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
                 
                 if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
-                    List<Map<String, Object>> affectedInstallments = new ArrayList<>();
-                    
-                    // Use the transaction mappings to get exactly which installments were affected by this transaction
-                    transaction.getLoanTransactionToRepaymentScheduleMappings().forEach(mapping -> {
-                        LoanRepaymentScheduleInstallment installment = mapping.getLoanRepaymentScheduleInstallment();
-                        
-                        // Only include installments that had actual amounts applied in this transaction
-                        if (mapping.getAmount() != null && mapping.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                            Map<String, Object> installmentData = new HashMap<>();
-                            installmentData.put("installmentNumber", installment.getInstallmentNumber());
-                            installmentData.put("dueDate", installment.getDueDate());
-                            
-                            // Current installment state (after this transaction)
-                            installmentData.put("principalDue", installment.getPrincipal(loan.getCurrency()).getAmount());
-                            installmentData.put("principalPaid", installment.getPrincipalCompleted(loan.getCurrency()).getAmount());
-                            installmentData.put("principalOutstanding", installment.getPrincipalOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("interestDue", installment.getInterestCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("interestPaid", installment.getInterestPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("interestOutstanding", installment.getInterestOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesDue", installment.getFeeChargesCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesPaid", installment.getFeeChargesPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("feeChargesOutstanding", installment.getFeeChargesOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesDue", installment.getPenaltyChargesCharged(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesPaid", installment.getPenaltyChargesPaid(loan.getCurrency()).getAmount());
-                            installmentData.put("penaltyChargesOutstanding", installment.getPenaltyChargesOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("totalOutstanding", installment.getTotalOutstanding(loan.getCurrency()).getAmount());
-                            installmentData.put("completed", installment.isObligationsMet());
-                            
-                            // Add the amounts that were specifically applied in this transaction
-                            installmentData.put("thisTransactionPrincipalPortion", mapping.getPrincipalPortion());
-                            installmentData.put("thisTransactionInterestPortion", mapping.getInterestPortion());
-                            installmentData.put("thisTransactionFeeChargesPortion", mapping.getFeeChargesPortion());
-                            installmentData.put("thisTransactionPenaltyChargesPortion", mapping.getPenaltyChargesPortion());
-                            installmentData.put("thisTransactionTotalAmount", mapping.getAmount());
-                            
-                            affectedInstallments.add(installmentData);
-                        }
-                    });
+                    // Extract affected installments using the shared utility method
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, transaction);
                     
                     // Get transaction amount from the command for webhook payload
                     BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
