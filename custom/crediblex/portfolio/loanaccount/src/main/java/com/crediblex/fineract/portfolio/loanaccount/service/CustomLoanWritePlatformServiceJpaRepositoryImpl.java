@@ -43,20 +43,7 @@ import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulk
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
-import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.Loan;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.*;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleHistoryWritePlatformService;
@@ -97,6 +84,12 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleData;
+import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLoanData;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -106,6 +99,9 @@ import java.util.*;
 @Service
 @Primary
 public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePlatformServiceJpaRepositoryImpl {
+    
+    private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
+    
     private final JdbcTemplate jdbcTemplate;
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanTransactionValidator loanTransactionValidator, LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper, LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository, LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository, LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService, CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService, HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService, WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService, AccountTransfersReadPlatformService accountTransfersReadPlatformService, AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService, FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository, LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService, LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository, AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService, GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler, PostDatedChecksRepository postDatedChecksRepository, LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository, LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService, ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService, ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService, LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService, ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService, LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService, LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper, LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties, JdbcTemplate jdbcTemplate) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService, noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler, journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository, configurationDomainService, workingDaysRepository, accountTransfersWritePlatformService, accountTransfersReadPlatformService, accountAssociationsReadPlatformService, loanReadPlatformService, fromApiJsonHelper, calendarRepository, loanScheduleHistoryWritePlatformService, loanApplicationValidator, accountAssociationRepository, accountTransferDetailRepository, businessEventNotifierService, guarantorDomainService, loanUtilService, entityDatatableChecksWritePlatformService, codeValueRepository, cashierTransactionDataValidator, glimRepository, loanRepository, repaymentWithPostDatedChecksAssembler, postDatedChecksRepository, loanRepaymentScheduleInstallmentRepository, loanLifecycleStateMachine, loanAccountLockService, externalIdFactory, loanAccrualTransactionBusinessEventService, errorHandler, loanDownPaymentHandlerService, loanTransactionAssembler, loanAccrualsProcessingService, loanOfficerValidator, loanDownPaymentTransactionValidator, loanDisbursementService, loanScheduleService, loanChargeValidator, loanOfficerService, reprocessLoanTransactionsService, loanAccountService, journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService, fineractProperties);
@@ -588,6 +584,68 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             );
         }
 
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult makeLoanRepayment(final LoanTransactionType repaymentTransactionType, final Long loanId, 
+            final JsonCommand command, final boolean isRecoveryRepayment) {
+        // Call the parent implementation to handle the core repayment logic
+        CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
+        
+        // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
+        if (result != null && result.hasChanges() && result.getResourceId() != null) {
+            try {
+                // Fetch the updated loan to get the loan transaction
+                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+                
+                // Find the specific transaction that was just created using the resourceId (transaction ID)
+                LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
+                
+                if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
+                    // Extract affected installments using the shared utility method
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, transaction);
+                    
+                    // Get transaction amount from the command for webhook payload
+                    BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+                    LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+                    
+                    // Add the affected installments to the result for webhook payload
+                    Map<String, Object> additionalChanges = new HashMap<>();
+                    if (result.getChanges() != null) {
+                        additionalChanges.putAll(result.getChanges());
+                    }
+                    
+                    // Add affected installments and transaction details to the changes
+                    additionalChanges.put("affectedInstallments", affectedInstallments);
+                    additionalChanges.put("transactionAmount", transactionAmount);
+                    additionalChanges.put("transactionDate", transactionDate);
+                    additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction ID
+                    
+                    // Create a new result with the additional schedule information
+                    return new CommandProcessingResultBuilder()
+                        .withCommandId(result.getCommandId())
+                        .withEntityId(result.getResourceId())
+                        .withEntityExternalId(result.getResourceExternalId())
+                        .withSubEntityId(result.getSubResourceId())
+                        .withSubEntityExternalId(result.getSubResourceExternalId())
+                        .withOfficeId(result.getOfficeId())
+                        .withClientId(result.getClientId())
+                        .withGroupId(result.getGroupId())
+                        .withLoanId(result.getLoanId())
+                        .withLoanExternalId(result.getLoanExternalId())
+                        .with(additionalChanges)
+                        .build();
+                }
+                    
+            } catch (Exception e) {
+                // Log the error but don't fail the repayment transaction
+                log.warn("Failed to fetch affected installments for webhook payload: {}", e.getMessage());
+                return result;
+            }
+        }
+        
         return result;
     }
 
