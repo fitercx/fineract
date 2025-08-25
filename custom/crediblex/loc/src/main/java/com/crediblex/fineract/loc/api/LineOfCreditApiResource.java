@@ -49,6 +49,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
+import java.util.Collections;
 
 @Path("/v1/lineofcredit")
 @Component
@@ -88,7 +89,7 @@ public class LineOfCreditApiResource {
             lineOfCredits = this.readPlatformService.retrieveAllLineOfCredits();
         }
 
-        return this.toApiJsonSerializer.serialize(settings, lineOfCredits, "lineOfCredit");
+        return this.toApiJsonSerializer.serialize(settings, lineOfCredits, Collections.singleton("lineOfCredit"));
     }
 
     @GET
@@ -105,7 +106,7 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
 
-        return this.toApiJsonSerializer.serialize(settings, template, "lineOfCredit");
+        return this.toApiJsonSerializer.serialize(settings, Collections.singleton(template), Collections.singleton("lineOfCredit"));
     }
 
     @GET
@@ -123,7 +124,7 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData lineOfCredit = this.readPlatformService.retrieveOne(lineOfCreditId);
 
-        return this.toApiJsonSerializer.serialize(settings, lineOfCredit, "lineOfCredit");
+        return this.toApiJsonSerializer.serialize(settings, Collections.singleton(lineOfCredit), Collections.singleton("lineOfCredit"));
     }
 
     @POST
@@ -259,6 +260,6 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final Collection<LineOfCreditTransactionData> transactions = this.readPlatformService.retrieveAllTransactions(lineOfCreditId);
 
-        return this.transactionToApiJsonSerializer.serialize(settings, transactions, "lineOfCreditTransaction");
+        return this.transactionToApiJsonSerializer.serialize(settings, transactions, Collections.singleton("lineOfCreditTransaction"));
     }
 } 

@@ -679,7 +679,10 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     }
 
     public BigDecimal getAmountWithTaxes() {
-        return this.hasTax() ? this.amount.add(this.taxAmount) : this.amount;
+        if (this.hasTax() && !Objects.isNull(this.taxAmount)) {
+            return this.amount.add(this.taxAmount);
+        }
+        return this.amount;
     }
 
     /**

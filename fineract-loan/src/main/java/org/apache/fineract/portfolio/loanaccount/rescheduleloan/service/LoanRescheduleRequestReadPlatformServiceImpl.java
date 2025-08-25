@@ -166,7 +166,6 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
                     break;
                 }
             } while (rs.next());
-
             return LoanRescheduleRequestData.instance(id, loanId, statusEnum, rescheduleFromInstallment, rescheduleFromDate,
                     rescheduleReasonCodeValue, rescheduleReasonComment, timeline, clientName, loanAccountNumber, clientId,
                     recalculateInterest, rescheduleReasons, loanTermVariations);
@@ -186,7 +185,8 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
 
     }
 
-    private static final class LoanRescheduleRequestRowMapperForBulkApproval implements RowMapper<LoanRescheduleRequestData> {
+
+    protected static final class LoanRescheduleRequestRowMapperForBulkApproval implements RowMapper<LoanRescheduleRequestData> {
 
         public String schema() {
             final StringBuilder sqlBuilder = new StringBuilder(200);

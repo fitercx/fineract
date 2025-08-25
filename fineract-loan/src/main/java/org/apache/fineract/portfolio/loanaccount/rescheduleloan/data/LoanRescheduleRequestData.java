@@ -121,9 +121,19 @@ public final class LoanRescheduleRequestData {
     public static LoanRescheduleRequestData instance(Long id, Long loanId, LoanRescheduleRequestStatusEnumData statusEnum,
             final String clientName, final String loanAccountNumber, final Long clientId, final LocalDate rescheduleFromDate,
             final CodeValueData rescheduleReasonCodeValue) {
-
         return new LoanRescheduleRequestData(id, loanId, statusEnum, clientName, loanAccountNumber, clientId, rescheduleFromDate,
                 rescheduleReasonCodeValue);
+    }
+
+    /**
+     * @return an instance of the LoanRescheduleRequestData class with loan term variations data
+     **/
+    public static LoanRescheduleRequestData instance(Long id, Long loanId, LoanRescheduleRequestStatusEnumData statusEnum,
+            final String clientName, final String loanAccountNumber, final Long clientId, final LocalDate rescheduleFromDate,
+            final CodeValueData rescheduleReasonCodeValue, final Collection<LoanTermVariationsData> loanTermVariationsData) {
+
+        return new LoanRescheduleRequestData(id, loanId, statusEnum, null, rescheduleFromDate, rescheduleReasonCodeValue,
+                null, null, clientName, loanAccountNumber, clientId, null, null, loanTermVariationsData);
     }
 
     /**
@@ -215,4 +225,12 @@ public final class LoanRescheduleRequestData {
 
         return value;
     }
+
+    /**
+     * @return the loanTermVariationsData
+     */
+    public Collection<LoanTermVariationsData> getLoanTermVariationsData() {
+        return loanTermVariationsData;
+    }
+
 }
