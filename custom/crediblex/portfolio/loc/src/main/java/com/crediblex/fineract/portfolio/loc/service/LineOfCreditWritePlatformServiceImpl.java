@@ -21,6 +21,9 @@ package com.crediblex.fineract.portfolio.loc.service;
 
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
@@ -32,10 +35,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.Map;
-
 @Service
 @Slf4j
 public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePlatformService {
@@ -46,10 +45,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final LineOfCreditDataValidator dataValidator;
 
     @Autowired
-    public LineOfCreditWritePlatformServiceImpl(PlatformSecurityContext context,
-                                                LineOfCreditRepository lineOfCreditRepository,
-                                                ClientRepositoryWrapper clientRepository,
-                                                LineOfCreditDataValidator dataValidator) {
+    public LineOfCreditWritePlatformServiceImpl(PlatformSecurityContext context, LineOfCreditRepository lineOfCreditRepository,
+            ClientRepositoryWrapper clientRepository, LineOfCreditDataValidator dataValidator) {
         this.context = context;
         this.lineOfCreditRepository = lineOfCreditRepository;
         this.clientRepository = clientRepository;
@@ -78,8 +75,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         } catch (final Exception e) {
             log.error("Error occurred while creating line of credit", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.creation.failed", 
-                                                        "Line of credit creation failed", e.getMessage());
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.creation.failed", "Line of credit creation failed",
+                    e.getMessage(), e);
         }
     }
 
@@ -90,8 +87,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             this.dataValidator.validateForUpdate(command.json());
 
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", 
-                                                                             "Line of credit not found", "lineOfCreditId"));
+                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
+                            "Line of credit not found", "lineOfCreditId"));
 
             final Map<String, Object> changes = lineOfCredit.update(command);
 
@@ -103,8 +100,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         } catch (final Exception e) {
             log.error("Error occurred while updating line of credit", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed", 
-                                                        "Line of credit update failed", "lineOfCreditId");
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed", "Line of credit update failed",
+                    "lineOfCreditId", e);
         }
     }
 
@@ -113,8 +110,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     public CommandProcessingResult activateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         try {
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", 
-                                                                             "Line of credit not found", "lineOfCreditId"));
+                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
+                            "Line of credit not found", "lineOfCreditId"));
 
             lineOfCredit.activate();
             this.lineOfCreditRepository.save(lineOfCredit);
@@ -123,8 +120,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         } catch (final Exception e) {
             log.error("Error occurred while activating line of credit", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.activation.failed", 
-                                                        "Line of credit activation failed", "lineOfCreditId");
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.activation.failed", "Line of credit activation failed",
+                    "lineOfCreditId", e);
         }
     }
 
@@ -133,8 +130,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     public CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         try {
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", 
-                                                                             "Line of credit not found", "lineOfCreditId"));
+                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
+                            "Line of credit not found", "lineOfCreditId"));
 
             lineOfCredit.deactivate();
             this.lineOfCreditRepository.save(lineOfCredit);
@@ -143,8 +140,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         } catch (final Exception e) {
             log.error("Error occurred while deactivating line of credit", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.deactivation.failed", 
-                                                        "Line of credit deactivation failed", "lineOfCreditId");
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.deactivation.failed",
+                    "Line of credit deactivation failed", "lineOfCreditId", e);
         }
     }
 
@@ -153,8 +150,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     public CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId) {
         try {
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", 
-                                                                             "Line of credit not found", "lineOfCreditId"));
+                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
+                            "Line of credit not found", "lineOfCreditId"));
 
             this.lineOfCreditRepository.delete(lineOfCredit);
 
@@ -162,8 +159,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         } catch (final Exception e) {
             log.error("Error occurred while deleting line of credit", e);
-            throw new PlatformApiDataValidationException("error.msg.line.of.credit.deletion.failed", 
-                                                        "Line of credit deletion failed", "lineOfCreditId");
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.deletion.failed", "Line of credit deletion failed",
+                    "lineOfCreditId", e);
         }
     }
-} 
+}

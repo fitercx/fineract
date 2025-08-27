@@ -20,13 +20,10 @@
 package com.crediblex.fineract.portfolio.loc.repository;
 
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
-
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 /**
  * Repository interface for Line of Credit entity.
@@ -37,25 +34,19 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
     /**
      * Find all line of credits by client ID.
      *
-     * @param clientId the client ID
+     * @param clientId
+     *            the client ID
      * @return list of line of credits
      */
     List<LineOfCredit> findByClientId(Long clientId);
 
     /**
-     * Find all active line of credits by client ID.
-     *
-     * @param clientId the client ID
-     * @return list of active line of credits
-     */
-    @Query("SELECT loc FROM LineOfCredit loc WHERE loc.client.id = :clientId AND loc.activationStatus = 'ACTIVE'")
-    List<LineOfCredit> findActiveByClientId(@Param("clientId") Long clientId);
-
-    /**
      * Find line of credit by client ID and name.
      *
-     * @param clientId the client ID
-     * @param name the line of credit name
+     * @param clientId
+     *            the client ID
+     * @param name
+     *            the line of credit name
      * @return optional line of credit
      */
     Optional<LineOfCredit> findByClientIdAndName(Long clientId, String name);
@@ -63,8 +54,10 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
     /**
      * Check if a line of credit exists by client ID and name.
      *
-     * @param clientId the client ID
-     * @param name the line of credit name
+     * @param clientId
+     *            the client ID
+     * @param name
+     *            the line of credit name
      * @return true if exists, false otherwise
      */
     boolean existsByClientIdAndName(Long clientId, String name);
@@ -72,8 +65,10 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
     /**
      * Find all line of credits by client ID and activation status.
      *
-     * @param clientId the client ID
-     * @param activationStatus the activation status
+     * @param clientId
+     *            the client ID
+     * @param activationStatus
+     *            the activation status
      * @return list of line of credits
      */
     List<LineOfCredit> findByClientIdAndActivationStatus(Long clientId, LineOfCredit.ActivationStatus activationStatus);

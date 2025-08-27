@@ -22,6 +22,11 @@ package com.crediblex.fineract.portfolio.loc.service;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -32,12 +37,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.stream.Collectors;
-
 @Service
 @Slf4j
 public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlatformService {
@@ -47,9 +46,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private final ClientReadPlatformService clientReadPlatformService;
 
     @Autowired
-    public LineOfCreditReadPlatformServiceImpl(PlatformSecurityContext context,
-                                               LineOfCreditRepository lineOfCreditRepository,
-                                               ClientReadPlatformService clientReadPlatformService) {
+    public LineOfCreditReadPlatformServiceImpl(PlatformSecurityContext context, LineOfCreditRepository lineOfCreditRepository,
+            ClientReadPlatformService clientReadPlatformService) {
         this.context = context;
         this.lineOfCreditRepository = lineOfCreditRepository;
         this.clientReadPlatformService = clientReadPlatformService;
@@ -60,9 +58,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
         final List<LineOfCredit> lineOfCredits = this.lineOfCreditRepository.findAll();
-        return lineOfCredits.stream()
-                .map(this::assembleLineOfCreditData)
-                .collect(Collectors.toList());
+        return lineOfCredits.stream().map(this::assembleLineOfCreditData).collect(Collectors.toList());
     }
 
     @Override
@@ -98,45 +94,30 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
         final List<LineOfCredit> lineOfCredits = this.lineOfCreditRepository.findByClientId(clientId);
-        return lineOfCredits.stream()
-                .map(this::assembleLineOfCreditData)
-                .collect(Collectors.toList());
+        return lineOfCredits.stream().map(this::assembleLineOfCreditData).collect(Collectors.toList());
     }
 
     @Override
     public Collection<LineOfCreditData> retrieveActiveLineOfCreditsForClient(Long clientId) {
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
-        final List<LineOfCredit> lineOfCredits = this.lineOfCreditRepository.findByClientIdAndActivationStatus(clientId, LineOfCredit.ActivationStatus.ACTIVE);
-        return lineOfCredits.stream()
-                .map(this::assembleLineOfCreditData)
-                .collect(Collectors.toList());
+        final List<LineOfCredit> lineOfCredits = this.lineOfCreditRepository.findByClientIdAndActivationStatus(clientId,
+                LineOfCredit.ActivationStatus.ACTIVE);
+        return lineOfCredits.stream().map(this::assembleLineOfCreditData).collect(Collectors.toList());
     }
-
 
     private LineOfCreditData assembleLineOfCreditData(LineOfCredit lineOfCredit) {
         final ClientData clientData = this.clientReadPlatformService.retrieveOne(lineOfCredit.getClient().getId());
         final EnumOptionData activationStatus = getActivationStatusEnumOptionData(lineOfCredit.getActivationStatus());
 
-        return LineOfCreditData.instance(
-                lineOfCredit.getId(),
-                lineOfCredit.getClient().getId(),
-                clientData,
-                lineOfCredit.getName(),
-                lineOfCredit.getProductType(),
-                lineOfCredit.getMaximumAmount(),
-                lineOfCredit.getAvailableBalance(),
-                lineOfCredit.getConsumedAmount(),
-                activationStatus,
-                lineOfCredit.getStartDate(),
-                lineOfCredit.getEndDate(),
+        return LineOfCreditData.instance(lineOfCredit.getId(), lineOfCredit.getClient().getId(), clientData, lineOfCredit.getName(),
+                lineOfCredit.getProductType(), lineOfCredit.getMaximumAmount(), lineOfCredit.getAvailableBalance(),
+                lineOfCredit.getConsumedAmount(), activationStatus, lineOfCredit.getStartDate(), lineOfCredit.getEndDate(),
                 lineOfCredit.getCreatedDate().map(OffsetDateTime::toLocalDate).orElse(null),
                 lineOfCredit.getCreatedBy().map(String::valueOf).orElse(null),
                 lineOfCredit.getLastModifiedDate().map(OffsetDateTime::toLocalDate).orElse(null),
-                lineOfCredit.getLastModifiedBy().map(String::valueOf).orElse(null)
-        );
+                lineOfCredit.getLastModifiedBy().map(String::valueOf).orElse(null));
     }
-
 
     private EnumOptionData getActivationStatusEnumOptionData(LineOfCredit.ActivationStatus status) {
         return new EnumOptionData((long) status.ordinal(), status.name(), status.name());
@@ -157,4 +138,4 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         return options;
     }
 
-} 
+}

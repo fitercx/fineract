@@ -75,7 +75,7 @@ public class LineOfCreditCommandWrapperBuilder {
     }
 
     public CommandWrapper build() {
-        return new CommandWrapper(null, null, null, null, null, this.actionName, this.entityName, 
-                this.entityId, null, this.href, this.json, null, null, null, null, null, null, null, null);
+        return new CommandWrapper(null, null, null, null, null, this.actionName, this.entityName, this.entityId, null, this.href, this.json,
+                null, null, null, null, null, null, null, null);
     }
-} 
+}

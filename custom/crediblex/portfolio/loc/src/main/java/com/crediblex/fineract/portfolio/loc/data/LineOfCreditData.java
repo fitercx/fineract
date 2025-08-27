@@ -19,16 +19,15 @@
 
 package com.crediblex.fineract.portfolio.loc.data;
 
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Collection;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.portfolio.client.data.ClientData;
-
-import java.io.Serializable;
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.Collection;
 
 /**
  * Immutable data object representing Line of Credit data.
@@ -49,7 +48,7 @@ public final class LineOfCreditData implements Serializable {
     private EnumOptionData activationStatus;
     private LocalDate startDate;
     private LocalDate endDate;
-    
+
     // Audit fields
     private LocalDate createdDate;
     private String createdByUsername;
@@ -65,30 +64,25 @@ public final class LineOfCreditData implements Serializable {
     private String dateFormat;
     private String locale;
 
-    public static LineOfCreditData importInstance(Long clientId, String name, String productType, 
-                                                 BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
-                                                 Integer rowIndex, String dateFormat, String locale) {
-        return new LineOfCreditData(clientId, name, productType, maximumAmount, startDate, endDate, 
-                                   rowIndex, dateFormat, locale);
+    public static LineOfCreditData importInstance(Long clientId, String name, String productType, BigDecimal maximumAmount,
+            LocalDate startDate, LocalDate endDate, Integer rowIndex, String dateFormat, String locale) {
+        return new LineOfCreditData(clientId, name, productType, maximumAmount, startDate, endDate, rowIndex, dateFormat, locale);
     }
 
-    public static LineOfCreditData template(Collection<EnumOptionData> activationStatusOptions, 
-                                           Collection<String> productTypeOptions) {
+    public static LineOfCreditData template(Collection<EnumOptionData> activationStatusOptions, Collection<String> productTypeOptions) {
         return new LineOfCreditData(activationStatusOptions, productTypeOptions);
     }
 
-    public static LineOfCreditData instance(Long id, Long clientId, ClientData client, String name, 
-                                           String productType, BigDecimal maximumAmount, BigDecimal availableBalance,
-                                           BigDecimal consumedAmount, EnumOptionData activationStatus, 
-                                           LocalDate startDate, LocalDate endDate, LocalDate createdDate,
-                                           String createdByUsername, LocalDate lastModifiedDate, String lastModifiedByUsername) {
-        return new LineOfCreditData(id, clientId, client, name, productType, maximumAmount, availableBalance,
-                                   consumedAmount, activationStatus, startDate, endDate, createdDate, 
-                                   createdByUsername, lastModifiedDate, lastModifiedByUsername);
+    public static LineOfCreditData instance(Long id, Long clientId, ClientData client, String name, String productType,
+            BigDecimal maximumAmount, BigDecimal availableBalance, BigDecimal consumedAmount, EnumOptionData activationStatus,
+            LocalDate startDate, LocalDate endDate, LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate,
+            String lastModifiedByUsername) {
+        return new LineOfCreditData(id, clientId, client, name, productType, maximumAmount, availableBalance, consumedAmount,
+                activationStatus, startDate, endDate, createdDate, createdByUsername, lastModifiedDate, lastModifiedByUsername);
     }
 
-    private LineOfCreditData(Long clientId, String name, String productType, BigDecimal maximumAmount,
-                             LocalDate startDate, LocalDate endDate, Integer rowIndex, String dateFormat, String locale) {
+    private LineOfCreditData(Long clientId, String name, String productType, BigDecimal maximumAmount, LocalDate startDate,
+            LocalDate endDate, Integer rowIndex, String dateFormat, String locale) {
         this.clientId = clientId;
         this.name = name;
         this.productType = productType;
@@ -105,10 +99,9 @@ public final class LineOfCreditData implements Serializable {
         this.productTypeOptions = productTypeOptions;
     }
 
-    private LineOfCreditData(Long id, Long clientId, ClientData client, String name, String productType,
-                             BigDecimal maximumAmount, BigDecimal availableBalance, BigDecimal consumedAmount,
-                             EnumOptionData activationStatus, LocalDate startDate, LocalDate endDate,
-                             LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate, String lastModifiedByUsername) {
+    private LineOfCreditData(Long id, Long clientId, ClientData client, String name, String productType, BigDecimal maximumAmount,
+            BigDecimal availableBalance, BigDecimal consumedAmount, EnumOptionData activationStatus, LocalDate startDate, LocalDate endDate,
+            LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate, String lastModifiedByUsername) {
         this.id = id;
         this.clientId = clientId;
         this.client = client;
@@ -125,4 +118,4 @@ public final class LineOfCreditData implements Serializable {
         this.lastModifiedDate = lastModifiedDate;
         this.lastModifiedByUsername = lastModifiedByUsername;
     }
-} 
+}

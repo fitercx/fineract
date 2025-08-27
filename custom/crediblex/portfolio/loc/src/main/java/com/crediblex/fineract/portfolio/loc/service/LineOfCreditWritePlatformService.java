@@ -39,4 +39,4 @@ public interface LineOfCreditWritePlatformService {
 
     @Transactional
     CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId);
-} 
+}

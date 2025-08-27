@@ -22,7 +22,6 @@ package com.crediblex.fineract.portfolio.loc.api;
 import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperBuilder;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
-import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -30,10 +29,20 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
+import java.util.Collection;
+import java.util.Collections;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
@@ -45,9 +54,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import java.util.Collection;
-import java.util.Collections;
 
 @Path("/api/v1/credit-lines")
 @Component
@@ -63,11 +69,9 @@ public class LineOfCreditApiResource {
     private static final Logger log = LoggerFactory.getLogger(LineOfCreditApiResource.class);
 
     @Autowired
-    public LineOfCreditApiResource(PlatformSecurityContext context,
-                                   LineOfCreditReadPlatformService readPlatformService,
-                                   DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer,
-                                   ApiRequestParameterHelper apiRequestParameterHelper,
-                                   PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService) {
+    public LineOfCreditApiResource(PlatformSecurityContext context, LineOfCreditReadPlatformService readPlatformService,
+            DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer, ApiRequestParameterHelper apiRequestParameterHelper,
+            PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService) {
         this.context = context;
         this.readPlatformService = readPlatformService;
         this.toApiJsonSerializer = toApiJsonSerializer;
@@ -92,7 +96,6 @@ public class LineOfCreditApiResource {
         return this.toApiJsonSerializer.serialize(settings, Collections.singleton(template), Collections.singleton("lineOfCredit"));
     }
 
-
     @GET
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
@@ -100,11 +103,11 @@ public class LineOfCreditApiResource {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditsResponse.class))) })
     public String retrieveAll(@Context final UriInfo uriInfo,
-                              @QueryParam("clientId") @Parameter(description = "clientId") final Long clientId,
-                              @QueryParam("offset") @Parameter(description = "offset") final Integer offset,
-                              @QueryParam("limit") @Parameter(description = "limit") final Integer limit,
-                              @QueryParam("orderBy") @Parameter(description = "orderBy") final String orderBy,
-                              @QueryParam("sortOrder") @Parameter(description = "sortOrder") final String sortOrder) {
+            @QueryParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @QueryParam("offset") @Parameter(description = "offset") final Integer offset,
+            @QueryParam("limit") @Parameter(description = "limit") final Integer limit,
+            @QueryParam("orderBy") @Parameter(description = "orderBy") final String orderBy,
+            @QueryParam("sortOrder") @Parameter(description = "sortOrder") final String sortOrder) {
 
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
@@ -146,7 +149,7 @@ public class LineOfCreditApiResource {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
     public String update(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-                         @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder() //
                 .updateLineOfCredit(lineOfCreditId) //
@@ -166,7 +169,7 @@ public class LineOfCreditApiResource {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String activate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-                           @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder() //
                 .activateLineOfCredit(lineOfCreditId) //
@@ -187,13 +190,10 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.DeleteLineOfCreditResponse.class))) })
     public String delete(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder()
-                .deleteLineOfCredit(lineOfCreditId)
-                .build();
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deleteLineOfCredit(lineOfCreditId).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
         return this.toApiJsonSerializer.serialize(result);
     }
-
 }
