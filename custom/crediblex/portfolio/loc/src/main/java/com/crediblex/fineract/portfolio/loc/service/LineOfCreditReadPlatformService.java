@@ -17,26 +17,26 @@
  * under the License.
  */
 
-package com.crediblex.fineract.loc.api;
+package com.crediblex.fineract.portfolio.loc.service;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.junit.jupiter.MockitoExtension;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import java.util.Collection;
 
-@ExtendWith(MockitoExtension.class)
-class LineOfCreditApiResourceTest {
+public interface LineOfCreditReadPlatformService {
 
-    @InjectMocks
-    private LineOfCreditApiResource lineOfCreditApiResource;
+    Collection<LineOfCreditData> retrieveAllLineOfCredits();
 
-    @Test
-    void testLineOfCreditApiResourceCreation() {
-        // Given
-        // When
-        // Then
-        assertNotNull(lineOfCreditApiResource);
-    }
-}
+    Page<LineOfCreditData> retrieveAllLineOfCredits(Pageable pageable);
+
+    LineOfCreditData retrieveOne(Long lineOfCreditId);
+
+    LineOfCreditData retrieveTemplate();
+
+    Collection<LineOfCreditData> retrieveAllLineOfCreditsForClient(Long clientId);
+
+    Collection<LineOfCreditData> retrieveActiveLineOfCreditsForClient(Long clientId);
+
+} 

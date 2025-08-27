@@ -17,31 +17,16 @@
  * under the License.
  */
 
-package com.crediblex.fineract.loc;
-
-import org.springframework.stereotype.Service;
-
-/**
- * Service class for LOC (Line of Credit) functionality.
- * This is a placeholder class that can be extended with actual LOC business logic.
- */
-@Service
-public class LocService {
-
-    /**
-     * Default constructor.
-     */
-    public LocService() {
-        // Default constructor
-    }
-
-    /**
-     * Placeholder method for LOC service initialization.
-     * 
-     * @return true if service is initialized successfully
-     */
-    public boolean initialize() {
-        // TODO: Implement actual LOC service initialization logic
-        return true;
-    }
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract LOC Service'
+
+group = 'com.crediblex.fineract.loc'
+
+base {
+    archivesName = 'crediblex-fineract-loc-service'
+}
+
+apply from: 'dependencies.gradle'

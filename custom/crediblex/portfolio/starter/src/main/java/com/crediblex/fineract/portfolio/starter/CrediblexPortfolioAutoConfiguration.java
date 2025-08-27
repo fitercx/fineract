@@ -27,7 +27,10 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @AutoConfiguration
 @ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio") })
-@EnableJpaRepositories(basePackages = "com.crediblex.fineract.portfolio.loanaccount.repository")
+@EnableJpaRepositories(basePackages = {
+    "com.crediblex.fineract.portfolio.loanaccount.repository",
+    "com.crediblex.fineract.portfolio.loc.repository"
+})
 @Import(CrediblexStandingInstructionsOverrideConfiguration.class)
 public class CrediblexPortfolioAutoConfiguration {
 
