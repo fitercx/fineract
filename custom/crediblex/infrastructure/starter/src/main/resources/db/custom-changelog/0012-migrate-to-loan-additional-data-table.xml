@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Step 1: Create the new consolidated dt_loan_additional_data table -->
+    <changeSet author="fineract" id="1">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not>
+                <tableExists tableName="dt_loan_additional_data"/>
+            </not>
+        </preConditions>
+
+        <createTable tableName="dt_loan_additional_data">
+            <column name="loan_id" type="BIGINT">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="remitter_name" type="TEXT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="dp_name" type="TEXT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="agreed_cash_margin_amount" type="FLOAT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP"/>
+            <column name="updated_at" type="TIMESTAMP"/>
+        </createTable>
+
+        <addForeignKeyConstraint
+                baseTableName="dt_loan_additional_data"
+                baseColumnNames="loan_id"
+                constraintName="fk_loan_additional_data_loan_id"
+                referencedTableName="m_loan"
+                referencedColumnNames="id"/>
+    </changeSet>
+
+    <!-- Step 2: Migrate data from existing table -->
+    <changeSet author="fineract" id="2">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="dt_loan_additional_data"/>
+                <tableExists tableName="dt_loan_remitter_dp_info"/>
+            </and>
+        </preConditions>
+
+        <!-- Insert data from loan remitter dp info table -->
+        <sql>
+            INSERT INTO dt_loan_additional_data (loan_id, remitter_name, dp_name, created_at, updated_at)
+            SELECT 
+                lrdi.loan_id,
+                lrdi.remitter_name,
+                lrdi.dp_name,
+                lrdi.created_at,
+                lrdi.updated_at
+            FROM dt_loan_remitter_dp_info lrdi
+        </sql>
+    </changeSet>
+
+    <!-- Step 3: Register the new table -->
+    <changeSet author="fineract" id="3">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+
+        <insert tableName="x_registered_table">
+            <column name="registered_table_name" value="dt_loan_additional_data"/>
+            <column name="application_table_name" value="m_loan"/>
+            <column name="entity_subtype" value="Entity"/>
+        </insert>
+    </changeSet>
+
+    <!-- Step 4: Add entity datatable check for the new table -->
+    <changeSet author="fineract" id="4">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_entity_datatable_check
+                WHERE application_table_name = 'm_loan' AND x_registered_table_name = 'dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+
+        <insert tableName="m_entity_datatable_check">
+            <column name="application_table_name" value="m_loan"/>
+            <column name="x_registered_table_name" value="dt_loan_additional_data"/>
+            <column name="status_enum" valueNumeric="100"/>
+            <column name="system_defined" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <!-- Step 5: Add permissions for the new table -->
+    <changeSet author="fineract" id="5">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'CREATE_dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="CREATE_dt_loan_additional_data" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="CREATE" />
+            <column name="can_maker_checker" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="6">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'CREATE_dt_loan_additional_data_CHECKER'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="CREATE_dt_loan_additional_data_CHECKER" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="CREATE" />
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="7">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'READ_dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="READ_dt_loan_additional_data" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="READ" />
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="8">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'UPDATE_dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="UPDATE_dt_loan_additional_data" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="UPDATE" />
+            <column name="can_maker_checker" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="9">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'UPDATE_dt_loan_additional_data_CHECKER'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="UPDATE_dt_loan_additional_data_CHECKER" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="UPDATE" />
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="10">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'DELETE_dt_loan_additional_data'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="DELETE_dt_loan_additional_data" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="DELETE" />
+            <column name="can_maker_checker" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="fineract" id="11">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'DELETE_dt_loan_additional_data_CHECKER'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="datatable" />
+            <column name="code" value="DELETE_dt_loan_additional_data_CHECKER" />
+            <column name="entity_name" value="dt_loan_additional_data" />
+            <column name="action_name" value="DELETE" />
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <!-- Step 6: Remove old datatable registrations -->
+    <changeSet author="fineract" id="12">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM x_registered_table WHERE registered_table_name = 'dt_loan_remitter_dp_info'
+            </sqlCheck>
+        </preConditions>
+
+        <delete tableName="m_entity_datatable_check">
+            <where>application_table_name = 'm_loan' AND x_registered_table_name = 'dt_loan_remitter_dp_info'</where>
+        </delete>
+
+        <delete tableName="x_registered_table">
+            <where>registered_table_name = 'dt_loan_remitter_dp_info'</where>
+        </delete>
+
+        <!-- Remove old permissions -->
+        <delete tableName="m_permission">
+            <where>entity_name = 'dt_loan_remitter_dp_info'</where>
+        </delete>
+    </changeSet>
+
+    <!-- Step 7: Drop old table (after data migration) -->
+    <changeSet author="fineract" id="13">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="dt_loan_additional_data"/>
+                <tableExists tableName="dt_loan_remitter_dp_info"/>
+            </and>
+        </preConditions>
+
+        <dropTable tableName="dt_loan_remitter_dp_info" cascadeConstraints="true"/>
+    </changeSet>
+
+</databaseChangeLog>
