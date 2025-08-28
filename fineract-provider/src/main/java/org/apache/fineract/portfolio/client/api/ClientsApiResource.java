@@ -322,6 +322,8 @@ public class ClientsApiResource {
         return retrieveClientTransferTemplate(clientId, null);
     }
 
+
+
     @GET
     @Path("/external-id/{externalId}")
     @Produces({ MediaType.APPLICATION_JSON })

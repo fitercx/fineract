@@ -97,36 +97,27 @@ public class LineOfCreditApiResource {
         return this.toApiJsonSerializer.serialize(settings, Collections.singleton(template), Collections.singleton("lineOfCredit"));
     }
 
+
     @GET
-    @Path("list")
+    @Path("clients/{clientId}/creditlines")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "List Line of Credits", description = "The list capability of line of credits can support pagination and sorting.")
+    @Operation(summary = "List Line of Credits for Client", description = "Retrieves all line of credits for a specific client.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditsResponse.class))) })
-    public String retrieveAll(@Context final UriInfo uriInfo,
-            @QueryParam("clientId") @Parameter(description = "clientId") final Long clientId,
-            @QueryParam("offset") @Parameter(description = "offset") final Integer offset,
-            @QueryParam("limit") @Parameter(description = "limit") final Integer limit,
-            @QueryParam("orderBy") @Parameter(description = "orderBy") final String orderBy,
-            @QueryParam("sortOrder") @Parameter(description = "sortOrder") final String sortOrder) {
+    public String retrieveAllForClient(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @Context final UriInfo uriInfo) {
 
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-
-        Collection<LineOfCreditData> lineOfCredits;
-        if (clientId != null) {
-            lineOfCredits = this.readPlatformService.retrieveAllLineOfCreditsForClient(clientId);
-        } else {
-            lineOfCredits = this.readPlatformService.retrieveAllLineOfCredits();
-        }
+        final Collection<LineOfCreditData> lineOfCredits = this.readPlatformService.retrieveAllLineOfCreditsForClient(clientId);
 
         return this.toApiJsonSerializer.serialize(settings, lineOfCredits, Collections.singleton("lineOfCredit"));
     }
 
     @GET
-    @Path("{lineOfCreditId}")
+    @Path("clients/{clientId}/creditlines/{lineOfCreditId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Retrieve a Line of Credit", description = "Retrieves a specific line of credit by ID.")
@@ -169,12 +160,8 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String createForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final String apiRequestBodyAsJson) {
-        log.debug("REQUEST BOYD => " + apiRequestBodyAsJson);
 
-        // Replace the clientId in the JSON with the one from the path parameter
-        String modifiedJson = apiRequestBodyAsJson.replaceAll("\"clientId\"\\s*:\\s*\\d+", "\"clientId\": " + lineOfCreditId);
-
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(modifiedJson).build();
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(apiRequestBodyAsJson).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -199,8 +186,27 @@ public class LineOfCreditApiResource {
         return this.toApiJsonSerializer.serialize(result);
     }
 
+    @PUT
+    @Path("{clientId}/creditlines/{lineOfCreditId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Update a Line of Credit for Specific Client", description = "Updates an existing line of credit for a specific client.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
+    public String updateForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
+                .withJson(apiRequestBodyAsJson).build();
+
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
     @POST
-    @Path("{lineOfCreditId}")
+    @Path("{lineOfCreditId}/activate")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Activate a Line of Credit", description = "Activates an inactive line of credit.")
@@ -210,6 +216,24 @@ public class LineOfCreditApiResource {
             @Parameter(hidden = true) final String apiRequestBodyAsJson) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().activateLineOfCredit(lineOfCreditId)
+                .withJson(apiRequestBodyAsJson).build();
+
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @POST
+    @Path("{lineOfCreditId}/deactivate")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Deactivate a Line of Credit", description = "Deactivates an active line of credit.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
+    public String deactivate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deactivateLineOfCredit(lineOfCreditId)
                 .withJson(apiRequestBodyAsJson).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);

@@ -59,15 +59,15 @@ public class LineOfCreditDataValidator {
         final BigDecimal maximumAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("maximumAmount", element);
         baseDataValidator.reset().parameter("maximumAmount").value(maximumAmount).notNull().positiveAmount();
 
-//        final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element);
-//        baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
-//
-//        final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element);
-//        baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+         final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element);
+         baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
 
-//        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-//            baseDataValidator.reset().parameter("endDate").value(endDate).failWithCode("end.date.cannot.be.before.start.date");
-//        }
+         final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element);
+         baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+
+         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+         baseDataValidator.reset().parameter("endDate").value(endDate).failWithCode("end.date.cannot.be.before.start.date");
+         }
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }

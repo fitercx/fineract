@@ -23,10 +23,12 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
+import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.client.domain.Client;
@@ -57,16 +59,11 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult createLineOfCredit(JsonCommand command) {
         try {
-            log.info("Starting line of credit creation with JSON: {}", command.json());
-
             this.dataValidator.validateForCreate(command.json());
-            log.info("Validation passed successfully");
 
             final Long clientId = command.longValueOfParameterNamed("clientId");
-            log.info("Client ID: {}", clientId);
 
             final Client client = this.clientRepository.findOneWithNotFoundDetection(clientId);
-            log.info("Client found: {}", client.getId());
 
             final String name = command.stringValueOfParameterNamed("name");
             final String productType = command.stringValueOfParameterNamed("productType");
@@ -74,14 +71,25 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
             final LocalDate endDate = command.localDateValueOfParameterNamed("endDate");
 
-            log.info("Creating LineOfCredit with name: {}, productType: {}, maximumAmount: {}, startDate: {}, endDate: {}", name,
-                    productType, maximumAmount, startDate, endDate);
 
             final LineOfCredit lineOfCredit = new LineOfCredit(client, name, productType, maximumAmount, startDate, endDate);
             final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.save(lineOfCredit);
 
-            log.info("Line of credit created successfully with ID: {}", savedLineOfCredit.getId());
-            return CommandProcessingResult.resourceResult(savedLineOfCredit.getId());
+
+            // Create a map with the line of credit data
+            final Map<String, Object> changes = new HashMap<>();
+            changes.put("resourceId", savedLineOfCredit.getId());
+            changes.put("clientId", savedLineOfCredit.getClient().getId());
+            changes.put("name", savedLineOfCredit.getName());
+            changes.put("productType", savedLineOfCredit.getProductType());
+            changes.put("maximumAmount", savedLineOfCredit.getMaximumAmount());
+            changes.put("availableBalance", savedLineOfCredit.getAvailableBalance());
+            changes.put("consumedAmount", savedLineOfCredit.getConsumedAmount());
+            changes.put("activationStatus", savedLineOfCredit.getActivationStatus().name());
+            changes.put("startDate", savedLineOfCredit.getStartDate());
+            changes.put("endDate", savedLineOfCredit.getEndDate());
+
+            return new CommandProcessingResultBuilder().withEntityId(savedLineOfCredit.getId()).with(changes).build();
 
         } catch (final PlatformApiDataValidationException e) {
             // Re-throw validation exceptions as-is
@@ -110,7 +118,22 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 this.lineOfCreditRepository.save(lineOfCredit);
             }
 
-            return CommandProcessingResult.resourceResult(lineOfCreditId, command.commandId(), changes);
+
+            // Create a map with the updated line of credit data
+            final Map<String, Object> responseData = new HashMap<>();
+            responseData.put("resourceId", lineOfCredit.getId());
+            responseData.put("clientId", lineOfCredit.getClient().getId());
+            responseData.put("name", lineOfCredit.getName());
+            responseData.put("productType", lineOfCredit.getProductType());
+            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
+            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
+            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
+            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
+            responseData.put("startDate", lineOfCredit.getStartDate());
+            responseData.put("endDate", lineOfCredit.getEndDate());
+            responseData.put("changes", changes);
+
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
         } catch (final Exception e) {
             log.error("Error occurred while updating line of credit", e);
@@ -130,7 +153,23 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             lineOfCredit.activate();
             this.lineOfCreditRepository.save(lineOfCredit);
 
-            return CommandProcessingResult.resourceResult(lineOfCreditId);
+            log.info("Line of credit activated successfully with ID: {}", lineOfCreditId);
+
+            // Create a map with the activated line of credit data
+            final Map<String, Object> responseData = new HashMap<>();
+            responseData.put("resourceId", lineOfCredit.getId());
+            responseData.put("clientId", lineOfCredit.getClient().getId());
+            responseData.put("name", lineOfCredit.getName());
+            responseData.put("productType", lineOfCredit.getProductType());
+            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
+            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
+            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
+            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
+            responseData.put("startDate", lineOfCredit.getStartDate());
+            responseData.put("endDate", lineOfCredit.getEndDate());
+            responseData.put("action", "ACTIVATED");
+
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
         } catch (final Exception e) {
             log.error("Error occurred while activating line of credit", e);
@@ -150,7 +189,23 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             lineOfCredit.deactivate();
             this.lineOfCreditRepository.save(lineOfCredit);
 
-            return CommandProcessingResult.resourceResult(lineOfCreditId);
+            log.info("Line of credit deactivated successfully with ID: {}", lineOfCreditId);
+
+            // Create a map with the deactivated line of credit data
+            final Map<String, Object> responseData = new HashMap<>();
+            responseData.put("resourceId", lineOfCredit.getId());
+            responseData.put("clientId", lineOfCredit.getClient().getId());
+            responseData.put("name", lineOfCredit.getName());
+            responseData.put("productType", lineOfCredit.getProductType());
+            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
+            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
+            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
+            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
+            responseData.put("startDate", lineOfCredit.getStartDate());
+            responseData.put("endDate", lineOfCredit.getEndDate());
+            responseData.put("action", "DEACTIVATED");
+
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
         } catch (final Exception e) {
             log.error("Error occurred while deactivating line of credit", e);
@@ -167,9 +222,25 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
                             "Line of credit not found", "lineOfCreditId"));
 
+            // Store the data before deletion
+            final Map<String, Object> responseData = new HashMap<>();
+            responseData.put("resourceId", lineOfCredit.getId());
+            responseData.put("clientId", lineOfCredit.getClient().getId());
+            responseData.put("name", lineOfCredit.getName());
+            responseData.put("productType", lineOfCredit.getProductType());
+            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
+            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
+            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
+            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
+            responseData.put("startDate", lineOfCredit.getStartDate());
+            responseData.put("endDate", lineOfCredit.getEndDate());
+            responseData.put("action", "DELETED");
+
             this.lineOfCreditRepository.delete(lineOfCredit);
 
-            return CommandProcessingResult.resourceResult(lineOfCreditId);
+            log.info("Line of credit deleted successfully with ID: {}", lineOfCreditId);
+
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
         } catch (final Exception e) {
             log.error("Error occurred while deleting line of credit", e);
