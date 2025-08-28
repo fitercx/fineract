@@ -44,8 +44,23 @@ dependencies {
     implementation('org.springframework:spring-tx')
     implementation('org.slf4j:log4j-over-slf4j:2.0.13')
 
-    testImplementation('org.springframework.boot:spring-boot-starter-test:3.2.0')
-    testImplementation('org.junit.jupiter:junit-jupiter:5.10.0')
-    testImplementation('org.junit.jupiter:junit-jupiter-api:5.10.0')
-    testImplementation('org.junit.jupiter:junit-jupiter-engine:5.10.0')
+    // testCompile dependencies are ONLY used in src/test, not src/main.
+    // Do NOT repeat dependencies which are ALREADY in implementation or runtimeOnly!
+    //
+    testImplementation( 'io.github.classgraph:classgraph' )
+    testImplementation ('org.springframework.boot:spring-boot-starter-test') {
+        exclude group: 'com.jayway.jsonpath', module: 'json-path'
+        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+        exclude group: 'jakarta.activation'
+        exclude group: 'javax.activation'
+        exclude group: 'org.skyscreamer'
+    }
+    testImplementation ('org.mockito:mockito-inline')
+    testImplementation ('org.mockito:mockito-core')
+    testImplementation ('org.mockito:mockito-junit-jupiter')
+    testImplementation ('org.junit.jupiter:junit-jupiter-api')
+    testImplementation ('org.junit.jupiter:junit-jupiter-engine')
+    testImplementation ('org.junit.jupiter:junit-jupiter-params')
+    testImplementation ('org.junit.platform:junit-platform-runner')
+    testImplementation ('org.assertj:assertj-core')
 }

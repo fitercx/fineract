@@ -99,7 +99,7 @@ public class ClientCreditLinesApiResource {
         final LineOfCreditData lineOfCredit = this.readPlatformService.retrieveOne(lineOfCreditId);
 
         // Verify that the line of credit belongs to the specified client
-        if (lineOfCredit == null || !lineOfCredit.getClientId().equals(clientId)) {
+        if (lineOfCredit == null || lineOfCredit.getClientId() == null || !lineOfCredit.getClientId().equals(clientId)) {
             throw new RuntimeException("Line of credit not found for the specified client");
         }
 
