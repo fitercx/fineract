@@ -40,6 +40,7 @@ import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
+import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.apache.fineract.infrastructure.security.exception.NoAuthorizationException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.useradministration.domain.AppUser;
@@ -187,7 +188,7 @@ class ClientCreditLinesApiResourceTest {
 
         // when & then
         assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, LINE_OF_CREDIT_ID, uriInfo))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Line of credit not found for the specified client");
 
         verify(readPlatformService).retrieveOne(LINE_OF_CREDIT_ID);
@@ -202,7 +203,7 @@ class ClientCreditLinesApiResourceTest {
 
         // when & then
         assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, LINE_OF_CREDIT_ID, uriInfo))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Line of credit not found for the specified client");
 
         verify(readPlatformService).retrieveOne(LINE_OF_CREDIT_ID);
@@ -219,7 +220,7 @@ class ClientCreditLinesApiResourceTest {
 
         // when & then
         assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, LINE_OF_CREDIT_ID, uriInfo))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Line of credit not found for the specified client");
 
         verify(readPlatformService).retrieveOne(LINE_OF_CREDIT_ID);
@@ -253,7 +254,7 @@ class ClientCreditLinesApiResourceTest {
 
         // when & then
         assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, null, uriInfo))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Line of credit not found for the specified client");
 
         verify(readPlatformService).retrieveOne(null);

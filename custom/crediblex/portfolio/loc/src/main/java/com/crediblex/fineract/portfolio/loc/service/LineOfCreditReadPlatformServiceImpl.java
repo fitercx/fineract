@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
+import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
@@ -74,7 +75,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
 
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new RuntimeException("Line of credit not found with id: " + lineOfCreditId));
+                .orElseThrow(() -> new ResourceNotFoundException("error.msg.line.of.credit.not.found", 
+                    "Line of credit not found with id: " + lineOfCreditId, new Object[]{lineOfCreditId}));
 
         return assembleLineOfCreditData(lineOfCredit);
     }

@@ -42,6 +42,7 @@ import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -100,7 +101,8 @@ public class ClientCreditLinesApiResource {
 
         // Verify that the line of credit belongs to the specified client
         if (lineOfCredit == null || lineOfCredit.getClientId() == null || !lineOfCredit.getClientId().equals(clientId)) {
-            throw new RuntimeException("Line of credit not found for the specified client");
+            throw new ResourceNotFoundException("error.msg.line.of.credit.not.found.for.client", 
+                "Line of credit not found for the specified client", new Object[]{clientId, lineOfCreditId});
         }
 
         return this.toApiJsonSerializer.serialize(settings, lineOfCredit, Collections.singleton("lineOfCredit"));
