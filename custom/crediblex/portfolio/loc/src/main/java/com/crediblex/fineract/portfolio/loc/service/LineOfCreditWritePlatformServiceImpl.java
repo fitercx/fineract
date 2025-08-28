@@ -57,10 +57,16 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult createLineOfCredit(JsonCommand command) {
         try {
+            log.info("Starting line of credit creation with JSON: {}", command.json());
+
             this.dataValidator.validateForCreate(command.json());
+            log.info("Validation passed successfully");
 
             final Long clientId = command.longValueOfParameterNamed("clientId");
+            log.info("Client ID: {}", clientId);
+
             final Client client = this.clientRepository.findOneWithNotFoundDetection(clientId);
+            log.info("Client found: {}", client.getId());
 
             final String name = command.stringValueOfParameterNamed("name");
             final String productType = command.stringValueOfParameterNamed("productType");
@@ -68,11 +74,19 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
             final LocalDate endDate = command.localDateValueOfParameterNamed("endDate");
 
+            log.info("Creating LineOfCredit with name: {}, productType: {}, maximumAmount: {}, startDate: {}, endDate: {}", name,
+                    productType, maximumAmount, startDate, endDate);
+
             final LineOfCredit lineOfCredit = new LineOfCredit(client, name, productType, maximumAmount, startDate, endDate);
             final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.save(lineOfCredit);
 
-            return CommandProcessingResult.resourceResult(savedLineOfCredit.getClient().getId());
+            log.info("Line of credit created successfully with ID: {}", savedLineOfCredit.getId());
+            return CommandProcessingResult.resourceResult(savedLineOfCredit.getId());
 
+        } catch (final PlatformApiDataValidationException e) {
+            // Re-throw validation exceptions as-is
+            log.error("Validation error occurred: {}", e.getMessage());
+            throw e;
         } catch (final Exception e) {
             log.error("Error occurred while creating line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.creation.failed", "Line of credit creation failed",

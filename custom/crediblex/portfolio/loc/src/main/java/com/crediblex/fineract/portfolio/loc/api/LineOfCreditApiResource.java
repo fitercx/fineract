@@ -169,9 +169,12 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String createForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+        log.debug("REQUEST BOYD => " + apiRequestBodyAsJson);
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(apiRequestBodyAsJson)
-                .build();
+        // Replace the clientId in the JSON with the one from the path parameter
+        String modifiedJson = apiRequestBodyAsJson.replaceAll("\"clientId\"\\s*:\\s*\\d+", "\"clientId\": " + lineOfCreditId);
+
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(modifiedJson).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
