@@ -277,6 +277,11 @@
             <where>registered_table_name IN ('dt_client_remitter_names', 'dt_client_virtual_account_number')</where>
         </delete>
 
+        <!-- Remove role permission associations first -->
+        <delete tableName="m_role_permission">
+            <where>permission_id IN (SELECT id FROM m_permission WHERE entity_name IN ('dt_client_remitter_names', 'dt_client_virtual_account_number'))</where>
+        </delete>
+
         <!-- Remove old permissions -->
         <delete tableName="m_permission">
             <where>entity_name IN ('dt_client_remitter_names', 'dt_client_virtual_account_number')</where>
