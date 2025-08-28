@@ -221,6 +221,9 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
+    @Column(name = "is_loc_enabled", nullable = false)
+    private boolean isLocEnabled = false;
+
     @Column(name = "due_days_for_repayment_event")
     private Integer dueDaysForRepaymentEvent;
 
@@ -617,6 +620,10 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
 
     public boolean isInterestRecalculationEnabled() {
         return this.loanProductRelatedDetail.isInterestRecalculationEnabled();
+    }
+
+    public boolean isLocEnabled() {
+        return this.isLocEnabled;
     }
 
     public Integer getMinimumDaysBetweenDisbursalAndFirstRepayment() {
