@@ -24,6 +24,7 @@ import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -68,6 +69,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             final String name = command.stringValueOfParameterNamed("name");
             final String productType = command.stringValueOfParameterNamed("productType");
             final BigDecimal maximumAmount = command.bigDecimalValueOfParameterNamed("maximumAmount");
+            final String dateFormat = command.dateFormat();
+            final String localeString = command.locale();
+            final Locale locale = Locale.forLanguageTag(localeString);
             final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
             final LocalDate endDate = command.localDateValueOfParameterNamed("endDate");
 

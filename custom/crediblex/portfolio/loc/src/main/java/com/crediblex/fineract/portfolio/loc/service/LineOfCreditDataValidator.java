@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.DataValidatorBuilder;
@@ -59,10 +60,12 @@ public class LineOfCreditDataValidator {
         final BigDecimal maximumAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("maximumAmount", element);
         baseDataValidator.reset().parameter("maximumAmount").value(maximumAmount).notNull().positiveAmount();
 
-         final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element);
+         final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
+         final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
+         final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
          baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
 
-         final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element);
+         final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
          baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
 
          if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
@@ -98,12 +101,16 @@ public class LineOfCreditDataValidator {
         }
 
         if (this.fromApiJsonHelper.parameterExists("startDate", element)) {
-            final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element);
+            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
+            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
+            final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
             baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
         }
 
         if (this.fromApiJsonHelper.parameterExists("endDate", element)) {
-            final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element);
+            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
+            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
+            final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
             baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
         }
 

@@ -20,12 +20,15 @@
 package com.crediblex.fineract.portfolio.loc.api;
 
 import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperBuilder;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -139,11 +142,12 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Create a Line of Credit", description = "Creates a new line of credit for a client.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
-    public String create(@Parameter(hidden = true) final String apiRequestBodyAsJson) {
+    public String create(@Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(apiRequestBodyAsJson)
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson())
                 .build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
@@ -156,12 +160,13 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Create a Line of Credit for Specific Client", description = "Creates a new line of credit for a specific client identified by lineOfCreditId.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String createForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(apiRequestBodyAsJson).build();
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson()).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -173,13 +178,14 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Update a Line of Credit", description = "Updates an existing line of credit.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
     public String update(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
-                .withJson(apiRequestBodyAsJson).build();
+                .withJson(lineOfCreditRequest.toJson()).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -191,14 +197,15 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Update a Line of Credit for Specific Client", description = "Updates an existing line of credit for a specific client.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
     public String updateForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
-            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
-                .withJson(apiRequestBodyAsJson).build();
+                .withJson(lineOfCreditRequest.toJson()).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -210,13 +217,18 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Activate a Line of Credit", description = "Activates an inactive line of credit.")
+    @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String activate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final LineOfCreditActionRequest lineOfCreditActionRequest) {
+
+        // Create a default request if none provided
+        LineOfCreditActionRequest request = lineOfCreditActionRequest != null ? lineOfCreditActionRequest : 
+            new LineOfCreditActionRequest("yyyy-MM-dd", "en");
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().activateLineOfCredit(lineOfCreditId)
-                .withJson(apiRequestBodyAsJson).build();
+                .withJson(request.toJson()).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -228,13 +240,18 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Deactivate a Line of Credit", description = "Deactivates an active line of credit.")
+    @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String deactivate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @Parameter(hidden = true) final String apiRequestBodyAsJson) {
+            @Parameter(hidden = true) final LineOfCreditActionRequest lineOfCreditActionRequest) {
+
+        // Create a default request if none provided
+        LineOfCreditActionRequest request = lineOfCreditActionRequest != null ? lineOfCreditActionRequest : 
+            new LineOfCreditActionRequest("yyyy-MM-dd", "en");
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deactivateLineOfCredit(lineOfCreditId)
-                .withJson(apiRequestBodyAsJson).build();
+                .withJson(request.toJson()).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 

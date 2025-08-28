@@ -29,7 +29,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import jakarta.ws.rs.core.UriInfo;
 import java.math.BigDecimal;
@@ -95,7 +97,8 @@ class LineOfCreditApiResourceTest {
 
     private static final Long CLIENT_ID = 34L;
     private static final Long LINE_OF_CREDIT_ID = 1L;
-    private static final String API_REQUEST_BODY = "{\"clientId\": 34, \"name\": \"Test Credit Line\"}";
+    private static final LineOfCreditRequest LINE_OF_CREDIT_REQUEST = new LineOfCreditRequest(34L, "Test Credit Line", "Payable", "5000000", "29 August 2025", "29 October 2025", "dd MMMM yyyy", "en");
+    private static final LineOfCreditActionRequest LINE_OF_CREDIT_ACTION_REQUEST = new LineOfCreditActionRequest("yyyy-MM-dd", "en");
 
     @BeforeEach
     void setUp() {
@@ -177,7 +180,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.create(API_REQUEST_BODY);
+        String result = underTest.create(LINE_OF_CREDIT_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -191,7 +194,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.create(API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.create(LINE_OF_CREDIT_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
@@ -207,7 +210,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.createForClient(LINE_OF_CREDIT_ID, API_REQUEST_BODY);
+        String result = underTest.createForClient(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -221,7 +224,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.createForClient(LINE_OF_CREDIT_ID, API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.createForClient(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
@@ -237,7 +240,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.update(LINE_OF_CREDIT_ID, API_REQUEST_BODY);
+        String result = underTest.update(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -251,7 +254,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.update(LINE_OF_CREDIT_ID, API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.update(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
@@ -267,7 +270,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.updateForClient(LINE_OF_CREDIT_ID, CLIENT_ID, API_REQUEST_BODY);
+        String result = underTest.updateForClient(LINE_OF_CREDIT_ID, CLIENT_ID, LINE_OF_CREDIT_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -281,7 +284,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.updateForClient(LINE_OF_CREDIT_ID, CLIENT_ID, API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.updateForClient(LINE_OF_CREDIT_ID, CLIENT_ID, LINE_OF_CREDIT_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
@@ -297,7 +300,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.activate(LINE_OF_CREDIT_ID, API_REQUEST_BODY);
+        String result = underTest.activate(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -311,12 +314,28 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.activate(LINE_OF_CREDIT_ID, API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.activate(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
+    }
+
+    @Test
+    void activate_WithNullRequest_ShouldActivateCreditLineWithDefaultRequest() {
+        // given
+        doNothing().when(appUser).validateHasUpdatePermission("LINE_OF_CREDIT");
+        given(commandsSourceWritePlatformService.logCommandSource(any(CommandWrapper.class))).willReturn(commandProcessingResult);
+        given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
+
+        // when
+        String result = underTest.activate(LINE_OF_CREDIT_ID, null);
+
+        // then
+        assertThat(result).isEqualTo("{\"resourceId\": 1}");
+        verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        verify(toApiJsonSerializer).serialize(commandProcessingResult);
     }
 
     @Test
@@ -327,7 +346,7 @@ class LineOfCreditApiResourceTest {
         given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
 
         // when
-        String result = underTest.deactivate(LINE_OF_CREDIT_ID, API_REQUEST_BODY);
+        String result = underTest.deactivate(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST);
 
         // then
         assertThat(result).isEqualTo("{\"resourceId\": 1}");
@@ -341,12 +360,28 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.deactivate(LINE_OF_CREDIT_ID, API_REQUEST_BODY))
+        assertThatThrownBy(() -> underTest.deactivate(LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST))
                 .isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
+    }
+
+    @Test
+    void deactivate_WithNullRequest_ShouldDeactivateCreditLineWithDefaultRequest() {
+        // given
+        doNothing().when(appUser).validateHasUpdatePermission("LINE_OF_CREDIT");
+        given(commandsSourceWritePlatformService.logCommandSource(any(CommandWrapper.class))).willReturn(commandProcessingResult);
+        given(toApiJsonSerializer.serialize(commandProcessingResult)).willReturn("{\"resourceId\": 1}");
+
+        // when
+        String result = underTest.deactivate(LINE_OF_CREDIT_ID, null);
+
+        // then
+        assertThat(result).isEqualTo("{\"resourceId\": 1}");
+        verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        verify(toApiJsonSerializer).serialize(commandProcessingResult);
     }
 
     @Test

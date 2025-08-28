@@ -43,6 +43,8 @@ dependencies {
     implementation('org.springframework:spring-context')
     implementation('org.springframework:spring-tx')
     implementation('org.slf4j:log4j-over-slf4j:2.0.13')
+    implementation('com.fasterxml.jackson.core:jackson-core')
+    implementation('com.fasterxml.jackson.core:jackson-databind')
 
     // testCompile dependencies are ONLY used in src/test, not src/main.
     // Do NOT repeat dependencies which are ALREADY in implementation or runtimeOnly!
