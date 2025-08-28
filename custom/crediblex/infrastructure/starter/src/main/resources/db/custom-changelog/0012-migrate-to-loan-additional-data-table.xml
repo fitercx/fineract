@@ -235,6 +235,11 @@
             <where>registered_table_name = 'dt_loan_remitter_dp_info'</where>
         </delete>
 
+        <!-- Remove role permission associations first -->
+        <delete tableName="m_role_permission">
+            <where>permission_id IN (SELECT id FROM m_permission WHERE entity_name = 'dt_loan_remitter_dp_info')</where>
+        </delete>
+
         <!-- Remove old permissions -->
         <delete tableName="m_permission">
             <where>entity_name = 'dt_loan_remitter_dp_info'</where>
