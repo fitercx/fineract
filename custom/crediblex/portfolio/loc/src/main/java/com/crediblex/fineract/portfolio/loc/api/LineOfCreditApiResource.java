@@ -53,13 +53,14 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-@Path("v1/credit-lines")
+@Path("/v1/clients")
 @Component
 @Tag(name = "Line of Credit", description = "Line of Credit management for clients")
 public class LineOfCreditApiResource {
@@ -70,7 +71,6 @@ public class LineOfCreditApiResource {
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
 
-    private static final Logger log = LoggerFactory.getLogger(LineOfCreditApiResource.class);
 
     @Autowired
     public LineOfCreditApiResource(PlatformSecurityContext context, LineOfCreditReadPlatformService readPlatformService,
@@ -84,15 +84,16 @@ public class LineOfCreditApiResource {
     }
 
     @GET
-    @Path("template")
+    @Path("{clientId}/creditlines/template")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Retrieve Line of Credit Template", description = "This is a convenience resource. It can be useful when building maintenance user interface screens for line of credit applications.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTemplateResponse.class))) })
-    public String retrieveTemplate(@Context final UriInfo uriInfo) {
+    public String retrieveTemplate(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
+        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
@@ -102,7 +103,7 @@ public class LineOfCreditApiResource {
 
 
     @GET
-    @Path("clients/{clientId}/creditlines")
+    @Path("{clientId}/creditlines")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "List Line of Credits for Client", description = "Retrieves all line of credits for a specific client.")
@@ -111,7 +112,7 @@ public class LineOfCreditApiResource {
     public String retrieveAllForClient(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
+        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final Collection<LineOfCreditData> lineOfCredits = this.readPlatformService.retrieveAllLineOfCreditsForClient(clientId);
@@ -120,32 +121,40 @@ public class LineOfCreditApiResource {
     }
 
     @GET
-    @Path("clients/{clientId}/creditlines/{lineOfCreditId}")
+    @Path("{clientId}/creditlines/{lineOfCreditId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Retrieve a Line of Credit", description = "Retrieves a specific line of credit by ID.")
+    @Operation(summary = "Retrieve a Line of Credit for Client", description = "Retrieves a specific line of credit for a client.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditResponse.class))) })
-    public String retrieveOne(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+    public String retrieveOne(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission("LINE_OF_CREDIT");
+        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData lineOfCredit = this.readPlatformService.retrieveOne(lineOfCreditId);
+
+        // Verify that the line of credit belongs to the specified client
+        if (lineOfCredit == null || lineOfCredit.getClientId() == null || !lineOfCredit.getClientId().equals(clientId)) {
+            throw new ResourceNotFoundException("error.msg.line.of.credit.not.found.for.client", 
+                "Line of credit not found for the specified client", new Object[]{clientId, lineOfCreditId});
+        }
 
         return this.toApiJsonSerializer.serialize(settings, lineOfCredit, Collections.singleton("lineOfCredit"));
     }
 
     @POST
-    @Path("creditlines")
+    @Path("{clientId}/creditlines")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Create a Line of Credit", description = "Creates a new line of credit for a client.")
     @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
-    public String create(@Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
+    public String create(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson())
                 .build();
@@ -155,33 +164,18 @@ public class LineOfCreditApiResource {
         return this.toApiJsonSerializer.serialize(result);
     }
 
-    @POST
-    @Path("{lineOfCreditId}/creditlines")
-    @Consumes({ MediaType.APPLICATION_JSON })
-    @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Create a Line of Credit for Specific Client", description = "Creates a new line of credit for a specific client identified by lineOfCreditId.")
-    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
-    public String createForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson()).build();
-
-        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
-
-        return this.toApiJsonSerializer.serialize(result);
-    }
 
     @PUT
-    @Path("{lineOfCreditId}")
+    @Path("{clientId}/creditlines/{lineOfCreditId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Update a Line of Credit", description = "Updates an existing line of credit.")
     @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
-    public String update(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+    public String update(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
@@ -192,35 +186,18 @@ public class LineOfCreditApiResource {
         return this.toApiJsonSerializer.serialize(result);
     }
 
-    @PUT
-    @Path("{clientId}/creditlines/{lineOfCreditId}")
-    @Consumes({ MediaType.APPLICATION_JSON })
-    @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Update a Line of Credit for Specific Client", description = "Updates an existing line of credit for a specific client.")
-    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = LineOfCreditRequest.class)))
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
-    public String updateForClient(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
-            @PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
-            @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
-                .withJson(lineOfCreditRequest.toJson()).build();
-
-        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
-
-        return this.toApiJsonSerializer.serialize(result);
-    }
 
     @POST
-    @Path("{lineOfCreditId}/activate")
+    @Path("{clientId}/creditlines/{lineOfCreditId}/activate")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Activate a Line of Credit", description = "Activates an inactive line of credit.")
     @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
-    public String activate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+    public String activate(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final LineOfCreditActionRequest lineOfCreditActionRequest) {
 
         // Create a default request if none provided
@@ -236,14 +213,15 @@ public class LineOfCreditApiResource {
     }
 
     @POST
-    @Path("{lineOfCreditId}/deactivate")
+    @Path("{clientId}/creditlines/{lineOfCreditId}/deactivate")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Deactivate a Line of Credit", description = "Deactivates an active line of credit.")
     @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
-    public String deactivate(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+    public String deactivate(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final LineOfCreditActionRequest lineOfCreditActionRequest) {
 
         // Create a default request if none provided
@@ -259,13 +237,14 @@ public class LineOfCreditApiResource {
     }
 
     @DELETE
-    @Path("{lineOfCreditId}")
+    @Path("{clientId}/creditlines/{lineOfCreditId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Delete a Line of Credit", description = "Deletes a line of credit.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.DeleteLineOfCreditResponse.class))) })
-    public String delete(@PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId) {
+    public String delete(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId) {
 
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deleteLineOfCredit(lineOfCreditId).build();
 
