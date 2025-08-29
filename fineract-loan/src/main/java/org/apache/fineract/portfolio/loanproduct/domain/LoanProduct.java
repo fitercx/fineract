@@ -221,7 +221,7 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
-    @Column(name = "is_loc_enabled", nullable = false)
+    @Column(name = "is_loc_enable", nullable = false)
     private boolean isLocEnabled = false;
 
     @Column(name = "due_days_for_repayment_event")
