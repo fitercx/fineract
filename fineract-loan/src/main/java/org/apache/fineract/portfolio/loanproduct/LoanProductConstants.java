@@ -176,4 +176,7 @@ public interface LoanProductConstants {
     String ENABLE_INCOME_CAPITALIZATION_PARAM_NAME = "enableIncomeCapitalization";
     String CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME = "capitalizedIncomeCalculationType";
     String CAPITALIZED_INCOME_STRATEGY_PARAM_NAME = "capitalizedIncomeStrategy";
+
+    // Line of Credit
+    String IS_LOC_ENABLED_PARAM_NAME = "isLocEnabled";
 }
