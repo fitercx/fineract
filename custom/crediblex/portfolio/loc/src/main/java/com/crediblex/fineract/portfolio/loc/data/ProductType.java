@@ -16,22 +16,16 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.portfolio.loc.data;
 
-package com.crediblex.fineract.portfolio.starter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
-import org.springframework.context.annotation.Import;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-
-@AutoConfiguration
-@ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio") })
-@EnableJpaRepositories(basePackages = {
-    "com.crediblex.fineract.portfolio.loanaccount.repository",
-    "com.crediblex.fineract.portfolio.loc.repository"
-})
-@Import(CrediblexStandingInstructionsOverrideConfiguration.class)
-public class CrediblexPortfolioAutoConfiguration {
-
+@Schema(description = "Enum for line of credit product types")
+public enum ProductType {
+    
+    @Schema(description = "Receivable product type")
+    RECEIVABLE,
+    
+    @Schema(description = "Payable product type")
+    PAYABLE
 }

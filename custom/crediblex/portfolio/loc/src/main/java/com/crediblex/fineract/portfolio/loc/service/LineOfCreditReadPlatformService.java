@@ -17,21 +17,25 @@
  * under the License.
  */
 
-package com.crediblex.fineract.portfolio.starter;
+package com.crediblex.fineract.portfolio.loc.service;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
-import org.springframework.context.annotation.Import;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import java.util.Collection;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
-@AutoConfiguration
-@ComponentScans({ @ComponentScan("com.crediblex.fineract.portfolio") })
-@EnableJpaRepositories(basePackages = {
-    "com.crediblex.fineract.portfolio.loanaccount.repository",
-    "com.crediblex.fineract.portfolio.loc.repository"
-})
-@Import(CrediblexStandingInstructionsOverrideConfiguration.class)
-public class CrediblexPortfolioAutoConfiguration {
+public interface LineOfCreditReadPlatformService {
+
+    Collection<LineOfCreditData> retrieveAllLineOfCredits();
+
+    Page<LineOfCreditData> retrieveAllLineOfCredits(Pageable pageable);
+
+    LineOfCreditData retrieveOne(Long lineOfCreditId);
+
+    LineOfCreditData retrieveTemplate();
+
+    Collection<LineOfCreditData> retrieveAllLineOfCreditsForClient(Long clientId);
+
+    Collection<LineOfCreditData> retrieveActiveLineOfCreditsForClient(Long clientId);
 
 }
