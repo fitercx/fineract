@@ -194,8 +194,8 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             .transactionProcessingStrategyCode("mifos-standard-strategy")
                 .linkAccountId(((Response<PostSavingsAccountsResponse>)testContext().get(TestContextKey.EUR_SAVINGS_ACCOUNT_CREATE_RESPONSE))
                         .body().getResourceId())
-                .datatables(Set.of(new TableData().registeredTableName("dt_loan_remitter_dp_info")
-                        .data(createLoanRemitterInfo())));;
+                .datatables(Set.of(new TableData().registeredTableName("dt_loan_additional_data")
+                        .data(createLoanAdditionalData())));
         
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
         
@@ -236,8 +236,8 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             .charges(List.of(new PostLoansRequestChargeData()
                 .chargeId(disbursementChargeId)
                 .amount(new BigDecimal(10))))
-                .datatables(Set.of(new TableData().registeredTableName("dt_loan_remitter_dp_info")
-                        .data(createLoanRemitterInfo())));
+                .datatables(Set.of(new TableData().registeredTableName("dt_loan_additional_data")
+                        .data(createLoanAdditionalData())));
 
         log.info("Request data {}", loanRequest);
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
@@ -250,13 +250,15 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         log.info("Created loan with charge, ID: {}", loanResponse.body().getLoanId());
     }
 
-    private static Map<String, Object> createLoanRemitterInfo() {
-        Map<String, Object> remitterInfo = new HashMap<>();
-        remitterInfo.put("locale", "en");
-        remitterInfo.put("remitter_name", RandomStringUtils.insecure().nextAscii(10));
-        remitterInfo.put("dp_name",RandomStringUtils.insecure().nextAscii(10));
+    private static Map<String, Object> createLoanAdditionalData() {
+        Map<String, Object> additionalData = new HashMap<>();
+        additionalData.put("locale", DEFAULT_LOCALE);
+        additionalData.put("dateFormat", DATE_FORMAT);
+        additionalData.put("remitter_name", RandomStringUtils.insecure().nextAscii(10));
+        additionalData.put("dp_name", RandomStringUtils.insecure().nextAscii(10));
+        additionalData.put("agreed_cash_margin_amount", 1000.0); // Default test value
 
-        return remitterInfo;
+        return additionalData;
     }
     
     @And("Admin approves the loan on {string} date and principal amount of {int}")

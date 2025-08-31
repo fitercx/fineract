@@ -39,8 +39,8 @@ public class LineOfCreditRequest {
     @Schema(example = "Business Credit Line", description = "Name of the line of credit")
     private String name;
 
-    @Schema(example = "Payable", description = "Type of product for the line of credit")
-    private String productType;
+    @Schema(example = "PAYABLE", description = "Type of product for the line of credit")
+    private ProductType productType;
 
     @Schema(example = "3000000", description = "Maximum amount allowed for the line of credit (can be string or number)")
     private String maximumAmount;

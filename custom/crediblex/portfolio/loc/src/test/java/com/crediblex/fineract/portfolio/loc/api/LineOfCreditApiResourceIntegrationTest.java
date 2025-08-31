@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
+import com.crediblex.fineract.portfolio.loc.data.ProductType;
 import org.junit.jupiter.api.Test;
 
 public class LineOfCreditApiResourceIntegrationTest {
@@ -30,14 +31,14 @@ public class LineOfCreditApiResourceIntegrationTest {
     public void testLineOfCreditRequestSerialization() {
         // Test the exact request format from the API client
         LineOfCreditRequest request = new LineOfCreditRequest(
-            1L,                           // clientId
-            "clientlient payable",        // name
-            "payable",                    // productType
-            "3,000,000",                  // maximumAmount (with commas)
-            "29 August 2025",             // startDate
-            "29 October 2025",            // endDate
-            "dd MMMM yyyy",               // dateFormat (correct format for "29 August 2025")
-            "en"                          // locale
+            1L,
+            "clientlient payable",
+            ProductType.PAYABLE,
+            "3,000,000",
+            "29 August 2025",
+            "29 October 2025",
+            "dd MMMM yyyy",
+            "en"
         );
 
         // Verify the request can be serialized to JSON
@@ -55,12 +56,12 @@ public class LineOfCreditApiResourceIntegrationTest {
     public void testLineOfCreditRequestWithDifferentFormats() {
         // Test with different date formats
         LineOfCreditRequest request1 = new LineOfCreditRequest(
-            1L, "Test Credit Line", "payable", "3000000",
+            1L, "Test Credit Line", ProductType.PAYABLE, "3000000",
             "2025-08-29", "2025-10-29", "yyyy-MM-dd", "en"
         );
 
         LineOfCreditRequest request2 = new LineOfCreditRequest(
-            1L, "Test Credit Line", "payable", "3,000,000",
+            1L, "Test Credit Line", ProductType.PAYABLE, "3,000,000",
             "29 August 2025", "29 October 2025", "dd MMMM yyyy", "en"
         );
 
@@ -81,7 +82,7 @@ public class LineOfCreditApiResourceIntegrationTest {
         LineOfCreditRequest correctRequest = new LineOfCreditRequest(
             1L,                           // clientId
             "clientlient payable",        // name
-            "payable",                    // productType
+            ProductType.PAYABLE,          // productType
             "3,000,000",                  // maximumAmount (with commas)
             "29 August 2025",             // startDate
             "29 October 2025",            // endDate
@@ -105,7 +106,7 @@ public class LineOfCreditApiResourceIntegrationTest {
         LineOfCreditRequest incorrectRequest = new LineOfCreditRequest(
             1L,                           // clientId
             "clientlient payable",        // name
-            "payable",                    // productType
+            ProductType.PAYABLE,          // productType
             "3,000,000",                  // maximumAmount
             "29 August 2025",             // startDate
             "29 October 2025",            // endDate

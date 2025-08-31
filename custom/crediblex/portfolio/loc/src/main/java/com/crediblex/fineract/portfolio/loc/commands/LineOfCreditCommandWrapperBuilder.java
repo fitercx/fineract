@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loc.commands;
 
+import com.crediblex.fineract.portfolio.loc.api.LocApiConstants;
 import org.apache.fineract.commands.domain.CommandWrapper;
 
 public class LineOfCreditCommandWrapperBuilder {
@@ -31,7 +32,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder createLineOfCredit() {
         this.actionName = "CREATE";
-        this.entityName = "LINE_OF_CREDIT";
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = null;
         this.href = "/v1/lineofcredit";
         return this;
@@ -39,7 +40,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder updateLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "UPDATE";
-        this.entityName = "LINE_OF_CREDIT";
+        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -47,7 +48,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "ACTIVATE";
-        this.entityName = "LINE_OF_CREDIT";
+        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -55,7 +56,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "DEACTIVATE";
-        this.entityName = "LINE_OF_CREDIT";
+        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -63,7 +64,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder deleteLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "DELETE";
-        this.entityName = "LINE_OF_CREDIT";
+        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;

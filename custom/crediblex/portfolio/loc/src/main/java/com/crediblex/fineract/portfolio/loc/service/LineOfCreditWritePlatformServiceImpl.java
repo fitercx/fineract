@@ -79,22 +79,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             final LineOfCredit lineOfCredit = new LineOfCredit(client, name, productType, maximumAmount, startDate, endDate);
             final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.save(lineOfCredit);
 
-
-            // Create a map with the line of credit data
-            final Map<String, Object> changes = new HashMap<>();
-            changes.put("resourceId", savedLineOfCredit.getId());
-            changes.put("clientId", savedLineOfCredit.getClient().getId());
-            changes.put("name", savedLineOfCredit.getName());
-            changes.put("productType", savedLineOfCredit.getProductType());
-            changes.put("maximumAmount", savedLineOfCredit.getMaximumAmount());
-            changes.put("availableBalance", savedLineOfCredit.getAvailableBalance());
-            changes.put("consumedAmount", savedLineOfCredit.getConsumedAmount());
-            changes.put("activationStatus", savedLineOfCredit.getActivationStatus().name());
-            changes.put("startDate", savedLineOfCredit.getStartDate());
-            changes.put("endDate", savedLineOfCredit.getEndDate());
-
-            return new CommandProcessingResultBuilder().withEntityId(savedLineOfCredit.getId()).with(changes).build();
-
+            return new CommandProcessingResultBuilder().withEntityId(savedLineOfCredit.getId()).build();
         } catch (final PlatformApiDataValidationException e) {
             // Re-throw validation exceptions as-is
             log.error("Validation error occurred: {}", e.getMessage());
@@ -125,20 +110,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
             // Create a map with the updated line of credit data
             final Map<String, Object> responseData = new HashMap<>();
-            responseData.put("resourceId", lineOfCredit.getId());
-            responseData.put("clientId", lineOfCredit.getClient().getId());
-            responseData.put("name", lineOfCredit.getName());
-            responseData.put("productType", lineOfCredit.getProductType());
-            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
-            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
-            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
-            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
-            responseData.put("startDate", lineOfCredit.getStartDate());
-            responseData.put("endDate", lineOfCredit.getEndDate());
             responseData.put("changes", changes);
 
-            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
-
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
         } catch (final Exception e) {
             log.error("Error occurred while updating line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed", "Line of credit update failed",
@@ -161,16 +135,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
             // Create a map with the activated line of credit data
             final Map<String, Object> responseData = new HashMap<>();
-            responseData.put("resourceId", lineOfCredit.getId());
-            responseData.put("clientId", lineOfCredit.getClient().getId());
-            responseData.put("name", lineOfCredit.getName());
-            responseData.put("productType", lineOfCredit.getProductType());
-            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
-            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
-            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
-            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
-            responseData.put("startDate", lineOfCredit.getStartDate());
-            responseData.put("endDate", lineOfCredit.getEndDate());
             responseData.put("action", "ACTIVATED");
 
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
@@ -193,20 +157,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             lineOfCredit.deactivate();
             this.lineOfCreditRepository.save(lineOfCredit);
 
-            log.info("Line of credit deactivated successfully with ID: {}", lineOfCreditId);
-
             // Create a map with the deactivated line of credit data
             final Map<String, Object> responseData = new HashMap<>();
-            responseData.put("resourceId", lineOfCredit.getId());
-            responseData.put("clientId", lineOfCredit.getClient().getId());
-            responseData.put("name", lineOfCredit.getName());
-            responseData.put("productType", lineOfCredit.getProductType());
-            responseData.put("maximumAmount", lineOfCredit.getMaximumAmount());
-            responseData.put("availableBalance", lineOfCredit.getAvailableBalance());
-            responseData.put("consumedAmount", lineOfCredit.getConsumedAmount());
-            responseData.put("activationStatus", lineOfCredit.getActivationStatus());
-            responseData.put("startDate", lineOfCredit.getStartDate());
-            responseData.put("endDate", lineOfCredit.getEndDate());
             responseData.put("action", "DEACTIVATED");
 
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
