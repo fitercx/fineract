@@ -241,8 +241,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
 
         do {
             int totalFilteredRecords = loanIds.size();
-            log.debug("Starting holiday schedule recalculation - total filtered records - {}", totalFilteredRecords);
-            
             if (!loanIds.isEmpty()) {
                 processLoanBatch(loanIds, threadPoolSize, fromDate, toDate, holiday);
             }
@@ -279,12 +277,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         List<Loan> allLoans = new ArrayList<>();
         allLoans.addAll(Collections.synchronizedList(customLoanRepositoryWrapper.customFindByClientOfficeIdsAndLoanStatus(officeIds, loanStatuses, pageSize, maxLoanIdInList)));
         allLoans.addAll(Collections.synchronizedList(customLoanRepositoryWrapper.customFindByGroupOfficeIdsAndLoanStatus(officeIds, loanStatuses, pageSize, maxLoanIdInList)));
-
-//        // Apply pagination manually since the repository methods don't support it
-//        List<Loan> paginatedLoans = allLoans.stream()
-//                .filter(loan -> loan.getId() > maxLoanIdInList)
-//                .limit(pageSize)
-//                .toList();
 
         // Filter loans that have repayment schedules overlapping with the holiday date range
         List<Long> affectedLoanIds = new ArrayList<>();
@@ -334,12 +326,9 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                         for (Long loanId : batch) {
                             transactionTemplate.executeWithoutResult(status -> {
                                 try {
-                                    log.debug("Applying holiday changes to loan '{}'", loanId);
                                     Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
                                     applyHolidayChangesToLoan(loan, holiday);
-                                    log.debug("Successfully applied holiday changes to loan: '{}'", loanId);
                                 } catch (Exception e) {
-                                    log.error("Failed to recalculate schedule for loan {}", loanId, e);
                                     throw new RuntimeException("Failed to recalculate schedule for loan " + loanId, e);
                                 }
                             });
@@ -467,10 +456,8 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             errors.add(e);
-            log.error("Thread interrupted during task execution.", e);
         } catch (ExecutionException e) {
             errors.add(e.getCause());
-            log.error("Execution exception occurred during task execution.", e);
         }
 
         if (!errors.isEmpty()) {
@@ -558,7 +545,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
                 } else {
                     adjustRepaymentSchedules(loan, holiday, adjustedRescheduleToDate);
                 }
-                log.debug("Applied holiday changes to loan: {}", loan.getId());
             }
 
             // Fix from dates to ensure consistency
@@ -568,7 +554,6 @@ public class CredibleXHolidayWritePlatformServiceJpaRepositoryImpl extends Holid
             loanRepositoryWrapper.saveAndFlush(loan);
 
         } catch (Exception e) {
-            log.error("Failed to apply holiday changes to loan: {}", loan.getId(), e);
             throw e;
         }
     }
