@@ -49,6 +49,38 @@ public final class LineOfCreditData implements Serializable {
     private LocalDate startDate;
     private LocalDate endDate;
 
+    // New fields from migration
+    private BigDecimal approvedCreditFacilityAmount;
+    private String externalId;
+    private LocalDate activationDate;
+    private String currency;
+    private BigDecimal advancePercentage;
+    private Integer tenorDays;
+    private String approvedBuyers;
+    private BigDecimal processingFeePctLoc;
+    private String cashMarginType;
+    private BigDecimal cashMarginValue;
+    private String invHandlingFeeBasis;
+    private BigDecimal invHandlingFeePct;
+    private BigDecimal invHandlingFeeMinAmount;
+    private String invHandlingFeeCurrency;
+    private LocalDate interimReviewDate;
+    private String rateType;
+    private BigDecimal annualInterestRate;
+    private String isInterestUpfrontOrPostDisbursal;
+    private String clientCompanyName;
+    private String clientContactPersonName;
+    private String clientContactPersonPhone;
+    private String clientContactPersonEmail;
+    private String authorizedSignatoryName;
+    private String authorizedSignatoryPhone;
+    private String authorizedSignatoryEmail;
+    private String va;
+    private String distributionPartner;
+    private BigDecimal bankTransferFee;
+    private String specialConditions;
+    private BigDecimal latePaymentFee;
+
     // Audit fields
     private LocalDate createdDate;
     private String createdByUsername;
@@ -75,10 +107,23 @@ public final class LineOfCreditData implements Serializable {
 
     public static LineOfCreditData instance(Long id, Long clientId, ClientData client, String name, String productType,
             BigDecimal maximumAmount, BigDecimal availableBalance, BigDecimal consumedAmount, EnumOptionData activationStatus,
-            LocalDate startDate, LocalDate endDate, LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate,
-            String lastModifiedByUsername) {
+            LocalDate startDate, LocalDate endDate, BigDecimal approvedCreditFacilityAmount, String externalId, LocalDate activationDate,
+            String currency, BigDecimal advancePercentage, Integer tenorDays, String approvedBuyers, BigDecimal processingFeePctLoc,
+            String cashMarginType, BigDecimal cashMarginValue, String invHandlingFeeBasis, BigDecimal invHandlingFeePct,
+            BigDecimal invHandlingFeeMinAmount, String invHandlingFeeCurrency, LocalDate interimReviewDate, String rateType,
+            BigDecimal annualInterestRate, String isInterestUpfrontOrPostDisbursal, String clientCompanyName,
+            String clientContactPersonName, String clientContactPersonPhone, String clientContactPersonEmail,
+            String authorizedSignatoryName, String authorizedSignatoryPhone, String authorizedSignatoryEmail, String va,
+            String distributionPartner, BigDecimal bankTransferFee, String specialConditions, BigDecimal latePaymentFee,
+            LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate, String lastModifiedByUsername) {
         return new LineOfCreditData(id, clientId, client, name, productType, maximumAmount, availableBalance, consumedAmount,
-                activationStatus, startDate, endDate, createdDate, createdByUsername, lastModifiedDate, lastModifiedByUsername);
+                activationStatus, startDate, endDate, approvedCreditFacilityAmount, externalId, activationDate, currency,
+                advancePercentage, tenorDays, approvedBuyers, processingFeePctLoc, cashMarginType, cashMarginValue,
+                invHandlingFeeBasis, invHandlingFeePct, invHandlingFeeMinAmount, invHandlingFeeCurrency, interimReviewDate,
+                rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, clientCompanyName, clientContactPersonName,
+                clientContactPersonPhone, clientContactPersonEmail, authorizedSignatoryName, authorizedSignatoryPhone,
+                authorizedSignatoryEmail, va, distributionPartner, bankTransferFee, specialConditions, latePaymentFee,
+                createdDate, createdByUsername, lastModifiedDate, lastModifiedByUsername);
     }
 
     private LineOfCreditData(Long clientId, String name, String productType, BigDecimal maximumAmount, LocalDate startDate,
@@ -101,6 +146,13 @@ public final class LineOfCreditData implements Serializable {
 
     private LineOfCreditData(Long id, Long clientId, ClientData client, String name, String productType, BigDecimal maximumAmount,
             BigDecimal availableBalance, BigDecimal consumedAmount, EnumOptionData activationStatus, LocalDate startDate, LocalDate endDate,
+            BigDecimal approvedCreditFacilityAmount, String externalId, LocalDate activationDate, String currency, BigDecimal advancePercentage,
+            Integer tenorDays, String approvedBuyers, BigDecimal processingFeePctLoc, String cashMarginType, BigDecimal cashMarginValue,
+            String invHandlingFeeBasis, BigDecimal invHandlingFeePct, BigDecimal invHandlingFeeMinAmount, String invHandlingFeeCurrency,
+            LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate, String isInterestUpfrontOrPostDisbursal,
+            String clientCompanyName, String clientContactPersonName, String clientContactPersonPhone, String clientContactPersonEmail,
+            String authorizedSignatoryName, String authorizedSignatoryPhone, String authorizedSignatoryEmail, String va,
+            String distributionPartner, BigDecimal bankTransferFee, String specialConditions, BigDecimal latePaymentFee,
             LocalDate createdDate, String createdByUsername, LocalDate lastModifiedDate, String lastModifiedByUsername) {
         this.id = id;
         this.clientId = clientId;
@@ -113,6 +165,36 @@ public final class LineOfCreditData implements Serializable {
         this.activationStatus = activationStatus;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.approvedCreditFacilityAmount = approvedCreditFacilityAmount;
+        this.externalId = externalId;
+        this.activationDate = activationDate;
+        this.currency = currency;
+        this.advancePercentage = advancePercentage;
+        this.tenorDays = tenorDays;
+        this.approvedBuyers = approvedBuyers;
+        this.processingFeePctLoc = processingFeePctLoc;
+        this.cashMarginType = cashMarginType;
+        this.cashMarginValue = cashMarginValue;
+        this.invHandlingFeeBasis = invHandlingFeeBasis;
+        this.invHandlingFeePct = invHandlingFeePct;
+        this.invHandlingFeeMinAmount = invHandlingFeeMinAmount;
+        this.invHandlingFeeCurrency = invHandlingFeeCurrency;
+        this.interimReviewDate = interimReviewDate;
+        this.rateType = rateType;
+        this.annualInterestRate = annualInterestRate;
+        this.isInterestUpfrontOrPostDisbursal = isInterestUpfrontOrPostDisbursal;
+        this.clientCompanyName = clientCompanyName;
+        this.clientContactPersonName = clientContactPersonName;
+        this.clientContactPersonPhone = clientContactPersonPhone;
+        this.clientContactPersonEmail = clientContactPersonEmail;
+        this.authorizedSignatoryName = authorizedSignatoryName;
+        this.authorizedSignatoryPhone = authorizedSignatoryPhone;
+        this.authorizedSignatoryEmail = authorizedSignatoryEmail;
+        this.va = va;
+        this.distributionPartner = distributionPartner;
+        this.bankTransferFee = bankTransferFee;
+        this.specialConditions = specialConditions;
+        this.latePaymentFee = latePaymentFee;
         this.createdDate = createdDate;
         this.createdByUsername = createdByUsername;
         this.lastModifiedDate = lastModifiedDate;

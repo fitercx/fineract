@@ -19,7 +19,9 @@
 
 package com.crediblex.fineract.portfolio.loc.commands;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.commands.annotation.CommandType;
@@ -36,10 +38,21 @@ import org.springframework.transaction.annotation.Transactional;
 public class LineOfCreditCreateCommandHandler implements NewCommandSourceHandler {
 
     private final LineOfCreditWritePlatformService writePlatformService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     @Transactional
     public CommandProcessingResult processCommand(JsonCommand command) {
-        return this.writePlatformService.createLineOfCredit(command);
+        try {
+            // Parse JSON to LineOfCreditRequest object
+            final LineOfCreditRequest request = objectMapper.readValue(command.json(), LineOfCreditRequest.class);
+            
+            // Use the new method that accepts LineOfCreditRequest directly
+            return this.writePlatformService.createLineOfCredit(request);
+        } catch (Exception e) {
+            log.error("Error parsing LineOfCreditRequest from JSON: {}", e.getMessage());
+            // Fallback to the original method if parsing fails
+            return this.writePlatformService.createLineOfCredit(command);
+        }
     }
 }

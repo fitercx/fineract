@@ -19,7 +19,10 @@
 
 package com.crediblex.fineract.portfolio.starter;
 
+import java.util.Set;
+import org.apache.fineract.infrastructure.core.config.jpa.EntityManagerFactoryCustomizer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScans;
 import org.springframework.context.annotation.Import;
@@ -31,7 +34,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
     "com.crediblex.fineract.portfolio.loanaccount.repository",
     "com.crediblex.fineract.portfolio.loc.repository"
 })
-@Import(CrediblexStandingInstructionsOverrideConfiguration.class)
+@Import({CrediblexStandingInstructionsOverrideConfiguration.class,CrediblexEntityManagerFactory.class})
 public class CrediblexPortfolioAutoConfiguration {
-
 }

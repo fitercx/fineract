@@ -40,7 +40,6 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
@@ -54,8 +53,6 @@ import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSeria
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -94,7 +91,6 @@ public class LineOfCreditApiResource {
             @Context final UriInfo uriInfo) {
 
         this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
-
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
 
@@ -111,9 +107,7 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditsResponse.class))) })
     public String retrieveAllForClient(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Context final UriInfo uriInfo) {
-
         this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
-
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final Collection<LineOfCreditData> lineOfCredits = this.readPlatformService.retrieveAllLineOfCreditsForClient(clientId);
 
@@ -132,10 +126,8 @@ public class LineOfCreditApiResource {
             @Context final UriInfo uriInfo) {
 
         this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
-
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData lineOfCredit = this.readPlatformService.retrieveOne(lineOfCreditId);
-
         // Verify that the line of credit belongs to the specified client
         if (lineOfCredit == null || lineOfCredit.getClientId() == null || !lineOfCredit.getClientId().equals(clientId)) {
             throw new ResourceNotFoundException("error.msg.line.of.credit.not.found.for.client", 
@@ -155,7 +147,6 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String create(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
-
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson())
                 .build();
 
@@ -163,8 +154,6 @@ public class LineOfCreditApiResource {
 
         return this.toApiJsonSerializer.serialize(result);
     }
-
-
 
     @PUT
     @Path("{clientId}/creditlines/{lineOfCreditId}")
@@ -185,7 +174,6 @@ public class LineOfCreditApiResource {
 
         return this.toApiJsonSerializer.serialize(result);
     }
-
 
 
     @POST
@@ -243,9 +231,9 @@ public class LineOfCreditApiResource {
     @Operation(summary = "Delete a Line of Credit", description = "Deletes a line of credit.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.DeleteLineOfCreditResponse.class))) })
+
     public String delete(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId) {
-
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deleteLineOfCredit(lineOfCreditId).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);

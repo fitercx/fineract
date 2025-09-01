@@ -66,6 +66,22 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     + "loc.maximum_amount as maximumAmount, loc.available_balance as availableBalance, "
                     + "loc.consumed_amount as consumedAmount, loc.activation_status as activationStatus, "
                     + "loc.start_date as startDate, loc.end_date as endDate, "
+                    + "loc.approved_credit_facility_amount as approvedCreditFacilityAmount, "
+                    + "loc.external_id as externalId, loc.activation_date as activationDate, "
+                    + "loc.currency as currency, loc.advance_percentage as advancePercentage, "
+                    + "loc.tenor_days as tenorDays, loc.approved_buyers as approvedBuyers, "
+                    + "loc.processing_fee_pct_loc as processingFeePctLoc, loc.cash_margin_type as cashMarginType, "
+                    + "loc.cash_margin_value as cashMarginValue, loc.inv_handling_fee_basis as invHandlingFeeBasis, "
+                    + "loc.inv_handling_fee_pct as invHandlingFeePct, loc.inv_handling_fee_min_amount as invHandlingFeeMinAmount, "
+                    + "loc.inv_handling_fee_currency as invHandlingFeeCurrency, loc.interim_review_date as interimReviewDate, "
+                    + "loc.rate_type as rateType, loc.annual_interest_rate as annualInterestRate, "
+                    + "loc.is_interest_upfront_or_post_disbursal as isInterestUpfrontOrPostDisbursal, "
+                    + "loc.client_company_name as clientCompanyName, loc.client_contact_person_name as clientContactPersonName, "
+                    + "loc.client_contact_person_phone as clientContactPersonPhone, loc.client_contact_person_email as clientContactPersonEmail, "
+                    + "loc.authorized_signatory_name as authorizedSignatoryName, loc.authorized_signatory_phone as authorizedSignatoryPhone, "
+                    + "loc.authorized_signatory_email as authorizedSignatoryEmail, loc.va as va, "
+                    + "loc.distribution_partner as distributionPartner, loc.bank_transfer_fee as bankTransferFee, "
+                    + "loc.special_conditions as specialConditions, loc.late_payment_fee as latePaymentFee, "
                     + "loc.created_on_utc as createdDate, loc.created_by as createdBy, "
                     + "loc.last_modified_on_utc as lastModifiedDate, loc.last_modified_by as lastModifiedBy "
                     + "from m_line_of_credit loc ";
@@ -83,6 +99,36 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String activationStatus = rs.getString("activationStatus");
             final LocalDate startDate = rs.getDate("startDate") != null ? rs.getDate("startDate").toLocalDate() : null;
             final LocalDate endDate = rs.getDate("endDate") != null ? rs.getDate("endDate").toLocalDate() : null;
+            final BigDecimal approvedCreditFacilityAmount = rs.getBigDecimal("approvedCreditFacilityAmount");
+            final String externalId = rs.getString("externalId");
+            final LocalDate activationDate = rs.getDate("activationDate") != null ? rs.getDate("activationDate").toLocalDate() : null;
+            final String currency = rs.getString("currency");
+            final BigDecimal advancePercentage = rs.getBigDecimal("advancePercentage");
+            final Integer tenorDays = rs.getObject("tenorDays") != null ? rs.getInt("tenorDays") : null;
+            final String approvedBuyers = rs.getString("approvedBuyers");
+            final BigDecimal processingFeePctLoc = rs.getBigDecimal("processingFeePctLoc");
+            final String cashMarginType = rs.getString("cashMarginType");
+            final BigDecimal cashMarginValue = rs.getBigDecimal("cashMarginValue");
+            final String invHandlingFeeBasis = rs.getString("invHandlingFeeBasis");
+            final BigDecimal invHandlingFeePct = rs.getBigDecimal("invHandlingFeePct");
+            final BigDecimal invHandlingFeeMinAmount = rs.getBigDecimal("invHandlingFeeMinAmount");
+            final String invHandlingFeeCurrency = rs.getString("invHandlingFeeCurrency");
+            final LocalDate interimReviewDate = rs.getDate("interimReviewDate") != null ? rs.getDate("interimReviewDate").toLocalDate() : null;
+            final String rateType = rs.getString("rateType");
+            final BigDecimal annualInterestRate = rs.getBigDecimal("annualInterestRate");
+            final String isInterestUpfrontOrPostDisbursal = rs.getString("isInterestUpfrontOrPostDisbursal");
+            final String clientCompanyName = rs.getString("clientCompanyName");
+            final String clientContactPersonName = rs.getString("clientContactPersonName");
+            final String clientContactPersonPhone = rs.getString("clientContactPersonPhone");
+            final String clientContactPersonEmail = rs.getString("clientContactPersonEmail");
+            final String authorizedSignatoryName = rs.getString("authorizedSignatoryName");
+            final String authorizedSignatoryPhone = rs.getString("authorizedSignatoryPhone");
+            final String authorizedSignatoryEmail = rs.getString("authorizedSignatoryEmail");
+            final String va = rs.getString("va");
+            final String distributionPartner = rs.getString("distributionPartner");
+            final BigDecimal bankTransferFee = rs.getBigDecimal("bankTransferFee");
+            final String specialConditions = rs.getString("specialConditions");
+            final BigDecimal latePaymentFee = rs.getBigDecimal("latePaymentFee");
             
             // Handle OffsetDateTime fields
             final LocalDate createdDate = rs.getTimestamp("createdDate") != null ? 
@@ -93,7 +139,13 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String lastModifiedBy = rs.getString("lastModifiedBy");
 
             return LineOfCreditData.instance(id, clientId, null, name, productType, maximumAmount, availableBalance, consumedAmount,
-                    getActivationStatusEnumOptionData(activationStatus), startDate, endDate, createdDate, createdBy, lastModifiedDate, lastModifiedBy);
+                    getActivationStatusEnumOptionData(activationStatus), startDate, endDate, approvedCreditFacilityAmount, externalId, activationDate,
+                    currency, advancePercentage, tenorDays, approvedBuyers, processingFeePctLoc, cashMarginType, cashMarginValue,
+                    invHandlingFeeBasis, invHandlingFeePct, invHandlingFeeMinAmount, invHandlingFeeCurrency, interimReviewDate,
+                    rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, clientCompanyName, clientContactPersonName,
+                    clientContactPersonPhone, clientContactPersonEmail, authorizedSignatoryName, authorizedSignatoryPhone,
+                    authorizedSignatoryEmail, va, distributionPartner, bankTransferFee, specialConditions, latePaymentFee,
+                    createdDate, createdBy, lastModifiedDate, lastModifiedBy);
         }
 
         private EnumOptionData getActivationStatusEnumOptionData(String status) {
@@ -153,7 +205,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     @Override
     public LineOfCreditData retrieveOne(Long lineOfCreditId) {
         this.context.authenticatedUser();
-        
         try {
             final LineOfCreditMapper mapper = new LineOfCreditMapper();
             final String sql = "select " + mapper.schema() + " where loc.id = ?";
@@ -170,7 +221,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     @Override
     public LineOfCreditData retrieveTemplate() {
         this.context.authenticatedUser();
-        
         final Collection<EnumOptionData> activationStatusOptions = getActivationStatusOptions();
         final Collection<String> productTypeOptions = getProductTypeOptions();
 
@@ -211,7 +261,16 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     loc.getId(), loc.getClientId(), clientData, loc.getName(), loc.getProductType(),
                     loc.getMaximumAmount(), loc.getAvailableBalance(), loc.getConsumedAmount(),
                     loc.getActivationStatus(), loc.getStartDate(), loc.getEndDate(),
-                    loc.getCreatedDate(), loc.getCreatedByUsername(), loc.getLastModifiedDate(), loc.getLastModifiedByUsername()
+                    loc.getApprovedCreditFacilityAmount(), loc.getExternalId(), loc.getActivationDate(),
+                    loc.getCurrency(), loc.getAdvancePercentage(), loc.getTenorDays(), loc.getApprovedBuyers(),
+                    loc.getProcessingFeePctLoc(), loc.getCashMarginType(), loc.getCashMarginValue(),
+                    loc.getInvHandlingFeeBasis(), loc.getInvHandlingFeePct(), loc.getInvHandlingFeeMinAmount(),
+                    loc.getInvHandlingFeeCurrency(), loc.getInterimReviewDate(), loc.getRateType(),
+                    loc.getAnnualInterestRate(), loc.getIsInterestUpfrontOrPostDisbursal(), loc.getClientCompanyName(),
+                    loc.getClientContactPersonName(), loc.getClientContactPersonPhone(), loc.getClientContactPersonEmail(),
+                    loc.getAuthorizedSignatoryName(), loc.getAuthorizedSignatoryPhone(), loc.getAuthorizedSignatoryEmail(),
+                    loc.getVa(), loc.getDistributionPartner(), loc.getBankTransferFee(), loc.getSpecialConditions(),
+                    loc.getLatePaymentFee(), loc.getCreatedDate(), loc.getCreatedByUsername(), loc.getLastModifiedDate(), loc.getLastModifiedByUsername()
                 );
                 // Replace the original object in the list
                 int index = lineOfCredits.indexOf(loc);
@@ -230,7 +289,16 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 lineOfCredit.getId(), lineOfCredit.getClientId(), clientData, lineOfCredit.getName(), lineOfCredit.getProductType(),
                 lineOfCredit.getMaximumAmount(), lineOfCredit.getAvailableBalance(), lineOfCredit.getConsumedAmount(),
                 lineOfCredit.getActivationStatus(), lineOfCredit.getStartDate(), lineOfCredit.getEndDate(),
-                lineOfCredit.getCreatedDate(), lineOfCredit.getCreatedByUsername(), lineOfCredit.getLastModifiedDate(), lineOfCredit.getLastModifiedByUsername()
+                lineOfCredit.getApprovedCreditFacilityAmount(), lineOfCredit.getExternalId(), lineOfCredit.getActivationDate(),
+                lineOfCredit.getCurrency(), lineOfCredit.getAdvancePercentage(), lineOfCredit.getTenorDays(), lineOfCredit.getApprovedBuyers(),
+                lineOfCredit.getProcessingFeePctLoc(), lineOfCredit.getCashMarginType(), lineOfCredit.getCashMarginValue(),
+                lineOfCredit.getInvHandlingFeeBasis(), lineOfCredit.getInvHandlingFeePct(), lineOfCredit.getInvHandlingFeeMinAmount(),
+                lineOfCredit.getInvHandlingFeeCurrency(), lineOfCredit.getInterimReviewDate(), lineOfCredit.getRateType(),
+                lineOfCredit.getAnnualInterestRate(), lineOfCredit.getIsInterestUpfrontOrPostDisbursal(), lineOfCredit.getClientCompanyName(),
+                lineOfCredit.getClientContactPersonName(), lineOfCredit.getClientContactPersonPhone(), lineOfCredit.getClientContactPersonEmail(),
+                lineOfCredit.getAuthorizedSignatoryName(), lineOfCredit.getAuthorizedSignatoryPhone(), lineOfCredit.getAuthorizedSignatoryEmail(),
+                lineOfCredit.getVa(), lineOfCredit.getDistributionPartner(), lineOfCredit.getBankTransferFee(), lineOfCredit.getSpecialConditions(),
+                lineOfCredit.getLatePaymentFee(), lineOfCredit.getCreatedDate(), lineOfCredit.getCreatedByUsername(), lineOfCredit.getLastModifiedDate(), lineOfCredit.getLastModifiedByUsername()
             );
         }
         return lineOfCredit;
