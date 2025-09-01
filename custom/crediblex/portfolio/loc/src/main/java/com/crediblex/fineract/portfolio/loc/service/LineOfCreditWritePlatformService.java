@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,9 @@ public interface LineOfCreditWritePlatformService {
 
     @Transactional
     CommandProcessingResult createLineOfCredit(JsonCommand command);
+
+    @Transactional
+    CommandProcessingResult createLineOfCredit(LineOfCreditRequest request);
 
     @Transactional
     CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command);

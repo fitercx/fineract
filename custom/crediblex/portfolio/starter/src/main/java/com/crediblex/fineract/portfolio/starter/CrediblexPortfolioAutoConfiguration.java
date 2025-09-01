@@ -34,16 +34,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
     "com.crediblex.fineract.portfolio.loanaccount.repository",
     "com.crediblex.fineract.portfolio.loc.repository"
 })
-@Import(CrediblexStandingInstructionsOverrideConfiguration.class)
+@Import({CrediblexStandingInstructionsOverrideConfiguration.class,CrediblexEntityManagerFactory.class})
 public class CrediblexPortfolioAutoConfiguration {
-
-    @Bean
-    public EntityManagerFactoryCustomizer crediblexEntityManagerFactoryCustomizer() {
-        return new EntityManagerFactoryCustomizer() {
-            @Override
-            public Set<String> additionalPackagesToScan() {
-                return Set.of("com.crediblex.fineract");
-            }
-        };
-    }
 }

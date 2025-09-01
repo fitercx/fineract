@@ -99,8 +99,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String activationStatus = rs.getString("activationStatus");
             final LocalDate startDate = rs.getDate("startDate") != null ? rs.getDate("startDate").toLocalDate() : null;
             final LocalDate endDate = rs.getDate("endDate") != null ? rs.getDate("endDate").toLocalDate() : null;
-            
-            // New fields
             final BigDecimal approvedCreditFacilityAmount = rs.getBigDecimal("approvedCreditFacilityAmount");
             final String externalId = rs.getString("externalId");
             final LocalDate activationDate = rs.getDate("activationDate") != null ? rs.getDate("activationDate").toLocalDate() : null;

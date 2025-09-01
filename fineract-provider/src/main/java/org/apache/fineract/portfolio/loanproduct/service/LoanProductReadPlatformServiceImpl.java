@@ -75,12 +75,12 @@ import org.springframework.jdbc.core.RowMapper;
 public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatformService {
 
     private final PlatformSecurityContext context;
-    private final JdbcTemplate jdbcTemplate;
-    private final ChargeReadPlatformService chargeReadPlatformService;
-    private final RateReadService rateReadService;
+    protected final JdbcTemplate jdbcTemplate;
+    protected final ChargeReadPlatformService chargeReadPlatformService;
+    protected final RateReadService rateReadService;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final FineractEntityAccessUtil fineractEntityAccessUtil;
-    private final DelinquencyReadPlatformService delinquencyReadPlatformService;
+    protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
     private final LoanProductRepository loanProductRepository;
 
     @Override
@@ -294,8 +294,7 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
                     + "lp.charge_off_behaviour as chargeOffBehaviour, " //
                     + "lp.enable_income_capitalization as enableIncomeCapitalization, " //
                     + "lp.capitalized_income_calculation_type as capitalizedIncomeCalculationType, " //
-                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy, " //
-                    + "lp.is_loc_enable as is_loc_enabled " //
+                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy " //
                     + " from m_product_loan lp " + " left join m_fund f on f.id = lp.fund_id "
                     + " left join m_product_loan_recalculation_details lpr on lpr.product_id=lp.id "
                     + " left join m_product_loan_guarantee_details lpg on lpg.loan_product_id=lp.id "
@@ -589,7 +588,7 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
                     fixedLength, enableAccrualActivityPosting, supportedInterestRefundTypes,
                     loanChargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate,
                     daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy,
-                    rs.getBoolean("is_loc_enabled"));
+                    false);
         }
     }
 

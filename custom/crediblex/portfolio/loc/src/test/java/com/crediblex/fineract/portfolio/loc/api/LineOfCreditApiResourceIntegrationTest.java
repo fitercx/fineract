@@ -30,16 +30,15 @@ public class LineOfCreditApiResourceIntegrationTest {
     @Test
     public void testLineOfCreditRequestSerialization() {
         // Test the exact request format from the API client
-        LineOfCreditRequest request = new LineOfCreditRequest(
-            1L,
-            "clientlient payable",
-            ProductType.PAYABLE,
-            "3,000,000",
-            "29 August 2025",
-            "29 October 2025",
-            "dd MMMM yyyy",
-            "en"
-        );
+        LineOfCreditRequest request = new LineOfCreditRequest();
+        request.setClientId(1L);
+        request.setName("clientlient payable");
+        request.setProductType("PAYABLE");
+        request.setMaximumAmount("3,000,000");
+        request.setStartDate("29 August 2025");
+        request.setEndDate("29 October 2025");
+        request.setDateFormat("dd MMMM yyyy");
+        request.setLocale("en");
 
         // Verify the request can be serialized to JSON
         String json = request.toJson();
@@ -55,15 +54,25 @@ public class LineOfCreditApiResourceIntegrationTest {
     @Test
     public void testLineOfCreditRequestWithDifferentFormats() {
         // Test with different date formats
-        LineOfCreditRequest request1 = new LineOfCreditRequest(
-            1L, "Test Credit Line", ProductType.PAYABLE, "3000000",
-            "2025-08-29", "2025-10-29", "yyyy-MM-dd", "en"
-        );
+        LineOfCreditRequest request1 = new LineOfCreditRequest();
+        request1.setClientId(1L);
+        request1.setName("Test Credit Line");
+        request1.setProductType("PAYABLE");
+        request1.setMaximumAmount("3000000");
+        request1.setStartDate("2025-08-29");
+        request1.setEndDate("2025-10-29");
+        request1.setDateFormat("yyyy-MM-dd");
+        request1.setLocale("en");
 
-        LineOfCreditRequest request2 = new LineOfCreditRequest(
-            1L, "Test Credit Line", ProductType.PAYABLE, "3,000,000",
-            "29 August 2025", "29 October 2025", "dd MMMM yyyy", "en"
-        );
+        LineOfCreditRequest request2 = new LineOfCreditRequest();
+        request2.setClientId(1L);
+        request2.setName("Test Credit Line");
+        request2.setProductType("PAYABLE");
+        request2.setMaximumAmount("3,000,000");
+        request2.setStartDate("29 August 2025");
+        request2.setEndDate("29 October 2025");
+        request2.setDateFormat("dd MMMM yyyy");
+        request2.setLocale("en");
 
         // Both should serialize successfully
         assertThat(request1.toJson()).isNotNull();
@@ -79,16 +88,15 @@ public class LineOfCreditApiResourceIntegrationTest {
         // The API client was sending "dateFormat": "yyyy MMMM yyyy" which is INVALID
         // It should send "dateFormat": "dd MMMM yyyy" instead
         
-        LineOfCreditRequest correctRequest = new LineOfCreditRequest(
-            1L,                           // clientId
-            "clientlient payable",        // name
-            ProductType.PAYABLE,          // productType
-            "3,000,000",                  // maximumAmount (with commas)
-            "29 August 2025",             // startDate
-            "29 October 2025",            // endDate
-            "dd MMMM yyyy",               // CORRECT dateFormat (NOT "yyyy MMMM yyyy")
-            "en"                          // locale
-        );
+        LineOfCreditRequest correctRequest = new LineOfCreditRequest();
+        correctRequest.setClientId(1L);
+        correctRequest.setName("clientlient payable");
+        correctRequest.setProductType("PAYABLE");
+        correctRequest.setMaximumAmount("3,000,000");
+        correctRequest.setStartDate("29 August 2025");
+        correctRequest.setEndDate("29 October 2025");
+        correctRequest.setDateFormat("dd MMMM yyyy");
+        correctRequest.setLocale("en");
 
         String json = correctRequest.toJson();
         
@@ -103,16 +111,15 @@ public class LineOfCreditApiResourceIntegrationTest {
         // This test shows the INCORRECT format that was causing the error
         // The API client was sending this, which causes validation failure
         
-        LineOfCreditRequest incorrectRequest = new LineOfCreditRequest(
-            1L,                           // clientId
-            "clientlient payable",        // name
-            ProductType.PAYABLE,          // productType
-            "3,000,000",                  // maximumAmount
-            "29 August 2025",             // startDate
-            "29 October 2025",            // endDate
-            "yyyy MMMM yyyy",             // INCORRECT dateFormat (this causes the error)
-            "en"                          // locale
-        );
+        LineOfCreditRequest incorrectRequest = new LineOfCreditRequest();
+        incorrectRequest.setClientId(1L);
+        incorrectRequest.setName("clientlient payable");
+        incorrectRequest.setProductType("PAYABLE");
+        incorrectRequest.setMaximumAmount("3,000,000");
+        incorrectRequest.setStartDate("29 August 2025");
+        incorrectRequest.setEndDate("29 October 2025");
+        incorrectRequest.setDateFormat("yyyy MMMM yyyy");
+        incorrectRequest.setLocale("en");
 
         String json = incorrectRequest.toJson();
 

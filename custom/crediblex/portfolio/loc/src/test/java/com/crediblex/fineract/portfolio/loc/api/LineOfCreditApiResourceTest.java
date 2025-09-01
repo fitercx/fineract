@@ -98,13 +98,23 @@ class LineOfCreditApiResourceTest {
 
     private static final Long CLIENT_ID = 34L;
     private static final Long LINE_OF_CREDIT_ID = 1L;
-    private static final LineOfCreditRequest LINE_OF_CREDIT_REQUEST = new LineOfCreditRequest(34L, "Test Credit Line", ProductType.PAYABLE, "5000000", "29 August 2025", "29 October 2025", "dd MMMM yyyy", "en");
+    private static final LineOfCreditRequest LINE_OF_CREDIT_REQUEST = new LineOfCreditRequest();
     private static final LineOfCreditActionRequest LINE_OF_CREDIT_ACTION_REQUEST = new LineOfCreditActionRequest("yyyy-MM-dd", "en");
 
     @BeforeEach
     void setUp() {
         given(context.authenticatedUser()).willReturn(appUser);
         given(apiRequestParameterHelper.process(uriInfo.getQueryParameters())).willReturn(settings);
+        
+        // Set up the test request
+        LINE_OF_CREDIT_REQUEST.setClientId(34L);
+        LINE_OF_CREDIT_REQUEST.setName("Test Credit Line");
+        LINE_OF_CREDIT_REQUEST.setProductType("PAYABLE");
+        LINE_OF_CREDIT_REQUEST.setMaximumAmount("5000000");
+        LINE_OF_CREDIT_REQUEST.setStartDate("29 August 2025");
+        LINE_OF_CREDIT_REQUEST.setEndDate("29 October 2025");
+        LINE_OF_CREDIT_REQUEST.setDateFormat("dd MMMM yyyy");
+        LINE_OF_CREDIT_REQUEST.setLocale("en");
     }
 
     @Test
