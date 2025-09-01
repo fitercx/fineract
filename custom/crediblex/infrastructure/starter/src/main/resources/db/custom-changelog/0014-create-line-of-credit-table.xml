@@ -27,6 +27,11 @@
 
 
     <changeSet author="crediblex" id="1" context="postgresql">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not>
+                <tableExists tableName="m_line_of_credit"/>
+            </not>
+        </preConditions>
         <createTable tableName="m_line_of_credit">
             <column autoIncrement="true" name="id" type="BIGINT">
                 <constraints nullable="false" primaryKey="true"/>
@@ -66,6 +71,11 @@
     </changeSet>
 
     <changeSet author="crediblex" id="2" context="postgresql">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not>
+                <tableExists tableName="m_line_of_credit_transactions"/>
+            </not>
+        </preConditions>
         <createTable tableName="m_line_of_credit_transactions">
             <column autoIncrement="true" name="id" type="BIGINT">
                 <constraints nullable="false" primaryKey="true"/>
@@ -99,6 +109,15 @@
 
     <!-- Add foreign key constraints -->
     <changeSet author="crediblex" id="3">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <tableExists tableName="m_line_of_credit_transactions"/>
+                <not>
+                    <foreignKeyConstraintExists foreignKeyName="FK_line_of_credit_client"/>
+                </not>
+            </and>
+        </preConditions>
         <addForeignKeyConstraint baseColumnNames="client_id" baseTableName="m_line_of_credit"
                                  constraintName="FK_line_of_credit_client" deferrable="false" initiallyDeferred="false"
                                  onDelete="RESTRICT" onUpdate="RESTRICT" referencedColumnNames="id"
@@ -132,6 +151,15 @@
 
     <!-- Add indexes for better performance -->
     <changeSet author="crediblex" id="4">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <tableExists tableName="m_line_of_credit_transactions"/>
+                <not>
+                    <indexExists tableName="m_line_of_credit" indexName="idx_line_of_credit_client_id"/>
+                </not>
+            </and>
+        </preConditions>
         <createIndex tableName="m_line_of_credit" indexName="idx_line_of_credit_client_id">
             <column name="client_id"/>
         </createIndex>

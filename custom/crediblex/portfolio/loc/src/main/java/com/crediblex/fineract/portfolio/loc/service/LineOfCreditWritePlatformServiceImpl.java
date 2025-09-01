@@ -75,8 +75,74 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
             final LocalDate endDate = command.localDateValueOfParameterNamed("endDate");
 
+            // Extract new fields (all optional)
+            final BigDecimal approvedCreditFacilityAmount = command.hasParameter("approvedCreditFacilityAmount") ? 
+                command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount") : null;
+            final String externalId = command.hasParameter("externalId") ? 
+                command.stringValueOfParameterNamed("externalId") : null;
+            final LocalDate activationDate = command.hasParameter("activationDate") ? 
+                command.localDateValueOfParameterNamed("activationDate") : null;
+            final String currency = command.hasParameter("currency") ? 
+                command.stringValueOfParameterNamed("currency") : null;
+            final BigDecimal advancePercentage = command.hasParameter("advancePercentage") ? 
+                command.bigDecimalValueOfParameterNamed("advancePercentage") : null;
+            final Integer tenorDays = command.hasParameter("tenorDays") ? 
+                command.integerValueOfParameterNamed("tenorDays") : null;
+            final String approvedBuyers = command.hasParameter("approvedBuyers") ? 
+                command.stringValueOfParameterNamed("approvedBuyers") : null;
+            final BigDecimal processingFeePctLoc = command.hasParameter("processingFeePctLoc") ? 
+                command.bigDecimalValueOfParameterNamed("processingFeePctLoc") : null;
+            final String cashMarginType = command.hasParameter("cashMarginType") ? 
+                command.stringValueOfParameterNamed("cashMarginType") : null;
+            final BigDecimal cashMarginValue = command.hasParameter("cashMarginValue") ? 
+                command.bigDecimalValueOfParameterNamed("cashMarginValue") : null;
+            final String invHandlingFeeBasis = command.hasParameter("invHandlingFeeBasis") ? 
+                command.stringValueOfParameterNamed("invHandlingFeeBasis") : null;
+            final BigDecimal invHandlingFeePct = command.hasParameter("invHandlingFeePct") ? 
+                command.bigDecimalValueOfParameterNamed("invHandlingFeePct") : null;
+            final BigDecimal invHandlingFeeMinAmount = command.hasParameter("invHandlingFeeMinAmount") ? 
+                command.bigDecimalValueOfParameterNamed("invHandlingFeeMinAmount") : null;
+            final String invHandlingFeeCurrency = command.hasParameter("invHandlingFeeCurrency") ? 
+                command.stringValueOfParameterNamed("invHandlingFeeCurrency") : null;
+            final LocalDate interimReviewDate = command.hasParameter("interimReviewDate") ? 
+                command.localDateValueOfParameterNamed("interimReviewDate") : null;
+            final String rateType = command.hasParameter("rateType") ? 
+                command.stringValueOfParameterNamed("rateType") : null;
+            final BigDecimal annualInterestRate = command.hasParameter("annualInterestRate") ? 
+                command.bigDecimalValueOfParameterNamed("annualInterestRate") : null;
+            final String isInterestUpfrontOrPostDisbursal = command.hasParameter("isInterestUpfrontOrPostDisbursal") ? 
+                command.stringValueOfParameterNamed("isInterestUpfrontOrPostDisbursal") : null;
+            final String clientCompanyName = command.hasParameter("clientCompanyName") ? 
+                command.stringValueOfParameterNamed("clientCompanyName") : null;
+            final String clientContactPersonName = command.hasParameter("clientContactPersonName") ? 
+                command.stringValueOfParameterNamed("clientContactPersonName") : null;
+            final String clientContactPersonPhone = command.hasParameter("clientContactPersonPhone") ? 
+                command.stringValueOfParameterNamed("clientContactPersonPhone") : null;
+            final String clientContactPersonEmail = command.hasParameter("clientContactPersonEmail") ? 
+                command.stringValueOfParameterNamed("clientContactPersonEmail") : null;
+            final String authorizedSignatoryName = command.hasParameter("authorizedSignatoryName") ? 
+                command.stringValueOfParameterNamed("authorizedSignatoryName") : null;
+            final String authorizedSignatoryPhone = command.hasParameter("authorizedSignatoryPhone") ? 
+                command.stringValueOfParameterNamed("authorizedSignatoryPhone") : null;
+            final String authorizedSignatoryEmail = command.hasParameter("authorizedSignatoryEmail") ? 
+                command.stringValueOfParameterNamed("authorizedSignatoryEmail") : null;
+            final String va = command.hasParameter("va") ? 
+                command.stringValueOfParameterNamed("va") : null;
+            final String distributionPartner = command.hasParameter("distributionPartner") ? 
+                command.stringValueOfParameterNamed("distributionPartner") : null;
+            final BigDecimal bankTransferFee = command.hasParameter("bankTransferFee") ? 
+                command.bigDecimalValueOfParameterNamed("bankTransferFee") : null;
+            final String specialConditions = command.hasParameter("specialConditions") ? 
+                command.stringValueOfParameterNamed("specialConditions") : null;
+            final BigDecimal latePaymentFee = command.hasParameter("latePaymentFee") ? 
+                command.bigDecimalValueOfParameterNamed("latePaymentFee") : null;
 
-            final LineOfCredit lineOfCredit = new LineOfCredit(client, name, productType, maximumAmount, startDate, endDate);
+            final LineOfCredit lineOfCredit = new LineOfCredit(client, name, productType, maximumAmount, startDate, endDate,
+                    approvedCreditFacilityAmount, externalId, activationDate, currency, advancePercentage, tenorDays, approvedBuyers,
+                    processingFeePctLoc, cashMarginType, cashMarginValue, invHandlingFeeBasis, invHandlingFeePct, invHandlingFeeMinAmount,
+                    invHandlingFeeCurrency, interimReviewDate, rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal,
+                    clientCompanyName, clientContactPersonName, clientContactPersonPhone, clientContactPersonEmail, authorizedSignatoryName,
+                    authorizedSignatoryPhone, authorizedSignatoryEmail, va, distributionPartner, bankTransferFee, specialConditions, latePaymentFee);
             final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.save(lineOfCredit);
 
             return new CommandProcessingResultBuilder().withEntityId(savedLineOfCredit.getId()).build();
