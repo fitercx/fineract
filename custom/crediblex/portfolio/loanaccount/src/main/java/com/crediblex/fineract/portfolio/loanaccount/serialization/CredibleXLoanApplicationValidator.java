@@ -53,6 +53,7 @@ import org.apache.fineract.portfolio.loanproduct.exception.EqualAmortizationUnsu
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
 import org.apache.fineract.portfolio.loanproduct.serialization.LoanProductDataValidator;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
+
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
@@ -64,20 +65,20 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
     private final CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper;
 
     public CredibleXLoanApplicationValidator(FromJsonHelper fromApiJsonHelper, LoanScheduleValidator loanScheduleValidator,
-            ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper,
-            LoanChargeApiJsonValidator loanChargeApiJsonValidator,
-            LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
-            AdvancedPaymentAllocationsValidator advancedPaymentAllocationsValidator, ConfigurationDomainService configurationDomainService,
-            LoanProductRepository loanProductRepository, ClientRepositoryWrapper clientRepository, GroupRepositoryWrapper groupRepository,
-            LoanReadPlatformService loanReadPlatformService, LoanProductDataValidator loanProductDataValidator,
-            GlobalConfigurationRepositoryWrapper globalConfigurationRepository,
-            FineractEntityToEntityMappingRepository entityMappingRepository,
-            FineractEntityRelationRepository fineractEntityRelationRepository, CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper,
-            LoanProductReadPlatformService loanProductReadPlatformService, LoanCollateralAssembler collateralAssembler,
-            WorkingDaysRepositoryWrapper workingDaysRepository, HolidayRepository holidayRepository,
-            SavingsAccountRepositoryWrapper savingsAccountRepository, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
-            CalendarInstanceRepository calendarInstanceRepository, LoanUtilService loanUtilService,
-            EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, LoanMapper loanMapper) {
+                                             ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper,
+                                             LoanChargeApiJsonValidator loanChargeApiJsonValidator,
+                                             LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
+                                             AdvancedPaymentAllocationsValidator advancedPaymentAllocationsValidator, ConfigurationDomainService configurationDomainService,
+                                             LoanProductRepository loanProductRepository, ClientRepositoryWrapper clientRepository, GroupRepositoryWrapper groupRepository,
+                                             LoanReadPlatformService loanReadPlatformService, LoanProductDataValidator loanProductDataValidator,
+                                             GlobalConfigurationRepositoryWrapper globalConfigurationRepository,
+                                             FineractEntityToEntityMappingRepository entityMappingRepository,
+                                             FineractEntityRelationRepository fineractEntityRelationRepository, CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper,
+                                             LoanProductReadPlatformService loanProductReadPlatformService, LoanCollateralAssembler collateralAssembler,
+                                             WorkingDaysRepositoryWrapper workingDaysRepository, HolidayRepository holidayRepository,
+                                             SavingsAccountRepositoryWrapper savingsAccountRepository, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
+                                             CalendarInstanceRepository calendarInstanceRepository, LoanUtilService loanUtilService,
+                                             EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, LoanMapper loanMapper) {
         super(fromApiJsonHelper, loanScheduleValidator, clientCollateralManagementRepositoryWrapper, loanChargeApiJsonValidator,
                 loanRepaymentScheduleTransactionProcessorFactory, advancedPaymentAllocationsValidator, configurationDomainService,
                 loanProductRepository, clientRepository, groupRepository, loanReadPlatformService, loanProductDataValidator,
