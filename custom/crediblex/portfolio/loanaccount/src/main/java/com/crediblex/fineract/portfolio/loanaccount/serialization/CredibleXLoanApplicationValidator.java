@@ -132,7 +132,11 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
             "fixedPrincipalPercentagePerInstallment", "disallowExpectedDisbursements", "fraudAttributeName",
             "loanScheduleProcessingType", "fixedLength", "enableInstallmentLevelDelinquency", "enableDownPayment",
             "enableAutoRepaymentDownPayment", "disbursedAmountPercentageDownPayment", 
-            "interestRecognitionOnDisbursementDate", "daysInYearCustomStrategy","lineOfCreditId"
+            "interestRecognitionOnDisbursementDate", "daysInYearCustomStrategy",
+            "allowPartialPeriodInterestCalcualtion", "graceOnArrearsAgeing", "repaymentsStartingFromDate",
+            "interestChargedFromDate", "repaymentFrequencyNthDayType", "repaymentFrequencyDayOfWeekType",
+            "interestRateFrequencyType", "enableInstallmentLevelDelinquency",
+            "lineOfCreditId"
         ));
         
         this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, extendedSupportedParameters);
