@@ -36,7 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class LocLoanApplicationWritePlatformServiceJpaRepositoryImpl{
 
-
     private final FromJsonHelper fromApiJsonHelper;
     private final LocLoanAssociationService locLoanAssociationService;
 
@@ -59,7 +58,6 @@ public class LocLoanApplicationWritePlatformServiceJpaRepositoryImpl{
      */
     @Transactional
     public boolean processLoanApplicationWithLineOfCredit(final JsonCommand command, final Long loanId) {
-        log.info("Processing loan application {} with Line of Credit support", loanId);
         
         // Extract line of credit information from the command
         Long lineOfCreditId = extractLineOfCreditIdFromCommand(command);

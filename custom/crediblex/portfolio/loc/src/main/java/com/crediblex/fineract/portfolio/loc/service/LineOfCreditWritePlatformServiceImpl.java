@@ -271,26 +271,47 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         try {
+            // Validate limit reduction if maximumAmount is being updated (do this first for business rule validation)
+            if (command.hasParameter("maximumAmount")) {
+                try {
+                    final BigDecimal newMaximumAmount = command.bigDecimalValueOfParameterNamed("maximumAmount");
+                    this.dataValidator.validateForLimitReduction(lineOfCreditId, newMaximumAmount);
+                } catch (Exception e) {
+                    throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed",
+                        "Error processing maximumAmount parameter: " + e.getMessage(), "maximumAmount", e);
+                }
+            }
+
             this.dataValidator.validateForUpdate(command.json());
 
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
                     .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
                             "Line of credit not found", "lineOfCreditId"));
 
-            final Map<String, Object> changes = lineOfCredit.update(command);
+            final Map<String, Object> changes;
+            try {
+                changes = lineOfCredit.update(command);
+                log.info("Update changes calculated: {}", changes);
+            } catch (Exception updateException) {
+                throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed",
+                    "Line of credit update failed during entity update: " + updateException.getMessage(), 
+                    "lineOfCreditId", updateException);
+            }
 
             if (!changes.isEmpty()) {
                 this.lineOfCreditRepository.save(lineOfCredit);
+            } else {
+                log.info("No changes detected for line of credit ID: {}", lineOfCreditId);
             }
-
 
             // Create a map with the updated line of credit data
             final Map<String, Object> responseData = new HashMap<>();
             responseData.put("changes", changes);
 
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+        } catch (final PlatformApiDataValidationException e) {
+            throw e;
         } catch (final Exception e) {
-            log.error("Error occurred while updating line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.update.failed", "Line of credit update failed",
                     "lineOfCreditId", e);
         }
@@ -307,8 +328,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             lineOfCredit.activate();
             this.lineOfCreditRepository.save(lineOfCredit);
 
-            log.info("Line of credit activated successfully with ID: {}", lineOfCreditId);
-
             // Create a map with the activated line of credit data
             final Map<String, Object> responseData = new HashMap<>();
             responseData.put("action", "ACTIVATED");
@@ -316,7 +335,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
         } catch (final Exception e) {
-            log.error("Error occurred while activating line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.activation.failed", "Line of credit activation failed",
                     "lineOfCreditId", e);
         }
@@ -326,6 +344,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         try {
+            // Validate that the line of credit can be deactivated
+            this.dataValidator.validateForDeactivation(lineOfCreditId);
+
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
                     .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
                             "Line of credit not found", "lineOfCreditId"));
@@ -339,8 +360,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
+        } catch (final PlatformApiDataValidationException e) {
+            throw e;
         } catch (final Exception e) {
-            log.error("Error occurred while deactivating line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.deactivation.failed",
                     "Line of credit deactivation failed", "lineOfCreditId", e);
         }
@@ -350,6 +372,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId) {
         try {
+            // Validate that the line of credit can be deleted (same validation as deactivation)
+            this.dataValidator.validateForDeactivation(lineOfCreditId);
+
             final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
                     .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
                             "Line of credit not found", "lineOfCreditId"));
@@ -363,8 +388,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
             return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
 
+        } catch (final PlatformApiDataValidationException e) {
+            throw e;
         } catch (final Exception e) {
-            log.error("Error occurred while deleting line of credit", e);
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.deletion.failed", "Line of credit deletion failed",
                     "lineOfCreditId", e);
         }
