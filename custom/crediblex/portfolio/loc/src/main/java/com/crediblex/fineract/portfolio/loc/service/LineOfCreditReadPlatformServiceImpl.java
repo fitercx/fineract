@@ -170,7 +170,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final LineOfCreditMapper mapper = new LineOfCreditMapper();
         final String sql = "select " + mapper.schema() + " order by loc.id";
         
-        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper); // NOSONAR
+        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper);
         
         // Enrich with client data
         return enrichWithClientData(lineOfCredits);
@@ -184,7 +184,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         
         // Count total records
         final String countSql = "select count(*) from m_line_of_credit";
-        final Integer totalElements = this.jdbcTemplate.queryForObject(countSql, Integer.class); // NOSONAR
+        final Integer totalElements = this.jdbcTemplate.queryForObject(countSql, Integer.class);
         
         if (totalElements == null || totalElements == 0) {
             return new PageImpl<>(new ArrayList<>(), pageable, 0);
@@ -194,7 +194,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final String sql = "select " + mapper.schema() + " order by loc.id";
         final String paginatedSql = sql + " limit " + pageable.getPageSize() + " offset " + pageable.getOffset();
         
-        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(paginatedSql, mapper); // NOSONAR
+        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(paginatedSql, mapper);
         
         // Enrich with client data
         final List<LineOfCreditData> enrichedData = enrichWithClientData(lineOfCredits);
@@ -234,7 +234,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final LineOfCreditMapper mapper = new LineOfCreditMapper();
         final String sql = "select " + mapper.schema() + " where loc.client_id = ? order by loc.id";
         
-        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, new Object[] { clientId }); // NOSONAR
+        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, new Object[] { clientId });
         
         return enrichWithClientData(lineOfCredits);
     }
@@ -247,7 +247,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final String sql = "select " + mapper.schema() + " where loc.client_id = ? and loc.activation_status = ? order by loc.id";
         
         final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, 
-            new Object[] { clientId, "ACTIVE" }); // NOSONAR
+            new Object[] { clientId, "ACTIVE" });
         
         return enrichWithClientData(lineOfCredits);
     }

@@ -9,6 +9,8 @@ import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
+
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.configuration.domain.GlobalConfigurationRepositoryWrapper;
@@ -53,16 +55,20 @@ import org.apache.fineract.portfolio.loanproduct.exception.EqualAmortizationUnsu
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
 import org.apache.fineract.portfolio.loanproduct.serialization.LoanProductDataValidator;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
-
+import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.infrastructure.core.exception.InvalidJsonException;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @Primary
 public class CredibleXLoanApplicationValidator extends LoanApplicationValidator {
 
     private final CredibleXLoanRepositoryWrapper credibleXLoanRepositoryWrapper;
+    private final LocLoanApplicationValidator locLoanApplicationValidator;
 
     public CredibleXLoanApplicationValidator(FromJsonHelper fromApiJsonHelper, LoanScheduleValidator loanScheduleValidator,
                                              ClientCollateralManagementRepositoryWrapper clientCollateralManagementRepositoryWrapper,
@@ -78,7 +84,8 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
                                              WorkingDaysRepositoryWrapper workingDaysRepository, HolidayRepository holidayRepository,
                                              SavingsAccountRepositoryWrapper savingsAccountRepository, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
                                              CalendarInstanceRepository calendarInstanceRepository, LoanUtilService loanUtilService,
-                                             EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, LoanMapper loanMapper) {
+                                             EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, LoanMapper loanMapper,
+                                             LocLoanApplicationValidator locLoanApplicationValidator) {
         super(fromApiJsonHelper, loanScheduleValidator, clientCollateralManagementRepositoryWrapper, loanChargeApiJsonValidator,
                 loanRepaymentScheduleTransactionProcessorFactory, advancedPaymentAllocationsValidator, configurationDomainService,
                 loanProductRepository, clientRepository, groupRepository, loanReadPlatformService, loanProductDataValidator,
@@ -88,7 +95,53 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
                 loanMapper);
 
         this.credibleXLoanRepositoryWrapper = credibleXLoanRepositoryWrapper;
+        this.locLoanApplicationValidator = locLoanApplicationValidator;
     }
+
+    /**
+     * Override the base validation to add support for lineOfCreditId parameter.
+     * This allows the lineOfCreditId to pass through the base validation before
+     * our custom Line of Credit validation runs.
+     */
+    @Override
+    public void validateForCreate(JsonCommand command) {
+        String json = command.json();
+        
+        // Validate request body
+        if (StringUtils.isBlank(json)) {
+            throw new InvalidJsonException();
+        }
+        
+        // Custom validation for lineOfCreditId before base validation
+        final Type typeOfMap = new TypeToken<Map<String, Object>>() {}.getType();
+        final Set<String> extendedSupportedParameters = new HashSet<>(Arrays.asList(
+            // Base supported parameters
+            "locale", "dateFormat", "id", "clientId", "groupId", "loanType", "productId", "principal", 
+            "totalLoan", "parentAccount", "loanTermFrequency", "loanTermFrequencyType", "numberOfRepayments", 
+            "repaymentEvery", "repaymentFrequencyType", "repaymentFrequencyNthDayType", "repaymentFrequencyDayOfWeekType",
+            "interestRatePerPeriod", "amortizationType", "amortizationTypeOptions", "interestType", 
+            "isFloatingInterestRate", "interestRateDifferential", "interestCalculationPeriodType",
+            "allowPartialPeriodInterestCalculation", "interestRateFrequencyType", "expectedDisbursementDate",
+            "repaymentsStartingFromDate", "graceOnPrincipalPayment", "graceOnInterestPayment", "graceOnInterestCharged",
+            "interestChargedFromDate", "submittedOnDate", "submittedOnNote", "accountNo", "externalId", "fundId",
+            "loanOfficerId", "loanPurposeId", "inArrearsTolerance", "charges", "collateral", 
+            "transactionProcessingStrategyCode", "calendarId", "syncDisbursementWithMeeting", "linkAccountId",
+            "disbursementData", "fixedEmiAmount", "maxOutstandingBalance", "graceOnArrearsAgeing",
+            "createStandingInstructionAtDisbursement", "isTopup", "loanIdToClose", "datatables", 
+            "isEqualAmortization", "rates", "applicationId", "lastApplication", "daysInYearType",
+            "fixedPrincipalPercentagePerInstallment", "disallowExpectedDisbursements", "fraudAttributeName",
+            "loanScheduleProcessingType", "fixedLength", "enableInstallmentLevelDelinquency", "enableDownPayment",
+            "enableAutoRepaymentDownPayment", "disbursedAmountPercentageDownPayment", 
+            "interestRecognitionOnDisbursementDate", "daysInYearCustomStrategy","lineOfCreditId"
+        ));
+        
+        this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, extendedSupportedParameters);
+        
+        final JsonElement element = this.fromApiJsonHelper.parse(json);
+        validateForCreate(element);
+    }
+
+
 
     protected void validateForCreate(final JsonElement element) {
         boolean isMeetingMandatoryForJLGLoans = configurationDomainService.isMeetingMandatoryForJLGLoans();
@@ -638,5 +691,7 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
                 throw new UnsupportedParameterException(unsupportedParameterList);
             }
         }
+
+        this.locLoanApplicationValidator.validateLineOfCredit(element);
     }
 }

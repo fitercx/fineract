@@ -6,7 +6,6 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
-import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
@@ -107,13 +106,13 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 }
             }
             // Building response
-            return new CommandProcessingResultBuilder() //
-                    .withCommandId(command.commandId()) //
-                    .withEntityId(loan.getId()) //
-                    .withEntityExternalId(loan.getExternalId()) //
-                    .withOfficeId(loan.getOfficeId()) //
-                    .withClientId(loan.getClientId()) //
-                    .withGroupId(loan.getGroupId()) //
+            return new CommandProcessingResultBuilder()
+                    .withCommandId(command.commandId())
+                    .withEntityId(loan.getId())
+                    .withEntityExternalId(loan.getExternalId())
+                    .withOfficeId(loan.getOfficeId())
+                    .withClientId(loan.getClientId())
+                    .withGroupId(loan.getGroupId())
                     .withLoanId(loan.getId()).withGlimId(loan.getGlimId()).build();
         } catch (final JpaSystemException | DataIntegrityViolationException dve) {
             handleDataIntegrityIssues(command, dve.getMostSpecificCause(), dve);
@@ -124,7 +123,4 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             return CommandProcessingResult.empty();
         }
     }
-
-
-
 }

@@ -33,6 +33,13 @@ import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidati
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.springframework.stereotype.Component;
 
+import com.google.gson.reflect.TypeToken;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.lang.reflect.Type;
+
 @Component
 @RequiredArgsConstructor
 public class LineOfCreditDataValidator {
@@ -47,6 +54,20 @@ public class LineOfCreditDataValidator {
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
 
         final JsonElement element = this.fromApiJsonHelper.parse(json);
+
+        // Check for unsupported parameters - lineOfCreditId should not be in request body
+        final Type typeOfMap = new TypeToken<Map<String, Object>>() {}.getType();
+        final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
+            "locale", "dateFormat", "clientId", "name", "productType", "maximumAmount", "startDate", "endDate",
+            "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
+            "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
+            "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
+            "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
+            "clientCompanyName", "clientContactPersonName", "clientContactPersonPhone", "clientContactPersonEmail",
+            "authorizedSignatoryName", "authorizedSignatoryPhone", "authorizedSignatoryEmail", "va",
+            "distributionPartner", "bankTransferFee", "specialConditions", "latePaymentFee"
+        ));
+        this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, supportedParameters);
 
         final Long clientId = this.fromApiJsonHelper.extractLongNamed("clientId", element);
         baseDataValidator.reset().parameter("clientId").value(clientId).notNull().integerGreaterThanZero();
@@ -87,6 +108,19 @@ public class LineOfCreditDataValidator {
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
 
         final JsonElement element = this.fromApiJsonHelper.parse(json);
+
+        final Type typeOfMap = new TypeToken<Map<String, Object>>() {}.getType();
+        final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
+            "locale", "dateFormat", "name", "productType", "maximumAmount", "startDate", "endDate",
+            "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
+            "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
+            "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
+            "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
+            "clientCompanyName", "clientContactPersonName", "clientContactPersonPhone", "clientContactPersonEmail",
+            "authorizedSignatoryName", "authorizedSignatoryPhone", "authorizedSignatoryEmail", "va",
+            "distributionPartner", "bankTransferFee", "specialConditions", "latePaymentFee"
+        ));
+        this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, supportedParameters);
 
         if (this.fromApiJsonHelper.parameterExists("name", element)) {
             final String name = this.fromApiJsonHelper.extractStringNamed("name", element);
