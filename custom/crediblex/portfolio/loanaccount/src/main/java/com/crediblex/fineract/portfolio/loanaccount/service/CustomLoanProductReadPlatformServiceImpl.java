@@ -79,13 +79,12 @@ public class CustomLoanProductReadPlatformServiceImpl {
                     + "lp.allow_variabe_installments as isVariableIntallmentsAllowed, " + "lvi.minimum_gap as minimumGap, "
                     + "lvi.maximum_gap as maximumGap, dbuc.id as delinquencyBucketId, dbuc.name as delinquencyBucketName, "
                     + "lp.can_use_for_topup as canUseForTopup, lp.is_equal_amortization as isEqualAmortization, lp.loan_schedule_type as loanScheduleType, lp.loan_schedule_processing_type as loanScheduleProcessingType, lp.supported_interest_refund_types as supportedInterestRefundTypes, "
-                    + "lp.charge_off_behaviour as chargeOffBehaviour, " //
-                    + "lp.enable_income_capitalization as enableIncomeCapitalization, " //
-                    + "lp.capitalized_income_calculation_type as capitalizedIncomeCalculationType, " //
-                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy, " //
-                    + "lp.is_loc_enable as is_loc_enabled, " //
-                    + "l.line_of_credit_id as line_of_credit_id, " //
-                    + "loc.name as lineOfCreditName " //
+                    + "lp.charge_off_behaviour as chargeOffBehaviour, "
+                    + "lp.enable_income_capitalization as enableIncomeCapitalization, "
+                    + "lp.capitalized_income_calculation_type as capitalizedIncomeCalculationType, "
+                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy, "
+                    + "lp.is_loc_enable as is_loc_enabled, "
+                    + "loc.name as lineOfCreditName "
                     + " from m_product_loan lp " + " left join m_fund f on f.id = lp.fund_id "
                     + " left join m_product_loan_recalculation_details lpr on lpr.product_id=lp.id "
                     + " left join m_product_loan_guarantee_details lpg on lpg.loan_product_id=lp.id "
@@ -94,7 +93,6 @@ public class CustomLoanProductReadPlatformServiceImpl {
                     + " left join m_floating_rates as fr on lfr.floating_rates_id = fr.id "
                     + " left join m_product_loan_variable_installment_config as lvi on lvi.loan_product_id = lp.id "
                     + " left join m_delinquency_bucket as dbuc on dbuc.id = lp.delinquency_bucket_id "
-                    + " left join m_line_of_credit loc on loc.id = l.line_of_credit_id "
                     + " join m_currency curr on curr.code = lp.currency_code";
         }
 
