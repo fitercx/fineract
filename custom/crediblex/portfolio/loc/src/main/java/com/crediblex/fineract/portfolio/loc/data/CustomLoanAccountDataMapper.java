@@ -17,11 +17,11 @@
  * under the License.
  */
 
-package com.crediblex.fineract.portfolio.loc.service;
+package com.crediblex.fineract.portfolio.loc.data;
 
-import com.crediblex.fineract.portfolio.loc.data.LocLoanAccountData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Component;
@@ -36,12 +36,12 @@ import java.util.List;
  * This service extends the base loan account data with line of credit specific fields.
  */
 @Component
-public class LocLoanAccountDataMapper {
+public class CustomLoanAccountDataMapper {
 
     private final JdbcTemplate jdbcTemplate;
 
     @Autowired
-    public LocLoanAccountDataMapper(JdbcTemplate jdbcTemplate) {
+    public CustomLoanAccountDataMapper(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -51,7 +51,7 @@ public class LocLoanAccountDataMapper {
      * @param baseData the base loan account data
      * @return LocLoanAccountData with line of credit information
      */
-    public LocLoanAccountData enhanceWithLineOfCreditData(LoanAccountData baseData) {
+    public CustomLoanAccountData enhanceWithLineOfCreditData(LoanAccountData baseData) {
         if (baseData == null || baseData.getId() == null) {
             return null;
         }
@@ -66,10 +66,10 @@ public class LocLoanAccountDataMapper {
 
         try {
             LineOfCreditInfo locInfo = jdbcTemplate.queryForObject(sql, new LineOfCreditInfoRowMapper(), baseData.getId());
-            return new LocLoanAccountData(baseData, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
-        } catch (Exception e) {
+            return new CustomLoanAccountData(baseData, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
+        } catch (EmptyResultDataAccessException e) {
             // If no line of credit association, return data without line of credit info
-            return new LocLoanAccountData(baseData, null, null, null);
+            return new CustomLoanAccountData(baseData, null, null, null);
         }
     }
 
@@ -79,7 +79,7 @@ public class LocLoanAccountDataMapper {
      * @param baseDataList collection of base loan account data
      * @return list of LocLoanAccountData with line of credit information
      */
-    public List<LocLoanAccountData> enhanceWithLineOfCreditData(Collection<LoanAccountData> baseDataList) {
+    public List<CustomLoanAccountData> enhanceWithLineOfCreditData(Collection<LoanAccountData> baseDataList) {
         if (baseDataList == null || baseDataList.isEmpty()) {
             return List.of();
         }
@@ -92,7 +92,7 @@ public class LocLoanAccountDataMapper {
 
         if (loanIds.isEmpty()) {
             return baseDataList.stream()
-                    .map(data -> new LocLoanAccountData(data, null, null, null))
+                    .map(data -> new CustomLoanAccountData(data, null, null, null))
                     .toList();
         }
 
@@ -115,9 +115,9 @@ public class LocLoanAccountDataMapper {
                 .map(data -> {
                     LineOfCreditInfo locInfo = locInfoMap.get(data.getId());
                     if (locInfo != null) {
-                        return new LocLoanAccountData(data, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
+                        return new CustomLoanAccountData(data, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
                     } else {
-                        return new LocLoanAccountData(data, null, null, null);
+                        return new CustomLoanAccountData(data, null, null, null);
                     }
                 })
                 .toList();
@@ -138,7 +138,7 @@ public class LocLoanAccountDataMapper {
 
         try {
             return jdbcTemplate.queryForObject(sql, new LineOfCreditInfoRowMapper(), loanId);
-        } catch (Exception e) {
+        } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }

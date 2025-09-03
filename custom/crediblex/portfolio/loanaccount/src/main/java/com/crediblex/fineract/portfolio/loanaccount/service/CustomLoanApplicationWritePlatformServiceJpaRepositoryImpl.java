@@ -1,5 +1,7 @@
-package com.crediblex.fineract.portfolio.loc.service;
+package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
+import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationWritePlatformServiceJpaRepositoryImpl;
 import jakarta.persistence.PersistenceException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
@@ -26,6 +28,7 @@ import org.apache.fineract.portfolio.loanaccount.service.*;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.service.GSIMReadPlatformService;
+import org.eclipse.persistence.exceptions.ValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -57,7 +60,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             // Line of Credit validation (before standard validation to catch LOC-specific errors first)
             try {
                 locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
-            } catch (Exception e) {
+            } catch (ValidationException e) {
                 log.error("Line of Credit validation failed: {}", e.getMessage());
                 throw e; // Re-throw to maintain the validation error flow
             }
@@ -90,7 +93,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 this.entityDatatableChecksWritePlatformService.saveDatatables(StatusEnum.CREATE.getValue(), EntityTables.LOAN.getName(),
                         loan.getId(), loan.productId(), command.arrayOfParameterNamed(LoanApiConstants.datatables));
             }
-            // TODO: review whether we really need this
+
             loanRepositoryWrapper.flush();
             // Check mandatory datatable entries were created
             this.entityDatatableChecksWritePlatformService.runTheCheckForProduct(loan.getId(), EntityTables.LOAN.getName(),

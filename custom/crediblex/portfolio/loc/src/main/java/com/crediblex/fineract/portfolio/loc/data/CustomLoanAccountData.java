@@ -29,7 +29,7 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
  */
 @Getter
 @Setter
-public class LocLoanAccountData extends LoanAccountData {
+public class CustomLoanAccountData extends LoanAccountData {
 
     // Line of Credit specific fields
     private Long lineOfCreditId;
@@ -40,7 +40,7 @@ public class LocLoanAccountData extends LoanAccountData {
     /**
      * Default constructor.
      */
-    public LocLoanAccountData() {
+    public CustomLoanAccountData() {
         super();
     }
 
@@ -52,7 +52,7 @@ public class LocLoanAccountData extends LoanAccountData {
      * @param lineOfCreditName the line of credit name
      * @param lineOfCreditExternalId the line of credit external ID
      */
-    public LocLoanAccountData(LoanAccountData baseData, Long lineOfCreditId, String lineOfCreditName, String lineOfCreditExternalId) {
+    public CustomLoanAccountData(LoanAccountData baseData, Long lineOfCreditId, String lineOfCreditName, String lineOfCreditExternalId) {
         // Copy basic fields from base data using reflection or manual copying
         if (baseData != null) {
             this.setId(baseData.getId());
