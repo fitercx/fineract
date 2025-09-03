@@ -1,75 +1,38 @@
-package com.crediblex.fineract.portfolio.loc.service;
+package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
-import org.apache.fineract.infrastructure.entityaccess.service.FineractEntityAccessUtil;
-import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
-import org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService;
-import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
-import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRepository;
-import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformServiceImpl;
-import org.apache.fineract.portfolio.rate.service.RateReadService;
-import org.springframework.context.annotation.Primary;
+import com.crediblex.fineract.portfolio.loc.data.CustomLoanAccountData;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.apache.fineract.portfolio.loanproduct.data.LoanProductData;
-import org.apache.fineract.portfolio.loanproduct.data.AdvancedPaymentData;
-import org.apache.fineract.portfolio.loanproduct.data.CreditAllocationData;
-import org.apache.fineract.portfolio.loanproduct.data.LoanProductBorrowerCycleVariationData;
-import org.apache.fineract.portfolio.delinquency.data.DelinquencyBucketData;
-import org.apache.fineract.portfolio.rate.data.RateData;
-import org.apache.fineract.portfolio.charge.data.ChargeData;
 import org.springframework.jdbc.core.RowMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Collection;
-
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
 import org.springframework.stereotype.Service;
 
-@Primary
 @Service
-public class LocLoanProductReadPlatformServiceImpl extends LoanProductReadPlatformServiceImpl {
-    public LocLoanProductReadPlatformServiceImpl(PlatformSecurityContext context, JdbcTemplate jdbcTemplate, ChargeReadPlatformService chargeReadPlatformService, RateReadService rateReadService, DatabaseSpecificSQLGenerator sqlGenerator, FineractEntityAccessUtil fineractEntityAccessUtil, DelinquencyReadPlatformService delinquencyReadPlatformService, LoanProductRepository loanProductRepository) {
-        super(context, jdbcTemplate, chargeReadPlatformService, rateReadService, sqlGenerator, fineractEntityAccessUtil, delinquencyReadPlatformService, loanProductRepository);
+public class CustomLoanProductReadPlatformServiceImpl {
+    
+    private final JdbcTemplate jdbcTemplate;
+
+    public CustomLoanProductReadPlatformServiceImpl(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
-    public LoanProductData retrieveLoanProduct(final Long loanProductId) {
+    /**
+     * Retrieve loan product data with line of credit information.
+     * This method provides a way to get loan product data that includes line of credit details.
+     */
+    public CustomLoanAccountData retrieveLoanProductWithLineOfCredit(final Long loanProductId) {
+        final LocLoanProductMapper rm = new LocLoanProductMapper();
+        final String sql = "select " + rm.loanProductSchema() + " where lp.id = ?";
+        
         try {
-            final Collection<ChargeData> charges = this.chargeReadPlatformService.retrieveLoanProductCharges(loanProductId);
-            final Collection<RateData> rates = this.rateReadService.retrieveProductLoanRates(loanProductId);
-            final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas = retrieveLoanProductBorrowerCycleVariations(loanProductId);
-            final Collection<AdvancedPaymentData> advancedPaymentData = retrieveAdvancedPaymentData(loanProductId);
-            final Collection<CreditAllocationData> creditAllocationData = retrieveCreditAllocationData(loanProductId);
-            final Collection<DelinquencyBucketData> delinquencyBucketOptions = this.delinquencyReadPlatformService.retrieveAllDelinquencyBuckets();
-            
-            final LocLoanProductMapper rm = new LocLoanProductMapper(charges, borrowerCycleVariationDatas, rates, delinquencyBucketOptions, advancedPaymentData, creditAllocationData);
-            final String sql = "select " + rm.loanProductSchema() + " where lp.id = ?";
-            
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId);
-        } catch (final EmptyResultDataAccessException e) {
-            throw new LoanProductNotFoundException(loanProductId);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
         }
     }
 
-    private static final class LocLoanProductMapper implements RowMapper<LoanProductData> {
-        private final Collection<ChargeData> charges;
-        private final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas;
-        private final Collection<RateData> rates;
-        private final Collection<DelinquencyBucketData> delinquencyBucketOptions;
-        private final Collection<AdvancedPaymentData> advancedPaymentData;
-        private final Collection<CreditAllocationData> creditAllocationData;
-
-        LocLoanProductMapper(final Collection<ChargeData> charges, final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas,
-                final Collection<RateData> rates, final Collection<DelinquencyBucketData> delinquencyBucketOptions,
-                final Collection<AdvancedPaymentData> advancedPaymentData, final Collection<CreditAllocationData> creditAllocationData) {
-            this.charges = charges;
-            this.borrowerCycleVariationDatas = borrowerCycleVariationDatas;
-            this.rates = rates;
-            this.delinquencyBucketOptions = delinquencyBucketOptions;
-            this.advancedPaymentData = advancedPaymentData;
-            this.creditAllocationData = creditAllocationData;
-        }
+    private static final class LocLoanProductMapper implements RowMapper<CustomLoanAccountData> {
 
         public String loanProductSchema() {
             return "lp.id as id, lp.name as name, lp.short_name as shortName, lp.description as description, "
@@ -116,11 +79,12 @@ public class LocLoanProductReadPlatformServiceImpl extends LoanProductReadPlatfo
                     + "lp.allow_variabe_installments as isVariableIntallmentsAllowed, " + "lvi.minimum_gap as minimumGap, "
                     + "lvi.maximum_gap as maximumGap, dbuc.id as delinquencyBucketId, dbuc.name as delinquencyBucketName, "
                     + "lp.can_use_for_topup as canUseForTopup, lp.is_equal_amortization as isEqualAmortization, lp.loan_schedule_type as loanScheduleType, lp.loan_schedule_processing_type as loanScheduleProcessingType, lp.supported_interest_refund_types as supportedInterestRefundTypes, "
-                    + "lp.charge_off_behaviour as chargeOffBehaviour, " //
-                    + "lp.enable_income_capitalization as enableIncomeCapitalization, " //
-                    + "lp.capitalized_income_calculation_type as capitalizedIncomeCalculationType, " //
-                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy, " //
-                    + "lp.is_loc_enable as is_loc_enabled " //
+                    + "lp.charge_off_behaviour as chargeOffBehaviour, "
+                    + "lp.enable_income_capitalization as enableIncomeCapitalization, "
+                    + "lp.capitalized_income_calculation_type as capitalizedIncomeCalculationType, "
+                    + "lp.capitalized_income_strategy as capitalizedIncomeStrategy, "
+                    + "lp.is_loc_enable as is_loc_enabled, "
+                    + "loc.name as lineOfCreditName "
                     + " from m_product_loan lp " + " left join m_fund f on f.id = lp.fund_id "
                     + " left join m_product_loan_recalculation_details lpr on lpr.product_id=lp.id "
                     + " left join m_product_loan_guarantee_details lpg on lpg.loan_product_id=lp.id "
@@ -133,12 +97,22 @@ public class LocLoanProductReadPlatformServiceImpl extends LoanProductReadPlatfo
         }
 
         @Override
-        public LoanProductData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
-            // Get the is_loc_enabled value from the result set
-            boolean isLocEnabled = rs.getBoolean("is_loc_enabled");
+        public CustomLoanAccountData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final Long id = rs.getLong("id");
             
-            // Use the lookup method to create a basic LoanProductData with isLocEnabled
-            return LoanProductData.lookup(rs.getLong("id"), rs.getString("name"), rs.getBoolean("multiDisburseLoan"));
+            // Get the line_of_credit_id value from the result set
+            Long lineOfCreditId = rs.getLong("line_of_credit_id");
+            if (rs.wasNull()) {
+                lineOfCreditId = null;
+            }
+            
+            final String lineOfCreditName = rs.getString("lineOfCreditName");
+            
+            // Create a minimal LoanAccountData with just the ID
+            org.apache.fineract.portfolio.loanaccount.data.LoanAccountData baseData = new org.apache.fineract.portfolio.loanaccount.data.LoanAccountData();
+            baseData.setId(id);
+            
+            return new CustomLoanAccountData(baseData, lineOfCreditId, lineOfCreditName, null);
         }
     }
 }

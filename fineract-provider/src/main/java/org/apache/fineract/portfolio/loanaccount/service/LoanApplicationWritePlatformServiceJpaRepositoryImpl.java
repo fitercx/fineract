@@ -104,10 +104,10 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
 
     private final PlatformSecurityContext context;
     private final LoanApplicationTransitionValidator loanApplicationTransitionValidator;
-    private final LoanApplicationValidator loanApplicationValidator;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final LoanApplicationValidator loanApplicationValidator;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
     private final NoteRepository noteRepository;
-    private final LoanAssembler loanAssembler;
+    protected final LoanAssembler loanAssembler;
     private final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
     private final CalendarRepository calendarRepository;
     private final CalendarInstanceRepository calendarInstanceRepository;
@@ -117,7 +117,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
     private final LoanScheduleAssembler loanScheduleAssembler;
     private final LoanUtilService loanUtilService;
     private final CalendarReadPlatformService calendarReadPlatformService;
-    private final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
+    protected final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
     private final GLIMAccountInfoRepository glimRepository;
     private final LoanRepository loanRepository;
     private final GSIMReadPlatformService gsimReadPlatformService;
@@ -184,7 +184,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         }
     }
 
-    private void createAndPersistCalendarInstanceForInterestRecalculation(final Loan loan) {
+    protected void createAndPersistCalendarInstanceForInterestRecalculation(final Loan loan) {
 
         LocalDate calendarStartDate = loan.getExpectedDisbursedOnLocalDate();
         Integer repeatsOnDay = null;
@@ -442,7 +442,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
     /*
      * Guaranteed to throw an exception no matter what the data integrity issue is.
      */
-    private void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
+    protected void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
         if (realCause.getMessage().contains("loan_account_no_UNIQUE")
                 || (realCause.getCause() != null && realCause.getCause().getMessage().contains("loan_account_no_UNIQUE"))) {
             final String accountNo = command.stringValueOfParameterNamed("accountNo");
@@ -777,7 +777,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         return user;
     }
 
-    private void createSavingsAccountAssociation(Long savingsAccountId, Loan loan) {
+    protected void createSavingsAccountAssociation(Long savingsAccountId, Loan loan) {
         if (savingsAccountId != null) {
             SavingsAccount savingsAccount;
             AccountAssociations accountAssociations;
@@ -809,7 +809,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         }
     }
 
-    private void createCalendar(JsonCommand command, Loan loan) {
+    protected void createCalendar(JsonCommand command, Loan loan) {
         final Long calendarId = command.longValueOfParameterNamed("calendarId");
         Calendar calendar;
 
@@ -841,7 +841,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         }
     }
 
-    private Optional<Note> createNote(String submittedOnNote, Loan newLoanApplication) {
+    protected Optional<Note> createNote(String submittedOnNote, Loan newLoanApplication) {
         if (StringUtils.isNotBlank(submittedOnNote)) {
             final Note note = Note.loanNote(newLoanApplication, submittedOnNote);
             this.noteRepository.save(note);
