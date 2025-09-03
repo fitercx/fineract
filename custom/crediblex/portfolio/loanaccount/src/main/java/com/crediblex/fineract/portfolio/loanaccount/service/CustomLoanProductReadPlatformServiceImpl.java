@@ -1,6 +1,7 @@
-package com.crediblex.fineract.portfolio.loc.service;
+package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loc.data.LocLoanAccountData;
+import com.crediblex.fineract.portfolio.loc.data.CustomLoanAccountData;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import java.sql.ResultSet;
@@ -8,11 +9,11 @@ import java.sql.SQLException;
 import org.springframework.stereotype.Service;
 
 @Service
-public class LocLoanProductReadPlatformServiceImpl {
+public class CustomLoanProductReadPlatformServiceImpl {
     
     private final JdbcTemplate jdbcTemplate;
 
-    public LocLoanProductReadPlatformServiceImpl(JdbcTemplate jdbcTemplate) {
+    public CustomLoanProductReadPlatformServiceImpl(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -20,18 +21,18 @@ public class LocLoanProductReadPlatformServiceImpl {
      * Retrieve loan product data with line of credit information.
      * This method provides a way to get loan product data that includes line of credit details.
      */
-    public LocLoanAccountData retrieveLoanProductWithLineOfCredit(final Long loanProductId) {
+    public CustomLoanAccountData retrieveLoanProductWithLineOfCredit(final Long loanProductId) {
         final LocLoanProductMapper rm = new LocLoanProductMapper();
         final String sql = "select " + rm.loanProductSchema() + " where lp.id = ?";
         
         try {
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId);
-        } catch (Exception e) {
+        } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    private static final class LocLoanProductMapper implements RowMapper<LocLoanAccountData> {
+    private static final class LocLoanProductMapper implements RowMapper<CustomLoanAccountData> {
 
         public String loanProductSchema() {
             return "lp.id as id, lp.name as name, lp.short_name as shortName, lp.description as description, "
@@ -93,13 +94,12 @@ public class LocLoanProductReadPlatformServiceImpl {
                     + " left join m_floating_rates as fr on lfr.floating_rates_id = fr.id "
                     + " left join m_product_loan_variable_installment_config as lvi on lvi.loan_product_id = lp.id "
                     + " left join m_delinquency_bucket as dbuc on dbuc.id = lp.delinquency_bucket_id "
-                    + " left join m_loan l on l.product_id = lp.id "
                     + " left join m_line_of_credit loc on loc.id = l.line_of_credit_id "
                     + " join m_currency curr on curr.code = lp.currency_code";
         }
 
         @Override
-        public LocLoanAccountData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+        public CustomLoanAccountData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
             final Long id = rs.getLong("id");
             
             // Get the line_of_credit_id value from the result set
@@ -114,7 +114,7 @@ public class LocLoanProductReadPlatformServiceImpl {
             org.apache.fineract.portfolio.loanaccount.data.LoanAccountData baseData = new org.apache.fineract.portfolio.loanaccount.data.LoanAccountData();
             baseData.setId(id);
             
-            return new LocLoanAccountData(baseData, lineOfCreditId, lineOfCreditName, null);
+            return new CustomLoanAccountData(baseData, lineOfCreditId, lineOfCreditName, null);
         }
     }
 }

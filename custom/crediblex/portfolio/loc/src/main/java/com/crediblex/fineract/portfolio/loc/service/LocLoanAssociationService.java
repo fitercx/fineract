@@ -19,18 +19,11 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
-import com.crediblex.fineract.portfolio.loc.data.LocLoanAccountData;
+
 import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
-import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Collection;
-import java.util.List;
 
 /**
  * Service for managing associations between loans and line of credit facilities.
@@ -64,31 +57,7 @@ public class LocLoanAssociationService {
         // Update the loan with the line of credit ID
         String sql = "UPDATE m_loan SET line_of_credit_id = ? WHERE id = ?";
         int rowsUpdated = jdbcTemplate.update(sql, lineOfCreditId, loanId);
-        
+
         return rowsUpdated > 0;
-    }
-
-
-    /**
-     * Row mapper for LocLoanAccountData.
-     */
-    private static final class LocLoanAccountDataRowMapper implements RowMapper<LocLoanAccountData> {
-        @Override
-        public LocLoanAccountData mapRow(ResultSet rs, int rowNum) throws SQLException {
-            final Long loanId = rs.getLong("loanId");
-            final Long lineOfCreditId = rs.getLong("lineOfCreditId");
-            if (rs.wasNull()) {
-                return new LocLoanAccountData(null, null, null, null);
-            }
-            
-            final String lineOfCreditName = rs.getString("lineOfCreditName");
-            final String lineOfCreditExternalId = rs.getString("lineOfCreditExternalId");
-            
-            // Create a minimal LoanAccountData with just the ID
-            LoanAccountData baseData = new LoanAccountData();
-            baseData.setId(loanId);
-            
-            return new LocLoanAccountData(baseData, lineOfCreditId, lineOfCreditName, lineOfCreditExternalId);
-        }
     }
 }

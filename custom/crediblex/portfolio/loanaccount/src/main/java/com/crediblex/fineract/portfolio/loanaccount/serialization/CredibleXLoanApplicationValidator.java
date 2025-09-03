@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.serialization;
 
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -55,7 +56,7 @@ import org.apache.fineract.portfolio.loanproduct.exception.EqualAmortizationUnsu
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
 import org.apache.fineract.portfolio.loanproduct.serialization.LoanProductDataValidator;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
-import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
+
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.exception.InvalidJsonException;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;

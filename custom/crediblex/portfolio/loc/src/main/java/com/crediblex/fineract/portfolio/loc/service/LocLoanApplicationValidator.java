@@ -66,6 +66,7 @@ public class LocLoanApplicationValidator {
             }
         }
 
+
         // Throw validation errors if any exist
         if (!dataValidationErrors.isEmpty()) {
             throw new PlatformApiDataValidationException(dataValidationErrors);
