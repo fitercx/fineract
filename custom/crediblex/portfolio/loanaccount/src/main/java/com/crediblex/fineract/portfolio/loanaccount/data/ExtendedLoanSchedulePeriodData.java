@@ -29,7 +29,28 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
         DISBURSEMENT, SCHEDULED, DUE, OVERDUE, LATE_FEE_APPLIED, PAID, PARTIAL_PAID
     }
 
-    private final Status status;
+    public final Status status;
+
+    public static LoanSchedulePeriodData paymentsSummaryPeriod(
+            final Integer periodNumber,
+            final LocalDate dueDate,
+            final Boolean isComplete,
+            final BigDecimal principalDue,
+            final BigDecimal penaltyChargesDue,
+            final BigDecimal totalPaidForPeriod,
+            final BigDecimal totalOutstandingForPeriod) {
+
+        return builder()
+                .period(periodNumber)
+                .dueDate(dueDate)
+                .complete(isComplete)
+                .principalDue(principalDue)
+                .penaltyChargesDue(penaltyChargesDue)
+                .totalPaidForPeriod(totalPaidForPeriod)
+                .totalOutstandingForPeriod(totalOutstandingForPeriod)
+                .build();
+    }
+
 
     public ExtendedLoanSchedulePeriodData(Integer period, LocalDate fromDate, LocalDate dueDate, LocalDate obligationsMetOnDate,
             Boolean complete, Integer daysInPeriod, BigDecimal principalDisbursed, BigDecimal principalOriginalDue, BigDecimal principalDue,
