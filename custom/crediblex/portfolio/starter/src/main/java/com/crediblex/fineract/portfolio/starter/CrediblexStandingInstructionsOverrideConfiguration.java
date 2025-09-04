@@ -22,6 +22,7 @@ import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions
 import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
+import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
@@ -51,9 +52,10 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     public ExecuteStandingInstructionsTasklet executeStandingInstructionsTasklet(
             StandingInstructionReadPlatformService standingInstructionReadPlatformService, JdbcTemplate jdbcTemplate,
             DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, AccountTransferDetailRepository accountTransferDetailRepository) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService, fromApiJsonHelper);
+                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService, 
+                fromApiJsonHelper, accountTransferDetailRepository);
     }
 }

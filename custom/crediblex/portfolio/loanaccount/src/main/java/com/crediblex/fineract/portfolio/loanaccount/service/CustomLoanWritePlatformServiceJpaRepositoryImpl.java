@@ -601,7 +601,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
                 
                 // Find the specific transaction that was just created using the resourceId (transaction ID)
-                LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
+                Long resourceId = result.getResourceId();
+
+                LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(resourceId));
                 
                 if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
                     // Extract affected installments using the shared utility method

@@ -39,9 +39,12 @@ import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.StandingInstructionData;
 import org.apache.fineract.portfolio.account.data.StandingInstructionDuesData;
+import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
+import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferRecurrenceType;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionStatus;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionType;
+import org.apache.fineract.portfolio.account.exception.AccountTransferNotFoundException;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
@@ -80,6 +83,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final PlatformTransactionManager transactionManager;
     private final CustomCommandProcessingService customCommandProcessingService;
     private final FromJsonHelper fromApiJsonHelper;
+    private final AccountTransferDetailRepository accountTransferDetailRepository;
     private ApplicationContext applicationContext;
     private LoanRepositoryWrapper loanRepositoryWrapper;
 
@@ -87,7 +91,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
             PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, 
-            FromJsonHelper fromApiJsonHelper) {
+            FromJsonHelper fromApiJsonHelper, AccountTransferDetailRepository accountTransferDetailRepository) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -98,6 +102,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.savingsAccountAssembler = savingsAccountAssembler;
         this.customCommandProcessingService = customCommandProcessingService;
         this.fromApiJsonHelper = fromApiJsonHelper;
+        this.accountTransferDetailRepository = accountTransferDetailRepository;
     }
 
     @Override
@@ -176,17 +181,20 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                 try {
                     BigDecimal finalTransactionAmount = transactionAmount;
                     transactionTemplate.execute(status -> {
-                        final boolean transferCompleted = transferAmountWithPartialPaymentSupport(errors, accountTransferDTO, data.getId(),
+                        final Object[] result = transferAmountWithPartialPaymentSupport(errors, accountTransferDTO, data.getId(),
                                 finalTransactionAmount);
+                        final boolean transferCompleted = (Boolean) result[0];
+                        final Long loanTransactionId = (Long) result[1];
+                        
                         if (transferCompleted) {
                             final String updateQuery = "UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?";
                             jdbcTemplate.update(updateQuery, transactionDate, data.getId());
                             successCount.getAndIncrement();
+                            // Pass the actual loan transaction ID to the webhook
+                            triggerRepaymentWebhook(data, finalTransactionAmount, loanTransactionId);
                         } else {
                             failureCount.getAndIncrement();
                         }
-                        // Trigger repayment webhook after successful transfer
-                        triggerRepaymentWebhook(data, finalTransactionAmount);
                         return null;
                     });
                     log.debug("Successfully processed standing instruction {} for amount {}", data.getId(), transactionAmount);
@@ -210,15 +218,17 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
     /**
      * Enhanced transfer method that supports partial payments when insufficient balance is available
+     * Returns an array: [isCompleted, loanTransactionId]
      */
-    private boolean transferAmountWithPartialPaymentSupport(final List<Throwable> errors, final AccountTransferDTO accountTransferDTO,
+    private Object[] transferAmountWithPartialPaymentSupport(final List<Throwable> errors, final AccountTransferDTO accountTransferDTO,
             final Long instructionId, final BigDecimal originalAmount) {
         boolean transferCompleted = false;
         boolean isPartialPayment = false;
+        Long loanTransactionId = null;
 
         BigDecimal availableBalance = getAvailableBalance(accountTransferDTO.getFromAccountId());
         if (availableBalance.compareTo(BigDecimal.ZERO) <= 0) {
-            return transferCompleted;
+            return new Object[]{transferCompleted, loanTransactionId};
         }
 
         BigDecimal amount = accountTransferDTO.getTransactionAmount();
@@ -244,7 +254,21 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                         + ", amount, execution_time, error_log) VALUES (");
 
         try {
-            accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            Long transferTransactionId = accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            
+            // Get the loan transaction ID from the account transfer details
+            if (transferTransactionId != null && updatedDTO.getToAccountType().isLoanAccount()) {
+                try {
+                    AccountTransferDetails transferDetails = this.accountTransferDetailRepository.findById(transferTransactionId)
+                            .orElseThrow(() -> new AccountTransferNotFoundException(transferTransactionId));
+                    LoanTransaction loanTransaction = transferDetails.getAccountTransferTransactions().get(0).getToLoanTransaction();
+                    loanTransactionId = loanTransaction.getId();
+                    log.debug("Extracted loan transaction ID: {} from transfer ID: {}", loanTransactionId, transferTransactionId);
+                } catch (Exception e) {
+                    log.warn("Failed to extract loan transaction ID from transfer ID {}: {}", transferTransactionId, e.getMessage());
+                }
+            }
+            
             if (isPartialPayment) {
                 BigDecimal unpaidAmount = originalAmount.subtract(amount);
                 errorLog.append("Partial payment executed. Paid: ").append(amount).append(", Unpaid: ").append(unpaidAmount);
@@ -287,9 +311,15 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         updateQuery.append(amount.doubleValue());
         updateQuery.append(", now(),");
         updateQuery.append("'").append(errorLog).append("')");
+        
+        // Log errorLog contents for debugging
+        if (errorLog.length() > 0) {
+            log.warn("Standing Instruction {} execution had issues: {}", instructionId, errorLog.toString());
+        } 
+        
         jdbcTemplate.update(updateQuery.toString());
 
-        return transferCompleted;
+        return new Object[]{transferCompleted, loanTransactionId};
     }
 
     /**
@@ -300,7 +330,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         return account.getWithdrawableBalance();
     }
 
-    private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount) {
+    private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount, Long loanTransactionId) {
         try {
             // Format current date in the required format (dd MMMM yyyy)
             String formattedDate = DateUtils.getBusinessLocalDate().format(java.time.format.DateTimeFormatter.ofPattern(DATE_FORMAT));
@@ -322,34 +352,32 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             changes.put("locale", "en");
             changes.put("transactionDate", formattedDate);
 
-            // Follow the EXACT SAME pattern as UI repayment - find the actual transaction and use its mappings
+            // Follow the EXACT SAME pattern as UI repayment - use the actual transaction ID
             Long loanId = data.getToAccount().getId();
             try {
-                // After a successful transfer, the system creates a loan transaction
-                // We need to find this transaction and use its mappings (same as UI repayment)
-                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-                
-                // Find the most recent repayment transaction that matches our criteria
-                // We look for the transaction by amount and date (similar to how UI gets the resourceId)
-                LoanTransaction recentTransaction = loan.getLoanTransactions().stream()
-                    .filter(t -> t.isRepayment() && 
-                             t.getAmount().compareTo(transactionAmount) == 0 &&
-                             t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
-                    .max((t1, t2) -> t1.getId().compareTo(t2.getId()))
-                    .orElse(null);
-                
-                if (recentTransaction != null) {
-                    // Extract affected installments using the shared utility method (same logic as UI repayment)
-                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, recentTransaction);
+                // We already have the actual loan transaction ID from the transfer
+                if (loanTransactionId != null) {
+                    // Get the loan to access the transaction using the exact ID (same as UI repayment)
+                    Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
                     
-                    // Add affected installments and transaction details - SAME AS UI
-                    if (!affectedInstallments.isEmpty()) {
-                        changes.put("affectedInstallments", affectedInstallments);
+                    // Find the specific transaction using the ID (same logic as UI repayment with resourceId)
+                    LoanTransaction recentTransaction = loan.getLoanTransaction(t -> t.getId().equals(loanTransactionId));
+
+                    if (recentTransaction != null) {
+                        // Extract affected installments using the shared utility method (same logic as UI repayment)
+                        List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, recentTransaction);
+                        
+                        // Add affected installments and transaction details - SAME AS UI
+                        if (!affectedInstallments.isEmpty()) {
+                            changes.put("affectedInstallments", affectedInstallments);
+                        }
+                        changes.put("transactionId", recentTransaction.getId());
+                    } else {
+                        log.warn("Could not find loan transaction with ID {} for standing instruction {}", 
+                                 loanTransactionId, data.getId());
                     }
-                    changes.put("transactionId", recentTransaction.getId());
                 } else {
-                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}", 
-                             data.getId(), transactionAmount);
+                    log.warn("No loan transaction ID available for standing instruction {}", data.getId());
                 }
                 
             } catch (Exception e) {
