@@ -671,6 +671,155 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
+     * Calculates the discounted amount based on the principal and advance percentage from the associated Line of Credit.
+     * This method:
+     * 1. Retrieves the loan's associated Line of Credit
+     * 2. Gets the advance percentage from the LOC
+     * 3. Calculates the discounted amount as principal * advance_percentage
+     *
+     * @param loanId    the loan ID
+     * @param principal the principal amount to be discounted
+     * @return the discounted amount (principal * advance_percentage), or null if no LOC association exists
+     */
+    public BigDecimal calculateDiscountedAmount(Long loanId, BigDecimal principal) {
+        try {
+            // Check if loan is associated with a line of credit
+            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
+            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
+
+            if (lineOfCreditId == null) {
+                log.debug("No Line of Credit associated with loan {}", loanId);
+                return null;
+            }
+
+            // Get the advance percentage from the line of credit
+            String locSql = "SELECT advance_percentage FROM m_line_of_credit WHERE id = ?";
+            BigDecimal advancePercentage = jdbcTemplate.queryForObject(locSql, BigDecimal.class, lineOfCreditId);
+
+            if (advancePercentage == null) {
+                log.warn("No advance percentage set for Line of Credit {}", lineOfCreditId);
+                return null;
+            }
+
+            // Calculate discounted amount: principal * advance_percentage
+            BigDecimal discountedAmount = principal.multiply(advancePercentage);
+            
+            log.debug("Calculated discounted amount for loan {}: principal={}, advance_percentage={}, discounted_amount={}", 
+                     loanId, principal, advancePercentage, discountedAmount);
+
+            return discountedAmount;
+
+        } catch (Exception e) {
+            log.error("Failed to calculate discounted amount for loan {}: {}", loanId, e.getMessage());
+            throw new PlatformApiDataValidationException("error.msg.loc.discounted.amount.calculation.failed",
+                    "Failed to calculate discounted amount from Line of Credit", "loanId", loanId, e);
+        }
+    }
+
+    /**
+     * Calculates the expected interest based on the annual interest rate, discounted amount, and tenure days from the associated Line of Credit.
+     * This method:
+     * 1. Retrieves the loan's associated Line of Credit
+     * 2. Gets the annual interest rate and tenure days from the LOC
+     * 3. Calculates the expected interest using the formula: Annual Interest Rate * Discounted Amount * (Tenure Days / 365)
+     *
+     * @param loanId           the loan ID
+     * @param discountedAmount the discounted amount (principal * advance_percentage)
+     * @return the expected interest amount, or null if no LOC association exists or required fields are missing
+     */
+    public BigDecimal calculateExpectedInterest(Long loanId, BigDecimal discountedAmount) {
+        try {
+            // Check if loan is associated with a line of credit
+            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
+            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
+
+            if (lineOfCreditId == null) {
+                log.debug("No Line of Credit associated with loan {}", loanId);
+                return null;
+            }
+
+            // Get the annual interest rate and tenure days from the line of credit
+            String locSql = "SELECT annual_interest_rate, tenor_days FROM m_line_of_credit WHERE id = ?";
+            Map<String, Object> locData = jdbcTemplate.queryForMap(locSql, lineOfCreditId);
+
+            BigDecimal annualInterestRate = (BigDecimal) locData.get("annual_interest_rate");
+            Integer tenorDays = (Integer) locData.get("tenor_days");
+
+            if (annualInterestRate == null) {
+                log.warn("No annual interest rate set for Line of Credit {}", lineOfCreditId);
+                return null;
+            }
+
+            if (tenorDays == null) {
+                log.warn("No tenor days set for Line of Credit {}", lineOfCreditId);
+                return null;
+            }
+
+            if (discountedAmount == null || discountedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                log.warn("Invalid discounted amount for loan {}: {}", loanId, discountedAmount);
+                return null;
+            }
+
+            // Calculate expected interest: Annual Interest Rate * Discounted Amount * (Tenure Days / 365)
+            BigDecimal daysInYear = new BigDecimal("365");
+            BigDecimal timeFactor = new BigDecimal(tenorDays).divide(daysInYear, 10, java.math.RoundingMode.HALF_UP);
+            BigDecimal expectedInterest = annualInterestRate.multiply(discountedAmount).multiply(timeFactor);
+            
+            log.debug("Calculated expected interest for loan {}: annual_rate={}, discounted_amount={}, tenor_days={}, expected_interest={}", 
+                     loanId, annualInterestRate, discountedAmount, tenorDays, expectedInterest);
+
+            return expectedInterest;
+
+        } catch (Exception e) {
+            log.error("Failed to calculate expected interest for loan {}: {}", loanId, e.getMessage());
+            throw new PlatformApiDataValidationException("error.msg.loc.expected.interest.calculation.failed",
+                    "Failed to calculate expected interest from Line of Credit", "loanId", loanId, e);
+        }
+    }
+
+    /**
+     * Calculates the net disbursed amount by subtracting the expected interest from the discounted amount.
+     * This method:
+     * 1. Calculates the discounted amount (principal * advance_percentage)
+     * 2. Calculates the expected interest (annual_rate * discounted_amount * (tenor_days / 365))
+     * 3. Returns the net disbursed amount (discounted_amount - expected_interest)
+     *
+     * @param loanId   the loan ID
+     * @param principal the principal amount
+     * @return the net disbursed amount, or null if calculation cannot be performed
+     */
+    public BigDecimal calculateNetDisbursedAmount(Long loanId, BigDecimal principal) {
+        try {
+            // First calculate the discounted amount
+            BigDecimal discountedAmount = calculateDiscountedAmount(loanId, principal);
+            if (discountedAmount == null) {
+                log.debug("Cannot calculate net disbursed amount - discounted amount is null for loan {}", loanId);
+                return null;
+            }
+
+            // Then calculate the expected interest
+            BigDecimal expectedInterest = calculateExpectedInterest(loanId, discountedAmount);
+            if (expectedInterest == null) {
+                log.debug("Cannot calculate net disbursed amount - expected interest is null for loan {}", loanId);
+                return null;
+            }
+
+            // Calculate net disbursed amount: Discounted Amount - Expected Interest
+            BigDecimal netDisbursedAmount = discountedAmount.subtract(expectedInterest);
+            
+            log.debug("Calculated net disbursed amount for loan {}: discounted_amount={}, expected_interest={}, net_disbursed_amount={}", 
+                     loanId, discountedAmount, expectedInterest, netDisbursedAmount);
+
+            return netDisbursedAmount;
+
+        } catch (Exception e) {
+            log.error("Failed to calculate net disbursed amount for loan {}: {}", loanId, e.getMessage());
+            throw new PlatformApiDataValidationException("error.msg.loc.net.disbursed.amount.calculation.failed",
+                    "Failed to calculate net disbursed amount from Line of Credit", "loanId", loanId, e);
+        }
+    }
+
+    /**
      * Computes and updates Line of Credit balance upon loan disbursement.
      * This method:
      * 1. Automatically reduces the available LOC balance upon disbursement
@@ -752,4 +901,5 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     "Failed to compute line of credit balance", "loanId", loanId, e);
         }
     }
+
 }
