@@ -1,6 +1,9 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
@@ -120,8 +123,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService;
+    private final CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService;
+    private final CustomLoanChargeRepository loanChargeRepository;
 
-    public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanTransactionValidator loanTransactionValidator, LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper, LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository, LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository, LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService, CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService, HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService, WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService, AccountTransfersReadPlatformService accountTransfersReadPlatformService, AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService, FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository, LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService, LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository, AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService, GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler, PostDatedChecksRepository postDatedChecksRepository, LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository, LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService, ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService, ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService, LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService, ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService, LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService, LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper, LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties, JdbcTemplate jdbcTemplate) {
+    public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanTransactionValidator loanTransactionValidator, LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper, LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository, LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository, LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService, CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService, HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService, WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService, AccountTransfersReadPlatformService accountTransfersReadPlatformService, AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService, FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository, LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService, LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository, AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService, GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler, PostDatedChecksRepository postDatedChecksRepository, LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository, LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService, ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService, ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService, LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService, ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService, LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService, LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper, LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties, JdbcTemplate jdbcTemplate, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService, CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService, noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler, journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository, configurationDomainService, workingDaysRepository, accountTransfersWritePlatformService, accountTransfersReadPlatformService, accountAssociationsReadPlatformService, loanReadPlatformService, fromApiJsonHelper, calendarRepository, loanScheduleHistoryWritePlatformService, loanApplicationValidator, accountAssociationRepository, accountTransferDetailRepository, businessEventNotifierService, guarantorDomainService, loanUtilService, entityDatatableChecksWritePlatformService, codeValueRepository, cashierTransactionDataValidator, glimRepository, loanRepository, repaymentWithPostDatedChecksAssembler, postDatedChecksRepository, loanRepaymentScheduleInstallmentRepository, loanLifecycleStateMachine, loanAccountLockService, externalIdFactory, loanAccrualTransactionBusinessEventService, errorHandler, loanDownPaymentHandlerService, loanTransactionAssembler, loanAccrualsProcessingService, loanOfficerValidator, loanDownPaymentTransactionValidator, loanDisbursementService, loanScheduleService, loanChargeValidator, loanOfficerService, reprocessLoanTransactionsService, loanAccountService, journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService, fineractProperties);
         this.jdbcTemplate = jdbcTemplate;
         this.customLoanChargeReadPlatformService = customLoanChargeReadPlatformService;
@@ -672,6 +678,175 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         return result;
+    }
+
+    public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
+                                                                               final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+        final LoanRepaymentsSummaryMapper loanRepaymentSummaryMapper = new LoanRepaymentsSummaryMapper();
+        final String loanRepaymentSummarySql = loanRepaymentSummaryMapper.loanPaymentsSummarySchema();
+        final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.jdbcTemplate.query(loanRepaymentSummarySql, loanRepaymentSummaryMapper, loanId);
+
+        final LoanCurrencyDataMapper loanCurrencyDataMapper = new LoanCurrencyDataMapper();
+        final String loanCurrencySql = loanCurrencyDataMapper.loanPaymentsSummarySchema();
+        final CurrencyData currency = this.jdbcTemplate.queryForObject(loanCurrencySql, loanCurrencyDataMapper, loanId);
+
+        Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
+
+        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
+                .map(p -> new ExtendedLoanSchedulePeriodData(p, this.credibleXLoanReadPlatformService.resolvePeriodStatus(currency, p))).toList();
+
+        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges);
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        List<LoanChargeData> penaltyIdsToDisable = penaltyCalculator.getPenaltyIdsToDisable(transactionDate, loanId);
+//        Collection<LoanChargeData> applicableCharges = penaltyCalculator.getApplicableCharges(transactionDate);
+//        penaltyCalculator.waivePenaltiesForBackdatedRepayment(transactionDate, loanId);
+        if (!penaltyIdsToDisable.isEmpty()) {
+            List<Long> chargeIds = penaltyIdsToDisable.stream()
+                    .map(LoanChargeData::getId)
+                    .toList();
+
+            loanChargeRepository.deactivateCharges(loanId, chargeIds);
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final boolean allowTransactionsOnHoliday = this.configurationDomainService.allowTransactionsOnHolidayEnabled();
+        final List<Holiday> holidays = this.holidayRepository.findByOfficeIdAndGreaterThanDate(loan.getOfficeId(), transactionDate);
+        final WorkingDays workingDays = this.workingDaysRepository.findOne();
+        final boolean allowTransactionsOnNonWorkingDay = this.configurationDomainService.allowTransactionsOnNonWorkingDayEnabled();
+        final boolean isHolidayEnabled = this.configurationDomainService.isRescheduleRepaymentsOnHolidaysEnabled();
+        HolidayDetailDTO holidayDetailDTO = new HolidayDetailDTO(isHolidayEnabled, holidays, workingDays, allowTransactionsOnHoliday,
+                allowTransactionsOnNonWorkingDay);
+        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, transactionDate,
+                holidayDetailDTO);
+        this.loanScheduleService.regenerateRepaymentScheduleWithInterestRecalculation(loan, scheduleGeneratorDTO);
+
+
+        return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment, chargeRefundChargeType);
+    }
+
+    private static final class LoanRepaymentsSummaryMapper implements RowMapper<LoanSchedulePeriodData> {
+
+        @Override
+        public LoanSchedulePeriodData mapRow(ResultSet rs, int rowNum) throws SQLException {
+            final Integer installmentNumber = JdbcSupport.getInteger(rs, "installmentNumber");
+
+            final LocalDate dueDate = rs.getDate("duedate").toLocalDate();
+            final boolean isComplete = rs.getBoolean("isComplete");
+
+            final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
+            final BigDecimal principalPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalPaid");
+            final BigDecimal principalWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalWrittenOff");
+
+            final BigDecimal interestExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestDue");
+            final BigDecimal interestWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestWaived");
+            final BigDecimal interestWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestWrittenOff");
+            final BigDecimal interestPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestPaid");
+
+            final BigDecimal feeChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
+            final BigDecimal feeChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesPaid");
+            final BigDecimal feeChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWaived");
+            final BigDecimal feeChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWrittenOff");
+
+            final BigDecimal penaltyChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesDue");
+            final BigDecimal penaltyChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesPaid");
+            final BigDecimal penaltyChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesWaived");
+            final BigDecimal penaltyChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesWrittenOff");
+
+            final BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(penaltyChargesPaid);
+
+            final BigDecimal principalOutstanding = principalDue.subtract(principalPaid).subtract(principalWrittenOff);
+
+            final BigDecimal interestActualDue = interestExpectedDue.subtract(interestWaived).subtract(interestWrittenOff);
+            final BigDecimal interestOutstanding = interestActualDue.subtract(interestPaid);
+
+            final BigDecimal feeChargesActualDue = feeChargesExpectedDue.subtract(feeChargesWaived).subtract(feeChargesWrittenOff);
+            final BigDecimal feeChargesOutstanding = feeChargesActualDue.subtract(feeChargesPaid);
+
+            final BigDecimal penaltyChargesActualDue = penaltyChargesExpectedDue.subtract(penaltyChargesWaived).subtract(penaltyChargesWrittenOff);
+            final BigDecimal penaltyChargesOutstanding = penaltyChargesActualDue.subtract(penaltyChargesPaid);
+
+            final BigDecimal totalOutstandingForPeriod = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
+                    .add(penaltyChargesOutstanding);
+
+
+            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(
+                    installmentNumber,
+                    dueDate,
+                    isComplete,
+                    principalDue,
+                    penaltyChargesExpectedDue,
+                    totalPaidForPeriod,
+                    totalOutstandingForPeriod
+            );
+        }
+
+//        private LocalDate toLocalDateSafe(Date date) {
+//            return date != null ? date.toLocaleString() : null;
+//        }
+
+        public String loanPaymentsSummarySchema() {
+            return """
+                    select
+                        installment as installmentNumber,
+                        duedate as dueDate,
+                        completed_derived as isComplete,
+                        principal_amount as principalDue,
+                        principal_completed_derived as principalPaid,
+                        principal_writtenoff_derived as principalWrittenOff,
+                        interest_amount as interestDue,
+                        interest_waived_derived as interestWaived,
+                        interest_writtenoff_derived as interestWrittenOff,
+                        interest_completed_derived as interestPaid,
+                        fee_charges_amount as feeChargesDue,
+                        fee_charges_waived_derived as feeChargesWaived,
+                        fee_charges_writtenoff_derived as feeChargesWrittenOff,
+                        fee_charges_completed_derived as feeChargesPaid,
+                        penalty_charges_amount as penaltyChargesDue,
+                        penalty_charges_waived_derived as penaltyChargesWaived,
+                        penalty_charges_writtenoff_derived as penaltyChargesWrittenOff,
+                        penalty_charges_completed_derived as penaltyChargesPaid
+                    from m_loan_repayment_schedule
+                    where loan_id = ?
+                    order by installment asc
+                    """;
+        }
+    }
+
+    private static final class LoanCurrencyDataMapper implements  RowMapper<CurrencyData> {
+
+        @Override
+        public CurrencyData mapRow(ResultSet rs, int rowNum) throws SQLException {
+            final String code = rs.getString("code");
+            final String name = rs.getString("name");
+            final int decimalPlaces = rs.getInt("decimalPlaces");
+            final Integer inMultiplesOf = rs.getInt("inMultiplesOf");
+            final String displaySymbol = rs.getString("displaySymbol");
+            final String nameCode = rs.getString("nameCode");
+
+            return new CurrencyData(
+                    code,
+                    name,
+                    decimalPlaces,
+                    inMultiplesOf,
+                    displaySymbol,
+                    nameCode
+            );
+        }
+        public String loanPaymentsSummarySchema() {
+            return """
+        select
+           mc.code as code,
+           mc.name as name,
+           mc.decimal_places as decimalPlaces,
+           mc.currency_multiplesof as inMultiplesOf,
+           mc.display_symbol as displaySymbol,
+           mc.internationalized_name_code as nameCode
+        from m_currency mc
+        left join m_loan ml
+            on mc.code = ml.currency_code
+        where ml.id = ?
+        """;
+        }
+
     }
 
 }
