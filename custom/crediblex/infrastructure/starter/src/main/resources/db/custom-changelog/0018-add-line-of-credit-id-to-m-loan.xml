@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet author="crediblex" id="add-line-of-credit-id-to-m-loan">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="m_loan"/>
+                <tableExists tableName="m_line_of_credit"/>
+                <not>
+                    <columnExists tableName="m_loan" columnName="line_of_credit_id"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="line_of_credit_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="crediblex" id="add-foreign-key-constraint-line-of-credit-id">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="m_loan"/>
+                <tableExists tableName="m_line_of_credit"/>
+                <columnExists tableName="m_loan" columnName="line_of_credit_id"/>
+                <not>
+                    <foreignKeyConstraintExists foreignKeyName="FK_m_loan_line_of_credit_id"/>
+                </not>
+            </and>
+        </preConditions>
+        <addForeignKeyConstraint baseColumnNames="line_of_credit_id" baseTableName="m_loan"
+                                 constraintName="FK_m_loan_line_of_credit_id" deferrable="false" initiallyDeferred="false"
+                                 onDelete="RESTRICT" onUpdate="RESTRICT" referencedColumnNames="id"
+                                 referencedTableName="m_line_of_credit" validate="true"/>
+    </changeSet>
+
+    <changeSet author="crediblex" id="add-index-line-of-credit-id-m-loan">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <and>
+                <tableExists tableName="m_loan"/>
+                <columnExists tableName="m_loan" columnName="line_of_credit_id"/>
+                <not>
+                    <indexExists tableName="m_loan" indexName="idx_m_loan_line_of_credit_id"/>
+                </not>
+            </and>
+        </preConditions>
+        <createIndex tableName="m_loan" indexName="idx_m_loan_line_of_credit_id">
+            <column name="line_of_credit_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

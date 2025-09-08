@@ -1703,6 +1703,8 @@ public final class LoanProductsApiResourceSwagger {
         public String capitalizedIncomeCalculationType;
         @Schema(example = "EQUAL_AMORTIZATION", allowableValues = "EQUAL_AMORTIZATION")
         public String capitalizedIncomeStrategy;
+        @Schema(example = "false")
+        public Boolean isLocEnabled;
     }
 
     public static final class AdvancedPaymentData {

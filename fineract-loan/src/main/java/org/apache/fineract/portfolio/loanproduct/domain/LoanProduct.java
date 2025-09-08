@@ -221,6 +221,9 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
+    @Column(name = "is_loc_enable", nullable = false)
+    private boolean isLocEnabled = false;
+
     @Column(name = "due_days_for_repayment_event")
     private Integer dueDaysForRepaymentEvent;
 
@@ -284,7 +287,7 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
             final LoanChargeOffBehaviour chargeOffBehaviour, final boolean isInterestRecognitionOnDisbursementDate,
             final DaysInYearCustomStrategyType daysInYearCustomStrategy, final boolean enableIncomeCapitalization,
             final LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType,
-            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy) {
+            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy, final boolean isLocEnabled) {
         this.fund = fund;
         this.transactionProcessingStrategyCode = transactionProcessingStrategyCode;
 
@@ -386,6 +389,7 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
         this.repaymentStartDateType = repaymentStartDateType;
 
         this.enableInstallmentLevelDelinquency = enableInstallmentLevelDelinquency;
+        this.isLocEnabled = isLocEnabled;
         validateLoanProductPreSave();
     }
 
@@ -617,6 +621,10 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
 
     public boolean isInterestRecalculationEnabled() {
         return this.loanProductRelatedDetail.isInterestRecalculationEnabled();
+    }
+
+    public boolean isLocEnabled() {
+        return this.isLocEnabled;
     }
 
     public Integer getMinimumDaysBetweenDisbursalAndFirstRepayment() {

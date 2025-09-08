@@ -59,9 +59,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 
 @Slf4j
-public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet {
+public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet implements ApplicationContextAware {
+
+    private static final String DATE_FORMAT = "dd MMMM yyyy";
 
     private final StandingInstructionReadPlatformService standingInstructionReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
@@ -71,11 +80,14 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final PlatformTransactionManager transactionManager;
     private final CustomCommandProcessingService customCommandProcessingService;
     private final FromJsonHelper fromApiJsonHelper;
+    private ApplicationContext applicationContext;
+    private LoanRepositoryWrapper loanRepositoryWrapper;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, FromJsonHelper fromApiJsonHelper) {
+            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, 
+            FromJsonHelper fromApiJsonHelper) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -86,6 +98,13 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.savingsAccountAssembler = savingsAccountAssembler;
         this.customCommandProcessingService = customCommandProcessingService;
         this.fromApiJsonHelper = fromApiJsonHelper;
+    }
+
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+        // Get LoanRepositoryWrapper from Spring context when available
+        this.loanRepositoryWrapper = applicationContext.getBean(LoanRepositoryWrapper.class);
     }
 
     @Override
@@ -284,14 +303,13 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private void triggerRepaymentWebhook(StandingInstructionData data, BigDecimal transactionAmount) {
         try {
             // Format current date in the required format (dd MMMM yyyy)
-            String formattedDate = DateUtils.getBusinessLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy"));
+            String formattedDate = DateUtils.getBusinessLocalDate().format(java.time.format.DateTimeFormatter.ofPattern(DATE_FORMAT));
 
             // Construct the request part of the webhook payload
-            // Only this payload will go under "request" in final JSON
             Map<String, Object> requestMap = new HashMap<>();
             requestMap.put("note", "");
             requestMap.put("paymentTypeId", "");
-            requestMap.put("dateFormat", "dd MMMM yyyy");
+            requestMap.put("dateFormat", DATE_FORMAT);
             requestMap.put("transactionAmount", transactionAmount);
             requestMap.put("externalId", "");
             requestMap.put("locale", "en");
@@ -299,24 +317,55 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
             // Construct the response part of the webhook payload
             Map<String, Object> changes = new HashMap<>();
-            changes.put("dateFormat", "dd MMMM yyyy");
+            changes.put("dateFormat", DATE_FORMAT);
             changes.put("transactionAmount", transactionAmount.toString());
             changes.put("locale", "en");
             changes.put("transactionDate", formattedDate);
 
+            // Follow the EXACT SAME pattern as UI repayment - find the actual transaction and use its mappings
+            Long loanId = data.getToAccount().getId();
+            try {
+                // After a successful transfer, the system creates a loan transaction
+                // We need to find this transaction and use its mappings (same as UI repayment)
+                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+                
+                // Find the most recent repayment transaction that matches our criteria
+                // We look for the transaction by amount and date (similar to how UI gets the resourceId)
+                LoanTransaction recentTransaction = loan.getLoanTransactions().stream()
+                    .filter(t -> t.isRepayment() && 
+                             t.getAmount().compareTo(transactionAmount) == 0 &&
+                             t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
+                    .max((t1, t2) -> t1.getId().compareTo(t2.getId()))
+                    .orElse(null);
+                
+                if (recentTransaction != null) {
+                    // Extract affected installments using the shared utility method (same logic as UI repayment)
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, recentTransaction);
+                    
+                    // Add affected installments and transaction details - SAME AS UI
+                    if (!affectedInstallments.isEmpty()) {
+                        changes.put("affectedInstallments", affectedInstallments);
+                    }
+                    changes.put("transactionId", recentTransaction.getId());
+                } else {
+                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}", 
+                             data.getId(), transactionAmount);
+                }
+                
+            } catch (Exception e) {
+                log.warn("Failed to get affected installments from actual transaction for standing instruction {}: {}", 
+                         data.getId(), e.getMessage());
+            }
 
-            // Get client ID from the toClient object if available
+            // Get client and office IDs
             Long clientId = (data.getToClient() != null) ? data.getToClient().getId() : 0L;
-            // Get office ID from the toOffice field or from toClient
             Long officeId = 1L; // Default
             if (data.getToClient() != null && data.getToClient().getOfficeId() != null) {
                 officeId = data.getToClient().getOfficeId();
             }
 
-
             // Convert the map to JSON string using Gson
             String jsonCommandString = new com.google.gson.Gson().toJson(requestMap);
-            
             JsonElement parsedCommand = this.fromApiJsonHelper.parse(jsonCommandString);
 
             // Use JsonCommand.from() with complete payload
@@ -327,11 +376,11 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     parsedCommand, 
                     fromApiJsonHelper,
                     "LOAN", 
-                    data.getToAccount().getId(), 
+                    loanId, 
                     null, // subresourceId
                     null, // groupId
                     commandClientId, // clientId
-                    data.getToAccount().getId(), // loanId
+                    loanId, // loanId
                     null, // savingsId
                     null, // transactionId
                     null, // url
@@ -342,7 +391,6 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     ExternalId.empty() // loanExternalId
             );
 
-            final Long loanId = data.getToAccount().getId();
             CommandProcessingResult result = CommandProcessingResult.fromDetails(
                     null, // commandId
                     officeId,

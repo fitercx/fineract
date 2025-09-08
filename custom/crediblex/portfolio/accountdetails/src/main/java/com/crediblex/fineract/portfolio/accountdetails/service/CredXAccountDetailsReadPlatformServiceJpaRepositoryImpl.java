@@ -178,8 +178,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" ELSE l.fixed_emi_amount END as calculatedInstallmentAmount, ")
                     .append(" (SELECT SUM(lc.amount_outstanding_derived) FROM m_loan_charge lc ")
                     .append("  WHERE lc.loan_id = l.id AND lc.is_penalty = true AND lc.is_active = true and due_for_collection_as_of_date < CAST(:currentDate AS DATE)) as totalLateFees,")
-                    .append(" dtri.remitter_name as remitterName,")
-                    .append(" dtri.dp_name as dpName")
+                    .append(" dlad.remitter_name as remitterName,")
+                    .append(" dlad.dp_name as dpName")
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
@@ -192,7 +192,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" left join m_appuser cobu on cobu.id = l.charged_off_by_userid")
                     .append(" left join m_loan_arrears_aging la on la.loan_id = l.id")
                     .append(" left join glim_accounts glim on glim.id=l.glim_id")
-                    .append(" left join dt_loan_remitter_dp_info dtri on dtri.loan_id = l.id");
+                    .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id");
 
 
             return accountsSummary.toString();

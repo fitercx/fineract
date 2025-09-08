@@ -75,12 +75,12 @@ import org.springframework.jdbc.core.RowMapper;
 public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatformService {
 
     private final PlatformSecurityContext context;
-    private final JdbcTemplate jdbcTemplate;
-    private final ChargeReadPlatformService chargeReadPlatformService;
-    private final RateReadService rateReadService;
+    protected final JdbcTemplate jdbcTemplate;
+    protected final ChargeReadPlatformService chargeReadPlatformService;
+    protected final RateReadService rateReadService;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final FineractEntityAccessUtil fineractEntityAccessUtil;
-    private final DelinquencyReadPlatformService delinquencyReadPlatformService;
+    protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
     private final LoanProductRepository loanProductRepository;
 
     @Override
@@ -587,7 +587,8 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
                     enableInstallmentLevelDelinquency, loanScheduleType.asEnumOptionData(), loanScheduleProcessingType.asEnumOptionData(),
                     fixedLength, enableAccrualActivityPosting, supportedInterestRefundTypes,
                     loanChargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate,
-                    daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
+                    daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy,
+                    false);
         }
     }
 
