@@ -179,4 +179,84 @@ public class CustomLoanInterestCalculationService {
             return false;
         }
     }
+
+    /**
+     * Adjusts the principal due amount for RECEIVABLE LOC loans
+     * For RECEIVABLE loans, the principal due should be Approved Amount - Interest
+     * 
+     * @param loan The loan to adjust principal due for
+     * @param correctPrincipalDue The correct principal due amount (Approved Amount - Interest)
+     * @return true if adjustments were made, false otherwise
+     */
+    @Transactional
+    public boolean adjustPrincipalDueForReceivableLoan(Loan loan, BigDecimal correctPrincipalDue) {
+        try {
+            Long loanId = loan.getId();
+            
+            if (correctPrincipalDue == null) {
+                log.warn("Correct principal due amount is null for loan {}", loanId);
+                return false;
+            }
+            
+            // Adjust the principal due in the repayment schedule installments
+            List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+            if (installments == null || installments.isEmpty()) {
+                log.warn("No repayment schedule installments found for loan {}", loanId);
+                return false;
+            }
+            
+            // For RECEIVABLE loans, we need to adjust the principal due to be Approved Amount - Interest
+            Money correctPrincipalDueMoney = Money.of(loan.getCurrency(), correctPrincipalDue);
+            Money totalOriginalPrincipalDue = Money.zero(loan.getCurrency());
+            
+            // Calculate total original principal due
+            for (LoanRepaymentScheduleInstallment installment : installments) {
+                if (installment.getPrincipal() != null) {
+                    totalOriginalPrincipalDue = totalOriginalPrincipalDue.plus(installment.getPrincipal(loan.getCurrency()));
+                }
+            }
+            
+            if (totalOriginalPrincipalDue.isZero()) {
+                log.warn("Total original principal due is zero for loan {}, cannot adjust", loanId);
+                return false;
+            }
+            
+            // Distribute the correct principal due across installments proportionally
+            Money remainingPrincipalDue = correctPrincipalDueMoney;
+            for (int i = 0; i < installments.size(); i++) {
+                LoanRepaymentScheduleInstallment installment = installments.get(i);
+                
+                if (installment.getPrincipal() != null) {
+                    Money originalPrincipalDue = installment.getPrincipal(loan.getCurrency());
+                    
+                    // Calculate proportional principal due for this installment
+                    Money proportionalPrincipalDue;
+                    if (i == installments.size() - 1) {
+                        // Last installment gets the remaining principal due to avoid rounding errors
+                        proportionalPrincipalDue = remainingPrincipalDue;
+                    } else {
+                        // Calculate proportional amount
+                        BigDecimal proportion = originalPrincipalDue.getAmount().divide(totalOriginalPrincipalDue.getAmount(), 10, java.math.RoundingMode.HALF_UP);
+                        proportionalPrincipalDue = correctPrincipalDueMoney.multiplyRetainScale(proportion, new java.math.MathContext(10, java.math.RoundingMode.HALF_UP));
+                        remainingPrincipalDue = remainingPrincipalDue.minus(proportionalPrincipalDue);
+                    }
+                    
+                    // Update the installment with the new principal due amount
+                    installment.updatePrincipal(proportionalPrincipalDue.getAmount());
+                    
+                    log.debug("Updated installment {} for loan {}: original principal due = {}, new principal due = {}", 
+                        installment.getInstallmentNumber(), loanId, originalPrincipalDue, proportionalPrincipalDue);
+                }
+            }
+            
+            log.info("Successfully adjusted principal due calculations for RECEIVABLE loan {}: total correct principal due = {}", 
+                loanId, correctPrincipalDueMoney);
+            
+            return true;
+            
+        } catch (Exception e) {
+            log.error("Error adjusting principal due calculations for RECEIVABLE loan {}: {}", loan.getId(), e.getMessage());
+            return false;
+        }
+    }
 }
