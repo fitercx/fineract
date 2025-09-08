@@ -1581,8 +1581,30 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 } else {
                     existingTransactionIds.addAll(loan.findExistingTransactionIds());
                     existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
+                    
+                    // For RECEIVABLE LOC loans, create a disbursement transaction with proper principal and interest breakdown
                     disbursementTransaction = LoanTransaction.disbursement(loan, amountToDisburse, paymentDetail, actualDisbursementDate,
                             txnExternalId, loan.getTotalOverpaidAsMoney());
+                    
+                    // Set the principal and interest portions for RECEIVABLE LOC loans
+                    // Use the expected interest that was calculated earlier
+                    if (expectedInterest != null) {
+                        BigDecimal principalPortion = correctNetDisbursementAmount; // 87,300
+                        BigDecimal interestPortion = expectedInterest; // 2,700
+                        
+                        // Create Money objects for the components
+                        Money principalMoney = Money.of(loan.getCurrency(), principalPortion);
+                        Money interestMoney = Money.of(loan.getCurrency(), interestPortion);
+                        Money feeChargesMoney = Money.zero(loan.getCurrency());
+                        Money penaltyChargesMoney = Money.zero(loan.getCurrency());
+                        
+                        // Update the transaction components
+                        disbursementTransaction.updateComponentsAndTotal(principalMoney, interestMoney, feeChargesMoney, penaltyChargesMoney);
+                        
+                        log.info("Set disbursement transaction breakdown for RECEIVABLE LOC loan {} - Principal: {}, Interest: {}, Total: {}", 
+                                loan.getId(), principalPortion, interestPortion, amountToDisburse.getAmount());
+                    }
+                    
                     disbursementTransaction.updateLoan(loan);
                     loan.addLoanTransaction(disbursementTransaction);
                     loanTransactionRepository.saveAndFlush(disbursementTransaction);
