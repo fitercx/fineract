@@ -181,4 +181,18 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="5" author="crediblex" context="postgresql">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <columnExists tableName="m_line_of_credit" columnName="end_date"/>
+            </and>
+        </preConditions>
+
+        <dropNotNullConstraint tableName="m_line_of_credit"
+                               columnName="end_date"
+                               columnDataType="date"/>
+
+    </changeSet>
+
 </databaseChangeLog>

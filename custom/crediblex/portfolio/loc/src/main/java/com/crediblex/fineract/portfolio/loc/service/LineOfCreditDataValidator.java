@@ -69,7 +69,7 @@ public class LineOfCreditDataValidator {
         }.getType();
         final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
                 "locale", "dateFormat", "clientId", "name", "productType", "maximumAmount", "startDate", "endDate",
-                "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
+                "approvedCreditFacilityAmount", "externalId", "activationDate", "currencyCode", "advancePercentage",
                 "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
                 "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
                 "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
@@ -96,8 +96,11 @@ public class LineOfCreditDataValidator {
         final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
         baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
 
-        final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
-        baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+        LocalDate endDate = null;
+        if(fromApiJsonHelper.parameterExists("endDate", element)) {
+             endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
+            baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+        }
 
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             baseDataValidator.reset().parameter("endDate").value(endDate).failWithCode("end.date.cannot.be.before.start.date");
@@ -123,7 +126,7 @@ public class LineOfCreditDataValidator {
         }.getType();
         final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
                 "locale", "dateFormat", "name", "productType", "maximumAmount", "startDate", "endDate",
-                "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
+                "approvedCreditFacilityAmount", "externalId", "activationDate", "currencyCode", "advancePercentage",
                 "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
                 "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
                 "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
@@ -170,42 +173,10 @@ public class LineOfCreditDataValidator {
             baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
         }
 
-        // Validate new fields for update
-        if (this.fromApiJsonHelper.parameterExists("approvedCreditFacilityAmount", element) ||
-                this.fromApiJsonHelper.parameterExists("externalId", element) ||
-                this.fromApiJsonHelper.parameterExists("activationDate", element) ||
-                this.fromApiJsonHelper.parameterExists("currency", element) ||
-                this.fromApiJsonHelper.parameterExists("advancePercentage", element) ||
-                this.fromApiJsonHelper.parameterExists("tenorDays", element) ||
-                this.fromApiJsonHelper.parameterExists("approvedBuyers", element) ||
-                this.fromApiJsonHelper.parameterExists("processingFeePctLoc", element) ||
-                this.fromApiJsonHelper.parameterExists("cashMarginType", element) ||
-                this.fromApiJsonHelper.parameterExists("cashMarginValue", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeBasis", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeePct", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeMinAmount", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeCurrency", element) ||
-                this.fromApiJsonHelper.parameterExists("interimReviewDate", element) ||
-                this.fromApiJsonHelper.parameterExists("rateType", element) ||
-                this.fromApiJsonHelper.parameterExists("annualInterestRate", element) ||
-                this.fromApiJsonHelper.parameterExists("isInterestUpfrontOrPostDisbursal", element) ||
-                this.fromApiJsonHelper.parameterExists("clientCompanyName", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonName", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonPhone", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonEmail", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryName", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryPhone", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryEmail", element) ||
-                this.fromApiJsonHelper.parameterExists("va", element) ||
-                this.fromApiJsonHelper.parameterExists("distributionPartner", element) ||
-                this.fromApiJsonHelper.parameterExists("bankTransferFee", element) ||
-                this.fromApiJsonHelper.parameterExists("specialConditions", element) ||
-                this.fromApiJsonHelper.parameterExists("latePaymentFee", element)) {
 
-            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-            validateNewFields(element, baseDataValidator, dateFormat, locale);
-        }
+        final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
+        final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
+        validateNewFields(element, baseDataValidator, dateFormat, locale);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
@@ -438,7 +409,6 @@ public class LineOfCreditDataValidator {
 
         try {
             Map<String, Object> result = jdbcTemplate.queryForMap(sql, lineOfCreditId);
-            BigDecimal currentMaximumAmount = (BigDecimal) result.get("maximum_amount");
             BigDecimal consumedAmount = (BigDecimal) result.get("consumed_amount");
 
             // Check if the new limit is less than the currently utilized balance

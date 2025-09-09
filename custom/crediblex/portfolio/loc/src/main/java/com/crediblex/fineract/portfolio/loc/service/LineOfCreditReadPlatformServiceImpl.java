@@ -20,14 +20,19 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
+
+import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
+import com.crediblex.fineract.portfolio.loc.data.LocReviewPeriods;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
@@ -152,14 +157,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             if (status == null) {
                 return null;
             }
-            try {
-                com.crediblex.fineract.portfolio.loc.domain.LineOfCredit.ActivationStatus activationStatus = 
-                    com.crediblex.fineract.portfolio.loc.domain.LineOfCredit.ActivationStatus.valueOf(status);
-                return new EnumOptionData((long) activationStatus.ordinal(), activationStatus.name(), activationStatus.name());
-            } catch (IllegalArgumentException e) {
-                log.warn("Unknown activation status: {}", status);
-                return new EnumOptionData(0L, status, status);
-            }
+            return LocActivationStatus.valueOf(status).getEnumOptionData();
         }
     }
 
@@ -222,9 +220,10 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     public LineOfCreditData retrieveTemplate() {
         this.context.authenticatedUser();
         final Collection<EnumOptionData> activationStatusOptions = getActivationStatusOptions();
-        final Collection<String> productTypeOptions = getProductTypeOptions();
+        final Collection<EnumOptionData> productTypeOptions = getProductTypeOptions();
+        final Collection<EnumOptionData> reviewPeriodsOptions = getReviewPeriodsOptions();
 
-        return LineOfCreditData.template(activationStatusOptions, productTypeOptions);
+        return LineOfCreditData.template(activationStatusOptions, productTypeOptions,reviewPeriodsOptions);
     }
 
     @Override
@@ -246,8 +245,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final LineOfCreditMapper mapper = new LineOfCreditMapper();
         final String sql = "select " + mapper.schema() + " where loc.client_id = ? and loc.activation_status = ? order by loc.id";
         
-        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, 
-            new Object[] { clientId, "ACTIVE" });
+        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper,
+                clientId, "ACTIVE");
         
         return enrichWithClientData(lineOfCredits);
     }
@@ -305,19 +304,20 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     }
 
     private Collection<EnumOptionData> getActivationStatusOptions() {
-        final List<EnumOptionData> options = new ArrayList<>();
-        for (com.crediblex.fineract.portfolio.loc.domain.LineOfCredit.ActivationStatus status : 
-             com.crediblex.fineract.portfolio.loc.domain.LineOfCredit.ActivationStatus.values()) {
-            options.add(new EnumOptionData((long) status.ordinal(), status.name(), status.name()));
-        }
-        return options;
+        return Arrays.stream(LocActivationStatus.values())
+                .map(LocActivationStatus::getEnumOptionData)
+                .toList();
     }
 
-    private Collection<String> getProductTypeOptions() {
-        final List<String> options = new ArrayList<>();
-        for (ProductType productType : ProductType.values()) {
-            options.add(productType.name());
-        }
-        return options;
+    private Collection<EnumOptionData> getProductTypeOptions() {
+        return Arrays.stream(LocProductType.values())
+                .map(LocProductType::getEnumOptionsData)
+                .collect(Collectors.toList());
+    }
+
+    private Collection<EnumOptionData> getReviewPeriodsOptions() {
+        return Arrays.stream(LocReviewPeriods.values())
+                .map(LocReviewPeriods::getEnumOptionsData)
+                .collect(Collectors.toList());
     }
 }

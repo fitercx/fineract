@@ -17,11 +17,12 @@
  * under the License.
  */
 
-package com.crediblex.fineract.portfolio.loc.repository;
+package com.crediblex.fineract.portfolio.loc.domain;
 
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import java.util.List;
 import java.util.Optional;
+
+import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -71,5 +72,5 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
      *            the activation status
      * @return list of line of credits
      */
-    List<LineOfCredit> findByClientIdAndActivationStatus(Long clientId, LineOfCredit.ActivationStatus activationStatus);
+    List<LineOfCredit> findByClientIdAndActivationStatus(Long clientId, LocActivationStatus activationStatus);
 }

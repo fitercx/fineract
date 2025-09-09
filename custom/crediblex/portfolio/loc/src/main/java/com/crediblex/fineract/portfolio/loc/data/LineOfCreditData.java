@@ -89,7 +89,8 @@ public final class LineOfCreditData implements Serializable {
 
     // Template fields
     private Collection<EnumOptionData> activationStatusOptions;
-    private Collection<String> productTypeOptions;
+    private Collection<EnumOptionData> productTypeOptions;
+    private Collection<EnumOptionData> reviewPeriodsOptions;
 
     // Import fields
     private transient Integer rowIndex;
@@ -101,8 +102,9 @@ public final class LineOfCreditData implements Serializable {
         return new LineOfCreditData(clientId, name, productType, maximumAmount, startDate, endDate, rowIndex, dateFormat, locale);
     }
 
-    public static LineOfCreditData template(Collection<EnumOptionData> activationStatusOptions, Collection<String> productTypeOptions) {
-        return new LineOfCreditData(activationStatusOptions, productTypeOptions);
+    public static LineOfCreditData template(Collection<EnumOptionData> activationStatusOptions, Collection<EnumOptionData> productTypeOptions,
+                                            Collection<EnumOptionData> reviewPeriodsOptionsData) {
+        return new LineOfCreditData(activationStatusOptions, productTypeOptions,reviewPeriodsOptionsData);
     }
 
     public static LineOfCreditData instance(Long id, Long clientId, ClientData client, String name, String productType,
@@ -139,9 +141,11 @@ public final class LineOfCreditData implements Serializable {
         this.locale = locale;
     }
 
-    private LineOfCreditData(Collection<EnumOptionData> activationStatusOptions, Collection<String> productTypeOptions) {
+    private LineOfCreditData(Collection<EnumOptionData> activationStatusOptions, Collection<EnumOptionData> productTypeOptions,
+                             Collection<EnumOptionData> reviewPeriodsOptionsData)  {
         this.activationStatusOptions = activationStatusOptions;
         this.productTypeOptions = productTypeOptions;
+        this.reviewPeriodsOptions = reviewPeriodsOptionsData;
     }
 
     private LineOfCreditData(Long id, Long clientId, ClientData client, String name, String productType, BigDecimal maximumAmount,

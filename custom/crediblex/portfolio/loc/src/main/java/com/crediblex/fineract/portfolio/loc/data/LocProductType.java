@@ -19,13 +19,23 @@
 package com.crediblex.fineract.portfolio.loc.data;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
 @Schema(description = "Enum for line of credit product types")
-public enum ProductType {
-    
-    @Schema(description = "Receivable product type")
-    RECEIVABLE,
-    
-    @Schema(description = "Payable product type")
-    PAYABLE
+public enum LocProductType {
+    RECEIVABLE(1,"Receivable product type"), PAYABLE(2,"Payable product type");
+
+    private final Integer value;
+    private final String description;
+
+
+    LocProductType(final Integer value, final String description) {
+        this.value = value;
+        this.description = description;
+    }
+
+
+    public EnumOptionData getEnumOptionsData() {
+        return new EnumOptionData(this.value.longValue(), this.name(), this.description);
+    }
 }
