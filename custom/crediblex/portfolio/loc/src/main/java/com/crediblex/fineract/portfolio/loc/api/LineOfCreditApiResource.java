@@ -94,7 +94,7 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
 
-        return this.toApiJsonSerializer.serialize(settings, Collections.singleton(template), Collections.singleton("lineOfCredit"));
+        return this.toApiJsonSerializer.serialize(settings, template);
     }
 
 
@@ -147,7 +147,10 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String create(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(lineOfCreditRequest.toJson())
+        if(lineOfCreditRequest != null){
+            lineOfCreditRequest.setClientId(clientId);
+        }
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().createLineOfCredit().withJson(toApiJsonSerializer.serialize(lineOfCreditRequest))
                 .build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
@@ -167,8 +170,12 @@ public class LineOfCreditApiResource {
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final LineOfCreditRequest lineOfCreditRequest) {
 
+        if(lineOfCreditRequest != null){
+            lineOfCreditRequest.setClientId(clientId);
+        }
+
         final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateLineOfCredit(lineOfCreditId)
-                .withJson(lineOfCreditRequest.toJson()).build();
+                .withJson(toApiJsonSerializer.serialize(lineOfCreditRequest)).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 

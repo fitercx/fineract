@@ -18,8 +18,6 @@
  */
 package com.crediblex.fineract.portfolio.loc.data;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -67,7 +65,7 @@ public class LineOfCreditRequest {
     private String activationDate;
 
     @Schema(example = "USD", description = "Currency for the line of credit")
-    private String currency;
+    private String currencyCode;
 
     @Schema(example = "85.50", description = "Advance percentage")
     private String advancePercentage;
@@ -147,11 +145,4 @@ public class LineOfCreditRequest {
     @Schema(example = "500.00", description = "Late payment fee")
     private String latePaymentFee;
 
-    public String toJson() {
-        try {
-            return new ObjectMapper().writeValueAsString(this);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("Error serializing request to JSON", e);
-        }
-    }
 }
