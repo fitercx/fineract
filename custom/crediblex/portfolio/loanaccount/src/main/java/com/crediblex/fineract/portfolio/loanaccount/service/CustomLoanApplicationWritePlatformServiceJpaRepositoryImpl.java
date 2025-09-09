@@ -64,12 +64,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
         try {
             // Line of Credit validation (before standard validation to catch LOC-specific errors first)
-            try {
-                locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
-            } catch (ValidationException e) {
-                log.error("Line of Credit validation failed: {}", e.getMessage());
-                throw e; // Re-throw to maintain the validation error flow
-            }
+            locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
 
             // Validations (prior assembling) - use standard validation
             this.loanApplicationValidator.validateForCreate(command);
@@ -129,45 +124,45 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         } catch (final PersistenceException dve) {
             Throwable throwable = ExceptionUtils.getRootCause(dve.getCause());
             handleDataIntegrityIssues(command, throwable, dve);
-                         return CommandProcessingResult.empty();
-         }
-     }
+            return CommandProcessingResult.empty();
+        }
+    }
 
-     @Override
-     @Transactional
-     public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
-         try {
-             // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
-             String productType = customLoanService.getLocProductType(loanId);
-             if (ProductType.RECEIVABLE.name().equals(productType)) {
-                 // Get the original approved amount from the command
-                 BigDecimal originalApprovedAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
-                 
-                 if (originalApprovedAmount != null) {
-                     // Calculate the discounted amount (this will be the new approved amount)
-                     BigDecimal discountedAmount = customLoanService.calculateDiscountedAmount(loanId, originalApprovedAmount);
-                     
-                     // Create a modified JSON object with the discounted amount
-                     JsonObject modifiedJson = command.parsedJson().getAsJsonObject().deepCopy();
-                     modifiedJson.addProperty(LoanApiConstants.approvedLoanAmountParameterName, discountedAmount);
-                     
-                     // Create a new command with the modified JSON
-                     JsonCommand modifiedCommand = JsonCommand.fromExistingCommand(command, modifiedJson);
-                     
-                     log.info("Adjusted approved amount for RECEIVABLE LOC loan {}: original={}, discounted={}", 
-                             loanId, originalApprovedAmount, discountedAmount);
-                     
-                     // Call the parent implementation with the modified command
-                     return super.approveApplication(loanId, modifiedCommand);
-                 }
-             }
-         } catch (Exception e) {
-             log.warn("Failed to adjust approved amount for RECEIVABLE LOC loan {}: {}. Proceeding with standard approval.", 
-                     loanId, e.getMessage());
-             // Don't fail the approval if LOC adjustment fails, proceed with standard approval
-         }
-         
-         // For non-RECEIVABLE loans or if adjustment fails, proceed with standard approval
-         return super.approveApplication(loanId, command);
-     }
- }
+    @Override
+    @Transactional
+    public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
+        try {
+            // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
+            String productType = customLoanService.getLocProductType(loanId);
+            if (ProductType.RECEIVABLE.name().equals(productType)) {
+                // Get the original approved amount from the command
+                BigDecimal originalApprovedAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
+
+                if (originalApprovedAmount != null) {
+                    // Calculate the discounted amount (this will be the new approved amount)
+                    BigDecimal discountedAmount = customLoanService.calculateDiscountedAmount(loanId, originalApprovedAmount);
+
+                    // Create a modified JSON object with the discounted amount
+                    JsonObject modifiedJson = command.parsedJson().getAsJsonObject().deepCopy();
+                    modifiedJson.addProperty(LoanApiConstants.approvedLoanAmountParameterName, discountedAmount);
+
+                    // Create a new command with the modified JSON
+                    JsonCommand modifiedCommand = JsonCommand.fromExistingCommand(command, modifiedJson);
+
+                    log.info("Adjusted approved amount for RECEIVABLE LOC loan {}: original={}, discounted={}",
+                            loanId, originalApprovedAmount, discountedAmount);
+
+                    // Call the parent implementation with the modified command
+                    return super.approveApplication(loanId, modifiedCommand);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to adjust approved amount for RECEIVABLE LOC loan {}: {}. Proceeding with standard approval.",
+                    loanId, e.getMessage());
+            // Don't fail the approval if LOC adjustment fails, proceed with standard approval
+        }
+
+        // For non-RECEIVABLE loans or if adjustment fails, proceed with standard approval
+        return super.approveApplication(loanId, command);
+    }
+}
