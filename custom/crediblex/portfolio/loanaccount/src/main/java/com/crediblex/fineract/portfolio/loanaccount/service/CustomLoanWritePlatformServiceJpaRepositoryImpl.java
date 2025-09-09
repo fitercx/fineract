@@ -1,7 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -122,7 +122,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private void updateLoanSummaryDerivedFieldsForReceivableLoc(Loan loan) {
         String locProductType = getLocProductType(loan.getId());
 
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             BigDecimal approvedAmount = loan.getApprovedPrincipal();
             if (approvedAmount == null) {
                 approvedAmount = loan.getPrincipal().getAmount();
@@ -176,7 +176,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Check if this is a RECEIVABLE LOC loan
         String locProductType = getLocProductType(loanId);
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             log.info("Using custom disbursement logic for RECEIVABLE LOC loan {} - skipping validation", loanId);
 
             // For RECEIVABLE LOC loans, skip validation and apply custom logic
@@ -286,7 +286,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             Money originalDisburseAmount = disburseAmount;
 
 
-            if (ProductType.RECEIVABLE.name().equals(locProductTypeForDisbursement)) {
+            if (LocProductType.RECEIVABLE.name().equals(locProductTypeForDisbursement)) {
                 BigDecimal discountedAmount = disburseAmount.getAmount();
 
                 // Calculate expected interest based on the discounted amount
@@ -307,7 +307,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // For RECEIVABLE LOC loans, use the calculated disburseAmount directly
             // For other loans, use the copy as before
             Money amountToDisburse;
-            if (ProductType.RECEIVABLE.name().equals(locProductTypeForDisbursement)) {
+            if (LocProductType.RECEIVABLE.name().equals(locProductTypeForDisbursement)) {
                 amountToDisburse = disburseAmount; // Use the calculated amount directly
             } else {
                 amountToDisburse = disburseAmount.copy(); // Use copy for non-RECEIVABLE loans
@@ -573,7 +573,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                 // Check if this is a RECEIVABLE type LOC loan and adjust disbursement amount accordingly
                 String locProductType = getLocProductType(loan.getId());
-                if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+                if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
                     // For RECEIVABLE type, calculate net disbursed amount correctly
                     // The disburseAmount here is the discounted amount (approved_principal)
                     BigDecimal discountedAmount = disburseAmount.getAmount();
@@ -779,7 +779,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Apply custom interest calculations for RECEIVABLE LOC loans before foreclosure
         try {
             String productType = getLocProductType(loanId);
-            if (ProductType.RECEIVABLE.name().equals(productType)) {
+            if (LocProductType.RECEIVABLE.name().equals(productType)) {
                 BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loanId);
                 if (expectedInterest != null) {
                     // Apply the expected interest calculations to the loan before foreclosure
@@ -815,7 +815,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                                                      final JsonCommand command, final boolean isRecoveryRepayment) {
         // Check if this is a RECEIVABLE LOC loan and handle it specially
         String productType = getLocProductType(loanId);
-        if (ProductType.RECEIVABLE.name().equals(productType)) {
+        if (LocProductType.RECEIVABLE.name().equals(productType)) {
             return processReceivableLocRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
         }
 
@@ -969,7 +969,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     public CommandProcessingResult closeAsRescheduled(final Long loanId, final JsonCommand command) {
         // Apply custom interest calculations for RECEIVABLE LOC loans before rescheduling
         String productType = getLocProductType(loanId);
-        if (ProductType.RECEIVABLE.name().equals(productType)) {
+        if (LocProductType.RECEIVABLE.name().equals(productType)) {
             Loan loan = loanAssembler.assembleFrom(loanId);
             BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loanId);
             if (expectedInterest != null) {
@@ -1100,7 +1100,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      * @return the correct disbursement amount to use
      */
     private Money getCorrectDisbursementAmount(Long loanId, Money originalAmount, String locProductType) {
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             // For RECEIVABLE LOC loans, we should use the calculated amount
             // The originalAmount should already be the calculated net disbursed amount
             log.debug("Using calculated amount for RECEIVABLE LOC loan {}: {}", loanId, originalAmount.getAmount());
@@ -1383,7 +1383,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         try {
             String productType = getLocProductType(loanId);
 
-            if (!ProductType.RECEIVABLE.name().equals(productType)) {
+            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
                 return null; // Only applicable for RECEIVABLE loans
             }
 
@@ -1428,7 +1428,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Apply custom interest calculations for RECEIVABLE LOC loans after standard recalculation
         try {
             String productType = getLocProductType(updatedLoan.getId());
-            if (ProductType.RECEIVABLE.name().equals(productType)) {
+            if (LocProductType.RECEIVABLE.name().equals(productType)) {
                 BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(updatedLoan.getId());
                 customLoanInterestCalculationService.adjustInterestCalculationsForReceivableLoan(updatedLoan, productType, expectedInterest);
             }
@@ -1452,7 +1452,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // After the parent method completes, apply final custom logic for LOC loans
         String locProductType = getLocProductType(loan.getId());
-        if (locProductType != null && !ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (locProductType != null && !LocProductType.RECEIVABLE.name().equals(locProductType)) {
             // Compute LOC balance for non-RECEIVABLE LOC loans only
             // (RECEIVABLE loans already have LOC balance computation in the main disbursal logic)
             try {
@@ -1474,7 +1474,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
         }
 
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             log.info("Applying final custom logic for RECEIVABLE LOC loan {} after disbursement", loan.getId());
 
             try {
@@ -1690,7 +1690,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         String locProductType = getLocProductType(loan.getId());
 
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             // Get the approved amount (this is the discounted amount for RECEIVABLE loans)
             BigDecimal approvedAmount = loan.getApprovedPrincipal();
             if (approvedAmount == null) {
@@ -1904,7 +1904,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // After the parent method completes, apply custom logic for RECEIVABLE LOC loans
         String locProductType = getLocProductType(loanId);
-        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+        if (LocProductType.RECEIVABLE.name().equals(locProductType)) {
             // Reload the loan to get the updated state after the parent method
             Loan loan = loanAssembler.assembleFrom(loanId);
 

@@ -30,9 +30,6 @@ public interface LineOfCreditWritePlatformService {
     CommandProcessingResult createLineOfCredit(JsonCommand command);
 
     @Transactional
-    CommandProcessingResult createLineOfCredit(LineOfCreditRequest request);
-
-    @Transactional
     CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
     @Transactional

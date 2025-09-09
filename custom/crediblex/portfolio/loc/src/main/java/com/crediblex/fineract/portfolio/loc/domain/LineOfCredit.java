@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loc.domain;
 
+import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -64,7 +65,7 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @Column(name = "activation_status", length = 20, nullable = false)
     @Enumerated(EnumType.STRING)
-    private ActivationStatus activationStatus;
+    private LocActivationStatus activationStatus;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -178,7 +179,7 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.maximumAmount = maximumAmount;
         this.availableBalance = maximumAmount;
         this.consumedAmount = BigDecimal.ZERO;
-        this.activationStatus = ActivationStatus.INACTIVE;
+        this.activationStatus = LocActivationStatus.INACTIVE;
         this.startDate = startDate;
         this.endDate = endDate;
     }
@@ -200,7 +201,7 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.maximumAmount = maximumAmount;
         this.availableBalance = maximumAmount;
         this.consumedAmount = BigDecimal.ZERO;
-        this.activationStatus = ActivationStatus.INACTIVE;
+        this.activationStatus = LocActivationStatus.INACTIVE;
         this.startDate = startDate;
         this.endDate = endDate;
         this.approvedCreditFacilityAmount = approvedCreditFacilityAmount;
@@ -239,14 +240,14 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      * Activate the line of credit.
      */
     public void activate() {
-        this.activationStatus = ActivationStatus.ACTIVE;
+        this.activationStatus = LocActivationStatus.ACTIVE;
     }
 
     /**
      * Deactivate the line of credit.
      */
     public void deactivate() {
-        this.activationStatus = ActivationStatus.INACTIVE;
+        this.activationStatus = LocActivationStatus.INACTIVE;
     }
 
     /**
@@ -469,10 +470,5 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return actualChanges;
     }
 
-    /**
-     * Activation status enum for Line of Credit.
-     */
-    public enum ActivationStatus {
-        ACTIVE, INACTIVE, SUSPENDED, CLOSED
-    }
+
 }

@@ -7,7 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,7 +37,7 @@ public class CustomLoanInterestCalculationService {
         try {
             Long loanId = loan.getId();
             
-            if (!ProductType.RECEIVABLE.name().equals(productType)) {
+            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
                 log.debug("Loan {} is not a RECEIVABLE LOC loan, skipping interest adjustment", loanId);
                 return false;
             }
@@ -126,7 +126,7 @@ public class CustomLoanInterestCalculationService {
         try {
             Long loanId = loan.getId();
             
-            if (!ProductType.RECEIVABLE.name().equals(productType)) {
+            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
                 return null; // Not applicable for non-RECEIVABLE loans
             }
             
@@ -164,7 +164,7 @@ public class CustomLoanInterestCalculationService {
         try {
             Long loanId = loan.getId();
             
-            if (!ProductType.RECEIVABLE.name().equals(productType)) {
+            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
                 log.debug("Loan {} is not a RECEIVABLE LOC loan, skipping rescheduling interest adjustment", loanId);
                 return false;
             }

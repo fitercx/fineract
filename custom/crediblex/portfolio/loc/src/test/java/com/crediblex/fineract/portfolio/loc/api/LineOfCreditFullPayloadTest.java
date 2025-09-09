@@ -28,7 +28,7 @@ public class LineOfCreditFullPayloadTest {
         request.setApprovedCreditFacilityAmount("2,500,000");
         request.setExternalId("LOC-2025-001");
         request.setActivationDate("30 August 2025");
-        request.setCurrency("USD");
+        request.setCurrencyCode("USD");
         request.setAdvancePercentage("85.50");
         request.setTenorDays(60);
         request.setApprovedBuyers("ABC Corp, XYZ Ltd, DEF Industries");
@@ -108,7 +108,7 @@ public class LineOfCreditFullPayloadTest {
         assertThat(deserializedRequest.getApprovedCreditFacilityAmount()).isEqualTo("2,500,000");
         assertThat(deserializedRequest.getExternalId()).isEqualTo("LOC-2025-001");
         assertThat(deserializedRequest.getActivationDate()).isEqualTo("30 August 2025");
-        assertThat(deserializedRequest.getCurrency()).isEqualTo("USD");
+        assertThat(deserializedRequest.getCurrencyCode()).isEqualTo("USD");
         assertThat(deserializedRequest.getAdvancePercentage()).isEqualTo("85.50");
         assertThat(deserializedRequest.getTenorDays()).isEqualTo(60);
         assertThat(deserializedRequest.getApprovedBuyers()).isEqualTo("ABC Corp, XYZ Ltd, DEF Industries");

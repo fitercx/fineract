@@ -32,7 +32,6 @@ import static org.mockito.Mockito.when;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import jakarta.ws.rs.core.UriInfo;
 import java.math.BigDecimal;

@@ -1,6 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
 import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationWritePlatformServiceJpaRepositoryImpl;
 import com.google.gson.JsonObject;
@@ -134,7 +134,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         try {
             // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
             String productType = customLoanService.getLocProductType(loanId);
-            if (ProductType.RECEIVABLE.name().equals(productType)) {
+            if (LocProductType.RECEIVABLE.name().equals(productType)) {
                 // Get the original approved amount from the command
                 BigDecimal originalApprovedAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
 
