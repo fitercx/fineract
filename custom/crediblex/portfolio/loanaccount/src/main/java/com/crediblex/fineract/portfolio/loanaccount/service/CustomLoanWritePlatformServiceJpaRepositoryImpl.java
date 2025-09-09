@@ -47,6 +47,7 @@ import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.*;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleHistoryWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
@@ -1460,10 +1461,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 if (actualDisbursementDate == null) {
                     actualDisbursementDate = DateUtils.getBusinessLocalDate();
                 }
-                
-                log.info("Non-RECEIVABLE LOC loan {} ({}) - Using approved_principal for LOC balance: {}", 
+
+                log.info("Non-RECEIVABLE LOC loan {} ({}) - Using approved_principal for LOC balance: {}",
                         loan.getId(), locProductType, locBalanceAmount);
-                log.info("Calling computeLocBalance for non-RECEIVABLE LOC loan {} with amount {} on date {}", 
+                log.info("Calling computeLocBalance for non-RECEIVABLE LOC loan {} with amount {} on date {}",
                         loan.getId(), locBalanceAmount, actualDisbursementDate);
                 boolean locBalanceComputed = computeLocBalance(loan.getId(), locBalanceAmount, actualDisbursementDate);
                 log.info("Non-RECEIVABLE LOC balance computation result for loan {}: {}", loan.getId(), locBalanceComputed);
@@ -1472,7 +1473,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 // Don't fail the disbursement if LOC balance computation fails
             }
         }
-        
+
         if (ProductType.RECEIVABLE.name().equals(locProductType)) {
             log.info("Applying final custom logic for RECEIVABLE LOC loan {} after disbursement", loan.getId());
 
@@ -1693,8 +1694,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // Get the approved amount (this is the discounted amount for RECEIVABLE loans)
             BigDecimal approvedAmount = loan.getApprovedPrincipal();
             if (approvedAmount == null) {
-                log.warn("Approved principal not set for RECEIVABLE loan {}, using current principal: {}",
-                        loan.getId(), loan.getPrincipal().getAmount());
                 approvedAmount = loan.getPrincipal().getAmount();
             }
 
@@ -1719,7 +1718,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         } else {
             // For non-RECEIVABLE loans, use the standard parent method
-            log.debug("Using standard schedule generation for non-RECEIVABLE loan {}", loan.getId());
             super.regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO,
                     nextPossibleRepaymentDate, rescheduledRepaymentDate);
         }
@@ -1732,22 +1730,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      * 2. Decreases the consumed amount by the reversed disbursal amount
      * 3. Creates and persists a LOC transaction history record with reversal metadata
      *
-     * @param loanId             the loan ID
-     * @param reversedAmount     the amount being reversed (should be the approved_principal from the loan)
-     * @param transactionDate    the reversal date
+     * @param loanId          the loan ID
+     * @param reversedAmount  the amount being reversed (should be the approved_principal from the loan)
+     * @param transactionDate the reversal date
      * @return true if LOC balance was successfully updated, false if no LOC association exists
      */
     @Transactional
     public boolean reverseLocBalanceOnDisbursalUndo(Long loanId, BigDecimal reversedAmount, LocalDate transactionDate) {
         try {
-            log.info("Reversing LOC balance for loan {} with amount {} on date {}", loanId, reversedAmount, transactionDate);
-
             // Check if loan is associated with a line of credit
             String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
             Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
 
             if (lineOfCreditId == null) {
-                log.debug("No LOC associated with loan {}, skipping balance reversal", loanId);
                 return true; // No LOC to adjust
             }
 
@@ -1762,9 +1757,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (currentAvailableBalance == null) currentAvailableBalance = BigDecimal.ZERO;
             if (currentConsumedAmount == null) currentConsumedAmount = BigDecimal.ZERO;
 
-            // Log the LOC balance details for debugging
-            log.info("LOC Balance Reversal for loan {}: available_balance={}, reversed_amount={}, consumed_amount={}",
-                    loanId, currentAvailableBalance, reversedAmount, currentConsumedAmount);
 
             // Calculate new balances (reverse the disbursal effect)
             BigDecimal newAvailableBalance = currentAvailableBalance.add(reversedAmount);
@@ -1772,8 +1764,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             // Ensure consumed amount doesn't go below zero
             if (newConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
-                log.warn("Reversed amount {} exceeds consumed amount {} for LOC {}. Setting consumed amount to zero.",
-                        reversedAmount, currentConsumedAmount, lineOfCreditId);
                 newConsumedAmount = BigDecimal.ZERO;
                 // Adjust available balance accordingly
                 newAvailableBalance = currentAvailableBalance.add(currentConsumedAmount);
@@ -1809,17 +1799,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     referenceNumber,
                     description,
                     java.time.OffsetDateTime.now(),
-                    null); // Set created_by to null for now to avoid UserDetails access
-
-            log.info("Successfully reversed LOC balances for loan {}: reversed_amount={}, old_consumed={}, new_consumed={}, old_available={}, new_available={}",
-                    loanId, reversedAmount, currentConsumedAmount, newConsumedAmount, currentAvailableBalance, newAvailableBalance);
+                    null);
 
             return true;
 
         } catch (PlatformApiDataValidationException e) {
-            log.error("Validation error reversing LOC balance for loan {}: {}", loanId, e.getMessage());
-            throw e;
-        } catch (Exception e) {
             log.error("Failed to reverse LOC balance for loan {}: {}", loanId, e.getMessage());
             throw new PlatformApiDataValidationException("error.msg.loc.reversal.failed",
                     "Failed to reverse line of credit balance", "loanId", loanId, e);
@@ -1832,46 +1816,30 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Override
     @Transactional
     public CommandProcessingResult undoLoanDisbursal(final Long loanId, final JsonCommand command) {
-        log.info("Starting undo disbursal for loan {} with LOC balance adjustment", loanId);
-        
         // Get the disbursal amount before calling parent method
         BigDecimal disbursalAmount = null;
-        try {
-            // Get the loan's approved principal (this is the amount that was disbursed)
-            disbursalAmount = jdbcTemplate.queryForObject(
-                    "SELECT approved_principal FROM m_loan WHERE id = ?",
-                    BigDecimal.class,
-                    loanId
-            );
-            
-            log.info("Using approved_principal {} for LOC balance reversal for loan {}", disbursalAmount, loanId);
-        } catch (Exception e) {
-            log.warn("Could not determine disbursal amount for loan {}: {}", loanId, e.getMessage());
-        }
+        // Get the loan's approved principal (this is the amount that was disbursed)
+        disbursalAmount = jdbcTemplate.queryForObject(
+                "SELECT approved_principal FROM m_loan WHERE id = ?",
+                BigDecimal.class,
+                loanId
+        );
+
 
         // Call the parent method to perform the standard undo disbursal
         CommandProcessingResult result = super.undoLoanDisbursal(loanId, command);
 
         // If the undo was successful and we have a disbursal amount, adjust LOC balances
         if (disbursalAmount != null && disbursalAmount.compareTo(BigDecimal.ZERO) > 0) {
-            try {
-                // Get the transaction date from the command or use current date
-                LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-                if (transactionDate == null) {
-                    transactionDate = DateUtils.getBusinessLocalDate();
-                }
-
-                // Reverse the LOC balance adjustments
-                boolean locAdjusted = reverseLocBalanceOnDisbursalUndo(loanId, disbursalAmount, transactionDate);
-                if (locAdjusted) {
-                    log.info("Successfully adjusted LOC balances for loan {} disbursal reversal", loanId);
-                } else {
-                    log.info("No LOC adjustment needed for loan {} disbursal reversal", loanId);
-                }
-            } catch (Exception e) {
-                log.error("Failed to adjust LOC balances for loan {} disbursal reversal: {}", loanId, e.getMessage());
-                // Don't fail the entire operation, just log the error
+            // Get the transaction date from the command or use current date
+            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+            if (transactionDate == null) {
+                transactionDate = DateUtils.getBusinessLocalDate();
             }
+
+            // Reverse the LOC balance adjustments
+            reverseLocBalanceOnDisbursalUndo(loanId, disbursalAmount, transactionDate);
+
         }
 
         return result;
@@ -1883,47 +1851,174 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Override
     @Transactional
     public CommandProcessingResult undoLastLoanDisbursal(Long loanId, JsonCommand command) {
-        log.info("Starting undo last disbursal for loan {} with LOC balance adjustment", loanId);
-        
         // Get the last disbursal amount before calling parent method
         BigDecimal lastDisbursalAmount = null;
-        try {
-            // For undo last disbursal, we need to get the amount from the last disbursal transaction
-            // But for LOC balance reversal, we should use the approved_principal
-            String sql = "SELECT approved_principal FROM m_loan WHERE id = ?";
-            lastDisbursalAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, loanId);
-            
-            log.info("Using approved_principal {} for LOC balance reversal for undo last disbursal of loan {}", lastDisbursalAmount, loanId);
-        } catch (Exception e) {
-            log.warn("Could not determine disbursal amount for undo last disbursal of loan {}: {}", loanId, e.getMessage());
-        }
+        // For undo last disbursal, we need to get the amount from the last disbursal transaction
+        // But for LOC balance reversal, we should use the approved_principal
+        String sql = "SELECT approved_principal FROM m_loan WHERE id = ?";
+        lastDisbursalAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, loanId);
+
 
         // Call the parent method to perform the standard undo last disbursal
         CommandProcessingResult result = super.undoLastLoanDisbursal(loanId, command);
 
         // If the undo was successful and we have a disbursal amount, adjust LOC balances
         if (lastDisbursalAmount != null && lastDisbursalAmount.compareTo(BigDecimal.ZERO) > 0) {
-            try {
-                // Get the transaction date from the command or use current date
-                LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-                if (transactionDate == null) {
-                    transactionDate = DateUtils.getBusinessLocalDate();
-                }
-
-                // Reverse the LOC balance adjustments
-                boolean locAdjusted = reverseLocBalanceOnDisbursalUndo(loanId, lastDisbursalAmount, transactionDate);
-                if (locAdjusted) {
-                    log.info("Successfully adjusted LOC balances for loan {} last disbursal reversal", loanId);
-                } else {
-                    log.info("No LOC adjustment needed for loan {} last disbursal reversal", loanId);
-                }
-            } catch (Exception e) {
-                log.error("Failed to adjust LOC balances for loan {} last disbursal reversal: {}", loanId, e.getMessage());
-                // Don't fail the entire operation, just log the error
+            // Get the transaction date from the command or use current date
+            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+            if (transactionDate == null) {
+                transactionDate = DateUtils.getBusinessLocalDate();
             }
+
+            // Reverse the LOC balance adjustments
+            reverseLocBalanceOnDisbursalUndo(loanId, lastDisbursalAmount, transactionDate);
+
         }
 
         return result;
+    }
+
+    /**
+     * Override the parent's adjustLoanTransaction method to include LOC balance adjustments
+     * when undoing/reversing loan transactions (especially repayments)
+     */
+    @Override
+    @Transactional
+    public CommandProcessingResult adjustLoanTransaction(final Long loanId, final Long transactionId, final JsonCommand command) {
+        // Get the transaction details before calling parent method
+        LoanTransaction transactionToAdjust = this.loanTransactionRepository.findByIdAndLoanId(transactionId, loanId)
+                .orElseThrow(() -> new LoanTransactionNotFoundException(transactionId, loanId));
+
+        // Check if this is a repayment transaction being reversed
+        boolean isRepaymentReversal = transactionToAdjust.isRepayment() &&
+                command.bigDecimalValueOfParameterNamed("transactionAmount").compareTo(BigDecimal.ZERO) == 0;
+
+        BigDecimal repaymentAmount = null;
+        if (isRepaymentReversal) {
+            repaymentAmount = transactionToAdjust.getAmount();
+            log.info("Detected repayment reversal for loan {} transaction {} with amount {}", loanId, transactionId, repaymentAmount);
+        }
+
+        // Call the parent method to perform the standard transaction adjustment
+        CommandProcessingResult result = super.adjustLoanTransaction(loanId, transactionId, command);
+
+        // After the parent method completes, apply custom logic for RECEIVABLE LOC loans
+        String locProductType = getLocProductType(loanId);
+        if (ProductType.RECEIVABLE.name().equals(locProductType)) {
+            // Reload the loan to get the updated state after the parent method
+            Loan loan = loanAssembler.assembleFrom(loanId);
+
+            // Update the loan summary with correct amounts for RECEIVABLE LOC loans
+            updateLoanSummaryDerivedFieldsForReceivableLoc(loan);
+
+            // Save the loan with updated summary
+            saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+
+        }
+
+        // If this was a repayment reversal and we have a repayment amount, adjust LOC balances
+        if (isRepaymentReversal && repaymentAmount != null && repaymentAmount.compareTo(BigDecimal.ZERO) > 0) {
+            // Get the transaction date from the command or use current date
+            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+            if (transactionDate == null) {
+                transactionDate = DateUtils.getBusinessLocalDate();
+            }
+
+            // Reverse the LOC balance adjustments (opposite of what happens during repayment)
+            reverseLocBalanceOnRepaymentUndo(loanId, repaymentAmount, transactionDate);
+
+        }
+
+        return result;
+    }
+
+    /**
+     * Reverses LOC balance adjustments when a repayment is undone.
+     * This method:
+     * 1. Decreases the available LOC balance by the reversed repayment amount
+     * 2. Increases the consumed amount by the reversed repayment amount
+     * 3. Creates and persists a LOC transaction history record with reversal metadata
+     *
+     * @param loanId          the loan ID
+     * @param reversedAmount  the amount being reversed (repayment amount)
+     * @param transactionDate the reversal date
+     * @return true if LOC balance was successfully updated, false if no LOC association exists
+     */
+    @Transactional
+    public boolean reverseLocBalanceOnRepaymentUndo(Long loanId, BigDecimal reversedAmount, LocalDate transactionDate) {
+        try {
+            // Check if loan is associated with a line of credit
+            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
+            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
+
+            if (lineOfCreditId == null) {
+                log.debug("No LOC associated with loan {}, skipping balance reversal", loanId);
+                return true; // No LOC to adjust
+            }
+
+            // Get the line of credit details
+            String locSql = "SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?";
+            Map<String, Object> locData = jdbcTemplate.queryForMap(locSql, lineOfCreditId);
+
+            BigDecimal currentAvailableBalance = (BigDecimal) locData.get("available_balance");
+            BigDecimal currentConsumedAmount = (BigDecimal) locData.get("consumed_amount");
+
+            // Handle null values
+            if (currentAvailableBalance == null) currentAvailableBalance = BigDecimal.ZERO;
+            if (currentConsumedAmount == null) currentConsumedAmount = BigDecimal.ZERO;
+
+            // Calculate new balances (reverse the repayment effect)
+            BigDecimal newAvailableBalance = currentAvailableBalance.subtract(reversedAmount);
+            BigDecimal newConsumedAmount = currentConsumedAmount.add(reversedAmount);
+
+            // Ensure available balance doesn't go below zero
+            if (newAvailableBalance.compareTo(BigDecimal.ZERO) < 0) {
+                newAvailableBalance = BigDecimal.ZERO;
+                // Adjust consumed amount accordingly
+                newConsumedAmount = currentConsumedAmount.add(currentAvailableBalance);
+            }
+
+            // Update the LOC balances
+            String updateSql = "UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ?, last_modified_on_utc = NOW() WHERE id = ?";
+            int rowsUpdated = jdbcTemplate.update(updateSql, newAvailableBalance, newConsumedAmount, lineOfCreditId);
+
+            if (rowsUpdated == 0) {
+                throw new PlatformApiDataValidationException("error.msg.loc.update.failed",
+                        "Failed to update line of credit balances", "lineOfCreditId", lineOfCreditId);
+            }
+
+            // Create a transaction history record
+            String insertSql = "INSERT INTO m_line_of_credit_transactions " +
+                    "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
+                    "transaction_date, reference_number, description, created_on_utc, created_by) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            String referenceNumber = "LOAN_" + loanId + "_REPAYMENT_REVERSAL";
+            String description = String.format("Loan repayment reversal - LOC balance decreased by %s for loan %s",
+                    reversedAmount, loanId);
+
+            jdbcTemplate.update(insertSql,
+                    lineOfCreditId,
+                    "REPAYMENT_REVERSAL",
+                    reversedAmount,
+                    currentAvailableBalance,
+                    newAvailableBalance,
+                    transactionDate.atStartOfDay().atZone(java.time.ZoneOffset.UTC).toOffsetDateTime(),
+                    referenceNumber,
+                    description,
+                    java.time.OffsetDateTime.now(),
+                    null);
+
+            return true;
+
+        } catch (PlatformApiDataValidationException e) {
+            log.error("Validation error reversing LOC balance for repayment undo - loan {}: {}", loanId, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to reverse LOC balance for repayment undo - loan {}: {}", loanId, e.getMessage());
+            throw new PlatformApiDataValidationException("error.msg.loc.reversal.failed",
+                    "Failed to reverse line of credit balance", "loanId", loanId, e);
+        }
     }
 
 }
