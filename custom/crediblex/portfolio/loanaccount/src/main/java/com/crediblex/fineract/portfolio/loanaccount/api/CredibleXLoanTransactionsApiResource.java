@@ -18,6 +18,7 @@ import org.apache.fineract.infrastructure.core.api.DateParam;
 import org.apache.fineract.infrastructure.core.data.DateFormat;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.loanaccount.api.LoanTransactionsApiResource;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
@@ -42,11 +43,6 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
         super(context, loanReadPlatformService, apiRequestParameterHelper, toApiJsonSerializer, commandsSourceWritePlatformService, paymentTypeReadPlatformService, loanChargePaidByReadService);
         this.credibleXLoanReadPlatformService = credibleXLoanReadPlatformService;
         this.penaltyJsonSerializer = penaltyJsonSerializer;
-    }
-
-    @PostConstruct
-    public void init() {
-        System.out.println("CredibleXLoanTransactionsApiResource registered!");
     }
 
     @GET
@@ -79,7 +75,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
         // Default to current date if no transactionDate is provided
         LocalDate transactionDate;
         if (transactionDateDateParam == null) {
-            transactionDate = LocalDate.now();
+            transactionDate = DateUtils.getLocalDateOfTenant();
         } else {
             transactionDate = transactionDateDateParam.getDate("transactionDate", dateFormat, locale);
         }

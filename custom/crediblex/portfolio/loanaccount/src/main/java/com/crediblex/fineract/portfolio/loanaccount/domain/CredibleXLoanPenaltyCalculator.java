@@ -37,10 +37,6 @@ public class CredibleXLoanPenaltyCalculator {
     private final List<ExtendedLoanSchedulePeriodData> loanInstallments;
     private final List<LoanChargeData> loanCharges;
 
-
-//    private final CredXLoanChargeWritePlatformServiceImpl loanChargeWritePlatformService;
-//    private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
-
     public CredibleXLoanPenaltyCalculator(List<ExtendedLoanSchedulePeriodData> periods,
                                           Collection<LoanChargeData> loanCharges) {
         // Always store installments sorted by period number
@@ -53,8 +49,6 @@ public class CredibleXLoanPenaltyCalculator {
                 .sorted(Comparator.comparing(LoanChargeData::getDueDate,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
-//        this.loanChargeWritePlatformService = loanChargeWritePlatformService;
-//        this.commandsSourceWritePlatformService = commandsSourceWritePlatformService;
     }
 
     public BigDecimal calculatePenaltySum(LocalDate transactionDate) {
