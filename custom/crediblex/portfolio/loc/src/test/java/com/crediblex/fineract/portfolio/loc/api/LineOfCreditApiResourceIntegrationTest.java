@@ -22,7 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
 import org.junit.jupiter.api.Test;
 
 public class LineOfCreditApiResourceIntegrationTest {

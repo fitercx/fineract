@@ -5,7 +5,6 @@ import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePer
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
-import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -101,14 +100,14 @@ import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInsta
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
 @Primary
 public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePlatformServiceJpaRepositoryImpl {
-    @Autowired
-    private LocLoanApplicationValidator locLoanApplicationValidator;
+
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
@@ -132,8 +131,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Override
     public CommandProcessingResult disburseLoan(final Long loanId, final JsonCommand command, Boolean isAccountTransfer,
                                                 Boolean isWithoutAutoPayment) {
-        // Line of Credit validation (before standard validation to catch LOC-specific errors first)
-        locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
+
 
         loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
@@ -238,6 +236,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                  */
                 recalculateSchedule = true;
             }
+
+            // Compute and update Line of Credit balance upon disbursement
+            computeLocBalance(loanId, amountToDisburse.getAmount(), actualDisbursementDate);
+
 
             regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
                     rescheduledRepaymentDate);
@@ -369,17 +371,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
         loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
 
-        return new CommandProcessingResultBuilder() //
-                .withCommandId(command.commandId()) //
-                .withEntityId(loan.getId()) //
-                .withEntityExternalId(loan.getExternalId()) //
-                .withSubEntityId(disbursalTransactionId) //
-                .withSubEntityExternalId(disbursalTransactionExternalId) //
-                .withOfficeId(loan.getOfficeId()) //
-                .withClientId(loan.getClientId()) //
-                .withGroupId(loan.getGroupId()) //
-                .withLoanId(loanId) //
-                .with(changes) //
+        return new CommandProcessingResultBuilder()
+                .withCommandId(command.commandId())
+                .withEntityId(loan.getId())
+                .withEntityExternalId(loan.getExternalId())
+                .withSubEntityId(disbursalTransactionId)
+                .withSubEntityExternalId(disbursalTransactionExternalId)
+                .withOfficeId(loan.getOfficeId())
+                .withClientId(loan.getClientId())
+                .withGroupId(loan.getGroupId())
+                .withLoanId(loanId)
+                .with(changes)
                 .build();
     }
 
@@ -474,6 +476,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 }
                 disburseLoan(command, configurationDomainService.isPaymentTypeApplicableForDisbursementCharge(), paymentDetail, loan,
                         currentUser, changes, scheduleGeneratorDTO);
+
+                // Compute and update Line of Credit balance upon disbursement
+                try {
+                    computeLocBalance(loan.getId(), disburseAmount.getAmount(), actualDisbursementDate);
+                } catch (Exception e) {
+                    log.warn("Failed to compute LOC balance for loan {}: {}", loan.getId(), e.getMessage());
+                    // Don't fail the disbursement if LOC computation fails
+                }
+
 
                 loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
@@ -708,5 +719,87 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
 
         return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment, chargeRefundChargeType);
+    }
+    /**
+     * Computes and updates Line of Credit balance upon loan disbursement.
+     * This method:
+     * 1. Automatically reduces the available LOC balance upon disbursement
+     * 2. Increases the LOC consumed amount
+     * 3. Creates and persists a LOC transaction history record with disbursement metadata
+     *
+     * @param loanId             the loan ID
+     * @param disbursementAmount the disbursement amount
+     * @param transactionDate    the disbursement date
+     * @return true if LOC balance was successfully updated, false if no LOC association exists
+     */
+    @Transactional
+    public boolean computeLocBalance(Long loanId, BigDecimal disbursementAmount, LocalDate transactionDate) {
+        try {
+
+            // Check if loan is associated with a line of credit
+            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
+            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
+
+            if (lineOfCreditId == null) {
+                return false;
+            }
+
+            // Get the line of credit details
+            String locSql = "SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?";
+            Map<String, Object> locData = jdbcTemplate.queryForMap(locSql, lineOfCreditId);
+
+            BigDecimal currentAvailableBalance = (BigDecimal) locData.get("available_balance");
+            BigDecimal currentConsumedAmount = (BigDecimal) locData.get("consumed_amount");
+
+            // Validate that there's sufficient available balance
+            if (currentAvailableBalance.compareTo(disbursementAmount) < 0) {
+                throw new PlatformApiDataValidationException("error.msg.loc.insufficient.balance",
+                        "Insufficient line of credit balance for disbursement",
+                        "disbursementAmount", disbursementAmount);
+            }
+
+            // Calculate new balances
+            BigDecimal newAvailableBalance = currentAvailableBalance.subtract(disbursementAmount);
+            BigDecimal newConsumedAmount = currentConsumedAmount.add(disbursementAmount);
+
+            // Update LOC balances
+            String updateSql = "UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?";
+            int rowsUpdated = jdbcTemplate.update(updateSql, newAvailableBalance, newConsumedAmount, lineOfCreditId);
+
+            if (rowsUpdated == 0) {
+                log.error("Failed to update LOC balances for line of credit {}", lineOfCreditId);
+                throw new PlatformApiDataValidationException("error.msg.loc.update.failed",
+                        "Failed to update line of credit balances", "lineOfCreditId", lineOfCreditId);
+            }
+
+            // Create LOC transaction history record
+            String insertSql = "INSERT INTO m_line_of_credit_transactions " +
+                    "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
+                    "transaction_date, reference_number, description, created_on_utc, created_by) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+            String referenceNumber = "LOAN_" + loanId + "_DISBURSEMENT";
+            String description = String.format("Loan disbursement - LOC balance reduced by %s for loan %s",
+                    disbursementAmount, loanId);
+
+
+            jdbcTemplate.update(insertSql,
+                    lineOfCreditId,
+                    "DISBURSEMENT",
+                    disbursementAmount,
+                    currentAvailableBalance,
+                    newAvailableBalance,
+                    transactionDate.atStartOfDay().atZone(java.time.ZoneOffset.UTC).toOffsetDateTime(),
+                    referenceNumber,
+                    description,
+                    java.time.OffsetDateTime.now(),
+                    null); // Set created_by to null for now to avoid UserDetails access
+
+            return true;
+
+        } catch (PlatformApiDataValidationException e) {
+            throw new PlatformApiDataValidationException("error.msg.loc.computation.failed",
+                    "Failed to compute line of credit balance", "loanId", loanId, e);
+        }
     }
 }
