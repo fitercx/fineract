@@ -31,19 +31,14 @@ import java.util.*;
 import java.sql.Date;
 
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
-import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
-import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
+import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
-import org.apache.fineract.infrastructure.configuration.data.GlobalConfigurationPropertyData;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
-import org.apache.fineract.infrastructure.configuration.service.ConfigurationReadPlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiFacingEnum;
-import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.data.StringEnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
@@ -90,8 +85,6 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
-import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import java.util.List;
 
 @Service
@@ -103,6 +96,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
+    private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
 
     private final CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl;
 
@@ -122,7 +116,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                                             LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
                                             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
                                             LoanTransactionProcessingService loadTransactionProcessingService,
-                                            CredXLoanTransactionRepository credXLoanTransactionRepository, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl) {
+                                            CredXLoanTransactionRepository credXLoanTransactionRepository, LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -135,6 +129,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
+        this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.customLoanChargeReadPlatformServiceImpl = customLoanChargeReadPlatformServiceImpl;
     }
 
@@ -909,13 +904,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 //        final GlobalConfigurationPropertyData gracePeriodOnPenaltyConfig = this.configurationReadPlatformService.retrieveGlobalConfiguration("penalty-wait-period");
 
         final LoanCurrencyDataMapper loanCurrencyDataMapper = new LoanCurrencyDataMapper();
-        final LoanRepaymentsSummaryMapper loanRepaymentSummaryMapper = new LoanRepaymentsSummaryMapper();
-
         final String loanCurrencySql = loanCurrencyDataMapper.loanPaymentsSummarySchema();
-        final String loanRepaymentSummarySql = loanRepaymentSummaryMapper.loanPaymentsSummarySchema();
 
+        final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
         final CurrencyData currency = this.jdbcTemplate.queryForObject(loanCurrencySql, loanCurrencyDataMapper, loanId);
-        final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.jdbcTemplate.query(loanRepaymentSummarySql, loanRepaymentSummaryMapper, loanId);
 
         List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
                 .map(p -> new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p))).toList();
@@ -927,96 +919,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         return new BackdatedRepaymentPenaltyDTO(penaltySum);
     }
-
-
-    private static final class LoanRepaymentsSummaryMapper implements RowMapper<LoanSchedulePeriodData> {
-
-        @Override
-        public LoanSchedulePeriodData mapRow(ResultSet rs, int rowNum) throws SQLException {
-            final Integer installmentNumber = JdbcSupport.getInteger(rs, "installmentNumber");
-
-            final Date dueDate = rs.getDate("duedate");
-            final boolean isComplete = rs.getBoolean("isComplete");
-
-            final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
-            final BigDecimal principalPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalPaid");
-            final BigDecimal principalWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalWrittenOff");
-
-            final BigDecimal interestExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestDue");
-            final BigDecimal interestWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestWaived");
-            final BigDecimal interestWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestWrittenOff");
-            final BigDecimal interestPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestPaid");
-
-            final BigDecimal feeChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
-            final BigDecimal feeChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesPaid");
-            final BigDecimal feeChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWaived");
-            final BigDecimal feeChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWrittenOff");
-
-            final BigDecimal penaltyChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesDue");
-            final BigDecimal penaltyChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesPaid");
-            final BigDecimal penaltyChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesWaived");
-            final BigDecimal penaltyChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesWrittenOff");
-
-            final BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(penaltyChargesPaid);
-
-            final BigDecimal principalOutstanding = principalDue.subtract(principalPaid).subtract(principalWrittenOff);
-
-            final BigDecimal interestActualDue = interestExpectedDue.subtract(interestWaived).subtract(interestWrittenOff);
-            final BigDecimal interestOutstanding = interestActualDue.subtract(interestPaid);
-
-            final BigDecimal feeChargesActualDue = feeChargesExpectedDue.subtract(feeChargesWaived).subtract(feeChargesWrittenOff);
-            final BigDecimal feeChargesOutstanding = feeChargesActualDue.subtract(feeChargesPaid);
-
-            final BigDecimal penaltyChargesActualDue = penaltyChargesExpectedDue.subtract(penaltyChargesWaived).subtract(penaltyChargesWrittenOff);
-            final BigDecimal penaltyChargesOutstanding = penaltyChargesActualDue.subtract(penaltyChargesPaid);
-
-            final BigDecimal totalOutstandingForPeriod = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
-                    .add(penaltyChargesOutstanding);
-
-
-            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(
-                    installmentNumber,
-                    toLocalDateSafe(dueDate),
-                    isComplete,
-                    principalDue,
-                    penaltyChargesExpectedDue,
-                    totalPaidForPeriod,
-                    totalOutstandingForPeriod
-            );
-        }
-
-        private LocalDate toLocalDateSafe(Date date) {
-            return date != null ? date.toLocalDate() : null;
-        }
-
-        public String loanPaymentsSummarySchema() {
-            return """
-        select
-            installment as installmentNumber,
-            duedate as dueDate,
-            completed_derived as isComplete,
-            principal_amount as principalDue,
-            principal_completed_derived as principalPaid,
-            principal_writtenoff_derived as principalWrittenOff,
-            interest_amount as interestDue,
-            interest_waived_derived as interestWaived,
-            interest_writtenoff_derived as interestWrittenOff,
-            interest_completed_derived as interestPaid,
-            fee_charges_amount as feeChargesDue,
-            fee_charges_waived_derived as feeChargesWaived,
-            fee_charges_writtenoff_derived as feeChargesWrittenOff,
-            fee_charges_completed_derived as feeChargesPaid,
-            penalty_charges_amount as penaltyChargesDue,
-            penalty_charges_waived_derived as penaltyChargesWaived,
-            penalty_charges_writtenoff_derived as penaltyChargesWrittenOff,
-            penalty_charges_completed_derived as penaltyChargesPaid
-        from m_loan_repayment_schedule
-        where loan_id = ?
-        order by installment asc
-        """;
-        }
-    }
-
 
     private static final class LoanCurrencyDataMapper implements  RowMapper<CurrencyData> {
 
