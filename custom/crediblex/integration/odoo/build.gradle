@@ -1,0 +1,57 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+apply plugin: 'java'
+
+description = 'Fineract Odoo Integration Module'
+
+// Skip license check for resource files
+license {
+    exclude '**/resources/**'
+}
+
+dependencies {
+    // Core Fineract dependencies - exclude JPA to avoid conflicts
+    implementation(project(':fineract-core'))
+    implementation(project(':fineract-provider')) {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-data-jpa'
+    }
+    
+    // Spring Boot dependencies - minimal set to avoid conflicts
+    implementation("org.springframework.boot:spring-boot-starter-web") {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-data-jpa'
+    }
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-configuration-processor")
+    
+    // HTTP Client
+    implementation("org.apache.httpcomponents.client5:httpclient5:5.2.1")
+    
+    // JSON Processing
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+    
+    // Logging
+    implementation("org.slf4j:slf4j-api")
+    
+    // Test dependencies
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.mockito:mockito-core")
+    testImplementation("org.junit.jupiter:junit-jupiter")
+}
