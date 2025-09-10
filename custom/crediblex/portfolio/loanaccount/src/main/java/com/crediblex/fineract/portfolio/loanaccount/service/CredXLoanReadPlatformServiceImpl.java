@@ -916,8 +916,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
+        BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalPrincipalDue(transactionDate);
+        BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalInterestDue(transactionDate);
 
-        return new BackdatedRepaymentPenaltyDTO(penaltySum);
+        return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue);
     }
 
     private static final class LoanCurrencyDataMapper implements  RowMapper<CurrencyData> {

@@ -38,7 +38,8 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
             final BigDecimal principalDue,
             final BigDecimal penaltyChargesDue,
             final BigDecimal totalPaidForPeriod,
-            final BigDecimal totalOutstandingForPeriod) {
+            final BigDecimal totalOutstandingForPeriod,
+            final BigDecimal interestOutstanding) {
 
         return builder()
                 .period(periodNumber)
@@ -48,6 +49,7 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
                 .penaltyChargesDue(penaltyChargesDue)
                 .totalPaidForPeriod(totalPaidForPeriod)
                 .totalOutstandingForPeriod(totalOutstandingForPeriod)
+                .interestOutstanding(interestOutstanding)
                 .build();
     }
 

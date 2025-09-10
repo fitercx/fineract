@@ -10,5 +10,7 @@ import java.math.BigDecimal;
 @Setter
 @RequiredArgsConstructor
 public class BackdatedRepaymentPenaltyDTO {
-    private final BigDecimal penaltyAmount;
+    private final BigDecimal penaltyAmountDue;
+    private final BigDecimal principalAmountDue;
+    private final BigDecimal interestAmountDue;
 }

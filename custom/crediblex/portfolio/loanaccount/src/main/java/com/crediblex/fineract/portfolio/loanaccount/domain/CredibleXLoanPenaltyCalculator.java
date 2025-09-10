@@ -52,15 +52,9 @@ public class CredibleXLoanPenaltyCalculator {
     }
 
     public BigDecimal calculatePenaltySum(LocalDate transactionDate) {
-        final BigDecimal principalDueForInstallment = getPrincipalDueForTransaction(transactionDate);
 
-        LocalDate firstPendingInstallmentDate = loanInstallments.stream()
-                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID
-                        && p.status != ExtendedLoanSchedulePeriodData.Status.SCHEDULED
-                        && p.status != ExtendedLoanSchedulePeriodData.Status.DUE)
-                .map(ExtendedLoanSchedulePeriodData::getDueDate)
-                .min(LocalDate::compareTo)
-                .orElse(transactionDate);
+        final BigDecimal principalDueForInstallment = getPrincipalDueForTransaction(transactionDate);
+        final LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
 
         // Business rule validation
         if (transactionDate.isBefore(firstPendingInstallmentDate)) {
@@ -84,7 +78,24 @@ public class CredibleXLoanPenaltyCalculator {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal getPrincipalDueForTransaction(LocalDate transactionDate) {
+    private LocalDate getFirstPendingInstallmentDate(LocalDate transactionDate) {
+        return loanInstallments.stream()
+                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID
+                        && p.status != ExtendedLoanSchedulePeriodData.Status.SCHEDULED
+                        && p.status != ExtendedLoanSchedulePeriodData.Status.DUE)
+                .map(ExtendedLoanSchedulePeriodData::getDueDate)
+                .min(LocalDate::compareTo)
+                .orElse(transactionDate);
+    }
+
+
+    public BigDecimal getPrincipalDueForTransaction(LocalDate transactionDate) {
+        ExtendedLoanSchedulePeriodData installment = resolveInstallmentByTransactionDate(transactionDate);
+        return installment.getPrincipalDue();
+    }
+
+
+    public BigDecimal getInterestDueForTransaction(LocalDate transactionDate) {
         for (int i = 0; i < loanInstallments.size(); i++) {
             LocalDate currentDueDate = loanInstallments.get(i).getDueDate();
             LocalDate nextDueDate = (i + 1 < loanInstallments.size())
@@ -93,11 +104,11 @@ public class CredibleXLoanPenaltyCalculator {
 
             if (nextDueDate != null &&
                     (!transactionDate.isBefore(currentDueDate) && transactionDate.isBefore(nextDueDate))) {
-                return loanInstallments.get(i).getPrincipalDue();
+                return loanInstallments.get(i).getInterestOutstanding();
             }
 
             if (nextDueDate == null && !transactionDate.isBefore(currentDueDate)) {
-                return loanInstallments.get(i).getPrincipalDue();
+                return loanInstallments.get(i).getInterestOutstanding();
             }
         }
 
@@ -178,5 +189,53 @@ public class CredibleXLoanPenaltyCalculator {
                 .sorted(Comparator.comparing(LoanChargeData::getDueDate)) // ascending due date
                 .collect(Collectors.toList());
     }
+
+    public BigDecimal calculateTotalPrincipalDue(LocalDate transactionDate) {
+        LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
+        ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
+
+        return loanInstallments.stream()
+                .filter(p -> !p.getDueDate().isBefore(firstPendingInstallmentDate)) // on or after first pending
+                .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
+                .map(ExtendedLoanSchedulePeriodData::getPrincipalDue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal calculateTotalInterestDue(LocalDate transactionDate) {
+        LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
+        ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
+
+        return loanInstallments.stream()
+                .filter(p -> !p.getDueDate().isBefore(firstPendingInstallmentDate)) // on or after first pending
+                .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
+                .map(ExtendedLoanSchedulePeriodData::getInterestOutstanding)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private ExtendedLoanSchedulePeriodData resolveInstallmentByTransactionDate(LocalDate transactionDate) {
+        for (int i = 0; i < loanInstallments.size(); i++) {
+            LocalDate currentDueDate = loanInstallments.get(i).getDueDate();
+            LocalDate nextDueDate = (i + 1 < loanInstallments.size())
+                    ? loanInstallments.get(i + 1).getDueDate()
+                    : null;
+
+            if (nextDueDate != null &&
+                    (!transactionDate.isBefore(currentDueDate) && transactionDate.isBefore(nextDueDate))) {
+                return loanInstallments.get(i);
+            }
+
+            if (nextDueDate == null && !transactionDate.isBefore(currentDueDate)) {
+                return loanInstallments.get(i);
+            }
+        }
+
+        throw new PlatformApiDataValidationException(List.of(ApiParameterError.parameterError(
+                "validation.msg.transactionDate.before.firstInstallment",
+                "Transaction date is before the first installment due date.",
+                "transactionDate",
+                transactionDate
+        )));
+    }
+
 
 }

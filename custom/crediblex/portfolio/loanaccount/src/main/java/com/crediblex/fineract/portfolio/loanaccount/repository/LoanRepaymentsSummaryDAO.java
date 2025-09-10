@@ -106,7 +106,8 @@ public class LoanRepaymentsSummaryDAO {
                     principalDue,
                     penaltyChargesExpectedDue,
                     totalPaidForPeriod,
-                    totalOutstandingForPeriod
+                    totalOutstandingForPeriod,
+                    interestOutstanding
             );
         }
 
