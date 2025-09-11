@@ -18,8 +18,6 @@
  */
 package com.crediblex.fineract.integration.odoo.config;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -27,19 +25,10 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "odoo")
 public class OdooProperties {
 
-    @NotBlank
     private String url;
-
-    @NotBlank
     private String database;
-
-    @NotBlank
     private String username;
-
-    @NotBlank
     private String password;
-
-    @NotNull
     private Boolean enabled = false;
 
     private Integer connectionTimeout = 30000; // 30 seconds

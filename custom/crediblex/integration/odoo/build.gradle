@@ -17,6 +17,20 @@
  * under the License.
  */
 
+plugins {
+    id 'java'
+}
+
+description = 'CredibleX Fineract Odoo Integration Service'
+
+group = 'com.crediblex.fineract.integration.odoo'
+
+base {
+    archivesName = 'crediblex-fineract-odoo-integration'
+}
+
+apply from: 'dependencies.gradle'
+
 apply plugin: 'java'
 
 description = 'Fineract Odoo Integration Module'

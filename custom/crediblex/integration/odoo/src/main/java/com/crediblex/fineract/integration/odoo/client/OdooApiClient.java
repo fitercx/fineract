@@ -25,7 +25,12 @@ import com.crediblex.fineract.integration.odoo.exception.OdooConnectionException
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -72,6 +77,8 @@ public class OdooApiClient {
      * Authenticate with Odoo server
      */
     public Integer authenticate() throws OdooAuthenticationException {
+        System.out.println("Odoo Properties: " + odooProperties.getUrl() + ", DB: " + odooProperties.getDatabase() + ", User: "
+                + odooProperties.getUsername());
         if (!odooProperties.getEnabled()) {
             throw new OdooAuthenticationException("Odoo integration is disabled");
         }

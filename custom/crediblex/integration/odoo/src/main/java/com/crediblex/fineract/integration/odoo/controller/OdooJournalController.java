@@ -19,55 +19,108 @@
 package com.crediblex.fineract.integration.odoo.controller;
 
 import com.crediblex.fineract.integration.odoo.service.OdooJournalService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.UriInfo;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
+import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
+import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
+import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 /**
- * Simplified REST API controller for Odoo journal entries
+ * REST API controller for Odoo integration
  */
-@RestController
-@RequestMapping("/api/v1/odoo")
-@RequiredArgsConstructor
+@Path("/v1/odoo")
+@Component
+@Tag(name = "Odoo Integration", description = "Odoo ERP integration for journal entries")
 @Slf4j
 public class OdooJournalController {
 
     private final OdooJournalService odooJournalService;
+    private final PlatformSecurityContext context;
+    private final DefaultToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer;
+    private final ApiRequestParameterHelper apiRequestParameterHelper;
+
+    @Autowired
+    public OdooJournalController(OdooJournalService odooJournalService, PlatformSecurityContext context,
+            DefaultToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer, ApiRequestParameterHelper apiRequestParameterHelper) {
+        this.odooJournalService = odooJournalService;
+        this.context = context;
+        this.toApiJsonSerializer = toApiJsonSerializer;
+        this.apiRequestParameterHelper = apiRequestParameterHelper;
+    }
+
+//    @PostConstruct
+//    public void init() {
+//        log.info("OdooJournalController initialized");
+//    }
 
     /**
      * Test Odoo connection
      */
-    @GetMapping("/test")
-    public ResponseEntity<Map<String, Object>> testConnection() {
+    @GET
+    @Path("/test")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Test Odoo Connection", description = "Tests the connection to Odoo ERP system.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = Map.class))) })
+    public String testConnection(@Context final UriInfo uriInfo) {
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
         try {
             boolean connected = odooJournalService.testConnection();
-            return ResponseEntity.ok(Map.of("connected", connected, "message", connected ? "Connection successful" : "Connection failed"));
+            Map<String, Object> result = Map.of("connected", connected, "message",
+                    connected ? "Connection successful" : "Connection failed");
+            return this.toApiJsonSerializer.serialize(settings, result, null);
         } catch (Exception e) {
             log.error("Connection test failed: {}", e.getMessage(), e);
-            return ResponseEntity.ok(Map.of("connected", false, "message", "Connection failed: " + e.getMessage()));
+            Map<String, Object> result = Map.of("connected", false, "message", "Connection failed: " + e.getMessage());
+            return this.toApiJsonSerializer.serialize(settings, result, null);
         }
     }
 
     /**
      * Post journal entry to Odoo
      */
-    @PostMapping("/journal-entry")
-    public ResponseEntity<Map<String, Object>> postJournalEntry(@RequestBody JournalEntryRequest request) {
+    @POST
+    @Path("/journal-entry")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Post Journal Entry to Odoo", description = "Creates a journal entry in Odoo ERP system.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = JournalEntryRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = Map.class))) })
+    public String postJournalEntry(@Parameter(hidden = true) final JournalEntryRequest request, @Context final UriInfo uriInfo) {
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
         try {
             Map<String, Object> result = odooJournalService.postJournalEntry(request.getReference(), request.getDate(),
                     request.getDescription(), request.getAmount(), request.getDebitAccount(), request.getCreditAccount());
-            return ResponseEntity.ok(result);
+            return this.toApiJsonSerializer.serialize(settings, result, null);
         } catch (Exception e) {
             log.error("Journal entry posting failed: {}", e.getMessage(), e);
-            return ResponseEntity.ok(Map.of("success", false, "error", e.getMessage()));
+            Map<String, Object> result = Map.of("success", false, "error", e.getMessage());
+            return this.toApiJsonSerializer.serialize(settings, result, null);
         }
     }
 
