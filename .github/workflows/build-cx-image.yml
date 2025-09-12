@@ -82,31 +82,55 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo $NEW_VERSION > version.txt
 
-      - name: Configure AWS Credentials
+      - name: Build Docker Image
+        run: |
+          echo "Building image with Gradle"
+          ./gradlew --no-daemon --console=plain :custom:docker:jibDockerBuild
+          IMAGE_TAG="${{ env.NEW_VERSION }}"
+          STG_ECR_REGISTRY=${{ secrets.ECR_REGISTRY_STG }}
+          PROD_ECR_REGISTRY=${{ secrets.ECR_REGISTRY_PROD }}
+          STG_IMAGE_URI="$STG_ECR_REGISTRY:$IMAGE_TAG"
+          PROD_IMAGE_URI="$PROD_ECR_REGISTRY:$IMAGE_TAG"
+          echo "Tagging image with staging URI: $STG_IMAGE_URI"
+          echo "Tagging image with production URI: $PROD_IMAGE_URI"
+          docker tag fineract-custom:latest "$STG_IMAGE_URI"
+          docker tag fineract-custom:latest "$PROD_IMAGE_URI"
+
+      - name: Configure AWS Credentials - Staging Account
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: me-central-1
-          role-to-assume: arn:aws:iam::417872680205:role/GitHubActionRole
-          role-session-name: GithubActionSession-BuildFineractImage
+          role-to-assume: ${{ secrets.AWS_STG_ACCOUNT_ROLE }}
+          role-session-name: GitHubActionStaging
 
-      - name: Login to Amazon ECR
+      - name: Login to Amazon ECR - Staging Account
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push the image to Amazon ECR
+      - name: Push to Staging ECR
         run: |
-          echo "Building image $IMAGE_URI"
-          ./gradlew --no-daemon --console=plain :custom:docker:jibDockerBuild
           IMAGE_TAG="${{ env.NEW_VERSION }}"
-          ECR_REGISTRY=${{ secrets.ECR_REGISTRY }}
-          IMAGE_URI="$ECR_REGISTRY:$IMAGE_TAG"
-          echo "Tagging image with URI: $IMAGE_URI"
-          docker tag fineract-custom:latest "$IMAGE_URI"
-          echo "Pushing image to ECR..."
-          docker push "$IMAGE_URI"
-        env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-          AWS_DEFAULT_REGION: me-central-1
-          AWS_REGION: me-central-1
+          STG_ECR_REGISTRY=${{ secrets.ECR_REGISTRY_STG }}
+          STG_IMAGE_URI="$STG_ECR_REGISTRY:$IMAGE_TAG"
+          echo "Pushing image to staging ECR: $STG_IMAGE_URI"
+          docker push "$STG_IMAGE_URI"
+
+      - name: Configure AWS Credentials - PROD Account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: me-central-1
+          role-to-assume: ${{ secrets.AWS_PROD_ACCOUNT_ROLE }}
+          role-session-name: GitHubActionProduction
+
+      - name: Login to Amazon ECR - Prod Account
+        uses: aws-actions/amazon-ecr-login@v2
+        
+      - name: Push to Production ECR
+        run: |
+          IMAGE_TAG="${{ env.NEW_VERSION }}"
+          PROD_ECR_REGISTRY=${{ secrets.ECR_REGISTRY_PROD }}
+          PROD_IMAGE_URI="$PROD_ECR_REGISTRY:$IMAGE_TAG"
+          echo "Pushing image to production ECR: $PROD_IMAGE_URI"
+          docker push "$PROD_IMAGE_URI"
 
       - name: Create and Push Git Tag
         run: |
