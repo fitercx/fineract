@@ -20,6 +20,7 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
@@ -28,25 +29,38 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
+import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.data.LocReviewPeriods;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+
+import org.apache.fineract.portfolio.accountdetails.data.LoanAccountSummaryData;
+import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
+import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
+import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 
 @Service
 @Slf4j
@@ -143,21 +157,396 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 rs.getTimestamp("lastModifiedDate").toLocalDateTime().toLocalDate() : null;
             final String lastModifiedBy = rs.getString("lastModifiedBy");
 
-            return LineOfCreditData.instance(id, clientId, null, name, productType, maximumAmount, availableBalance, consumedAmount,
-                    getActivationStatusEnumOptionData(activationStatus), startDate, endDate, approvedCreditFacilityAmount, externalId, activationDate,
-                    currency, advancePercentage, tenorDays, approvedBuyers, processingFeePctLoc, cashMarginType, cashMarginValue,
-                    invHandlingFeeBasis, invHandlingFeePct, invHandlingFeeMinAmount, invHandlingFeeCurrency, interimReviewDate,
-                    rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, clientCompanyName, clientContactPersonName,
-                    clientContactPersonPhone, clientContactPersonEmail, authorizedSignatoryName, authorizedSignatoryPhone,
-                    authorizedSignatoryEmail, va, distributionPartner, bankTransferFee, specialConditions, latePaymentFee,
-                    createdDate, createdBy, lastModifiedDate, lastModifiedBy);
+            return LineOfCreditData.builder()
+                    .id(id)
+                    .clientId(clientId)
+                    .client(null)
+                    .name(name)
+                    .productType(productType)
+                    .maximumAmount(maximumAmount)
+                    .availableBalance(availableBalance)
+                    .consumedAmount(consumedAmount)
+                    .status(getActivationStatusEnumOptionData(activationStatus))
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .approvedCreditFacilityAmount(approvedCreditFacilityAmount)
+                    .externalId(externalId)
+                    .activationDate(activationDate)
+                    .currency(currency)
+                    .advancePercentage(advancePercentage)
+                    .tenorDays(tenorDays)
+                    .approvedBuyers(approvedBuyers)
+                    .processingFeePctLoc(processingFeePctLoc)
+                    .cashMarginType(cashMarginType)
+                    .cashMarginValue(cashMarginValue)
+                    .invHandlingFeeBasis(invHandlingFeeBasis)
+                    .invHandlingFeePct(invHandlingFeePct)
+                    .invHandlingFeeMinAmount(invHandlingFeeMinAmount)
+                    .invHandlingFeeCurrency(invHandlingFeeCurrency)
+                    .interimReviewDate(interimReviewDate)
+                    .rateType(rateType)
+                    .annualInterestRate(annualInterestRate)
+                    .isInterestUpfrontOrPostDisbursal(isInterestUpfrontOrPostDisbursal)
+                    .clientCompanyName(clientCompanyName)
+                    .clientContactPersonName(clientContactPersonName)
+                    .clientContactPersonPhone(clientContactPersonPhone)
+                    .clientContactPersonEmail(clientContactPersonEmail)
+                    .authorizedSignatoryName(authorizedSignatoryName)
+                    .authorizedSignatoryPhone(authorizedSignatoryPhone)
+                    .authorizedSignatoryEmail(authorizedSignatoryEmail)
+                    .va(va)
+                    .distributionPartner(distributionPartner)
+                    .bankTransferFee(bankTransferFee)
+                    .specialConditions(specialConditions)
+                    .latePaymentFee(latePaymentFee)
+                    .createdDate(createdDate)
+                    .createdByUsername(createdBy)
+                    .lastModifiedDate(lastModifiedDate)
+                    .lastModifiedByUsername(lastModifiedBy)
+                    .build();
         }
 
         private EnumOptionData getActivationStatusEnumOptionData(String status) {
             if (status == null) {
                 return null;
             }
-            return LocActivationStatus.valueOf(status).getEnumOptionData();
+            return LocStatus.valueOf(status).getEnumOptionData();
+        }
+    }
+
+    /**
+     * New mapper that uses ResultSetExtractor to group Line of Credit with its associated loans
+     * Supports both simple and exhaustive queries based on the use case
+     */
+    private static final class LineOfCreditWithLoansMapper implements ResultSetExtractor<List<LineOfCreditWithLoansData>> {
+
+        private final boolean isSimpleQuery;
+
+        public LineOfCreditWithLoansMapper(boolean isSimpleQuery) {
+            this.isSimpleQuery = isSimpleQuery;
+        }
+
+        public String schema() {
+            if (isSimpleQuery) {
+                return getSimpleSchema();
+            } else {
+                return getExhaustiveSchema();
+            }
+        }
+
+        /**
+         * Simple schema for listing LOCs - contains only the most important fields
+         */
+        private String getSimpleSchema() {
+            final StringBuilder sql = new StringBuilder();
+
+            // Essential LOC fields
+            sql.append("loc.id as locId, loc.name as locName, loc.external_id as locExternalId, ")
+               .append("loc.maximum_amount as locCreditLimit, loc.available_balance as locBalance, ")
+               .append("loc.consumed_amount as locUtilizationAmount, loc.product_type as locType, loc.va as accountNumber, ")
+               .append("loc.activation_status as locActivationStatus, ")
+
+               // Essential Loan fields
+               .append("l.id as loanId, l.account_no as loanAccountNo, lp.name as loanProductName, ")
+               .append("l.principal_disbursed_derived as loanAmount, l.total_outstanding_derived as loanOutstandingBalance, ")
+               .append("l.total_repayment_derived as loanAmountPaid, l.loan_status_id as loanStatusId ")
+
+               .append("FROM m_line_of_credit loc ")
+               .append("LEFT JOIN m_loan l ON l.line_of_credit_id = loc.id ")
+               .append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ");
+
+            return sql.toString();
+        }
+
+        /**
+         * Exhaustive schema for detailed single LOC view - contains all fields
+         */
+        private String getExhaustiveSchema() {
+            final StringBuilder sql = new StringBuilder();
+
+            // LOC fields
+            sql.append("loc.id as locId, loc.client_id as locClientId, loc.name as locName, ")
+               .append("loc.product_type as locProductType, loc.maximum_amount as locMaximumAmount, ")
+               .append("loc.available_balance as locAvailableBalance, loc.consumed_amount as locConsumedAmount, ")
+               .append("loc.activation_status as locActivationStatus, loc.start_date as locStartDate, ")
+               .append("loc.end_date as locEndDate, loc.approved_credit_facility_amount as locApprovedCreditFacilityAmount, ")
+               .append("loc.external_id as locExternalId, loc.activation_date as locActivationDate, ")
+               .append("loc.currency as locCurrency, loc.advance_percentage as locAdvancePercentage, ")
+               .append("loc.tenor_days as locTenorDays, loc.approved_buyers as locApprovedBuyers, ")
+               .append("loc.processing_fee_pct_loc as locProcessingFeePctLoc, loc.cash_margin_type as locCashMarginType, ")
+               .append("loc.cash_margin_value as locCashMarginValue, loc.inv_handling_fee_basis as locInvHandlingFeeBasis, ")
+               .append("loc.inv_handling_fee_pct as locInvHandlingFeePct, loc.inv_handling_fee_min_amount as locInvHandlingFeeMinAmount, ")
+               .append("loc.inv_handling_fee_currency as locInvHandlingFeeCurrency, loc.interim_review_date as locInterimReviewDate, ")
+               .append("loc.rate_type as locRateType, loc.annual_interest_rate as locAnnualInterestRate, ")
+               .append("loc.is_interest_upfront_or_post_disbursal as locIsInterestUpfrontOrPostDisbursal, ")
+               .append("loc.client_company_name as locClientCompanyName, loc.client_contact_person_name as locClientContactPersonName, ")
+               .append("loc.client_contact_person_phone as locClientContactPersonPhone, loc.client_contact_person_email as locClientContactPersonEmail, ")
+               .append("loc.authorized_signatory_name as locAuthorizedSignatoryName, loc.authorized_signatory_phone as locAuthorizedSignatoryPhone, ")
+               .append("loc.authorized_signatory_email as locAuthorizedSignatoryEmail, loc.va as locVa, ")
+               .append("loc.distribution_partner as locDistributionPartner, loc.bank_transfer_fee as locBankTransferFee, ")
+               .append("loc.special_conditions as locSpecialConditions, loc.late_payment_fee as locLatePaymentFee, ")
+               .append("loc.created_on_utc as locCreatedDate, loc.created_by as locCreatedBy, ")
+               .append("loc.last_modified_on_utc as locLastModifiedDate, loc.last_modified_by as locLastModifiedBy, loc.va as accountNumber, ")
+
+               // Loan fields
+               .append("l.id as loanId, l.account_no as loanAccountNo, l.external_id as loanExternalId, ")
+               .append("l.product_id as loanProductId, lp.name as loanProductName, lp.short_name as loanShortProductName, ")
+               .append("l.loan_status_id as loanStatusId, l.loan_type_enum as loanType, l.principal_disbursed_derived as loanOriginalLoan, ")
+               .append("l.total_outstanding_derived as loanBalance, l.total_repayment_derived as loanAmountPaid, ")
+               .append("l.loan_product_counter as loanCycle, l.currency_code as loanCurrencyCode, ")
+               .append("l.currency_digits as loanCurrencyDigits, l.currency_multiplesof as loanInMultiplesOf, ")
+               .append("curr.name as loanCurrencyName, curr.internationalized_name_code as loanCurrencyNameCode, ")
+               .append("curr.display_symbol as loanCurrencyDisplaySymbol, l.submittedon_date as loanSubmittedOnDate, ")
+               .append("l.approvedon_date as loanApprovedOnDate, l.expected_disbursedon_date as loanExpectedDisbursementDate, ")
+               .append("l.disbursedon_date as loanActualDisbursementDate, l.closedon_date as loanClosedOnDate, ")
+               .append("l.net_disbursal_amount as loanNetDisbursedAmount, l.fixed_emi_amount as loanInstallmentAmount ")
+
+               .append("FROM m_line_of_credit loc ")
+               .append("LEFT JOIN m_loan l ON l.line_of_credit_id = loc.id ")
+               .append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ")
+               .append("LEFT JOIN m_currency curr ON curr.code = l.currency_code ");
+
+            return sql.toString();
+        }
+
+        @Override
+        public List<LineOfCreditWithLoansData> extractData(ResultSet rs) throws SQLException, DataAccessException {
+            Map<Long, LineOfCreditWithLoansData> locMap = new HashMap<>();
+
+            while (rs.next()) {
+                Long locId = rs.getLong("locId");
+
+                // Get or create LOC data
+                LineOfCreditWithLoansData locWithLoans = locMap.get(locId);
+                if (locWithLoans == null) {
+                    // Extract LOC data based on query type
+                    LineOfCreditData locData = isSimpleQuery ?
+                        extractSimpleLineOfCreditData(rs) :
+                        extractExhaustiveLineOfCreditData(rs);
+                    locWithLoans = new LineOfCreditWithLoansData(locData, new ArrayList<>());
+                    locMap.put(locId, locWithLoans);
+                }
+
+                // Extract loan data if exists
+                Long loanId = rs.getLong("loanId");
+                if (loanId != null && loanId > 0) {
+                    LoanAccountSummaryData loanData = isSimpleQuery ?
+                        extractSimpleLoanData(rs) :
+                        extractExhaustiveLoanData(rs);
+                    locWithLoans.getLoans().add(loanData);
+                }
+            }
+
+            return new ArrayList<>(locMap.values());
+        }
+
+        /**
+         * Extract essential LOC data for listing purposes
+         */
+        private LineOfCreditData extractSimpleLineOfCreditData(ResultSet rs) throws SQLException {
+            final Long id = rs.getLong("locId");
+            final String name = rs.getString("locName");
+            final String externalId = rs.getString("locExternalId");
+            final BigDecimal creditLimit = rs.getBigDecimal("locCreditLimit");
+            final BigDecimal balance = rs.getBigDecimal("locBalance");
+            final BigDecimal utilizationAmount = rs.getBigDecimal("locUtilizationAmount");
+            final String productType = rs.getString("locType");
+            final String activationStatus = rs.getString("locActivationStatus");
+            final String accountNumber = rs.getString("accountNumber");
+
+            // Create simplified LOC data with essential fields only, including the activation status
+            return LineOfCreditData.builder()
+                    .id(id)
+                    .name(name)
+                    .productType(productType)
+                    .maximumAmount(creditLimit)
+                    .availableBalance(balance)
+                    .consumedAmount(utilizationAmount)
+                    .status(getActivationStatusEnumOptionData(activationStatus))
+                    .externalId(externalId)
+                    .accountNumber(accountNumber)
+                    .build();
+        }
+
+        /**
+         * Extract complete LOC data for detailed view
+         */
+        private LineOfCreditData extractExhaustiveLineOfCreditData(ResultSet rs) throws SQLException {
+            final Long id = rs.getLong("locId");
+            final Long clientId = rs.getLong("locClientId");
+            final String name = rs.getString("locName");
+            final String productType = rs.getString("locProductType");
+            final BigDecimal maximumAmount = rs.getBigDecimal("locMaximumAmount");
+            final BigDecimal availableBalance = rs.getBigDecimal("locAvailableBalance");
+            final BigDecimal consumedAmount = rs.getBigDecimal("locConsumedAmount");
+            final String activationStatus = rs.getString("locActivationStatus");
+            final LocalDate startDate = rs.getDate("locStartDate") != null ? rs.getDate("locStartDate").toLocalDate() : null;
+            final LocalDate endDate = rs.getDate("locEndDate") != null ? rs.getDate("locEndDate").toLocalDate() : null;
+            final BigDecimal approvedCreditFacilityAmount = rs.getBigDecimal("locApprovedCreditFacilityAmount");
+            final String externalId = rs.getString("locExternalId");
+            final LocalDate activationDate = rs.getDate("locActivationDate") != null ? rs.getDate("locActivationDate").toLocalDate() : null;
+            final String currency = rs.getString("locCurrency");
+            final BigDecimal advancePercentage = rs.getBigDecimal("locAdvancePercentage");
+            final Integer tenorDays = rs.getObject("locTenorDays") != null ? rs.getInt("locTenorDays") : null;
+            final String approvedBuyers = rs.getString("locApprovedBuyers");
+            final BigDecimal processingFeePctLoc = rs.getBigDecimal("locProcessingFeePctLoc");
+            final String cashMarginType = rs.getString("locCashMarginType");
+            final BigDecimal cashMarginValue = rs.getBigDecimal("locCashMarginValue");
+            final String invHandlingFeeBasis = rs.getString("locInvHandlingFeeBasis");
+            final BigDecimal invHandlingFeePct = rs.getBigDecimal("locInvHandlingFeePct");
+            final BigDecimal invHandlingFeeMinAmount = rs.getBigDecimal("locInvHandlingFeeMinAmount");
+            final String invHandlingFeeCurrency = rs.getString("locInvHandlingFeeCurrency");
+            final LocalDate interimReviewDate = rs.getDate("locInterimReviewDate") != null ? rs.getDate("locInterimReviewDate").toLocalDate() : null;
+            final String rateType = rs.getString("locRateType");
+            final BigDecimal annualInterestRate = rs.getBigDecimal("locAnnualInterestRate");
+            final String isInterestUpfrontOrPostDisbursal = rs.getString("locIsInterestUpfrontOrPostDisbursal");
+            final String clientCompanyName = rs.getString("locClientCompanyName");
+            final String clientContactPersonName = rs.getString("locClientContactPersonName");
+            final String clientContactPersonPhone = rs.getString("locClientContactPersonPhone");
+            final String clientContactPersonEmail = rs.getString("locClientContactPersonEmail");
+            final String authorizedSignatoryName = rs.getString("locAuthorizedSignatoryName");
+            final String authorizedSignatoryPhone = rs.getString("locAuthorizedSignatoryPhone");
+            final String authorizedSignatoryEmail = rs.getString("locAuthorizedSignatoryEmail");
+            final String distributionPartner = rs.getString("locDistributionPartner");
+            final BigDecimal bankTransferFee = rs.getBigDecimal("locBankTransferFee");
+            final String specialConditions = rs.getString("locSpecialConditions");
+            final BigDecimal latePaymentFee = rs.getBigDecimal("locLatePaymentFee");
+
+            final LocalDate createdDate = rs.getTimestamp("locCreatedDate") != null ?
+                rs.getTimestamp("locCreatedDate").toLocalDateTime().toLocalDate() : null;
+            final String createdBy = rs.getString("locCreatedBy");
+            final LocalDate lastModifiedDate = rs.getTimestamp("lastModifiedDate") != null ?
+                rs.getTimestamp("lastModifiedDate").toLocalDateTime().toLocalDate() : null;
+            final String lastModifiedBy = rs.getString("locLastModifiedBy");
+            final String accountNumber = rs.getString("accountNumber");
+
+            return LineOfCreditData.builder()
+                    .id(id)
+                    .clientId(clientId)
+                    .client(null)
+                    .name(name)
+                    .productType(productType)
+                    .maximumAmount(maximumAmount)
+                    .availableBalance(availableBalance)
+                    .consumedAmount(consumedAmount)
+                    .status(getActivationStatusEnumOptionData(activationStatus))
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .approvedCreditFacilityAmount(approvedCreditFacilityAmount)
+                    .externalId(externalId)
+                    .activationDate(activationDate)
+                    .currency(currency)
+                    .advancePercentage(advancePercentage)
+                    .tenorDays(tenorDays)
+                    .approvedBuyers(approvedBuyers)
+                    .processingFeePctLoc(processingFeePctLoc)
+                    .cashMarginType(cashMarginType)
+                    .cashMarginValue(cashMarginValue)
+                    .invHandlingFeeBasis(invHandlingFeeBasis)
+                    .invHandlingFeePct(invHandlingFeePct)
+                    .invHandlingFeeMinAmount(invHandlingFeeMinAmount)
+                    .invHandlingFeeCurrency(invHandlingFeeCurrency)
+                    .interimReviewDate(interimReviewDate)
+                    .rateType(rateType)
+                    .annualInterestRate(annualInterestRate)
+                    .isInterestUpfrontOrPostDisbursal(isInterestUpfrontOrPostDisbursal)
+                    .clientCompanyName(clientCompanyName)
+                    .clientContactPersonName(clientContactPersonName)
+                    .clientContactPersonPhone(clientContactPersonPhone)
+                    .clientContactPersonEmail(clientContactPersonEmail)
+                    .authorizedSignatoryName(authorizedSignatoryName)
+                    .authorizedSignatoryPhone(authorizedSignatoryPhone)
+                    .authorizedSignatoryEmail(authorizedSignatoryEmail)
+                    .va(accountNumber)
+                    .distributionPartner(distributionPartner)
+                    .bankTransferFee(bankTransferFee)
+                    .specialConditions(specialConditions)
+                    .latePaymentFee(latePaymentFee)
+                    .createdDate(createdDate)
+                    .createdByUsername(createdBy)
+                    .lastModifiedDate(lastModifiedDate)
+                    .lastModifiedByUsername(lastModifiedBy)
+                    .build();
+        }
+
+        /**
+         * Extract essential loan data for listing purposes
+         */
+        private LoanAccountSummaryData extractSimpleLoanData(ResultSet rs) throws SQLException {
+            final Long id = rs.getLong("loanId");
+            final String accountNo = rs.getString("loanAccountNo");
+            final String loanProductName = rs.getString("loanProductName");
+            final BigDecimal loanAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAmount");
+            final BigDecimal outstandingBalance = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanOutstandingBalance");
+            final BigDecimal amountPaid = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAmountPaid");
+            final Integer loanStatusId = JdbcSupport.getInteger(rs, "loanStatusId");
+
+            // Create loan status enum
+            final LoanStatusEnumData loanStatus = loanStatusId != null ? LoanEnumerations.status(loanStatusId) : null;
+
+            // Create simplified loan summary data with essential fields only
+            return new LoanAccountSummaryData(id, accountNo, null, null, loanProductName, null,
+                    loanStatus, null, null, null, null, false, loanAmount, outstandingBalance, amountPaid);
+        }
+
+        /**
+         * Extract complete loan data for detailed view
+         */
+        private LoanAccountSummaryData extractExhaustiveLoanData(ResultSet rs) throws SQLException {
+            final Long id = rs.getLong("loanId");
+            final String accountNo = rs.getString("loanAccountNo");
+            final String externalId = rs.getString("loanExternalId");
+            final Long productId = rs.getLong("loanProductId");
+            final String loanProductName = rs.getString("loanProductName");
+            final String shortLoanProductName = rs.getString("loanShortProductName");
+            final Integer loanStatusId = JdbcSupport.getInteger(rs, "loanStatusId");
+            final Integer loanTypeId = JdbcSupport.getInteger(rs, "loanType");
+            final Integer loanCycle = JdbcSupport.getInteger(rs, "loanCycle");
+
+            final String currencyCode = rs.getString("loanCurrencyCode");
+            final String currencyName = rs.getString("loanCurrencyName");
+            final String currencyNameCode = rs.getString("loanCurrencyNameCode");
+            final String currencyDisplaySymbol = rs.getString("loanCurrencyDisplaySymbol");
+            final Integer currencyDigits = JdbcSupport.getInteger(rs, "loanCurrencyDigits");
+            final Integer inMultiplesOf = JdbcSupport.getInteger(rs, "loanInMultiplesOf");
+
+            final BigDecimal originalLoan = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanOriginalLoan");
+            final BigDecimal loanBalance = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanBalance");
+            final BigDecimal amountPaid = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAmountPaid");
+
+            final LocalDate submittedOnDate = JdbcSupport.getLocalDate(rs, "loanSubmittedOnDate");
+            final LocalDate approvedOnDate = JdbcSupport.getLocalDate(rs, "loanApprovedOnDate");
+            final LocalDate expectedDisbursementDate = JdbcSupport.getLocalDate(rs, "loanExpectedDisbursementDate");
+            final LocalDate actualDisbursementDate = JdbcSupport.getLocalDate(rs, "loanActualDisbursementDate");
+            final LocalDate closedOnDate = JdbcSupport.getLocalDate(rs, "loanClosedOnDate");
+
+            // Create currency data
+            final CurrencyData currency = currencyCode != null ?
+                new CurrencyData(currencyCode, currencyName, currencyDigits, inMultiplesOf, currencyDisplaySymbol, currencyNameCode) : null;
+
+            // Create loan status enum
+            final LoanStatusEnumData loanStatus = loanStatusId != null ? LoanEnumerations.status(loanStatusId) : null;
+
+            // Create loan type enum
+            final EnumOptionData loanType = loanTypeId != null ? AccountEnumerations.loanType(loanTypeId) : null;
+
+            // Create simplified timeline - you may want to expand this
+            final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null,
+                    null, null, null, null, null, null,
+                    null, null, null, null, approvedOnDate, null,
+                    null, null, expectedDisbursementDate, actualDisbursementDate, null,
+                    null, null, closedOnDate, null, null, null,
+                    null, null, null, null, null, null,
+                    null, null, null, null);
+            return new LoanAccountSummaryData(id, accountNo, externalId, productId, loanProductName, shortLoanProductName,
+                    loanStatus, currency, loanType, loanCycle, timeline, false, originalLoan, loanBalance, amountPaid);
+        }
+
+        private EnumOptionData getActivationStatusEnumOptionData(String status) {
+            if (status == null) {
+                return null;
+            }
+            return LocStatus.valueOf(status).getEnumOptionData();
         }
     }
 
@@ -233,7 +622,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final LineOfCreditMapper mapper = new LineOfCreditMapper();
         final String sql = "select " + mapper.schema() + " where loc.client_id = ? order by loc.id";
         
-        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, new Object[] { clientId });
+        final List<LineOfCreditData> lineOfCredits = this.jdbcTemplate.query(sql, mapper, clientId);
         
         return enrichWithClientData(lineOfCredits);
     }
@@ -255,22 +644,53 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         for (LineOfCreditData loc : lineOfCredits) {
             if (loc.getClientId() != null) {
                 final ClientData clientData = this.clientReadPlatformService.retrieveOne(loc.getClientId());
-                // Create a new instance with client data
-                final LineOfCreditData enrichedLoc = LineOfCreditData.instance(
-                    loc.getId(), loc.getClientId(), clientData, loc.getName(), loc.getProductType(),
-                    loc.getMaximumAmount(), loc.getAvailableBalance(), loc.getConsumedAmount(),
-                    loc.getActivationStatus(), loc.getStartDate(), loc.getEndDate(),
-                    loc.getApprovedCreditFacilityAmount(), loc.getExternalId(), loc.getActivationDate(),
-                    loc.getCurrency(), loc.getAdvancePercentage(), loc.getTenorDays(), loc.getApprovedBuyers(),
-                    loc.getProcessingFeePctLoc(), loc.getCashMarginType(), loc.getCashMarginValue(),
-                    loc.getInvHandlingFeeBasis(), loc.getInvHandlingFeePct(), loc.getInvHandlingFeeMinAmount(),
-                    loc.getInvHandlingFeeCurrency(), loc.getInterimReviewDate(), loc.getRateType(),
-                    loc.getAnnualInterestRate(), loc.getIsInterestUpfrontOrPostDisbursal(), loc.getClientCompanyName(),
-                    loc.getClientContactPersonName(), loc.getClientContactPersonPhone(), loc.getClientContactPersonEmail(),
-                    loc.getAuthorizedSignatoryName(), loc.getAuthorizedSignatoryPhone(), loc.getAuthorizedSignatoryEmail(),
-                    loc.getVa(), loc.getDistributionPartner(), loc.getBankTransferFee(), loc.getSpecialConditions(),
-                    loc.getLatePaymentFee(), loc.getCreatedDate(), loc.getCreatedByUsername(), loc.getLastModifiedDate(), loc.getLastModifiedByUsername()
-                );
+                // Create a new instance with client data using builder pattern
+                final LineOfCreditData enrichedLoc = LineOfCreditData.builder()
+                    .id(loc.getId())
+                    .clientId(loc.getClientId())
+                    .client(clientData)
+                    .name(loc.getName())
+                    .productType(loc.getProductType())
+                    .maximumAmount(loc.getMaximumAmount())
+                    .availableBalance(loc.getAvailableBalance())
+                    .consumedAmount(loc.getConsumedAmount())
+                    .status(loc.getStatus())
+                    .startDate(loc.getStartDate())
+                    .endDate(loc.getEndDate())
+                    .approvedCreditFacilityAmount(loc.getApprovedCreditFacilityAmount())
+                    .externalId(loc.getExternalId())
+                    .activationDate(loc.getActivationDate())
+                    .currency(loc.getCurrency())
+                    .advancePercentage(loc.getAdvancePercentage())
+                    .tenorDays(loc.getTenorDays())
+                    .approvedBuyers(loc.getApprovedBuyers())
+                    .processingFeePctLoc(loc.getProcessingFeePctLoc())
+                    .cashMarginType(loc.getCashMarginType())
+                    .cashMarginValue(loc.getCashMarginValue())
+                    .invHandlingFeeBasis(loc.getInvHandlingFeeBasis())
+                    .invHandlingFeeMinAmount(loc.getInvHandlingFeeMinAmount())
+                    .invHandlingFeeCurrency(loc.getInvHandlingFeeCurrency())
+                    .interimReviewDate(loc.getInterimReviewDate())
+                    .rateType(loc.getRateType())
+                    .annualInterestRate(loc.getAnnualInterestRate())
+                    .isInterestUpfrontOrPostDisbursal(loc.getIsInterestUpfrontOrPostDisbursal())
+                    .clientCompanyName(loc.getClientCompanyName())
+                    .clientContactPersonName(loc.getClientContactPersonName())
+                    .clientContactPersonPhone(loc.getClientContactPersonPhone())
+                    .clientContactPersonEmail(loc.getClientContactPersonEmail())
+                    .authorizedSignatoryName(loc.getAuthorizedSignatoryName())
+                    .authorizedSignatoryPhone(loc.getAuthorizedSignatoryPhone())
+                    .authorizedSignatoryEmail(loc.getAuthorizedSignatoryEmail())
+                    .va(loc.getVa())
+                    .distributionPartner(loc.getDistributionPartner())
+                    .bankTransferFee(loc.getBankTransferFee())
+                    .specialConditions(loc.getSpecialConditions())
+                    .latePaymentFee(loc.getLatePaymentFee())
+                    .createdDate(loc.getCreatedDate())
+                    .createdByUsername(loc.getCreatedByUsername())
+                    .lastModifiedDate(loc.getLastModifiedDate())
+                    .lastModifiedByUsername(loc.getLastModifiedByUsername())
+                    .build();
                 // Replace the original object in the list
                 int index = lineOfCredits.indexOf(loc);
                 if (index != -1) {
@@ -284,28 +704,60 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private LineOfCreditData enrichWithClientData(LineOfCreditData lineOfCredit) {
         if (lineOfCredit.getClientId() != null) {
             final ClientData clientData = this.clientReadPlatformService.retrieveOne(lineOfCredit.getClientId());
-            return LineOfCreditData.instance(
-                lineOfCredit.getId(), lineOfCredit.getClientId(), clientData, lineOfCredit.getName(), lineOfCredit.getProductType(),
-                lineOfCredit.getMaximumAmount(), lineOfCredit.getAvailableBalance(), lineOfCredit.getConsumedAmount(),
-                lineOfCredit.getActivationStatus(), lineOfCredit.getStartDate(), lineOfCredit.getEndDate(),
-                lineOfCredit.getApprovedCreditFacilityAmount(), lineOfCredit.getExternalId(), lineOfCredit.getActivationDate(),
-                lineOfCredit.getCurrency(), lineOfCredit.getAdvancePercentage(), lineOfCredit.getTenorDays(), lineOfCredit.getApprovedBuyers(),
-                lineOfCredit.getProcessingFeePctLoc(), lineOfCredit.getCashMarginType(), lineOfCredit.getCashMarginValue(),
-                lineOfCredit.getInvHandlingFeeBasis(), lineOfCredit.getInvHandlingFeePct(), lineOfCredit.getInvHandlingFeeMinAmount(),
-                lineOfCredit.getInvHandlingFeeCurrency(), lineOfCredit.getInterimReviewDate(), lineOfCredit.getRateType(),
-                lineOfCredit.getAnnualInterestRate(), lineOfCredit.getIsInterestUpfrontOrPostDisbursal(), lineOfCredit.getClientCompanyName(),
-                lineOfCredit.getClientContactPersonName(), lineOfCredit.getClientContactPersonPhone(), lineOfCredit.getClientContactPersonEmail(),
-                lineOfCredit.getAuthorizedSignatoryName(), lineOfCredit.getAuthorizedSignatoryPhone(), lineOfCredit.getAuthorizedSignatoryEmail(),
-                lineOfCredit.getVa(), lineOfCredit.getDistributionPartner(), lineOfCredit.getBankTransferFee(), lineOfCredit.getSpecialConditions(),
-                lineOfCredit.getLatePaymentFee(), lineOfCredit.getCreatedDate(), lineOfCredit.getCreatedByUsername(), lineOfCredit.getLastModifiedDate(), lineOfCredit.getLastModifiedByUsername()
-            );
+            return LineOfCreditData.builder()
+                .id(lineOfCredit.getId())
+                .clientId(lineOfCredit.getClientId())
+                .client(clientData)
+                .name(lineOfCredit.getName())
+                .productType(lineOfCredit.getProductType())
+                .maximumAmount(lineOfCredit.getMaximumAmount())
+                .availableBalance(lineOfCredit.getAvailableBalance())
+                .consumedAmount(lineOfCredit.getConsumedAmount())
+                .status(lineOfCredit.getStatus())
+                .startDate(lineOfCredit.getStartDate())
+                .endDate(lineOfCredit.getEndDate())
+                .approvedCreditFacilityAmount(lineOfCredit.getApprovedCreditFacilityAmount())
+                .externalId(lineOfCredit.getExternalId())
+                .activationDate(lineOfCredit.getActivationDate())
+                .currency(lineOfCredit.getCurrency())
+                .advancePercentage(lineOfCredit.getAdvancePercentage())
+                .tenorDays(lineOfCredit.getTenorDays())
+                .approvedBuyers(lineOfCredit.getApprovedBuyers())
+                .processingFeePctLoc(lineOfCredit.getProcessingFeePctLoc())
+                .cashMarginType(lineOfCredit.getCashMarginType())
+                .cashMarginValue(lineOfCredit.getCashMarginValue())
+                .invHandlingFeeBasis(lineOfCredit.getInvHandlingFeeBasis())
+                .invHandlingFeePct(lineOfCredit.getInvHandlingFeePct())
+                .invHandlingFeeMinAmount(lineOfCredit.getInvHandlingFeeMinAmount())
+                .invHandlingFeeCurrency(lineOfCredit.getInvHandlingFeeCurrency())
+                .interimReviewDate(lineOfCredit.getInterimReviewDate())
+                .rateType(lineOfCredit.getRateType())
+                .annualInterestRate(lineOfCredit.getAnnualInterestRate())
+                .isInterestUpfrontOrPostDisbursal(lineOfCredit.getIsInterestUpfrontOrPostDisbursal())
+                .clientCompanyName(lineOfCredit.getClientCompanyName())
+                .clientContactPersonName(lineOfCredit.getClientContactPersonName())
+                .clientContactPersonPhone(lineOfCredit.getClientContactPersonPhone())
+                .clientContactPersonEmail(lineOfCredit.getClientContactPersonEmail())
+                .authorizedSignatoryName(lineOfCredit.getAuthorizedSignatoryName())
+                .authorizedSignatoryPhone(lineOfCredit.getAuthorizedSignatoryPhone())
+                .authorizedSignatoryEmail(lineOfCredit.getAuthorizedSignatoryEmail())
+                .va(lineOfCredit.getVa())
+                .distributionPartner(lineOfCredit.getDistributionPartner())
+                .bankTransferFee(lineOfCredit.getBankTransferFee())
+                .specialConditions(lineOfCredit.getSpecialConditions())
+                .latePaymentFee(lineOfCredit.getLatePaymentFee())
+                .createdDate(lineOfCredit.getCreatedDate())
+                .createdByUsername(lineOfCredit.getCreatedByUsername())
+                .lastModifiedDate(lineOfCredit.getLastModifiedDate())
+                .lastModifiedByUsername(lineOfCredit.getLastModifiedByUsername())
+                .build();
         }
         return lineOfCredit;
     }
 
     private Collection<EnumOptionData> getActivationStatusOptions() {
-        return Arrays.stream(LocActivationStatus.values())
-                .map(LocActivationStatus::getEnumOptionData)
+        return Arrays.stream(LocStatus.values())
+                .map(LocStatus::getEnumOptionData)
                 .toList();
     }
 
@@ -320,4 +772,49 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 .map(LocReviewPeriods::getEnumOptionsData)
                 .collect(Collectors.toList());
     }
+
+
+    /**
+     * Retrieve Line of Credit with associated loans using simple query for listing
+     */
+    public List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoans() {
+        this.context.authenticatedUser();
+
+        final LineOfCreditWithLoansMapper mapper = new LineOfCreditWithLoansMapper(true); // Simple query
+        final String sql = "SELECT " + mapper.schema() + " ORDER BY loc.id, l.id";
+
+        return this.jdbcTemplate.query(sql, mapper);
+    }
+
+    /**
+     * Retrieve specific Line of Credit with associated loans using exhaustive query
+     */
+    public LineOfCreditWithLoansData retrieveOneWithLoans(Long lineOfCreditId) {
+
+        final LineOfCreditWithLoansMapper mapper = new LineOfCreditWithLoansMapper(false); // Exhaustive query
+        final String sql = "SELECT " + mapper.schema() + " WHERE loc.id = ? ORDER BY l.id";
+
+        List<LineOfCreditWithLoansData> results = this.jdbcTemplate.query(sql, mapper, lineOfCreditId);
+
+        if (results == null || results.isEmpty()) {
+            throw new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
+                "Line of credit not found with id: " + lineOfCreditId,List.of());
+        }
+
+        return results.getFirst();
+    }
+
+    /**
+     * Retrieve all Line of Credits with loans for a specific client using simple query
+     */
+    @Override
+    public List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoansForClient(Long clientId) {
+
+        final LineOfCreditWithLoansMapper mapper = new LineOfCreditWithLoansMapper(true); // Simple query for listing
+        final String sql = "SELECT " + mapper.schema() + " WHERE loc.client_id = ? ORDER BY loc.id, l.id";
+
+        return this.jdbcTemplate.query(sql, mapper, clientId);
+    }
+
+
 }

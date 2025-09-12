@@ -40,16 +40,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Slf4j
 public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends LoanApplicationWritePlatformServiceJpaRepositoryImpl {
+
     private final BusinessEventNotifierService businessEventNotifierService;
-    @Autowired
-    private LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService;
-    @Autowired
-    private LocLoanApplicationValidator locLoanApplicationValidator;
+    private final LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService;
+    private final LocLoanApplicationValidator locLoanApplicationValidator;
 
 
-    public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator, LoanRepositoryWrapper loanRepositoryWrapper, NoteRepository noteRepository, LoanAssembler loanAssembler, LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory, CalendarRepository calendarRepository, CalendarInstanceRepository calendarInstanceRepository, SavingsAccountRepositoryWrapper savingsAccountRepository, AccountAssociationsRepository accountAssociationsRepository, BusinessEventNotifierService businessEventNotifierService, LoanScheduleAssembler loanScheduleAssembler, LoanUtilService loanUtilService, CalendarReadPlatformService calendarReadPlatformService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService, BusinessEventNotifierService businessEventNotifierService1) {
+    public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator, LoanRepositoryWrapper loanRepositoryWrapper, NoteRepository noteRepository, LoanAssembler loanAssembler, LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory, CalendarRepository calendarRepository, CalendarInstanceRepository calendarInstanceRepository, SavingsAccountRepositoryWrapper savingsAccountRepository, AccountAssociationsRepository accountAssociationsRepository, BusinessEventNotifierService businessEventNotifierService, LoanScheduleAssembler loanScheduleAssembler, LoanUtilService loanUtilService, CalendarReadPlatformService calendarReadPlatformService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService, BusinessEventNotifierService businessEventNotifierService1,
+                                                                      LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService, LocLoanApplicationValidator locLoanApplicationValidator) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler, loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository, accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService, calendarReadPlatformService, entityDatatableChecksWritePlatformService, glimRepository, loanRepository, gsimReadPlatformService, defaultLoanLifecycleStateMachine, loanAccrualsProcessingService, loanDownPaymentTransactionValidator, loanScheduleService);
         this.businessEventNotifierService = businessEventNotifierService1;
+        this.locLoanApplicationService = locLoanApplicationService;
+        this.locLoanApplicationValidator = locLoanApplicationValidator;
     }
 
     @Transactional
@@ -57,13 +59,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     public CommandProcessingResult submitApplication(final JsonCommand command) {
 
         try {
-            // Line of Credit validation (before standard validation to catch LOC-specific errors first)
-            try {
-                locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
-            } catch (ValidationException e) {
-                log.error("Line of Credit validation failed: {}", e.getMessage());
-                throw e; // Re-throw to maintain the validation error flow
-            }
+
+            locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
             
             // Validations (prior assembling) - use standard validation
             this.loanApplicationValidator.validateForCreate(command);
