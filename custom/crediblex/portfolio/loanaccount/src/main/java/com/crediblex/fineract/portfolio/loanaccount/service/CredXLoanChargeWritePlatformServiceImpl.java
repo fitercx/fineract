@@ -23,7 +23,9 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
+import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
@@ -118,10 +120,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.loanAccountDomainService = loanAccountDomainService;
         this.businessEventNotifierService = businessEventNotifierService;
         this.noteRepository = noteRepository;
-        
-        log.info("🚀 CredXLoanChargeWritePlatformServiceImpl initialized successfully!");
-        log.info("CredXLoanChargeWritePlatformServiceImpl will be used for all loan charge operations!");
-        System.out.println("🚀 CredXLoanChargeWritePlatformServiceImpl initialized successfully!");
         this.loanChargeRepository = loanChargeRepository;
         this.loanAccountService = loanAccountService;
         this.loanChargeValidator = loanChargeValidator1;
@@ -425,59 +423,4 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         
         return waiveLoanChargeTransaction;
     }
-
-    @Override
-    public void applyOverdueChargesForLoan(final Long loanId, final Collection<org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData> overdueLoanScheduleDataList) {
-        log.info("=== APPLYING OVERDUE CHARGES FOR LOAN ===");
-        log.info("Loan ID: {}, Number of overdue installments: {}", loanId, overdueLoanScheduleDataList.size());
-        
-        for (final org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData overdueData : overdueLoanScheduleDataList) {
-            log.info("Processing overdue installment - Charge ID: {}, Period: {}, Due Date: {}", 
-                    overdueData.getChargeId(), overdueData.getPeriodNumber(), overdueData.getDueDate());
-        }
-        
-        // Add more debugging information
-        log.info("About to call super.applyOverdueChargesForLoan for loan {}", loanId);
-        log.info("Overdue data list size: {}", overdueLoanScheduleDataList.size());
-        
-        // Debug the overdue data details
-        for (final org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData overdueData : overdueLoanScheduleDataList) {
-            log.info("Overdue data details - Charge ID: {}, Period: {}, Due Date: {}, Amount: {}", 
-                    overdueData.getChargeId(), overdueData.getPeriodNumber(), overdueData.getDueDate(), overdueData.getAmount());
-        }
-        
-        // Let's try to debug what's happening by checking the loan and charge configuration
-        try {
-            final org.apache.fineract.portfolio.loanaccount.domain.Loan loan = this.loanAssembler.assembleFrom(loanId);
-            log.info("Loan assembled - ID: {}, Status: {}, Principal: {}", loan.getId(), loan.getStatus().getValue(), loan.getPrincipal().getAmount());
-            
-            // Check if there are any overdue installment charges configured
-            final java.util.Optional<org.apache.fineract.portfolio.charge.domain.Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
-                    .filter((e) -> org.apache.fineract.portfolio.charge.domain.ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(e.getChargeTimeType()) && e.isLoanCharge())
-                    .findFirst();
-            
-            if (optPenaltyCharge.isPresent()) {
-                final org.apache.fineract.portfolio.charge.domain.Charge penaltyCharge = optPenaltyCharge.get();
-                log.info("Found overdue installment charge - ID: {}, Name: {}, Calculation: {}, Fee Frequency: {}, Fee Interval: {}", 
-                        penaltyCharge.getId(), penaltyCharge.getName(), penaltyCharge.getChargeCalculation(), 
-                        penaltyCharge.feeFrequency(), penaltyCharge.feeInterval());
-            } else {
-                log.warn("No overdue installment charge found for loan product!");
-            }
-            
-            // Check penalty wait period and grace period
-            final Long penaltyWaitPeriod = this.configurationDomainService.retrievePenaltyWaitPeriod();
-            final Long penaltyPostingWaitPeriod = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
-            log.info("Penalty wait period: {}, Grace on penalty posting period: {}", penaltyWaitPeriod, penaltyPostingWaitPeriod);
-            
-        } catch (Exception e) {
-            log.error("Error debugging loan configuration: {}", e.getMessage(), e);
-        }
-        
-        // Call the parent method to do the actual work
-        super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
-        
-        log.info("=== END APPLYING OVERDUE CHARGES FOR LOAN ===");
-    }
-
 }
