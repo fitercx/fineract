@@ -35,11 +35,6 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class CustomLatePaymentFeeCalculationService {
-
-    static {
-        System.out.println("🚀 CustomLatePaymentFeeCalculationService loaded!");
-    }
-
     private final JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -55,47 +50,31 @@ public class CustomLatePaymentFeeCalculationService {
      * @return true if the loan should use discounted amount for late payment fees, false otherwise
      */
     public boolean shouldUseDiscountedAmountForLatePaymentFee(Loan loan) {
-        log.info("=== CHECKING IF SHOULD USE DISCOUNTED AMOUNT ===");
-        log.info("Loan ID: {}", loan.getId());
-        
         try {
             // Check if the loan is associated with a Line of Credit
             Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
-            log.info("Line of Credit ID: {}", lineOfCreditId);
             if (lineOfCreditId == null) {
-                log.info("No Line of Credit associated with loan, returning false");
                 return false;
             }
 
             // Check if the LOC is of type RECEIVABLE
             String locProductType = getLocProductType(lineOfCreditId);
-            log.info("LOC Product Type: {}", locProductType);
             if (!LocProductType.RECEIVABLE.name().equalsIgnoreCase(locProductType)) {
-                log.info("LOC is not RECEIVABLE type, returning false");
                 return false;
             }
 
             // Check if the LOC has a late payment fee configured
             BigDecimal latePaymentFee = getLatePaymentFeeForLineOfCredit(lineOfCreditId);
-            log.info("LOC Late Payment Fee: {}", latePaymentFee);
             if (latePaymentFee == null || latePaymentFee.compareTo(BigDecimal.ZERO) <= 0) {
-                log.info("LOC has no late payment fee configured, returning false");
                 return false;
             }
 
             // Additional validation: ensure the loan has overdue penalty charges
-            boolean hasOverduePenaltyCharges = loan.getCharges().stream()
+            return loan.getCharges().stream()
                     .anyMatch(charge -> charge.isOverdueInstallmentCharge() &&
                              charge.isPenaltyCharge() &&
                              charge.isActive());
-            log.info("Has overdue penalty charges: {}", hasOverduePenaltyCharges);
-            
-            log.info("Final result: {}", hasOverduePenaltyCharges);
-            log.info("=== END CHECKING DISCOUNTED AMOUNT ===");
-            return hasOverduePenaltyCharges;
         } catch (Exception e) {
-            log.error("Error determining if loan {} should use discounted amount for late payment fee: {}",
-                    loan.getId(), e.getMessage(), e);
             return false;
         }
     }
@@ -118,8 +97,6 @@ public class CustomLatePaymentFeeCalculationService {
             String locProductType = getLocProductType(lineOfCreditId);
             return LocProductType.PAYABLE.name().equalsIgnoreCase(locProductType);
         } catch (Exception e) {
-            log.warn("Error determining if loan {} is PAYABLE LOC: {}", 
-                    loan.getId(), e.getMessage());
             return false;
         }
     }
@@ -155,11 +132,8 @@ public class CustomLatePaymentFeeCalculationService {
     private Long getLineOfCreditIdForLoan(Long loanId) {
         try {
             String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
-            Long result = jdbcTemplate.queryForObject(sql, Long.class, loanId);
-            log.info("Query result for loan {} line_of_credit_id: {}", loanId, result);
-            return result;
+            return jdbcTemplate.queryForObject(sql, Long.class, loanId);
         } catch (EmptyResultDataAccessException e) {
-            log.info("No line_of_credit_id found for loan {}", loanId);
             return null;
         }
     }
@@ -173,11 +147,8 @@ public class CustomLatePaymentFeeCalculationService {
     private BigDecimal getLatePaymentFeeForLineOfCredit(Long lineOfCreditId) {
         try {
             String sql = "SELECT late_payment_fee FROM m_line_of_credit WHERE id = ?";
-            BigDecimal result = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCreditId);
-            log.info("Query result for LOC {} late_payment_fee: {}", lineOfCreditId, result);
-            return result;
+            return jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCreditId);
         } catch (EmptyResultDataAccessException e) {
-            log.info("No late_payment_fee found for LOC {}", lineOfCreditId);
             return null;
         }
     }
@@ -191,11 +162,8 @@ public class CustomLatePaymentFeeCalculationService {
     private String getLocProductType(Long lineOfCreditId) {
         try {
             String sql = "SELECT product_type FROM m_line_of_credit WHERE id = ?";
-            String result = jdbcTemplate.queryForObject(sql, String.class, lineOfCreditId);
-            log.info("Query result for LOC {} product_type: {}", lineOfCreditId, result);
-            return result;
+            return jdbcTemplate.queryForObject(sql, String.class, lineOfCreditId);
         } catch (EmptyResultDataAccessException e) {
-            log.info("No product_type found for LOC {}", lineOfCreditId);
             return null;
         }
     }

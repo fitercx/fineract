@@ -21,11 +21,6 @@ import org.springframework.context.annotation.Primary;
 
 @Configuration
 public class CredibleXCustomPortfolioBeanConfiguration {
-
-    static {
-        System.out.println("🚀 CredibleXCustomPortfolioBeanConfiguration loaded!");
-    }
-
     @Bean
     LoanDisbursementService loanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator, ReprocessLoanTransactionsService reprocessLoanTransactionsService){
         return new CustomLoanDisbursementService(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
@@ -36,7 +31,6 @@ public class CredibleXCustomPortfolioBeanConfiguration {
     LoanChargeService loanChargeService(LoanChargeValidator loanChargeValidator,
                                        org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService loanTransactionProcessingService,
                                        CustomLatePaymentFeeCalculationService customLatePaymentFeeCalculationService) {
-        System.out.println("🚀 Creating CustomLoanChargeService bean!");
         return new CustomLoanChargeService(loanChargeValidator, loanTransactionProcessingService, customLatePaymentFeeCalculationService);
     }
 
@@ -47,7 +41,6 @@ public class CredibleXCustomPortfolioBeanConfiguration {
                                            LoanMapper loanMapper,
                                            LoanTransactionProcessingService loanTransactionProcessingService,
                                            LoanScheduleComponent loanSchedule) {
-        System.out.println("🚀 Creating CustomLoanScheduleService bean!");
         return new CustomLoanScheduleService(loanChargeService, reprocessLoanTransactionsService, loanMapper, loanTransactionProcessingService, loanSchedule);
     }
 
@@ -59,7 +52,6 @@ public class CredibleXCustomPortfolioBeanConfiguration {
                                           LoanProductRepository loanProductRepository,
                                           ExternalIdFactory externalIdFactory,
                                           CustomLatePaymentFeeCalculationService customLatePaymentFeeCalculationService) {
-        System.out.println("🚀 Creating CustomLoanChargeAssembler bean!");
         return new CustomLoanChargeAssembler(fromApiJsonHelper, chargeRepository, loanChargeRepository, loanProductRepository, externalIdFactory, customLatePaymentFeeCalculationService);
     }
 }

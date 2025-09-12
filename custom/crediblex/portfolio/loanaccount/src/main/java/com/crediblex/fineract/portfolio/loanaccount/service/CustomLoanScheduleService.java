@@ -42,7 +42,6 @@ public class CustomLoanScheduleService extends LoanScheduleService {
         this.loanMapper = loanMapper;
         this.loanSchedule = loanSchedule;
         this.loadTransactionProcessingService = loadTransactionProcessingService;
-        log.info("🚀 CustomLoanScheduleService initialized successfully!");
     }
 
     /**
@@ -51,52 +50,28 @@ public class CustomLoanScheduleService extends LoanScheduleService {
      */
     @Override
     public void regenerateRepaymentSchedule(final Loan loan, final ScheduleGeneratorDTO scheduleGeneratorDTO) {
-        log.info("=== REGENERATING REPAYMENT SCHEDULE ===");
-        log.info("Loan ID: {}, Penalty Wait Period: {}", loan.getId(), scheduleGeneratorDTO.getPenaltyWaitPeriod());
-        
-        // FIRST: Recalculate all charges with our custom logic
+        //Recalculate all charges with our custom logic
         final Set<LoanCharge> charges = loan.getActiveCharges();
-        log.info("Found {} active charges for loan {}", charges.size(), loan.getId());
-        
         for (final LoanCharge loanCharge : charges) {
-            log.info("Processing charge ID: {}, Name: '{}', Is Waived: {}, Is Overdue Installment: {}", 
-                    loanCharge.getId(), loanCharge.getCharge().getName(), 
-                    loanCharge.isWaived(), loanCharge.isOverdueInstallmentCharge());
-            
             if (!loanCharge.isWaived()) {
-                log.info("Recalculating charge {} for loan {} before schedule generation", 
-                         loanCharge.getId(), loan.getId());
                 loanChargeService.recalculateLoanCharge(loan, loanCharge, scheduleGeneratorDTO.getPenaltyWaitPeriod());
-            } else {
-                log.info("Skipping waived charge {}", loanCharge.getId());
             }
         }
         
-        // SECOND: Generate the schedule model with the updated charges
-        log.info("Generating schedule model for loan {}", loan.getId());
+        //Generate the schedule model with the updated charges
         final LoanScheduleModel loanScheduleModel = 
             loanMapper.regenerateScheduleModel(scheduleGeneratorDTO, loan);
         if (loanScheduleModel == null) {
-            log.warn("No schedule model generated for loan {}", loan.getId());
-            log.info("=== END REGENERATING REPAYMENT SCHEDULE (NO MODEL) ===");
             return;
         }
         
-        // THIRD: Update the loan schedule
-        log.info("Updating loan schedule for loan {}", loan.getId());
+        //Update the loan schedule
         loanSchedule.updateLoanSchedule(loan, loanScheduleModel);
-        
-        log.info("Successfully regenerated repayment schedule for loan {} with custom charge amounts", loan.getId());
-        log.info("=== END REGENERATING REPAYMENT SCHEDULE ===");
     }
 
     @Override
     public void recalculateSchedule(final Loan loan, final ScheduleGeneratorDTO generatorDTO) {
-        log.info("=== RECALCULATING SCHEDULE ===");
-        log.info("Loan ID: {}, Is Interest Bearing: {}, Is Charged Off: {}", 
-                loan.getId(), loan.isInterestBearingAndInterestRecalculationEnabled(), loan.isChargedOff());
         super.recalculateSchedule(loan, generatorDTO);
-        log.info("=== END RECALCULATING SCHEDULE ===");
     }
 
     /**
@@ -104,11 +79,8 @@ public class CustomLoanScheduleService extends LoanScheduleService {
      */
     @Override
     public void regenerateRepaymentScheduleWithInterestRecalculation(final Loan loan, final ScheduleGeneratorDTO generatorDTO) {
-        log.debug("Regenerating repayment schedule with interest recalculation for loan {} with custom charge recalculation", loan.getId());
-        
         final LocalDate lastTransactionDate = loan.getLastUserTransactionDate();
-        
-        // FIRST: Recalculate charges with our custom logic
+        //Recalculate charges with our custom logic
         final Set<LoanCharge> charges = loan.getActiveCharges();
         for (final LoanCharge loanCharge : charges) {
             if (!loanCharge.isDueAtDisbursement()) {
@@ -117,8 +89,6 @@ public class CustomLoanScheduleService extends LoanScheduleService {
                         || loan.getLoanProductRelatedDetail().getLoanScheduleType().equals(LoanScheduleType.PROGRESSIVE))) {
                     if ((loanCharge.isInstalmentFee() || !loanCharge.isWaived()) && (loanCharge.getDueLocalDate() == null
                             || !lastTransactionDate.isAfter(loanCharge.getDueLocalDate()))) {
-                        log.debug("Recalculating charge {} for loan {} before interest recalculation schedule generation", 
-                                 loanCharge.getId(), loan.getId());
                         loanChargeService.recalculateLoanCharge(loan, loanCharge, generatorDTO.getPenaltyWaitPeriod());
                         loanCharge.updateWaivedAmount(loan.getCurrency());
                     }
@@ -128,21 +98,18 @@ public class CustomLoanScheduleService extends LoanScheduleService {
             }
         }
         
-        // SECOND: Get the recalculated schedule
+        //Get the recalculated schedule
         final LoanScheduleDTO loanScheduleDTO = loadTransactionProcessingService.getRecalculatedSchedule(generatorDTO, loan);
         if (loanScheduleDTO == null) {
-            log.warn("No schedule DTO generated for loan {} with interest recalculation", loan.getId());
             return;
         }
         
-        // THIRD: Update the loan schedule
+        //Update the loan schedule
         loan.setInterestRecalculatedOn(org.apache.fineract.infrastructure.core.service.DateUtils.getBusinessLocalDate());
         if (loanScheduleDTO.getInstallments() != null) {
             loanSchedule.updateLoanSchedule(loan, loanScheduleDTO.getInstallments());
         } else {
             loanSchedule.updateLoanSchedule(loan, loanScheduleDTO.getLoanScheduleModel());
         }
-        
-        log.debug("Successfully regenerated repayment schedule with interest recalculation for loan {} with custom charge amounts", loan.getId());
     }
 }
