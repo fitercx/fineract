@@ -159,8 +159,8 @@ import groovy.sql.Sql
 
 project.ext.mysqlUser='root'
 project.ext.mysqlPassword='mysql'
-project.ext.pgUser='root'
-project.ext.pgPassword='mysql'
+project.ext.pgUser='myuser'
+project.ext.pgPassword='mypassword'
 
 configurations {
     driver
@@ -195,7 +195,7 @@ task dropDB {
 task createPGDB {
     description= "Creates the PostgreSQL Database. Needs database name to be passed (like: -PdbName=someDBname)"
     doLast {
-        def sql = Sql.newInstance( 'jdbc:postgresql://localhost:5432/', pgUser, pgPassword, 'org.postgresql.Driver' )
+        def sql = Sql.newInstance( 'jdbc:postgresql://localhost:5432/postgres', pgUser, pgPassword, 'org.postgresql.Driver' )
         sql.execute( 'create database '+"$dbName" )
     }
 }

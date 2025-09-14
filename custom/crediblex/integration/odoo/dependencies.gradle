@@ -18,56 +18,44 @@
  */
 
 dependencies {
-    implementation(project(':fineract-core'))
-    implementation(project(':fineract-provider'))
+    // Never use "compile" scope, but make all dependencies either 'implementation', 'runtimeOnly' or 'testCompile'.
+    // Note that we never use 'api', because Fineract at least currently is a simple monolithic application ("WAR"), not a library.
+    // We also (normally should have) no need to ever use 'compileOnly'.
 
-    // JAX-RS API for REST endpoints
-    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
-
-    // Spring Boot configuration processor
-    implementation('org.springframework.boot:spring-boot-configuration-processor')
-
-    // Jakarta validation
-    implementation('jakarta.validation:jakarta.validation-api')
-
-    // Apache HttpClient 5.x for Odoo API calls
-    implementation('org.apache.httpcomponents.client5:httpclient5:5.2.1')
-    implementation('org.apache.httpcomponents.core5:httpcore5:5.2.4')
-
-    // JSON processing
-    implementation('com.fasterxml.jackson.core:jackson-core')
-    implementation('com.fasterxml.jackson.core:jackson-databind')
-    implementation('com.fasterxml.jackson.core:jackson-annotations')
-
-    // Swagger annotations
-    implementation('io.swagger.core.v3:swagger-annotations-jakarta:2.2.22')
-
-    // Commons utilities
-    implementation('org.apache.commons:commons-lang3:3.12.0')
-    implementation('com.google.code.gson:gson:2.11.0')
-
-    // Spring context and transaction
-    implementation('org.springframework:spring-context')
-    implementation('org.springframework:spring-tx')
-
-    // Logging
-    implementation('org.slf4j:slf4j-api')
-    implementation('org.slf4j:log4j-over-slf4j:2.0.13')
-
-    // Testing dependencies
-    testImplementation('org.springframework.boot:spring-boot-starter-test') {
+    // implementation dependencies are directly used (compiled against) in src/main (and src/test)
+    //
+    implementation(project(path: ':fineract-core'))
+    
+    implementation(
+            'org.springframework.boot:spring-boot-starter-web',
+            'org.springframework.boot:spring-boot-starter-security',
+            'jakarta.ws.rs:jakarta.ws.rs-api',
+            
+            'com.google.guava:guava',
+            'com.google.code.gson:gson',
+            
+            'org.apache.commons:commons-lang3',
+            
+            'com.github.spotbugs:spotbugs-annotations',
+            'io.swagger.core.v3:swagger-annotations-jakarta',
+            
+            'org.springdoc:springdoc-openapi-starter-webmvc-ui',
+            'org.mapstruct:mapstruct',
+    )
+    
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor 'org.mapstruct:mapstruct-processor'
+    
+    // testCompile dependencies are ONLY used in src/test, not src/main.
+    // Do NOT repeat dependencies which are ALREADY in implementation or runtimeOnly!
+    //
+    testImplementation ('org.springframework.boot:spring-boot-starter-test') {
         exclude group: 'com.jayway.jsonpath', module: 'json-path'
         exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
         exclude group: 'jakarta.activation'
         exclude group: 'javax.activation'
         exclude group: 'org.skyscreamer'
     }
-    testImplementation('org.mockito:mockito-inline')
-    testImplementation('org.mockito:mockito-core')
-    testImplementation('org.mockito:mockito-junit-jupiter')
-    testImplementation('org.junit.jupiter:junit-jupiter-api')
-    testImplementation('org.junit.jupiter:junit-jupiter-engine')
-    testImplementation('org.junit.jupiter:junit-jupiter-params')
-    testImplementation('org.junit.platform:junit-platform-runner')
-    testImplementation('org.assertj:assertj-core')
+    testImplementation ('org.mockito:mockito-inline')
 }

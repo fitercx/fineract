@@ -17,12 +17,14 @@
  * under the License.
  */
 
-description = 'CredibleX Fineract Integration Module'
-
-group = 'com.crediblex.fineract.integration'
-
-base {
-    archivesName = 'crediblex-fineract-integration'
+dependencies {
+    implementation(project(':fineract-core'))
+    implementation(project(':custom:crediblex:integration:odoo'))
+    
+    // Spring Boot starter dependencies
+    implementation('org.springframework.boot:spring-boot-starter')
+    implementation('org.springframework.boot:spring-boot-autoconfigure')
+    
+    // For configuration properties
+    annotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
 }
-
-apply from: 'dependencies.gradle'
