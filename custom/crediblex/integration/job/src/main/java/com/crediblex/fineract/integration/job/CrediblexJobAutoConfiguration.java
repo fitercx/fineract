@@ -16,15 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-package com.crediblex.fineract.integration.starter;
+package com.crediblex.fineract.integration.job;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
 
 @AutoConfiguration
-@ComponentScans({ 
-    @ComponentScan({ "com.crediblex.fineract.integration.odoo" })
-})
-public class CrediblexIntegrationAutoConfiguration {}
+@ConditionalOnClass(name = "org.springframework.batch.core.Job")
+@ConditionalOnProperty(name = "odoo.enabled", havingValue = "true", matchIfMissing = false)
+@ComponentScan("com.crediblex.fineract.integration.job")
+public class CrediblexJobAutoConfiguration {}

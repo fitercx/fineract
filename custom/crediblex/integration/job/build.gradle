@@ -17,14 +17,4 @@
  * under the License.
  */
 
-package com.crediblex.fineract.integration.starter;
-
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
-
-@AutoConfiguration
-@ComponentScans({ 
-    @ComponentScan({ "com.crediblex.fineract.integration.odoo" })
-})
-public class CrediblexIntegrationAutoConfiguration {}
+apply from: 'dependencies.gradle'

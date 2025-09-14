@@ -16,15 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.integration.job;
 
-package com.crediblex.fineract.integration.starter;
+import java.util.List;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameData;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameProvider;
+import org.apache.fineract.infrastructure.jobs.service.jobname.SimpleJobNameProvider;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
+@Configuration
+public class CrediblexJobNameConfig {
 
-@AutoConfiguration
-@ComponentScans({ 
-    @ComponentScan({ "com.crediblex.fineract.integration.odoo" })
-})
-public class CrediblexIntegrationAutoConfiguration {}
+    @Bean
+    public JobNameProvider crediblexJobNameProvider() {
+        return new SimpleJobNameProvider(List.of(new JobNameData(CrediblexJobName.ODOO_JOURNAL_ENTRIES_SYNC_JOB.name(),
+                CrediblexJobName.ODOO_JOURNAL_ENTRIES_SYNC_JOB.toString())));
+    }
+}

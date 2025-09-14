@@ -16,15 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.integration.job;
 
-package com.crediblex.fineract.integration.starter;
+public enum CrediblexJobName {
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
+    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job");
 
-@AutoConfiguration
-@ComponentScans({ 
-    @ComponentScan({ "com.crediblex.fineract.integration.odoo" })
-})
-public class CrediblexIntegrationAutoConfiguration {}
+    private final String name;
+
+    CrediblexJobName(final String name) {
+        this.name = name;
+    }
+
+    @Override
+    public String toString() {
+        return this.name;
+    }
+}

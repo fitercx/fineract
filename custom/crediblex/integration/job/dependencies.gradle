@@ -17,14 +17,21 @@
  * under the License.
  */
 
-package com.crediblex.fineract.integration.starter;
+dependencies {
+    implementation(project(':fineract-core'))
+    implementation(project(':fineract-provider'))
+    implementation(project(':fineract-accounting'))
+    implementation(project(':custom:crediblex:integration:odoo'))
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
+    // Spring Batch for job framework
+    implementation('org.springframework.batch:spring-batch-core')
+    implementation('org.springframework.batch:spring-batch-infrastructure')
 
-@AutoConfiguration
-@ComponentScans({ 
-    @ComponentScan({ "com.crediblex.fineract.integration.odoo" })
-})
-public class CrediblexIntegrationAutoConfiguration {}
+    // Spring framework dependencies
+    implementation('org.springframework.boot:spring-boot-starter')
+    implementation('org.springframework:spring-context')
+    implementation('org.springframework:spring-tx')
+
+    // Logging
+    implementation('org.slf4j:slf4j-api')
+}
