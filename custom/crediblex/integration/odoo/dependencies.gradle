@@ -18,44 +18,34 @@
  */
 
 dependencies {
-    // Never use "compile" scope, but make all dependencies either 'implementation', 'runtimeOnly' or 'testCompile'.
-    // Note that we never use 'api', because Fineract at least currently is a simple monolithic application ("WAR"), not a library.
-    // We also (normally should have) no need to ever use 'compileOnly'.
+    implementation(project(':fineract-core'))
+    implementation(project(':fineract-provider'))
 
-    // implementation dependencies are directly used (compiled against) in src/main (and src/test)
-    //
-    implementation(project(path: ':fineract-core'))
-    
-    implementation(
-            'org.springframework.boot:spring-boot-starter-web',
-            'org.springframework.boot:spring-boot-starter-security',
-            'jakarta.ws.rs:jakarta.ws.rs-api',
-            
-            'com.google.guava:guava',
-            'com.google.code.gson:gson',
-            
-            'org.apache.commons:commons-lang3',
-            
-            'com.github.spotbugs:spotbugs-annotations',
-            'io.swagger.core.v3:swagger-annotations-jakarta',
-            
-            'org.springdoc:springdoc-openapi-starter-webmvc-ui',
-            'org.mapstruct:mapstruct',
-    )
-    
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
-    annotationProcessor 'org.mapstruct:mapstruct-processor'
-    
-    // testCompile dependencies are ONLY used in src/test, not src/main.
-    // Do NOT repeat dependencies which are ALREADY in implementation or runtimeOnly!
-    //
-    testImplementation ('org.springframework.boot:spring-boot-starter-test') {
-        exclude group: 'com.jayway.jsonpath', module: 'json-path'
-        exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
-        exclude group: 'jakarta.activation'
-        exclude group: 'javax.activation'
-        exclude group: 'org.skyscreamer'
-    }
-    testImplementation ('org.mockito:mockito-inline')
+    // Required for JAX-RS REST API resources
+    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    implementation('io.swagger.core.v3:swagger-annotations-jakarta:2.2.22')
+
+    // Spring framework dependencies
+    implementation('org.springframework.boot:spring-boot-starter')
+    implementation('org.springframework.boot:spring-boot-configuration-processor')
+    implementation('org.springframework:spring-context')
+    implementation('org.springframework.boot:spring-boot-starter-data-jpa')
+    implementation('org.springframework.boot:spring-boot-starter-security:3.2.0')
+
+    // JSON processing
+    implementation('com.fasterxml.jackson.core:jackson-core')
+    implementation('com.fasterxml.jackson.core:jackson-databind')
+
+    // HTTP Client for Odoo communication
+    implementation('org.apache.httpcomponents.client5:httpclient5:5.2.1')
+
+    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    implementation('com.google.code.gson:gson:2.11.0')
+    implementation('org.apache.commons:commons-lang3:3.12.0')
+    implementation('io.swagger.core.v3:swagger-annotations-jakarta:2.2.22')
+    implementation('org.springframework:spring-context')
+    implementation('org.springframework:spring-tx')
+    implementation('org.slf4j:log4j-over-slf4j:2.0.13')
+    implementation('com.fasterxml.jackson.core:jackson-core')
+    implementation('com.fasterxml.jackson.core:jackson-databind')
 }

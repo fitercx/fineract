@@ -21,8 +21,7 @@ plugins {
     id 'java'
 }
 
-description = 'CredibleX Fineract Integration Starter'
-
+description = 'CredibleX Fineract Integration Service'
 group = 'com.crediblex.fineract.integration'
 
 base {

@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package com.crediblex.fineract.integration.odoo.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -29,6 +30,7 @@ public class OdooProperties {
     private String database;
     private String username;
     private String password;
+    private String apiKey;
     private Boolean enabled = false;
 
     private Integer connectionTimeout = 30000; // 30 seconds
@@ -68,6 +70,14 @@ public class OdooProperties {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 
     public Boolean getEnabled() {

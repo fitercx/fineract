@@ -16,19 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package com.crediblex.fineract.integration.starter;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScans;
-import org.springframework.context.annotation.Import;
 
 @AutoConfiguration
-@ComponentScans({
-    @ComponentScan("com.crediblex.fineract.integration.odoo")
-})
-@Import({
-    IntegrationOdooConfiguration.class
-})
-public class CrediblexIntegrationAutoConfiguration {
-}
+@ComponentScans({ @ComponentScan({ "com.crediblex.fineract.integration.odoo" }) })
+public class CrediblexIntegrationAutoConfiguration {}

@@ -16,15 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.integration.odoo.service;
 
-dependencies {
-    implementation(project(':fineract-core'))
-    implementation(project(':custom:crediblex:integration:odoo'))
-    
-    // Spring Boot starter dependencies
-    implementation('org.springframework.boot:spring-boot-starter')
-    implementation('org.springframework.boot:spring-boot-autoconfigure')
-    
-    // For configuration properties
-    annotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
+import java.util.Map;
+
+/**
+ * Service interface for Odoo integration read operations
+ */
+public interface OdooIntegrationReadPlatformService {
+
+    /**
+     * Test connection to Odoo server
+     * 
+     * @return Map containing connection test results
+     */
+    Map<String, Object> testConnection();
 }
