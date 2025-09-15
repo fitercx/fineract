@@ -212,7 +212,7 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
         return LoanProductData.sensibleDefaultsForNewLoanProductCreation();
     }
 
-    private static final class LoanProductMapper implements RowMapper<LoanProductData> {
+    public static final class LoanProductMapper implements RowMapper<LoanProductData> {
 
         private final Collection<ChargeData> charges;
 
@@ -226,7 +226,7 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
 
         private final Collection<DelinquencyBucketData> delinquencyBucketOptions;
 
-        LoanProductMapper(final Collection<ChargeData> charges,
+        public LoanProductMapper(final Collection<ChargeData> charges,
                 final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas, final Collection<RateData> rates,
                 final Collection<DelinquencyBucketData> delinquencyBucketOptions, Collection<AdvancedPaymentData> advancedPaymentData,
                 Collection<CreditAllocationData> creditAllocationData) {
@@ -587,8 +587,7 @@ public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatfo
                     enableInstallmentLevelDelinquency, loanScheduleType.asEnumOptionData(), loanScheduleProcessingType.asEnumOptionData(),
                     fixedLength, enableAccrualActivityPosting, supportedInterestRefundTypes,
                     loanChargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate,
-                    daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy,
-                    false);
+                    daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
         }
     }
 

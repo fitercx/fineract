@@ -19,7 +19,8 @@
 
 package com.crediblex.fineract.portfolio.loc.domain;
 
-import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
+import com.crediblex.fineract.portfolio.loc.data.LocStatus;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -52,7 +53,8 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     private String name;
 
     @Column(name = "product_type", length = 50, nullable = false)
-    private String productType;
+    @Enumerated(EnumType.STRING)
+    private LocProductType productType;
 
     @Column(name = "maximum_amount", precision = 19, scale = 6, nullable = false)
     private BigDecimal maximumAmount;
@@ -65,7 +67,7 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @Column(name = "activation_status", length = 20, nullable = false)
     @Enumerated(EnumType.STRING)
-    private LocActivationStatus activationStatus;
+    private LocStatus status;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -175,11 +177,11 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public LineOfCredit(Client client, String name, String productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate) {
         this.client = client;
         this.name = name;
-        this.productType = productType;
+        this.productType = LocProductType.valueOf(productType);
         this.maximumAmount = maximumAmount;
         this.availableBalance = maximumAmount;
         this.consumedAmount = BigDecimal.ZERO;
-        this.activationStatus = LocActivationStatus.INACTIVE;
+        this.status = LocStatus.INACTIVE;
         this.startDate = startDate;
         this.endDate = endDate;
     }
@@ -197,11 +199,11 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             String distributionPartner, BigDecimal bankTransferFee, String specialConditions, BigDecimal latePaymentFee) {
         this.client = client;
         this.name = name;
-        this.productType = productType;
+        this.productType = LocProductType.valueOf(productType);
         this.maximumAmount = maximumAmount;
         this.availableBalance = maximumAmount;
         this.consumedAmount = BigDecimal.ZERO;
-        this.activationStatus = LocActivationStatus.INACTIVE;
+        this.status = LocStatus.INACTIVE;
         this.startDate = startDate;
         this.endDate = endDate;
         this.approvedCreditFacilityAmount = approvedCreditFacilityAmount;
@@ -240,14 +242,14 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      * Activate the line of credit.
      */
     public void activate() {
-        this.activationStatus = LocActivationStatus.ACTIVE;
+        this.status = LocStatus.ACTIVE;
     }
 
     /**
      * Deactivate the line of credit.
      */
     public void deactivate() {
-        this.activationStatus = LocActivationStatus.INACTIVE;
+        this.status = LocStatus.INACTIVE;
     }
 
     /**
@@ -262,10 +264,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.name = newValue;
         }
 
-        if (command.isChangeInStringParameterNamed("productType", this.productType)) {
+        if (command.isChangeInStringParameterNamed("productType", this.productType.name())) {
             final String newValue = command.stringValueOfParameterNamed("productType");
             actualChanges.put("productType", newValue);
-            this.productType = newValue;
+            this.productType = LocProductType.valueOf(newValue);
         }
 
         if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {

@@ -19,23 +19,9 @@
 
 dependencies {
     implementation(project(':fineract-provider'))
-    implementation(project(':fineract-client'))
     implementation(project(':fineract-loan'))
     implementation(project(':fineract-charge'))
-    implementation(project(':fineract-branch'))
-    implementation(project(':fineract-savings'))
-    implementation(project(':fineract-tax'))
-    implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-rates'))
-    implementation project(':fineract-progressive-loan')
-    implementation(project(":custom:crediblex:portfolio:account"))
     implementation(project(":custom:crediblex:infrastructure:commands"))
-    implementation(project(":custom:crediblex:portfolio:loc"))
-    implementation(project(":custom:crediblex:portfolio:loanproduct"))
-
-    implementation('com.google.guava:guava')
-    implementation('com.google.code.gson:gson')
-    implementation('org.apache.commons:commons-lang3:3.12.0')
-
-    testImplementation('org.springframework.security:spring-security-core:5.8.0')
+    implementation('org.springframework.batch:spring-batch-integration')
+    implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement
 }

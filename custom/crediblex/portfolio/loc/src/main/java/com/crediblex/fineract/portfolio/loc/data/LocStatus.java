@@ -3,17 +3,17 @@ package com.crediblex.fineract.portfolio.loc.data;
 import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
-public enum LocActivationStatus {
+public enum LocStatus {
 
-    ACTIVE(200,"locactivationstatus.active"), INACTIVE(300,"locactivationstatus.inactive"),
-    SUSPENDED(400,"locactivationstatus.suspended"), CLOSED(500,"locactivationstatus.closed");
+    ACTIVE(200,"status.active"), INACTIVE(300,"status.inactive"),
+    SUSPENDED(400,"status.suspended"), CLOSED(500,"status.closed");
 
     @Getter
     final Integer value;
     @Getter
     final String code;
 
-    LocActivationStatus(Integer value, String code) {
+    LocStatus(Integer value, String code) {
         this.value = value;
         this.code = code;
     }

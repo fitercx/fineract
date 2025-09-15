@@ -101,6 +101,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             }
         }
 
+        namedWhereClause = namedWhereClause + " and l.line_of_credit_id is null ";
         String currentDate = DateUtils.getLocalDateOfTenant().toString();
         params.addValue("currentDate", currentDate);
 

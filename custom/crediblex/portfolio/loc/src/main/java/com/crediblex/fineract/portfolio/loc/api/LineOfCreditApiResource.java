@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperB
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,6 +46,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
 import java.util.Collection;
 import java.util.Collections;
+
+import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
@@ -59,26 +62,17 @@ import org.springframework.stereotype.Component;
 
 @Path("/v1/clients")
 @Component
+@RequiredArgsConstructor
 @Tag(name = "Line of Credit", description = "Line of Credit management for clients")
 public class LineOfCreditApiResource {
 
     private final PlatformSecurityContext context;
     private final LineOfCreditReadPlatformService readPlatformService;
     private final DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer;
+    private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
+    @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
-
-
-    @Autowired
-    public LineOfCreditApiResource(PlatformSecurityContext context, LineOfCreditReadPlatformService readPlatformService,
-            DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer, ApiRequestParameterHelper apiRequestParameterHelper,
-            @Qualifier("portfolioCommandSourceWritePlatformServiceImpl") PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService) {
-        this.context = context;
-        this.readPlatformService = readPlatformService;
-        this.toApiJsonSerializer = toApiJsonSerializer;
-        this.apiRequestParameterHelper = apiRequestParameterHelper;
-        this.commandsSourceWritePlatformService = commandsSourceWritePlatformService;
-    }
 
     @GET
     @Path("{clientId}/creditlines/template")
@@ -109,9 +103,9 @@ public class LineOfCreditApiResource {
             @Context final UriInfo uriInfo) {
         this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        final Collection<LineOfCreditData> lineOfCredits = this.readPlatformService.retrieveAllLineOfCreditsForClient(clientId);
+        final Collection<LineOfCreditWithLoansData> lineOfCredits = this.readPlatformService.retrieveLineOfCreditWithLoansForClient(clientId);
 
-        return this.toApiJsonSerializer.serialize(settings, lineOfCredits, Collections.singleton("lineOfCredit"));
+        return this.toApiWithLoansJsonSerializer.serialize(settings, lineOfCredits);
     }
 
     @GET

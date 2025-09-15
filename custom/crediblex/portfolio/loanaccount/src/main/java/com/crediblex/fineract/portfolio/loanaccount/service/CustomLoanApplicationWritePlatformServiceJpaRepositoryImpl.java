@@ -30,8 +30,6 @@ import org.apache.fineract.portfolio.loanaccount.service.*;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.service.GSIMReadPlatformService;
-import org.eclipse.persistence.exceptions.ValidationException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.jpa.JpaSystemException;
@@ -44,18 +42,20 @@ import java.math.BigDecimal;
 @Service
 @Slf4j
 public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends LoanApplicationWritePlatformServiceJpaRepositoryImpl {
+
     private final BusinessEventNotifierService businessEventNotifierService;
-    @Autowired
-    private LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService;
-    @Autowired
-    private LocLoanApplicationValidator locLoanApplicationValidator;
-    @Autowired
-    private CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService;
+    private final LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService;
+    private final LocLoanApplicationValidator locLoanApplicationValidator;
+    private final CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService;
 
 
-    public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator, LoanRepositoryWrapper loanRepositoryWrapper, NoteRepository noteRepository, LoanAssembler loanAssembler, LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory, CalendarRepository calendarRepository, CalendarInstanceRepository calendarInstanceRepository, SavingsAccountRepositoryWrapper savingsAccountRepository, AccountAssociationsRepository accountAssociationsRepository, BusinessEventNotifierService businessEventNotifierService, LoanScheduleAssembler loanScheduleAssembler, LoanUtilService loanUtilService, CalendarReadPlatformService calendarReadPlatformService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService, BusinessEventNotifierService businessEventNotifierService1) {
+    public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator, LoanRepositoryWrapper loanRepositoryWrapper, NoteRepository noteRepository, LoanAssembler loanAssembler, LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory, CalendarRepository calendarRepository, CalendarInstanceRepository calendarInstanceRepository, SavingsAccountRepositoryWrapper savingsAccountRepository, AccountAssociationsRepository accountAssociationsRepository, BusinessEventNotifierService businessEventNotifierService, LoanScheduleAssembler loanScheduleAssembler, LoanUtilService loanUtilService, CalendarReadPlatformService calendarReadPlatformService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService, BusinessEventNotifierService businessEventNotifierService1,
+                                                                      LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService, LocLoanApplicationValidator locLoanApplicationValidator,CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler, loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository, accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService, calendarReadPlatformService, entityDatatableChecksWritePlatformService, glimRepository, loanRepository, gsimReadPlatformService, defaultLoanLifecycleStateMachine, loanAccrualsProcessingService, loanDownPaymentTransactionValidator, loanScheduleService);
         this.businessEventNotifierService = businessEventNotifierService1;
+        this.locLoanApplicationService = locLoanApplicationService;
+        this.locLoanApplicationValidator = locLoanApplicationValidator;
+        this.customLoanService = customLoanService;
     }
 
     @Transactional
@@ -63,9 +63,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     public CommandProcessingResult submitApplication(final JsonCommand command) {
 
         try {
-            // Line of Credit validation (before standard validation to catch LOC-specific errors first)
-            locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
 
+            locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
             // Validations (prior assembling) - use standard validation
             this.loanApplicationValidator.validateForCreate(command);
 
@@ -128,6 +127,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         }
     }
 
+    //TODO: Refactor method.
     @Override
     @Transactional
     public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
