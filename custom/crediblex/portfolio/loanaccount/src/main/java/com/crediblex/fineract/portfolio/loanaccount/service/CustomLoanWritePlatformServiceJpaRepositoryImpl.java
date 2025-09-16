@@ -731,8 +731,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
         return result;
     }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    
     public void applyOverdueChargesForSingleLoan(Long loanId) {
         final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
         final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
