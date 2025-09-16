@@ -5,7 +5,7 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
 public enum LocStatus {
 
-    ACTIVE(200,"status.active"), INACTIVE(300,"status.inactive"),
+    SUBMITTED(50,"status.submitted"), APPROVED(150,"status.approved"), ACTIVE(200,"status.active"), INACTIVE(300,"status.inactive"),
     SUSPENDED(400,"status.suspended"), CLOSED(500,"status.closed");
 
     @Getter
@@ -20,14 +20,14 @@ public enum LocStatus {
 
 
     public EnumOptionData getEnumOptionData() {
-        return switch (
-                this) {
+        return switch (this) {
+            case SUBMITTED -> new EnumOptionData(this.value.longValue(), this.code, "Submitted");
+            case APPROVED -> new EnumOptionData(this.value.longValue(), this.code, "Approved");
             case ACTIVE -> new EnumOptionData(this.value.longValue(), this.code, "Active");
             case INACTIVE -> new EnumOptionData(this.value.longValue(), this.code, "Inactive");
             case SUSPENDED -> new EnumOptionData(this.value.longValue(), this.code, "Suspended");
             case CLOSED -> new EnumOptionData(this.value.longValue(), this.code, "Closed");
-            default ->
-                    new EnumOptionData(0L, "error.msg.invalid.loc.activation.status", "Invalid Loc Activation Status");
+            default -> new EnumOptionData(0L, "error.msg.invalid.loc.activation.status", "Invalid Loc Activation Status");
         };
     }
 }

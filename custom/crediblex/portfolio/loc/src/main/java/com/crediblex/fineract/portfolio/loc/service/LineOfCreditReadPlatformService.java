@@ -29,18 +29,14 @@ import org.springframework.data.domain.Pageable;
 
 public interface LineOfCreditReadPlatformService {
 
-    Collection<LineOfCreditData> retrieveAllLineOfCredits();
 
-    Page<LineOfCreditData> retrieveAllLineOfCredits(Pageable pageable);
-
-    LineOfCreditData retrieveOne(Long lineOfCreditId);
+    LineOfCreditData retrieveOne(Long lineOfCreditId,Long clientId);
 
     LineOfCreditData retrieveTemplate();
 
     Collection<LineOfCreditData> retrieveAllLineOfCreditsForClient(Long clientId);
 
-    Collection<LineOfCreditData> retrieveActiveLineOfCreditsForClient(Long clientId);
-
     List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoansForClient(Long clientId);
 
+    LineOfCreditData retrieveOneWithCharges(Long lineOfCreditId,Long clientId);
 }

@@ -56,6 +56,7 @@ public class SearchParameters {
     private Long categoryId;
     @Getter(AccessLevel.NONE)
     private Boolean isSelfUser;
+    private Long locId;
 
     public Integer getLimit() {
         if (limit == null) {

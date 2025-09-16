@@ -23,6 +23,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import java.util.List;
 
 @Getter
 @Setter
@@ -85,18 +86,6 @@ public class LineOfCreditRequest {
     @Schema(example = "150,000", description = "Cash margin value")
     private String cashMarginValue;
 
-    @Schema(example = "PER_INVOICE", description = "Invoice handling fee basis")
-    private String invHandlingFeeBasis;
-
-    @Schema(example = "1.25", description = "Invoice handling fee percentage")
-    private String invHandlingFeePct;
-
-    @Schema(example = "5,000", description = "Minimum invoice handling fee amount")
-    private String invHandlingFeeMinAmount;
-
-    @Schema(example = "USD", description = "Invoice handling fee currency")
-    private String invHandlingFeeCurrency;
-
     @Schema(example = "15 September 2025", description = "Interim review date")
     private String interimReviewDate;
 
@@ -144,5 +133,20 @@ public class LineOfCreditRequest {
 
     @Schema(example = "500.00", description = "Late payment fee")
     private String latePaymentFee;
+
+    @Schema(example = "1000", description = "Maximum amount per drawdown")
+    private String maxPerDrawdown;
+
+    @Schema(example = "QUARTERLY", description = "Review period for the line of credit")
+    private String reviewPeriod;
+
+    @Schema(example = "12.75", description = "Interest rate override percentage")
+    private String interestRateOverride;
+
+    @Schema(example = "3839", description = "Settlement savings account ID")
+    private Long settlementSavingsAccountId;
+
+    @Schema(description = "List of charges associated with the line of credit")
+    private List<Object> charges;
 
 }

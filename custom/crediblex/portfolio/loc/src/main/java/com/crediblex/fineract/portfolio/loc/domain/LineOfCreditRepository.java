@@ -20,6 +20,9 @@
 package com.crediblex.fineract.portfolio.loc.domain;
 
 import java.util.List;
+import java.util.Optional;
+
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,9 +35,9 @@ import org.springframework.stereotype.Repository;
 public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long> {
 
     @Query("""
-        SELECT new com.crediblex.fineract.portfolio.loc.domain.LineOfCreditSummary(
+        SELECT new com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary(
             l.id,
-            l.name,
+            l.externalId,
             l.productType
         )
         FROM LineOfCredit l
@@ -43,4 +46,5 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
         """)
     List<LineOfCreditSummary> findActiveSummariesByCurrency(@Param("currency") String currency);
 
+    Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
 }

@@ -29,6 +29,7 @@ public class LineOfCreditCommandWrapperBuilder {
     private Long entityId;
     private String href;
     private String json = "{}";
+    private Long clientId;
 
     public LineOfCreditCommandWrapperBuilder createLineOfCredit() {
         this.actionName = "CREATE";
@@ -46,7 +47,8 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
-    public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId) {
+    public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId,Long clientId) {
+        this.clientId = clientId;
         this.actionName = "ACTIVATE";
         this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
@@ -54,7 +56,8 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
-    public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId) {
+    public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId,final Long clientId) {
+        this.clientId = clientId;
         this.actionName = "DEACTIVATE";
         this.entityName =  LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
@@ -70,13 +73,31 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder approveLineOfCredit(final Long lineOfCreditId, final Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "APPROVE";
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId;
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder closeLineOfCredit(final Long lineOfCreditId,Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "CLOSE";
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId;
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder withJson(final String json) {
         this.json = json;
         return this;
     }
 
     public CommandWrapper build() {
-        return new CommandWrapper(null, null, null, null, null, this.actionName, this.entityName, this.entityId, null, this.href, this.json,
+        return new CommandWrapper(null, null, clientId, null, null, this.actionName, this.entityName, this.entityId, null, this.href, this.json,
                 null, null, null, null, null, null, null, null);
     }
 }
