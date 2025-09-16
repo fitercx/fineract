@@ -19,19 +19,18 @@
 
 package com.crediblex.fineract.portfolio.loc.data;
 
+import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
-
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.useradministration.data.AppUserData;
-import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 
 /**
  * Immutable data object representing Line of Credit data.
@@ -119,10 +118,9 @@ public final class LineOfCreditData implements Serializable {
     private AppUserData closer;
 
     public static LineOfCreditData template(Collection<EnumOptionData> statusOptions, Collection<EnumOptionData> productTypeOptions,
-                                            Collection<EnumOptionData> reviewPeriodsOptionsData) {
-        return LineOfCreditData.builder().statusOptions(statusOptions)
-                .productTypeOptions(productTypeOptions).reviewPeriodsOptions(reviewPeriodsOptionsData).build();
+            Collection<EnumOptionData> reviewPeriodsOptionsData) {
+        return LineOfCreditData.builder().statusOptions(statusOptions).productTypeOptions(productTypeOptions)
+                .reviewPeriodsOptions(reviewPeriodsOptionsData).build();
     }
-
 
 }

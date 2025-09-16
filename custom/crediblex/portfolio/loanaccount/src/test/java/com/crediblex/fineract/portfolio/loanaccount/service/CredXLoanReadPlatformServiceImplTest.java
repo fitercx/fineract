@@ -11,7 +11,6 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.ArrayList;
 import java.util.List;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -25,7 +24,6 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
-
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +90,7 @@ public class CredXLoanReadPlatformServiceImplTest {
     public void testRetrieveLoanTransactionTemplate() {
         // Given
         when(credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId)).thenReturn(mockResult);
-        
+
         // Mock payment type options
         List<PaymentTypeData> paymentTypeOptions = new ArrayList<>();
         when(paymentTypeReadPlatformService.retrieveAllPaymentTypes()).thenReturn(paymentTypeOptions);

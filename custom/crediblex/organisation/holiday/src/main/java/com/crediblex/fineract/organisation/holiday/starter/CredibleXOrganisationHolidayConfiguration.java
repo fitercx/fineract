@@ -28,7 +28,6 @@ import org.apache.fineract.organisation.holiday.service.HolidayWritePlatformServ
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;

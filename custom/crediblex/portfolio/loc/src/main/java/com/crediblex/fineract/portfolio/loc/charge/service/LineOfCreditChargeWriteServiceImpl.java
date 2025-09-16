@@ -4,10 +4,8 @@ import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.charge.validation.LocChargeValidator;
-
 import java.time.LocalDate;
 import java.util.Optional;
-
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
@@ -48,26 +46,12 @@ public class LineOfCreditChargeWriteServiceImpl implements LineOfCreditChargeWri
     }
 
     private LocChargeData map(LineOfCreditCharge c) {
-        return LocChargeData.builder()
-                .id(c.getId())
-                .chargeDefinitionId(c.getChargeDefinition().getId())
-                .penalty(c.isPenaltyCharge())
-                .chargeTime(c.getChargeTime())
-                .chargeCalculation(c.getChargeCalculation())
-                .dueDate(c.getChargeDueDate())
-                .feeOnMonth(c.getFeeOnMonth())
-                .feeOnDay(c.getFeeOnDay())
-                .feeInterval(c.getFeeInterval())
-                .amount(c.getAmount())
-                .amountOutstanding(c.getAmountOutstanding())
-                .amountPaid(c.getAmountPaid())
-                .amountWaived(c.getAmountWaived())
-                .paid(c.isPaid())
-                .waived(c.isWaived())
-                .active(c.isActive())
-                .build();
+        return LocChargeData.builder().id(c.getId()).chargeDefinitionId(c.getChargeDefinition().getId()).penalty(c.isPenaltyCharge())
+                .chargeTime(c.getChargeTime()).chargeCalculation(c.getChargeCalculation()).dueDate(c.getChargeDueDate())
+                .feeOnMonth(c.getFeeOnMonth()).feeOnDay(c.getFeeOnDay()).feeInterval(c.getFeeInterval()).amount(c.getAmount())
+                .amountOutstanding(c.getAmountOutstanding()).amountPaid(c.getAmountPaid()).amountWaived(c.getAmountWaived())
+                .paid(c.isPaid()).waived(c.isWaived()).active(c.isActive()).build();
     }
-
 
     @Override
     public CommandProcessingResult waive(Long chargeInstanceId, JsonCommand command) {

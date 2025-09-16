@@ -232,7 +232,6 @@ public abstract class LoanRepositoryWrapper {
         return loans;
     }
 
-
     // Repayments Schedule
     public List<Loan> findByGroupOfficeIdsAndLoanStatus(@Param("officeIds") Collection<Long> officeIds,
             @Param("loanStatuses") Collection<LoanStatus> loanStatuses) {

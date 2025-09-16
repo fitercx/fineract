@@ -2,15 +2,13 @@ package com.crediblex.fineract.portfolio.loc.charge.service;
 
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidBy;
-import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
-
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
@@ -66,9 +64,9 @@ public class LocChargeAllocationService {
             }
             // percent-of-amount dynamic calculation: apply base if not yet computed (amount==0)
             if (isPercentOfAmount(charge) && (charge.getAmount() == null || charge.getAmount().compareTo(BigDecimal.ZERO) == 0)) {
-                BigDecimal base = loc.getSummary().getConsumedAmount() != null && loc.getSummary().getConsumedAmount().compareTo(BigDecimal.ZERO) > 0 ?
-                        loc.getSummary().getConsumedAmount()
-                        : (loc.getMaximumAmount() != null ? loc.getMaximumAmount() : outstanding);
+                BigDecimal base = loc.getSummary().getConsumedAmount() != null
+                        && loc.getSummary().getConsumedAmount().compareTo(BigDecimal.ZERO) > 0 ? loc.getSummary().getConsumedAmount()
+                                : (loc.getMaximumAmount() != null ? loc.getMaximumAmount() : outstanding);
                 domainService.applyPercentBase(charge, base);
                 // refresh outstanding after computation
                 outstanding = charge.getAmountOutstanding();
@@ -110,6 +108,7 @@ public class LocChargeAllocationService {
     }
 
     private boolean isPercentOfAmount(LineOfCreditCharge c) {
-        return c.getChargeCalculation() != null && c.getChargeCalculation().intValue() == ChargeCalculationType.PERCENT_OF_AMOUNT.getValue();
+        return c.getChargeCalculation() != null
+                && c.getChargeCalculation().intValue() == ChargeCalculationType.PERCENT_OF_AMOUNT.getValue();
     }
 }

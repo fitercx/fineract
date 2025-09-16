@@ -8,7 +8,6 @@ import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
 
@@ -21,9 +20,9 @@ import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
 public class LineOfCreditApprovedBuyers extends AbstractPersistableCustom<Long> {
 
     @Column(name = "name")
-    private  String name;
+    private String name;
 
     @ManyToOne
     @JoinColumn(name = "line_of_credit_id", referencedColumnName = "id")
-    private  LineOfCredit lineOfCredit;
+    private LineOfCredit lineOfCredit;
 }

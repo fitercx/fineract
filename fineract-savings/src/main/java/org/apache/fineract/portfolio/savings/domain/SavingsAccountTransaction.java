@@ -479,8 +479,13 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         return submittedOnDate;
     }
 
-    public Long getOriginalTransactionId() { return this.originalTxnId; }
-    public boolean isReversalTransaction() { return this.reversalTransaction; }
+    public Long getOriginalTransactionId() {
+        return this.originalTxnId;
+    }
+
+    public boolean isReversalTransaction() {
+        return this.reversalTransaction;
+    }
 
     void setReversalTransaction(boolean reversalTransaction) {
         this.reversalTransaction = reversalTransaction;

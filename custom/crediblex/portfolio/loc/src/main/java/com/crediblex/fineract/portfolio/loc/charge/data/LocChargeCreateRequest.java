@@ -24,6 +24,7 @@ import lombok.Data;
 
 @Data
 public class LocChargeCreateRequest {
+
     private Long locId; // populated by API endpoint
     private Long chargeId;
     private BigDecimal overrideAmount;

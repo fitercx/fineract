@@ -1,6 +1,8 @@
 package com.crediblex.fineract.portfolio.account.service;
 
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
@@ -34,16 +36,23 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-
 @Primary
 @Service
 public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTransfersWritePlatformServiceImpl {
-    public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator, AccountTransferAssembler accountTransferAssembler, AccountTransferRepository accountTransferRepository, SavingsAccountAssembler savingsAccountAssembler, SavingsAccountDomainService savingsAccountDomainService, LoanAssembler loanAccountAssembler, LoanAccountDomainService loanAccountDomainService, SavingsAccountWritePlatformService savingsAccountWritePlatformService, AccountTransferDetailRepository accountTransferDetailRepository, LoanReadPlatformService loanReadPlatformService, GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory, FineractProperties fineractProperties) {
-        super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler, savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService, accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory, fineractProperties);
-    }
 
+    public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator,
+            AccountTransferAssembler accountTransferAssembler, AccountTransferRepository accountTransferRepository,
+            SavingsAccountAssembler savingsAccountAssembler, SavingsAccountDomainService savingsAccountDomainService,
+            LoanAssembler loanAccountAssembler, LoanAccountDomainService loanAccountDomainService,
+            SavingsAccountWritePlatformService savingsAccountWritePlatformService,
+            AccountTransferDetailRepository accountTransferDetailRepository, LoanReadPlatformService loanReadPlatformService,
+            GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory,
+            FineractProperties fineractProperties) {
+        super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
+                savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
+                accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory,
+                fineractProperties);
+    }
 
     @Override
     @Transactional
@@ -212,7 +221,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             }
 
             BigDecimal netLoanDisbursementAmount = accountTransferDTO.getTransactionAmount();
-            if(accountTransferDTO instanceof CustomAccountTransferDTO){
+            if (accountTransferDTO instanceof CustomAccountTransferDTO) {
                 netLoanDisbursementAmount = ((CustomAccountTransferDTO) accountTransferDTO).getNetLoanDisbursementAmount();
             }
 

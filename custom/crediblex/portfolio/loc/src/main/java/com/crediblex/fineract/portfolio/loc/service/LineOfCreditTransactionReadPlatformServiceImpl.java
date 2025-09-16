@@ -1,7 +1,6 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
-
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -42,27 +41,19 @@ public class LineOfCreditTransactionReadPlatformServiceImpl implements LineOfCre
             final BigDecimal amount = rs.getBigDecimal("amount");
             final BigDecimal balanceBefore = rs.getBigDecimal("balanceBefore");
             final BigDecimal balanceAfter = rs.getBigDecimal("balanceAfter");
-            final OffsetDateTime transactionDate = rs.getTimestamp("transactionDate") != null ?
-                rs.getTimestamp("transactionDate").toInstant().atOffset(java.time.ZoneOffset.UTC) : null;
+            final OffsetDateTime transactionDate = rs.getTimestamp("transactionDate") != null
+                    ? rs.getTimestamp("transactionDate").toInstant().atOffset(java.time.ZoneOffset.UTC)
+                    : null;
             final String referenceNumber = rs.getString("referenceNumber");
             final String description = rs.getString("description");
-            final OffsetDateTime createdOn = rs.getTimestamp("createdOn") != null ?
-                rs.getTimestamp("createdOn").toInstant().atOffset(java.time.ZoneOffset.UTC) : null;
+            final OffsetDateTime createdOn = rs.getTimestamp("createdOn") != null
+                    ? rs.getTimestamp("createdOn").toInstant().atOffset(java.time.ZoneOffset.UTC)
+                    : null;
             final String createdBy = rs.getString("createdBy");
 
-            return LineOfCreditTransactionData.builder()
-                    .id(id)
-                    .lineOfCreditId(lineOfCreditId)
-                    .transactionType(transactionType)
-                    .amount(amount)
-                    .balanceBefore(balanceBefore)
-                    .balanceAfter(balanceAfter)
-                    .transactionDate(transactionDate)
-                    .referenceNumber(referenceNumber)
-                    .description(description)
-                    .createdOn(createdOn)
-                    .createdBy(createdBy)
-                    .build();
+            return LineOfCreditTransactionData.builder().id(id).lineOfCreditId(lineOfCreditId).transactionType(transactionType)
+                    .amount(amount).balanceBefore(balanceBefore).balanceAfter(balanceAfter).transactionDate(transactionDate)
+                    .referenceNumber(referenceNumber).description(description).createdOn(createdOn).createdBy(createdBy).build();
         }
     }
 

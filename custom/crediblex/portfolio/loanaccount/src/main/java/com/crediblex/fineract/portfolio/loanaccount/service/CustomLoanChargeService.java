@@ -28,8 +28,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Custom implementation of LoanChargeService that handles late payment fee calculations
- * based on discounted amount instead of disbursed amount for Line of Credit loans.
+ * Custom implementation of LoanChargeService that handles late payment fee calculations based on discounted amount
+ * instead of disbursed amount for Line of Credit loans.
  */
 @Service
 @Slf4j
@@ -40,20 +40,19 @@ public class CustomLoanChargeService extends LoanChargeService {
 
     @Autowired
     public CustomLoanChargeService(LoanChargeValidator loanChargeValidator,
-                                 org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService loanTransactionProcessingService,
-                                 CustomLatePaymentFeeCalculationService latePaymentFeeCalculationService) {
+            org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService loanTransactionProcessingService,
+            CustomLatePaymentFeeCalculationService latePaymentFeeCalculationService) {
         super(loanChargeValidator, loanTransactionProcessingService);
         this.latePaymentFeeCalculationService = latePaymentFeeCalculationService;
         this.loanChargeValidator = loanChargeValidator;
     }
-
 
     @Override
     public void recalculateLoanCharge(final Loan loan, final LoanCharge loanCharge, final int penaltyWaitPeriod) {
         BigDecimal amount = BigDecimal.ZERO;
         BigDecimal chargeAmt;
         BigDecimal totalChargeAmt = BigDecimal.ZERO;
-        
+
         if (loanCharge.getChargeCalculation().isPercentageBased()) {
             if (loanCharge.isOverdueInstallmentCharge()) {
                 // Use custom logic for overdue installment charges (late payment fees)
@@ -78,18 +77,20 @@ public class CustomLoanChargeService extends LoanChargeService {
     }
 
     /**
-     * Calculates the overdue amount percentage applied to for late payment fees.
-     * For RECEIVABLE Line of Credit loans, this method uses the discounted amount (net disbursal amount).
-     * For PAYABLE Line of Credit loans, this method uses the original calculation but retrieves the late payment fee from LOC.
-     * 
-     * @param loan the loan entity
-     * @param loanCharge the loan charge
-     * @param penaltyWaitPeriod the penalty wait period
+     * Calculates the overdue amount percentage applied to for late payment fees. For RECEIVABLE Line of Credit loans,
+     * this method uses the discounted amount (net disbursal amount). For PAYABLE Line of Credit loans, this method uses
+     * the original calculation but retrieves the late payment fee from LOC.
+     *
+     * @param loan
+     *            the loan entity
+     * @param loanCharge
+     *            the loan charge
+     * @param penaltyWaitPeriod
+     *            the penalty wait period
      * @return the calculated amount
      */
-    private BigDecimal calculateOverdueAmountPercentageAppliedToWithDiscountedAmount(final Loan loan, 
-                                                                                    final LoanCharge loanCharge, 
-                                                                                    final int penaltyWaitPeriod) {
+    private BigDecimal calculateOverdueAmountPercentageAppliedToWithDiscountedAmount(final Loan loan, final LoanCharge loanCharge,
+            final int penaltyWaitPeriod) {
         try {
             // Check if this is a RECEIVABLE LOC loan that should use discounted amount
             boolean shouldUseDiscounted = latePaymentFeeCalculationService.shouldUseDiscountedAmountForLatePaymentFee(loan);
@@ -98,7 +99,7 @@ public class CustomLoanChargeService extends LoanChargeService {
                 // Get the installment for this charge
                 var installment = loanCharge.getOverdueInstallmentCharge().getInstallment();
                 var graceDate = DateUtils.getBusinessLocalDate().minusDays(penaltyWaitPeriod);
-                
+
                 if (DateUtils.isAfter(graceDate, installment.getDueDate())) {
                     // Use discounted amount (net disbursal amount) instead of disbursed amount
                     var discountedAmount = loan.getNetDisbursalAmount();
@@ -108,7 +109,7 @@ public class CustomLoanChargeService extends LoanChargeService {
                     }
                 }
             }
-            
+
             // Check if this is a PAYABLE LOC loan
             boolean isPayableLoc = latePaymentFeeCalculationService.isPayableLocLoan(loan);
 
@@ -119,13 +120,12 @@ public class CustomLoanChargeService extends LoanChargeService {
                     return locLatePaymentFee;
                 }
             }
-            
+
             // Fall back to original calculation if not applicable or if there's an error
             return loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
-            
+
         } catch (Exception e) {
-            log.error("Error calculating overdue amount with LOC-specific logic for loan {}: {}", 
-                    loan.getId(), e.getMessage(), e);
+            log.error("Error calculating overdue amount with LOC-specific logic for loan {}", loan.getId(), e);
             // Fall back to original calculation
             return loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
         }

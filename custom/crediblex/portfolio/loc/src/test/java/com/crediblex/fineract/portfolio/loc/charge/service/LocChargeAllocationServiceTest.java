@@ -1,14 +1,12 @@
 package com.crediblex.fineract.portfolio.loc.charge.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidBy;
-import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
@@ -45,11 +43,19 @@ class LocChargeAllocationServiceTest {
         when(locRepo.findBySettlementSavingsAccount_Id(savingsId)).thenReturn(Optional.of(loc));
 
         LineOfCreditCharge c1 = new LineOfCreditCharge();
-        c1.setLineOfCredit(loc); c1.setAmount(new BigDecimal("50")); c1.setAmountOutstanding(new BigDecimal("50")); c1.setActive(true);
-        c1.setChargeTime(2); c1.setChargeCalculation(1); // specified due date / flat
+        c1.setLineOfCredit(loc);
+        c1.setAmount(new BigDecimal("50"));
+        c1.setAmountOutstanding(new BigDecimal("50"));
+        c1.setActive(true);
+        c1.setChargeTime(2);
+        c1.setChargeCalculation(1); // specified due date / flat
         LineOfCreditCharge c2 = new LineOfCreditCharge();
-        c2.setLineOfCredit(loc); c2.setAmount(new BigDecimal("80")); c2.setAmountOutstanding(new BigDecimal("80")); c2.setActive(true);
-        c2.setChargeTime(2); c2.setChargeCalculation(1);
+        c2.setLineOfCredit(loc);
+        c2.setAmount(new BigDecimal("80"));
+        c2.setAmountOutstanding(new BigDecimal("80"));
+        c2.setActive(true);
+        c2.setChargeTime(2);
+        c2.setChargeCalculation(1);
 
         when(chargeRepo.findUnpaidOrdered(loc.getId())).thenReturn(List.of(c1, c2));
 

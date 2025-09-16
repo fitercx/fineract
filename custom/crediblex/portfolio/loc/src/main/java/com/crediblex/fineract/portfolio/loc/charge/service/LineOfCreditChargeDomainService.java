@@ -4,9 +4,6 @@ import com.crediblex.fineract.portfolio.loc.charge.LocChargeConstants;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.MonthDay;
-import java.time.temporal.ChronoField;
 import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
@@ -20,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class LineOfCreditChargeDomainService {
 
-    public LineOfCreditCharge create(LineOfCredit loc, Charge definition, BigDecimal overrideAmount,Boolean isActive) {
+    public LineOfCreditCharge create(LineOfCredit loc, Charge definition, BigDecimal overrideAmount, Boolean isActive) {
         ChargeTimeType timeType = ChargeTimeType.fromInt(definition.getChargeTimeType());
         if (!LocChargeConstants.isSupportedChargeTime(timeType)) {
             throw new IllegalArgumentException("Unsupported charge time type for LOC: " + timeType);
@@ -81,7 +78,9 @@ public class LineOfCreditChargeDomainService {
         }
     }
 
-    public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment) { return pay(c, payment, true); }
+    public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment) {
+        return pay(c, payment, true);
+    }
 
     public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment, boolean advanceRecurringCycle) {
         require(payment != null && payment.compareTo(BigDecimal.ZERO) > 0, "payment must be > 0");
@@ -108,7 +107,9 @@ public class LineOfCreditChargeDomainService {
     }
 
     public void moveToNextCycle(LineOfCreditCharge c) {
-        if (!isRecurring(c)) { return; }
+        if (!isRecurring(c)) {
+            return;
+        }
         c.setAmountPaid(BigDecimal.ZERO);
         c.setAmountWaived(BigDecimal.ZERO);
         c.setAmountWrittenOff(BigDecimal.ZERO);
@@ -125,29 +126,55 @@ public class LineOfCreditChargeDomainService {
     }
 
     private void recalcOutstanding(LineOfCreditCharge c) {
-        BigDecimal outstanding = ns(c.getAmount())
-                .subtract(ns(c.getAmountPaid()))
-                .subtract(ns(c.getAmountWaived()))
+        BigDecimal outstanding = ns(c.getAmount()).subtract(ns(c.getAmountPaid())).subtract(ns(c.getAmountWaived()))
                 .subtract(ns(c.getAmountWrittenOff()));
         c.setAmountOutstanding(outstanding);
         c.setPaid(outstanding.compareTo(BigDecimal.ZERO) == 0 && !c.isWaived());
     }
 
-    private boolean isRecurring(LineOfCreditCharge c) { return isMonthly(c) || isAnnual(c) || isWeekly(c); }
-    private boolean isMonthly(LineOfCreditCharge c) { return ChargeTimeType.fromInt(c.getChargeTime()).isMonthlyFee(); }
-    private boolean isAnnual(LineOfCreditCharge c) { return ChargeTimeType.fromInt(c.getChargeTime()).isAnnualFee(); }
-    private boolean isWeekly(LineOfCreditCharge c) { return ChargeTimeType.fromInt(c.getChargeTime()).isWeeklyFee(); }
-    private boolean isFlat(LineOfCreditCharge c) { return ChargeCalculationType.fromInt(c.getChargeCalculation()) == ChargeCalculationType.FLAT; }
-    private boolean isPercent(LineOfCreditCharge c) { return ChargeCalculationType.fromInt(c.getChargeCalculation()) == ChargeCalculationType.PERCENT_OF_AMOUNT; }
+    private boolean isRecurring(LineOfCreditCharge c) {
+        return isMonthly(c) || isAnnual(c) || isWeekly(c);
+    }
 
-    private static void require(boolean condition, String msg) { if (!condition) throw new IllegalArgumentException(msg); }
-    private static BigDecimal ns(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+    private boolean isMonthly(LineOfCreditCharge c) {
+        return ChargeTimeType.fromInt(c.getChargeTime()).isMonthlyFee();
+    }
+
+    private boolean isAnnual(LineOfCreditCharge c) {
+        return ChargeTimeType.fromInt(c.getChargeTime()).isAnnualFee();
+    }
+
+    private boolean isWeekly(LineOfCreditCharge c) {
+        return ChargeTimeType.fromInt(c.getChargeTime()).isWeeklyFee();
+    }
+
+    private boolean isFlat(LineOfCreditCharge c) {
+        return ChargeCalculationType.fromInt(c.getChargeCalculation()) == ChargeCalculationType.FLAT;
+    }
+
+    private boolean isPercent(LineOfCreditCharge c) {
+        return ChargeCalculationType.fromInt(c.getChargeCalculation()) == ChargeCalculationType.PERCENT_OF_AMOUNT;
+    }
+
+    private static void require(boolean condition, String msg) {
+        if (!condition) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
+    private static BigDecimal ns(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
 
     public void unpay(LineOfCreditCharge c, BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) { return; }
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
         BigDecimal currentPaid = ns(c.getAmountPaid());
         BigDecimal newPaid = currentPaid.subtract(amount);
-        if (newPaid.compareTo(BigDecimal.ZERO) < 0) { newPaid = BigDecimal.ZERO; }
+        if (newPaid.compareTo(BigDecimal.ZERO) < 0) {
+            newPaid = BigDecimal.ZERO;
+        }
         c.setAmountPaid(newPaid);
         recalcOutstanding(c);
         // We are not rolling back dueDate if cycle already advanced. Future enhancement could track previous due date.

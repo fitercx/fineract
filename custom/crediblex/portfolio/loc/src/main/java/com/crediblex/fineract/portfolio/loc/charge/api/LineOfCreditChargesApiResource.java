@@ -48,14 +48,15 @@ public class LineOfCreditChargesApiResource {
         switch (normalized) {
             case "active":
             case "all":
-                result = readService.listActive(locId); break;
+                result = readService.listActive(locId);
+            break;
             case "due":
             case "overdue": // both map to same underlying service for now
                 LocalDate asOf = asOfDateStr != null ? LocalDate.parse(asOfDateStr) : LocalDate.now();
-                result = readService.listDueOrOverdue(locId, asOf); break;
+                result = readService.listDueOrOverdue(locId, asOf);
+            break;
             default:
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity("{\"message\":\"Unsupported status value\"}").build();
+                return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Unsupported status value\"}").build();
         }
         return Response.ok(result).build();
     }
@@ -73,7 +74,8 @@ public class LineOfCreditChargesApiResource {
     @Path("{chargeId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response postCommand(@PathParam("locId") Long locId, @PathParam("chargeId") Long chargeId, @QueryParam("command") String command) {
+    public Response postCommand(@PathParam("locId") Long locId, @PathParam("chargeId") Long chargeId,
+            @QueryParam("command") String command) {
         if (StringUtils.equalsIgnoreCase(command, "waive")) {
             ObjectNode node = objectMapper.createObjectNode();
             node.put("locId", locId);
@@ -83,8 +85,7 @@ public class LineOfCreditChargesApiResource {
             var result = commandsSourceWritePlatformService.logCommandSource(commandRequest);
             return Response.ok(result).build();
         }
-        return Response.status(Response.Status.BAD_REQUEST)
-                .entity("{\"message\":\"Unsupported command\"}").build();
+        return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Unsupported command\"}").build();
     }
 
     @DELETE

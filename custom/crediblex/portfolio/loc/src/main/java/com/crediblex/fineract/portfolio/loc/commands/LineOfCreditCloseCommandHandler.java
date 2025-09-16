@@ -24,4 +24,3 @@ public class LineOfCreditCloseCommandHandler implements NewCommandSourceHandler 
         return this.writePlatformService.closeLineOfCredit(command.entityId(), command);
     }
 }
-

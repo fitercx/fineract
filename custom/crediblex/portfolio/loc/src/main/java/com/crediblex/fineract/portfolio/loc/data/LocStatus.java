@@ -5,8 +5,8 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
 public enum LocStatus {
 
-    SUBMITTED(50,"status.submitted"), APPROVED(150,"status.approved"), ACTIVE(200,"status.active"), INACTIVE(300,"status.inactive"),
-    SUSPENDED(400,"status.suspended"), CLOSED(500,"status.closed");
+    SUBMITTED(50, "status.submitted"), APPROVED(150, "status.approved"), ACTIVE(200, "status.active"), INACTIVE(300,
+            "status.inactive"), SUSPENDED(400, "status.suspended"), CLOSED(500, "status.closed");
 
     @Getter
     final Integer value;
@@ -17,7 +17,6 @@ public enum LocStatus {
         this.value = value;
         this.code = code;
     }
-
 
     public EnumOptionData getEnumOptionData() {
         return switch (this) {

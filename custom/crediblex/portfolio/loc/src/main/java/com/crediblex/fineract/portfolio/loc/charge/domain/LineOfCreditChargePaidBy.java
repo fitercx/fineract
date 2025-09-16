@@ -1,6 +1,11 @@
 package com.crediblex.fineract.portfolio.loc.charge.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
@@ -35,7 +40,15 @@ public class LineOfCreditChargePaidBy extends AbstractPersistableCustom<Long> {
         return new LineOfCreditChargePaidBy(txn, charge, amount);
     }
 
-    public BigDecimal getAmount() { return amount; }
-    public LineOfCreditCharge getLineOfCreditCharge() { return lineOfCreditCharge; }
-    public SavingsAccountTransaction getSavingsAccountTransaction() { return savingsAccountTransaction; }
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public LineOfCreditCharge getLineOfCreditCharge() {
+        return lineOfCreditCharge;
+    }
+
+    public SavingsAccountTransaction getSavingsAccountTransaction() {
+        return savingsAccountTransaction;
+    }
 }

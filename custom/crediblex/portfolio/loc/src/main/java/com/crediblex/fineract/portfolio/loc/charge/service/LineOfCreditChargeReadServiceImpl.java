@@ -21,26 +21,17 @@ public class LineOfCreditChargeReadServiceImpl implements LineOfCreditChargeRead
     }
 
     private static final class LocChargeRowMapper implements RowMapper<LocChargeData> {
+
         @Override
         public LocChargeData mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return LocChargeData.builder()
-                    .id(rs.getLong("id"))
-                    .chargeDefinitionId(rs.getLong("chargeDefinitionId"))
-                    .penalty(rs.getBoolean("penalty"))
-                    .chargeTime(rs.getInt("chargeTime"))
-                    .chargeCalculation(rs.getInt("chargeCalculation"))
+            return LocChargeData.builder().id(rs.getLong("id")).chargeDefinitionId(rs.getLong("chargeDefinitionId"))
+                    .penalty(rs.getBoolean("penalty")).chargeTime(rs.getInt("chargeTime")).chargeCalculation(rs.getInt("chargeCalculation"))
                     .dueDate(rs.getDate("dueDate") != null ? rs.getDate("dueDate").toLocalDate() : null)
-                    .feeOnMonth(getInteger(rs, "feeOnMonth"))
-                    .feeOnDay(getInteger(rs, "feeOnDay"))
-                    .feeInterval(getInteger(rs, "feeInterval"))
-                    .amount(rs.getBigDecimal("amount"))
-                    .amountOutstanding(rs.getBigDecimal("amountOutstanding"))
-                    .amountPaid(rs.getBigDecimal("amountPaid"))
-                    .amountWaived(rs.getBigDecimal("amountWaived"))
-                    .paid(rs.getBoolean("isPaid"))
-                    .waived(rs.getBoolean("waived"))
-                    .active(rs.getBoolean("active"))
-                    .build();
+                    .feeOnMonth(getInteger(rs, "feeOnMonth")).feeOnDay(getInteger(rs, "feeOnDay"))
+                    .feeInterval(getInteger(rs, "feeInterval")).amount(rs.getBigDecimal("amount"))
+                    .amountOutstanding(rs.getBigDecimal("amountOutstanding")).amountPaid(rs.getBigDecimal("amountPaid"))
+                    .amountWaived(rs.getBigDecimal("amountWaived")).paid(rs.getBoolean("isPaid")).waived(rs.getBoolean("waived"))
+                    .active(rs.getBoolean("active")).build();
         }
 
         private Integer getInteger(ResultSet rs, String column) throws SQLException {
@@ -49,12 +40,11 @@ public class LineOfCreditChargeReadServiceImpl implements LineOfCreditChargeRead
         }
     }
 
-    private static final String BASE_SELECT = "SELECT locc.id as id, locc.charge_id as chargeDefinitionId, locc.is_penalty as penalty, " +
-            "locc.charge_time_enum as chargeTime, locc.charge_calculation_enum as chargeCalculation, locc.charge_due_date as dueDate, " +
-            "locc.fee_on_month as feeOnMonth, locc.fee_on_day as feeOnDay, locc.fee_interval as feeInterval, locc.amount as amount, " +
-            "locc.amount_outstanding_derived as amountOutstanding, locc.amount_paid_derived as amountPaid, locc.amount_waived_derived as amountWaived, " +
-            "locc.is_paid_derived as isPaid, locc.waived as waived, locc.is_active as active " +
-            "FROM m_line_of_credit_charge locc ";
+    private static final String BASE_SELECT = "SELECT locc.id as id, locc.charge_id as chargeDefinitionId, locc.is_penalty as penalty, "
+            + "locc.charge_time_enum as chargeTime, locc.charge_calculation_enum as chargeCalculation, locc.charge_due_date as dueDate, "
+            + "locc.fee_on_month as feeOnMonth, locc.fee_on_day as feeOnDay, locc.fee_interval as feeInterval, locc.amount as amount, "
+            + "locc.amount_outstanding_derived as amountOutstanding, locc.amount_paid_derived as amountPaid, locc.amount_waived_derived as amountWaived, "
+            + "locc.is_paid_derived as isPaid, locc.waived as waived, locc.is_active as active " + "FROM m_line_of_credit_charge locc ";
 
     @Override
     public List<LocChargeData> listActive(Long locId) {
@@ -64,16 +54,15 @@ public class LineOfCreditChargeReadServiceImpl implements LineOfCreditChargeRead
 
     @Override
     public List<LocChargeData> listDueOrOverdue(Long locId, LocalDate asOfDate) {
-        String sql = BASE_SELECT +
-                "WHERE locc.line_of_credit_id = ? AND locc.is_active = true AND locc.waived = false AND locc.is_paid_derived = false " +
-                "AND locc.charge_due_date IS NOT NULL AND locc.charge_due_date <= ?";
+        String sql = BASE_SELECT
+                + "WHERE locc.line_of_credit_id = ? AND locc.is_active = true AND locc.waived = false AND locc.is_paid_derived = false "
+                + "AND locc.charge_due_date IS NOT NULL AND locc.charge_due_date <= ?";
         return jdbcTemplate.query(sql, new LocChargeRowMapper(), locId, asOfDate);
     }
 
     @Override
     public LocChargeData getOne(Long locId, Long chargeInstanceId) {
-        String sql = BASE_SELECT +
-                "WHERE locc.line_of_credit_id = ? AND locc.id = ?";
+        String sql = BASE_SELECT + "WHERE locc.line_of_credit_id = ? AND locc.id = ?";
         List<LocChargeData> list = jdbcTemplate.query(sql, new LocChargeRowMapper(), locId, chargeInstanceId);
         if (list.isEmpty()) {
             throw new IllegalArgumentException("Charge not found");

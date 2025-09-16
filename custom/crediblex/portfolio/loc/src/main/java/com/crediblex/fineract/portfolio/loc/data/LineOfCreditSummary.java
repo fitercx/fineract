@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Getter
 public class LineOfCreditSummary {
+
     private final Long id;
     private final String externalId;
     private final LocProductType productType;

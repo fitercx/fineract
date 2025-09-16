@@ -2,12 +2,11 @@ package com.crediblex.fineract.portfolio.loc.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.math.BigDecimal;
 
 @Embeddable
 @Getter
@@ -31,8 +30,8 @@ public class LineOfCreditSummary {
     @Column(name = "consumed_amount", precision = 19, scale = 6, nullable = false)
     private BigDecimal consumedAmount;
 
-    public static LineOfCreditSummary getInitialState(){
-        return new LineOfCreditSummary(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO);
+    public static LineOfCreditSummary getInitialState() {
+        return new LineOfCreditSummary(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 
 }
