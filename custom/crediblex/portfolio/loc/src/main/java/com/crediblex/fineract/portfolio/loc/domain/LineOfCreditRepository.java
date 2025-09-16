@@ -47,4 +47,6 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
     List<LineOfCreditSummary> findActiveSummariesByCurrency(@Param("currency") String currency);
 
     Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
+
+    Optional<LineOfCredit> findByExternalId(String externalId);
 }

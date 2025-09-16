@@ -86,6 +86,11 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         this.dataValidator.validateForCreate(command.json());
         LineOfCredit lineOfCredit = this.lineOfCreditAssembler.assembleFrom(command);
 
+        lineOfCreditRepository.findByExternalId(lineOfCredit.getExternalId()).ifPresent(
+            existingLoc -> { throw new PlatformApiDataValidationException("error.msg.loc.duplicate.externalId",
+                "Line of Credit with given externalId already exists: " + lineOfCredit.getExternalId(), "externalId"); }
+        );
+
         if (command.hasParameter("charges")) {
             JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray chargesArray = fromJsonHelper.extractJsonArrayNamed("charges", root);
