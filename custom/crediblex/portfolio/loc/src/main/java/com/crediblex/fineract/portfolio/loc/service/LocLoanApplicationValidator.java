@@ -48,7 +48,7 @@ public class LocLoanApplicationValidator {
             if (lineOfCreditId != null && lineOfCreditId > 0) {
                 try {
                     // Fetch the line of credit
-                    final LineOfCreditData lineOfCredit = this.lineOfCreditReadPlatformService.retrieveOne(lineOfCreditId);
+                    final LineOfCreditData lineOfCredit = this.lineOfCreditReadPlatformService.retrieveOne(lineOfCreditId,null);
                     
                     if (lineOfCredit == null) {
                         baseDataValidator.reset().parameter(LocApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME)
@@ -92,8 +92,8 @@ public class LocLoanApplicationValidator {
             if (principal.compareTo(lineOfCredit.getAvailableBalance()) > 0) {
                 baseDataValidator.reset().parameter("principal")
                         .failWithCode("loan.amount.exceeds.available.balance", 
-                            String.format("Loan amount %s exceeds available balance %s of line of credit %s", 
-                                principal, lineOfCredit.getAvailableBalance(), lineOfCredit.getName()));
+                            String.format("Loan amount %s exceeds available balance %s of line of credit",
+                                principal, lineOfCredit.getAvailableBalance()));
 
             }
         }

@@ -124,4 +124,14 @@ public class ChargeDropdownReadPlatformServiceImpl implements ChargeDropdownRead
         return Arrays.asList(chargeTimeType(ChargeTimeType.SHAREACCOUNT_ACTIVATION), chargeTimeType(ChargeTimeType.SHARE_PURCHASE),
                 chargeTimeType(ChargeTimeType.SHARE_REDEEM));
     }
+
+    @Override
+    public List<EnumOptionData> retrieveLineOfCreditCalculationTypes() {
+        return Arrays.asList(chargeCalculationType(ChargeCalculationType.FLAT));
+    }
+
+    @Override
+    public List<EnumOptionData> retrieveLineOfCreditCollectionTimeTypes() {
+        return Arrays.asList(chargeTimeType(ChargeTimeType.LINE_OF_CREDIT_ACTIVATION));
+    }
 }

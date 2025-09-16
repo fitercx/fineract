@@ -87,6 +87,8 @@ public final class ChargeData implements Comparable<ChargeData>, Serializable {
     private final List<EnumOptionData> clientChargeTimeTypeOptions;
     private final List<EnumOptionData> shareChargeCalculationTypeOptions;
     private final List<EnumOptionData> shareChargeTimeTypeOptions;
+    private final List<EnumOptionData> lineOfCreditChargeCalculationTypeOptions;
+    private final List<EnumOptionData> lineOfCreditChargeTimeTypeOptions;
 
     private final List<EnumOptionData> feeFrequencyOptions;
 
@@ -113,6 +115,8 @@ public final class ChargeData implements Comparable<ChargeData>, Serializable {
                 .taxGroupOptions(template.getTaxGroupOptions())
                 .shareChargeCalculationTypeOptions(template.getShareChargeCalculationTypeOptions())
                 .shareChargeTimeTypeOptions(template.getShareChargeTimeTypeOptions())
+                .lineOfCreditChargeCalculationTypeOptions(template.getLineOfCreditChargeCalculationTypeOptions())
+                .lineOfCreditChargeTimeTypeOptions(template.getLineOfCreditChargeTimeTypeOptions())
                 .accountMappingForChargeConfig(template.getAccountMappingForChargeConfig())
                 .expenseAccountOptions(template.getExpenseAccountOptions()).assetAccountOptions(template.getAssetAccountOptions()).build();
     }

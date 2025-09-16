@@ -255,6 +255,18 @@ public final class ChargeDefinitionCommandFromApiJsonDeserializer {
                 baseDataValidator.reset().parameter(CHARGE_CALCULATION_TYPE).value(chargeCalculationType)
                         .isOneOfTheseValues(ChargeCalculationType.validValuesForShareAccountActivation());
             }
+        } else if (appliesTo.isLineOfCreditCharge()) {
+            // Line of Credit applicable validation
+            final Integer chargeTimeType = this.fromApiJsonHelper.extractIntegerSansLocaleNamed(CHARGE_TIME_TYPE, element);
+            baseDataValidator.reset().parameter(CHARGE_TIME_TYPE).value(chargeTimeType).notNull();
+            if (chargeTimeType != null) {
+                baseDataValidator.reset().parameter(CHARGE_TIME_TYPE).value(chargeTimeType)
+                        .isOneOfTheseValues(ChargeTimeType.validLineOfCreditValues());
+            }
+            if (chargeCalculationType != null) {
+                baseDataValidator.reset().parameter(CHARGE_CALCULATION_TYPE).value(chargeCalculationType)
+                        .isOneOfTheseValues(ChargeCalculationType.validValuesForLineOfCredit());
+            }
         }
 
         final String name = this.fromApiJsonHelper.extractStringNamed(NAME, element);
@@ -391,10 +403,12 @@ public final class ChargeDefinitionCommandFromApiJsonDeserializer {
             final Collection<Object> validSavingsValues = Arrays.asList(ChargeTimeType.validSavingsValues());
             final Collection<Object> validClientValues = Arrays.asList(ChargeTimeType.validClientValues());
             final Collection<Object> validShareValues = Arrays.asList(ChargeTimeType.validShareValues());
+            final Collection<Object> validLocValues = Arrays.asList(ChargeTimeType.validLineOfCreditValues());
             final Collection<Object> allValidValues = new ArrayList<>(validLoanValues);
             allValidValues.addAll(validSavingsValues);
             allValidValues.addAll(validClientValues);
             allValidValues.addAll(validShareValues);
+            allValidValues.addAll(validLocValues);
             baseDataValidator.reset().parameter(CHARGE_TIME_TYPE).value(chargeTimeType).notNull()
                     .isOneOfTheseValues(allValidValues.toArray(new Object[allValidValues.size()]));
         }

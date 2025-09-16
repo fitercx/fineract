@@ -40,4 +40,10 @@ public interface LineOfCreditWritePlatformService {
 
     @Transactional
     CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId);
+
+    @Transactional
+    CommandProcessingResult approveLineOfCredit(Long lineOfCreditId, JsonCommand command);
+
+    @Transactional
+    CommandProcessingResult closeLineOfCredit(Long lineOfCreditId, JsonCommand command);
 }
