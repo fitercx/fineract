@@ -247,7 +247,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final List<LoanSchedulePeriodData> loanSchedulePeriodData = this.jdbcTemplate.query(loanSchedulePeriodSql, loanSchedulePeriodRowMapper, loanId);
             final LoanAccountData loanAccountData = this.jdbcTemplate.queryForObject(sqlBuilder.toString(), loanRowMapper, loanId, hierarchySearchString, hierarchySearchString);
 
-            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData, BigDecimal.valueOf(25));
+            assert loanAccountData != null;
+            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData, loanAccountData.getAnnualInterestRate());
 
             if (loanAccountData instanceof ExtendedLoanAccountData extended) {
                 extended.addCustomParameter(

@@ -16,7 +16,7 @@ public class LoanInterestVariationsData {
     private final LocalDate fromDate;
     private final LocalDate toDate;
     private final BigDecimal decimalValue;
-    private final BigDecimal originalApprovedInterestRate;
+    private final transient BigDecimal originalApprovedInterestRate;
 
     public LoanInterestVariationsData(LocalDate fromDate, LocalDate toDate, BigDecimal decimalValue,
                                       BigDecimal originalApprovedInterestRate) {
