@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.google.common.collect.Lists;
@@ -871,6 +872,58 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             if (transactionAmount != null && transactionAmount.compareTo(BigDecimal.ZERO) > 0) {
                 adjustLocBalanceOnRepayment(loanId, transactionAmount);
+            }
+        }
+
+        // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
+        if (result != null && result.hasChanges() && result.getResourceId() != null) {
+            try {
+                // Fetch the updated loan to get the loan transaction
+                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+                // Find the specific transaction that was just created using the resourceId (transaction ID)
+                LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
+
+                if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
+                    // Extract affected installments using the shared utility method
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, transaction);
+
+                    // Get transaction amount from the command for webhook payload
+                    BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+                    LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+
+                    // Add the affected installments to the result for webhook payload
+                    Map<String, Object> additionalChanges = new HashMap<>();
+                    if (result.getChanges() != null) {
+                        additionalChanges.putAll(result.getChanges());
+                    }
+
+                    // Add affected installments and transaction details to the changes
+                    additionalChanges.put("affectedInstallments", affectedInstallments);
+                    additionalChanges.put("transactionAmount", transactionAmount);
+                    additionalChanges.put("transactionDate", transactionDate);
+                    additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction ID
+
+                    // Create a new result with the additional schedule information
+                    return new CommandProcessingResultBuilder()
+                        .withCommandId(result.getCommandId())
+                        .withEntityId(result.getResourceId())
+                        .withEntityExternalId(result.getResourceExternalId())
+                        .withSubEntityId(result.getSubResourceId())
+                        .withSubEntityExternalId(result.getSubResourceExternalId())
+                        .withOfficeId(result.getOfficeId())
+                        .withClientId(result.getClientId())
+                        .withGroupId(result.getGroupId())
+                        .withLoanId(result.getLoanId())
+                        .withLoanExternalId(result.getLoanExternalId())
+                        .with(additionalChanges)
+                        .build();
+                }
+
+            } catch (Exception e) {
+                // Log the error but don't fail the repayment transaction
+                log.warn("Failed to fetch affected installments for webhook payload: {}", e.getMessage());
+                return result;
             }
         }
 
