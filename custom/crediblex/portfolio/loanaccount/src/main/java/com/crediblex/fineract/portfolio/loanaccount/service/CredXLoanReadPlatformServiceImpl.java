@@ -915,7 +915,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         this.context.authenticatedUser();
 
-        final ExtendedLoanProductData loanProduct = (ExtendedLoanProductData)this.loanProductReadPlatformService.retrieveLoanProduct(productId);
+        final ExtendedLoanProductData loanProduct = (ExtendedLoanProductData) this.loanProductReadPlatformService.retrieveLoanProduct(productId);
         final Collection<EnumOptionData> loanTermFrequencyTypeOptions = this.loanDropdownReadPlatformService
                 .retrieveLoanTermFrequencyTypeOptions();
         final Collection<EnumOptionData> repaymentFrequencyTypeOptions = this.loanDropdownReadPlatformService
@@ -945,10 +945,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Collection<ChargeData> chargeOptions = null;
         if (loanProduct.getMultiDisburseLoan()) {
             chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
-                    new ChargeTimeType[] { ChargeTimeType.OVERDUE_INSTALLMENT });
+                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT});
         } else {
             chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
-                    new ChargeTimeType[] { ChargeTimeType.OVERDUE_INSTALLMENT, ChargeTimeType.TRANCHE_DISBURSEMENT });
+                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT, ChargeTimeType.TRANCHE_DISBURSEMENT});
         }
 
         Integer loanCycleCounter = null;
@@ -969,8 +969,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         List<LineOfCreditSummary> lineOfCreditSummaries = null;
         Boolean isLocEnabled = false;
-        if(!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled") && (Boolean)loanProduct.getAdditionalProperties().get("isLocEnabled")) {
-            isLocEnabled =  (Boolean)loanProduct.getAdditionalProperties().get("isLocEnabled");
+        if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled") && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
+            isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
             lineOfCreditSummaries = this.lineOfCreditRepository.findActiveSummariesByCurrency(loanProduct.getCurrency().getCode());
         }
 
@@ -1002,7 +1002,5 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return loanAccountData;
 
     }
-
-
 
 }
