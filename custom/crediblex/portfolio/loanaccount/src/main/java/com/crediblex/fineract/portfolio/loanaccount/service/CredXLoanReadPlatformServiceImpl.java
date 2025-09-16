@@ -247,7 +247,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final List<LoanSchedulePeriodData> loanSchedulePeriodData = this.jdbcTemplate.query(loanSchedulePeriodSql, loanSchedulePeriodRowMapper, loanId);
             final LoanAccountData loanAccountData = this.jdbcTemplate.queryForObject(sqlBuilder.toString(), loanRowMapper, loanId, hierarchySearchString, hierarchySearchString);
 
-            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData);
+            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData, BigDecimal.valueOf(25));
 
             if (loanAccountData instanceof ExtendedLoanAccountData extended) {
                 extended.addCustomParameter(
@@ -305,7 +305,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     ) AS rn
                 FROM m_loan_term_variations
                 WHERE loan_id = ?
-                      AND term_type = 10
+                    AND term_type = 10
+                    AND is_active = true
             )
             SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
             FROM ranked_variations
