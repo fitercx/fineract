@@ -58,7 +58,7 @@ import java.util.Map;
 @Path("/v1/odoo")
 @Component
 @Tag(name = "Odoo Integration", description = "Odoo ERP integration for financial data synchronization")
-@ConditionalOnProperty(name = "odoo.enabled", havingValue = "true", matchIfMissing = false)
+// @ConditionalOnProperty(name = "odoo.enabled", havingValue = "true", matchIfMissing = false)
 public class OdooIntegrationApiResource {
 
     private static final String RESOURCE_NAME_FOR_PERMISSION = "ODOO_INTEGRATION";

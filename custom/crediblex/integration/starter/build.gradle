@@ -17,8 +17,15 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':fineract-core'))
-    implementation(project(':fineract-provider'))
-    implementation(project(':custom:crediblex:integration:odoo'))
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract Integration Service'
+group = 'com.crediblex.fineract.integration'
+
+base {
+    archivesName = 'crediblex-fineract-integration-starter'
+}
+
+// apply from: 'dependencies.gradle'
