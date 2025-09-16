@@ -35,8 +35,6 @@ public class LineOfCreditAssembler {
                 command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount") : null;
         final String externalId = command.hasParameter("externalId") ?
                 command.stringValueOfParameterNamed("externalId") : null;
-        final LocalDate activationDate = command.hasParameter("activationDate") ?
-                command.localDateValueOfParameterNamed("activationDate") : null;
         final String currency = command.hasParameter("currencyCode") ?
                 command.stringValueOfParameterNamed("currencyCode") : null;
         final BigDecimal advancePercentage = command.hasParameter("advancePercentage") ?
@@ -112,7 +110,7 @@ public class LineOfCreditAssembler {
                 settlementAccount = savingsAccountRepository.findById(settlementId)
                         .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.settlement.savings.not.found", "Settlement savings account not found", "settlementSavingsAccountId"));
 
-                if(settlementAccount.getCurrency().getCode().equals(currency)){
+                if(!settlementAccount.getCurrency().getCode().equals(currency)){
                     throw new PlatformApiDataValidationException("error.msg.loc.currency.mismatch.settlement.savings",
                             "LOC currency must match settlement savings account currency", "currency");
                 }

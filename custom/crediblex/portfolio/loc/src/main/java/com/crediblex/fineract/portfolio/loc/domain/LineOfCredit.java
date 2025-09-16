@@ -147,6 +147,13 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
     }
 
+    public LineOfCreditStateChange getLineOfCreditStateChange(){
+        if(this.lineOfCreditStateChange == null){
+            this.lineOfCreditStateChange = new LineOfCreditStateChange();
+        }
+        return this.lineOfCreditStateChange;
+    }
+
     public void replaceApprovedBuyers(List<LineOfCreditApprovedBuyers> newApprovedBuyers) {
         if (this.approvedBuyers == null) {
             this.approvedBuyers = new ArrayList<>();

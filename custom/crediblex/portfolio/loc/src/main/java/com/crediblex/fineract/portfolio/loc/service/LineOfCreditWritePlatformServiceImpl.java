@@ -28,7 +28,9 @@ import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepo
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidBy;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeDomainService;
+import com.google.gson.JsonObject;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
@@ -444,7 +446,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         log.info("Found {} unpaid charges for LOC {}", charges.size(), loc.getId());
         MonetaryCurrency currency = loc.getSettlementSavingsAccount().getCurrency();
 
-        if(currency.getCode().equals(loc.getCurrency())){
+        if(!currency.getCode().equals(loc.getCurrency())){
             throw new PlatformApiDataValidationException("error.msg.loc.currency.mismatch.settlement.savings",
                 "LOC currency must match settlement savings account currency", "currency");
         }
@@ -492,17 +494,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         try {
             // Generate JSON command for savings account withdrawal
-            Map<String, Object> withdrawalData = new HashMap<>();
-            withdrawalData.put("transactionAmount", total);
-            withdrawalData.put("transactionDate", LocalDate.now());
-            withdrawalData.put("dateFormat", "yyyy-MM-dd");
-            withdrawalData.put("locale", "en");
-            withdrawalData.put("note", "LOC charges deduction for LOC ID: " + loc.getId());
+            JsonObject object = new JsonObject();
+            object.addProperty("transactionAmount", total);
+             object.addProperty("transactionDate", DateUtils.format( DateUtils.getBusinessLocalDate(),DateUtils.DEFAULT_DATE_FORMAT));
+             object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
+             object.addProperty("locale", "en");
+             object.addProperty("paymentTypeId", 1); // Assuming 1 is a valid payment type ID
+             object.addProperty("note", "LOC charges deduction for LOC ID: " + loc.getId());
 
-            String withdrawalJson = fromJsonHelper.toJson(withdrawalData);
-            JsonElement parsedJson = fromJsonHelper.parse(withdrawalJson);
-            JsonCommand withdrawalCommand = JsonCommand.fromJsonElement(
-                loc.getSettlementSavingsAccount().getId(), parsedJson, fromJsonHelper);
+            JsonCommand withdrawalCommand = JsonCommand.from(object.toString(), object, fromJsonHelper,null,null,null,null,null,null,loc.getSettlementSavingsAccount().getId(),null,null,null,null,null,null,null);
 
             // Execute savings withdrawal
             CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(
