@@ -1,18 +1,17 @@
 package com.crediblex.fineract.portfolio.loanaccount.repository;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
-import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.stereotype.Repository;
-
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.Collection;
+import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public class LoanRepaymentsSummaryDAO {
@@ -29,29 +28,29 @@ public class LoanRepaymentsSummaryDAO {
 
     public String loanPaymentsSummarySchema() {
         return """
-        select
-            installment as installmentNumber,
-            duedate as dueDate,
-            completed_derived as isComplete,
-            principal_amount as principalDue,
-            principal_completed_derived as principalPaid,
-            principal_writtenoff_derived as principalWrittenOff,
-            interest_amount as interestDue,
-            interest_waived_derived as interestWaived,
-            interest_writtenoff_derived as interestWrittenOff,
-            interest_completed_derived as interestPaid,
-            fee_charges_amount as feeChargesDue,
-            fee_charges_waived_derived as feeChargesWaived,
-            fee_charges_writtenoff_derived as feeChargesWrittenOff,
-            fee_charges_completed_derived as feeChargesPaid,
-            penalty_charges_amount as penaltyChargesDue,
-            penalty_charges_waived_derived as penaltyChargesWaived,
-            penalty_charges_writtenoff_derived as penaltyChargesWrittenOff,
-            penalty_charges_completed_derived as penaltyChargesPaid
-        from m_loan_repayment_schedule
-        where loan_id = ?
-        order by installment asc
-        """;
+                select
+                    installment as installmentNumber,
+                    duedate as dueDate,
+                    completed_derived as isComplete,
+                    principal_amount as principalDue,
+                    principal_completed_derived as principalPaid,
+                    principal_writtenoff_derived as principalWrittenOff,
+                    interest_amount as interestDue,
+                    interest_waived_derived as interestWaived,
+                    interest_writtenoff_derived as interestWrittenOff,
+                    interest_completed_derived as interestPaid,
+                    fee_charges_amount as feeChargesDue,
+                    fee_charges_waived_derived as feeChargesWaived,
+                    fee_charges_writtenoff_derived as feeChargesWrittenOff,
+                    fee_charges_completed_derived as feeChargesPaid,
+                    penalty_charges_amount as penaltyChargesDue,
+                    penalty_charges_waived_derived as penaltyChargesWaived,
+                    penalty_charges_writtenoff_derived as penaltyChargesWrittenOff,
+                    penalty_charges_completed_derived as penaltyChargesPaid
+                from m_loan_repayment_schedule
+                where loan_id = ?
+                order by installment asc
+                """;
     }
 
     private static final class LoanRepaymentsSummaryMapper implements RowMapper<LoanSchedulePeriodData> {
@@ -92,23 +91,15 @@ public class LoanRepaymentsSummaryDAO {
             final BigDecimal feeChargesActualDue = feeChargesExpectedDue.subtract(feeChargesWaived).subtract(feeChargesWrittenOff);
             final BigDecimal feeChargesOutstanding = feeChargesActualDue.subtract(feeChargesPaid);
 
-            final BigDecimal penaltyChargesActualDue = penaltyChargesExpectedDue.subtract(penaltyChargesWaived).subtract(penaltyChargesWrittenOff);
+            final BigDecimal penaltyChargesActualDue = penaltyChargesExpectedDue.subtract(penaltyChargesWaived)
+                    .subtract(penaltyChargesWrittenOff);
             final BigDecimal penaltyChargesOutstanding = penaltyChargesActualDue.subtract(penaltyChargesPaid);
 
             final BigDecimal totalOutstandingForPeriod = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
                     .add(penaltyChargesOutstanding);
 
-
-            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(
-                    installmentNumber,
-                    toLocalDateSafe(dueDate),
-                    isComplete,
-                    principalDue,
-                    penaltyChargesExpectedDue,
-                    totalPaidForPeriod,
-                    totalOutstandingForPeriod,
-                    interestOutstanding
-            );
+            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(installmentNumber, toLocalDateSafe(dueDate), isComplete,
+                    principalDue, penaltyChargesExpectedDue, totalPaidForPeriod, totalOutstandingForPeriod, interestOutstanding);
         }
 
         private LocalDate toLocalDateSafe(Date date) {

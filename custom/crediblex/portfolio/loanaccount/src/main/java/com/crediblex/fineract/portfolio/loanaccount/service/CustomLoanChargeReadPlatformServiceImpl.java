@@ -43,8 +43,8 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
     private final CustomLoanChargeRepository loanChargeRepository;
 
     public CustomLoanChargeReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
-                                                   ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
-                                                   LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
+            ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
+            LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
         super(jdbcTemplate, chargeDropdownReadPlatformService, dropdownReadPlatformService, loanChargeRepository);
         this.loanChargeRepository = customLoanChargeRepository;
     }

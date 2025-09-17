@@ -14,7 +14,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
@@ -116,16 +115,10 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.Repaym
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.apache.fineract.useradministration.domain.AppUser;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -151,39 +144,42 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private SavingsAccountWritePlatformService savingsAccountWritePlatformService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
-                                                           LoanTransactionValidator loanTransactionValidator,
-                                                           LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper,
-                                                           LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository,
-                                                           LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository,
-                                                           LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService,
-                                                           CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService,
-                                                           HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService,
-                                                           WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-                                                           AccountTransfersReadPlatformService accountTransfersReadPlatformService,
-                                                           AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService,
-                                                           FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository,
-                                                           LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService,
-                                                           LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository,
-                                                           AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService,
-                                                           GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService,
-                                                           EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService,
-                                                           CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator,
-                                                           GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository,
-                                                           RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler,
-                                                           PostDatedChecksRepository postDatedChecksRepository,
-                                                           LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository,
-                                                           LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService,
-                                                           ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
-                                                           ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
-                                                           LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService,
-                                                           LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
-                                                           LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService,
-                                                           LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService,
-                                                           ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService,
-                                                           LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
-                                                           LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
-                                                           LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
-                                                           JdbcTemplate jdbcTemplate, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService, CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository, LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO, @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService) {
+            LoanTransactionValidator loanTransactionValidator,
+            LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper,
+            LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository,
+            LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository,
+            LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService,
+            CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService,
+            HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService,
+            WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
+            AccountTransfersReadPlatformService accountTransfersReadPlatformService,
+            AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService,
+            FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository,
+            LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService,
+            LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository,
+            AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService,
+            GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService,
+            EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService,
+            CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator,
+            GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository,
+            RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler,
+            PostDatedChecksRepository postDatedChecksRepository,
+            LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository,
+            LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService,
+            ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
+            ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
+            LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService,
+            LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
+            LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService,
+            LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService,
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService,
+            LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
+            LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
+            LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
+            JdbcTemplate jdbcTemplate, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
+            CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
+            LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
+            @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -971,7 +967,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
-                                                                               final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+            final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
 
@@ -979,16 +975,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
 
         List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
-                .map(p -> new ExtendedLoanSchedulePeriodData(p, this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p))).toList();
+                .map(p -> new ExtendedLoanSchedulePeriodData(p,
+                        this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
+                .toList();
 
-        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges, penaltyWaitPeriodValue);
+        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
+                penaltyWaitPeriodValue);
         LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
         List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
 
         if (!penaltiesToDisable.isEmpty()) {
-            List<Long> chargeIds = penaltiesToDisable.stream()
-                    .map(LoanChargeData::getId)
-                    .toList();
+            List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
 
             loanChargeRepository.deactivateCharges(loanId, chargeIds);
         }
@@ -1004,22 +1001,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 holidayDetailDTO);
         this.loanScheduleService.regenerateRepaymentScheduleWithInterestRecalculation(loan, scheduleGeneratorDTO);
 
-
-        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment, chargeRefundChargeType);
+        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
+                isRecoveryRepayment, chargeRefundChargeType);
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
             this.applyOverdueChargesForSingleLoan(loanId);
         }
         return result;
     }
-    
+
     public void applyOverdueChargesForSingleLoan(Long loanId) {
         final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
         final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
 
-        final Collection<OverdueLoanScheduleData> installmentsForLoan =
-                this.credibleXLoanReadPlatformService.retrieveOverdueInstallmentsForLoan(
-                        loanId, penaltyWaitPeriodValue, backdatePenalties);
+        final Collection<OverdueLoanScheduleData> installmentsForLoan = this.credibleXLoanReadPlatformService
+                .retrieveOverdueInstallmentsForLoan(loanId, penaltyWaitPeriodValue, backdatePenalties);
 
         if (installmentsForLoan.isEmpty()) {
             return;
@@ -1031,15 +1027,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         } catch (final PlatformApiDataValidationException e) {
             // Validation errors (e.g. bad data, config issues)
             for (final ApiParameterError error : e.getErrors()) {
-                log.error("Apply overdue charges failed for loan {} with validation error: {}",
-                        loanId, error.getDeveloperMessage(), e);
+                log.error("Apply overdue charges failed for loan {} with validation error: {}", loanId, error.getDeveloperMessage(), e);
             }
             throw e; // rethrow so caller knows it failed
 
         } catch (final AbstractPlatformDomainRuleException e) {
             // Business rule violation (e.g. not allowed state transition)
-            log.error("Apply overdue charges failed for loan {} with business rule error: {}",
-                    loanId, e.getDefaultUserMessage(), e);
+            log.error("Apply overdue charges failed for loan {} with business rule error: {}", loanId, e.getDefaultUserMessage(), e);
             throw e;
 
         } catch (Exception e) {

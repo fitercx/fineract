@@ -31,28 +31,14 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
 
     public final Status status;
 
-    public static LoanSchedulePeriodData paymentsSummaryPeriod(
-            final Integer periodNumber,
-            final LocalDate dueDate,
-            final Boolean isComplete,
-            final BigDecimal principalDue,
-            final BigDecimal penaltyChargesDue,
-            final BigDecimal totalPaidForPeriod,
-            final BigDecimal totalOutstandingForPeriod,
-            final BigDecimal interestOutstanding) {
+    public static LoanSchedulePeriodData paymentsSummaryPeriod(final Integer periodNumber, final LocalDate dueDate,
+            final Boolean isComplete, final BigDecimal principalDue, final BigDecimal penaltyChargesDue,
+            final BigDecimal totalPaidForPeriod, final BigDecimal totalOutstandingForPeriod, final BigDecimal interestOutstanding) {
 
-        return builder()
-                .period(periodNumber)
-                .dueDate(dueDate)
-                .complete(isComplete)
-                .principalDue(principalDue)
-                .penaltyChargesDue(penaltyChargesDue)
-                .totalPaidForPeriod(totalPaidForPeriod)
-                .totalOutstandingForPeriod(totalOutstandingForPeriod)
-                .interestOutstanding(interestOutstanding)
-                .build();
+        return builder().period(periodNumber).dueDate(dueDate).complete(isComplete).principalDue(principalDue)
+                .penaltyChargesDue(penaltyChargesDue).totalPaidForPeriod(totalPaidForPeriod)
+                .totalOutstandingForPeriod(totalOutstandingForPeriod).interestOutstanding(interestOutstanding).build();
     }
-
 
     public ExtendedLoanSchedulePeriodData(Integer period, LocalDate fromDate, LocalDate dueDate, LocalDate obligationsMetOnDate,
             Boolean complete, Integer daysInPeriod, BigDecimal principalDisbursed, BigDecimal principalOriginalDue, BigDecimal principalDue,

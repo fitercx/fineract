@@ -19,16 +19,17 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loanaccount.data.*;
-import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
+import com.crediblex.fineract.portfolio.loanaccount.data.*;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
+import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
@@ -38,10 +39,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.*;
-import java.sql.Date;
-
-import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
-import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -119,7 +116,6 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import java.util.List;
 
 @Service
 @Primary
@@ -137,22 +133,24 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
-                                            LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
-                                            LoanProductReadPlatformService loanProductReadPlatformService, ClientReadPlatformService clientReadPlatformService,
-                                            GroupReadPlatformService groupReadPlatformService, LoanDropdownReadPlatformService loanDropdownReadPlatformService,
-                                            FundReadPlatformService fundReadPlatformService, ChargeReadPlatformService chargeReadPlatformService,
-                                            CodeValueReadPlatformService codeValueReadPlatformService, CalendarReadPlatformService calendarReadPlatformService,
-                                            StaffReadPlatformService staffReadPlatformService, PaginationHelper paginationHelper,
-                                            PaymentTypeReadPlatformService paymentTypeReadPlatformService,
-                                            LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
-                                            FloatingRatesReadPlatformService floatingRatesReadPlatformService, LoanUtilService loanUtilService,
-                                            ConfigurationDomainService configurationDomainService, AccountDetailsReadPlatformService accountDetailsReadPlatformService,
-                                            ColumnValidator columnValidator, DatabaseSpecificSQLGenerator sqlGenerator,
-                                            DelinquencyReadPlatformService delinquencyReadPlatformService, LoanTransactionRepository loanTransactionRepository,
-                                            LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
-                                            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
-                                            LoanTransactionProcessingService loadTransactionProcessingService,
-                                            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository, LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO, ConfigurationDomainService configurationDomainService1, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl) {
+            LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
+            LoanProductReadPlatformService loanProductReadPlatformService, ClientReadPlatformService clientReadPlatformService,
+            GroupReadPlatformService groupReadPlatformService, LoanDropdownReadPlatformService loanDropdownReadPlatformService,
+            FundReadPlatformService fundReadPlatformService, ChargeReadPlatformService chargeReadPlatformService,
+            CodeValueReadPlatformService codeValueReadPlatformService, CalendarReadPlatformService calendarReadPlatformService,
+            StaffReadPlatformService staffReadPlatformService, PaginationHelper paginationHelper,
+            PaymentTypeReadPlatformService paymentTypeReadPlatformService,
+            LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
+            FloatingRatesReadPlatformService floatingRatesReadPlatformService, LoanUtilService loanUtilService,
+            ConfigurationDomainService configurationDomainService, AccountDetailsReadPlatformService accountDetailsReadPlatformService,
+            ColumnValidator columnValidator, DatabaseSpecificSQLGenerator sqlGenerator,
+            DelinquencyReadPlatformService delinquencyReadPlatformService, LoanTransactionRepository loanTransactionRepository,
+            LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
+            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
+            LoanTransactionProcessingService loadTransactionProcessingService,
+            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository,
+            LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO, ConfigurationDomainService configurationDomainService1,
+            CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -944,7 +942,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
 
-        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges, penaltyWaitPeriodValue);
+        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
+                penaltyWaitPeriodValue);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalPrincipalDue(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalInterestDue(transactionDate);
@@ -952,7 +951,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue);
     }
 
-    private static final class LoanCurrencyDataMapper implements  RowMapper<CurrencyData> {
+    private static final class LoanCurrencyDataMapper implements RowMapper<CurrencyData> {
 
         @Override
         public CurrencyData mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -963,41 +962,34 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final String displaySymbol = rs.getString("displaySymbol");
             final String nameCode = rs.getString("nameCode");
 
-            return new CurrencyData(
-                    code,
-                    name,
-                    decimalPlaces,
-                    inMultiplesOf,
-                    displaySymbol,
-                    nameCode
-            );
+            return new CurrencyData(code, name, decimalPlaces, inMultiplesOf, displaySymbol, nameCode);
         }
+
         public String loanPaymentsSummarySchema() {
             return """
-        select
-           mc.code as code,
-           mc.name as name,
-           mc.decimal_places as decimalPlaces,
-           mc.currency_multiplesof as inMultiplesOf,
-           mc.display_symbol as displaySymbol,
-           mc.internationalized_name_code as nameCode
-        from m_currency mc
-        left join m_loan ml
-            on mc.code = ml.currency_code
-        where ml.id = ?
-        """;
+                    select
+                       mc.code as code,
+                       mc.name as name,
+                       mc.decimal_places as decimalPlaces,
+                       mc.currency_multiplesof as inMultiplesOf,
+                       mc.display_symbol as displaySymbol,
+                       mc.internationalized_name_code as nameCode
+                    from m_currency mc
+                    left join m_loan ml
+                        on mc.code = ml.currency_code
+                    where ml.id = ?
+                    """;
         }
 
     }
 
-    public Collection<OverdueLoanScheduleData> retrieveOverdueInstallmentsForLoan(final Long loanId,
-                                                                                  final Long penaltyWaitPeriod, final Boolean backdatePenalties) {
+    public Collection<OverdueLoanScheduleData> retrieveOverdueInstallmentsForLoan(final Long loanId, final Long penaltyWaitPeriod,
+            final Boolean backdatePenalties) {
 
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
 
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema())
-                .append(" where ml.id = ? ") // filter for a single loan
+        sqlBuilder.append("select ").append(rm.schema()).append(" where ml.id = ? ") // filter for a single loan
                 .append(" and " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
