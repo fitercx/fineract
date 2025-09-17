@@ -108,7 +108,6 @@ public class CredibleXLoanPenaltyCalculator {
         }
     }
 
-
     public Collection<LoanChargeData> getApplicableCharges(LocalDate transactionDate) {
         BigDecimal principalDueForInstallment = this.getPrincipalDueForTransaction(transactionDate);
         LocalDate firstPendingInstallmentDate = this.getFirstPendingInstallmentDate(transactionDate);
