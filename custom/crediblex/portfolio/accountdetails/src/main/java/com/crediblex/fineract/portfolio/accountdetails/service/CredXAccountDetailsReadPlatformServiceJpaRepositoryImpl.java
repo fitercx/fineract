@@ -40,6 +40,7 @@ import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
 import org.apache.fineract.portfolio.group.service.GroupReadPlatformService;
+import org.apache.fineract.portfolio.loanaccount.data.CollectionData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
@@ -52,7 +53,6 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.apache.fineract.portfolio.loanaccount.data.CollectionData;
 
 @Service
 @Primary
@@ -134,8 +134,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
         public String loanAccountSummarySchema() {
 
             final StringBuilder accountsSummary = new StringBuilder("l.id as id, l.account_no as accountNo, l.external_id as externalId,");
-            accountsSummary.append(" l.product_id as productId, lp.name as productName, lp.short_name as shortProductName,")
-                    .append(" l.loan_status_id as statusId, l.loan_type_enum as loanType, l.is_forced_closure as isForcedClosure, l.is_restructured as isRestructured,")
+            accountsSummary.append(" l.product_id as productId, lp.name as productName, lp.short_name as shortProductName,").append(
+                    " l.loan_status_id as statusId, l.loan_type_enum as loanType, l.is_forced_closure as isForcedClosure, l.is_restructured as isRestructured,")
 
                     .append(" glim.account_number as parentAccountNumber,")
 
@@ -172,15 +172,13 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" cobu.firstname as chargedOffByFirstname, cobu.lastname as chargedOffByLastname, ")
 
                     // Adding new fields
-                    .append(" l.net_disbursal_amount as netDisbursedAmount,")
-                    .append(" l.fixed_emi_amount as installmentAmount, ")
+                    .append(" l.net_disbursal_amount as netDisbursedAmount,").append(" l.fixed_emi_amount as installmentAmount, ")
                     .append(" CASE WHEN l.fixed_emi_amount IS NULL OR l.fixed_emi_amount = 0 THEN ")
                     .append("   (l.principal_amount + COALESCE(l.interest_charged_derived, 0)) / NULLIF(l.number_of_repayments, 0) ")
                     .append(" ELSE l.fixed_emi_amount END as calculatedInstallmentAmount, ")
                     .append(" (SELECT SUM(lc.amount_outstanding_derived) FROM m_loan_charge lc ")
                     .append("  WHERE lc.loan_id = l.id AND lc.is_penalty = true AND lc.is_active = true and due_for_collection_as_of_date < CAST(:currentDate AS DATE)) as totalLateFees,")
-                    .append(" dlad.remitter_name as remitterName,")
-                    .append(" dlad.dp_name as dpName")
+                    .append(" dlad.remitter_name as remitterName,").append(" dlad.dp_name as dpName")
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
@@ -194,7 +192,6 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" left join m_loan_arrears_aging la on la.loan_id = l.id")
                     .append(" left join glim_accounts glim on glim.id=l.glim_id")
                     .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id");
-
 
             return accountsSummary.toString();
         }
@@ -307,8 +304,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     effectiveInstallmentAmount);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.TOTAL_LATE_FEES, totalLateFees);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NET_DISBURSED_AMOUNT, netDisbursedAmount);
-             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.REMITTER_NAME, remitterName);
-             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DP_NAME, dpName);
+            extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.REMITTER_NAME, remitterName);
+            extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DP_NAME, dpName);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 

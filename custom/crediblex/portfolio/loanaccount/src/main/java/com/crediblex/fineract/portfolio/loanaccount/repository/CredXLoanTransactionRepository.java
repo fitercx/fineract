@@ -42,10 +42,10 @@ public class CredXLoanTransactionRepository {
     }
 
     public Result retrieveLoanRepaymentTemplate(Long loanId) {
-        RapaymentStatusQuery.Params P = RapaymentStatusQuery.PARAMS;
+        RapaymentStatusQuery.Params params = RapaymentStatusQuery.PARAMS;
 
-        return ezySql.from(LoanQueries.rapaymentStatusQuery()).setParam(P.LOAN_ID, loanId).setParam(P.NOW, DateUtils.getLocalDateOfTenant())
-                .setParam(P.TRANSACTION_TYPES,
+        return ezySql.from(LoanQueries.rapaymentStatusQuery()).setParam(params.LOAN_ID, loanId)
+                .setParam(params.NOW, DateUtils.getLocalDateOfTenant()).setParam(params.TRANSACTION_TYPES,
                         List.of(LoanTransactionType.REPAYMENT.getValue(), LoanTransactionType.DOWN_PAYMENT.getValue()))
                 .one();
     }

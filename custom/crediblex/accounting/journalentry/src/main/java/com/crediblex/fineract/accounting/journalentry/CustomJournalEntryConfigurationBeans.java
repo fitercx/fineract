@@ -23,11 +23,11 @@ public class CustomJournalEntryConfigurationBeans {
     @Bean
     @Primary
     public AccountingProcessorHelper accountingProcessorHelper(JournalEntryRepository glJournalEntryRepository,
-                                                               ProductToGLAccountMappingRepository accountMappingRepository,
-                                                               FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository,
-                                                               GLAccountRepository glAccountRepository, OfficeRepository officeRepository,
-                                                               AccountTransfersReadPlatformService accountTransfersReadPlatformService, ChargeRepositoryWrapper chargeRepositoryWrapper,
-                                                               BusinessEventNotifierService businessEventNotifierService) {
+            ProductToGLAccountMappingRepository accountMappingRepository,
+            FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository,
+            GLAccountRepository glAccountRepository, OfficeRepository officeRepository,
+            AccountTransfersReadPlatformService accountTransfersReadPlatformService, ChargeRepositoryWrapper chargeRepositoryWrapper,
+            BusinessEventNotifierService businessEventNotifierService) {
         return new CustomAccountingProcessorHelper(glJournalEntryRepository, accountMappingRepository, financialActivityAccountRepository,
                 closureRepository, glAccountRepository, officeRepository, accountTransfersReadPlatformService, chargeRepositoryWrapper,
                 businessEventNotifierService);
@@ -35,13 +35,15 @@ public class CustomJournalEntryConfigurationBeans {
 
     @Bean
     @Primary
-    public CustomAccrualBasedAccountingProcessorForLoan accrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper, JournalEntryWritePlatformService journalEntryWritePlatformService){
+    public CustomAccrualBasedAccountingProcessorForLoan accrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
+            JournalEntryWritePlatformService journalEntryWritePlatformService) {
         return new CustomAccrualBasedAccountingProcessorForLoan(helper, journalEntryWritePlatformService);
     }
 
     @Bean
     @Primary
-    public CustomCashBasedAccountingProcessorForLoan cashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper, JournalEntryWritePlatformService journalEntryWritePlatformService) {
+    public CustomCashBasedAccountingProcessorForLoan cashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
+            JournalEntryWritePlatformService journalEntryWritePlatformService) {
         return new CustomCashBasedAccountingProcessorForLoan(helper, journalEntryWritePlatformService);
     }
 

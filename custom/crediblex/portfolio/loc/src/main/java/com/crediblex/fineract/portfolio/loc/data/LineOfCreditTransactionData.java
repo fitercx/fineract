@@ -3,7 +3,6 @@ package com.crediblex.fineract.portfolio.loc.data;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-
 import lombok.Builder;
 import lombok.Getter;
 

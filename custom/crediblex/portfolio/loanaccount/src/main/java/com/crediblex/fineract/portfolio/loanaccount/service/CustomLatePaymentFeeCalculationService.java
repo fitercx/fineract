@@ -17,9 +17,8 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import java.math.BigDecimal;
-
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import java.math.BigDecimal;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,13 +27,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Service for calculating late payment fees based on discounted amount instead of disbursed amount.
- * This service provides functionality to determine if a loan should use the net disbursal amount
- * (discounted amount) for late payment fee calculations.
+ * Service for calculating late payment fees based on discounted amount instead of disbursed amount. This service
+ * provides functionality to determine if a loan should use the net disbursal amount (discounted amount) for late
+ * payment fee calculations.
  */
 @Service
 @Slf4j
 public class CustomLatePaymentFeeCalculationService {
+
     private final JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -43,10 +43,12 @@ public class CustomLatePaymentFeeCalculationService {
     }
 
     /**
-     * Determines if the loan should use discounted amount (net disbursal amount) for late payment fee calculation.
-     * This method checks if the loan is associated with a RECEIVABLE Line of Credit (LOC) and if the LOC has a late payment fee configured.
-     * 
-     * @param loan the loan entity
+     * Determines if the loan should use discounted amount (net disbursal amount) for late payment fee calculation. This
+     * method checks if the loan is associated with a RECEIVABLE Line of Credit (LOC) and if the LOC has a late payment
+     * fee configured.
+     *
+     * @param loan
+     *            the loan entity
      * @return true if the loan should use discounted amount for late payment fees, false otherwise
      */
     public boolean shouldUseDiscountedAmountForLatePaymentFee(Loan loan) {
@@ -71,9 +73,7 @@ public class CustomLatePaymentFeeCalculationService {
 
             // Additional validation: ensure the loan has overdue penalty charges
             return loan.getCharges().stream()
-                    .anyMatch(charge -> charge.isOverdueInstallmentCharge() &&
-                             charge.isPenaltyCharge() &&
-                             charge.isActive());
+                    .anyMatch(charge -> charge.isOverdueInstallmentCharge() && charge.isPenaltyCharge() && charge.isActive());
         } catch (Exception e) {
             return false;
         }
@@ -81,8 +81,9 @@ public class CustomLatePaymentFeeCalculationService {
 
     /**
      * Determines if the loan is associated with a PAYABLE Line of Credit and should use LOC late payment fee.
-     * 
-     * @param loan the loan entity
+     *
+     * @param loan
+     *            the loan entity
      * @return true if the loan is associated with a PAYABLE LOC, false otherwise
      */
     public boolean isPayableLocLoan(Loan loan) {
@@ -103,8 +104,9 @@ public class CustomLatePaymentFeeCalculationService {
 
     /**
      * Gets the late payment fee amount from the LOC table for PAYABLE LOC loans.
-     * 
-     * @param loan the loan entity
+     *
+     * @param loan
+     *            the loan entity
      * @return the late payment fee amount from LOC, null if not applicable
      */
     public BigDecimal getLocLatePaymentFee(Loan loan) {
@@ -117,16 +119,16 @@ public class CustomLatePaymentFeeCalculationService {
             Long lineOfCreditId = getLineOfCreditIdForLoan(loan.getId());
             return getLatePaymentFeeForLineOfCredit(lineOfCreditId);
         } catch (Exception e) {
-            log.warn("Error getting LOC late payment fee for loan {}: {}", 
-                    loan.getId(), e.getMessage());
+            log.warn("Error getting LOC late payment fee for loan {}: {}", loan.getId(), e.getMessage());
             return null;
         }
     }
 
     /**
      * Gets the line of credit ID associated with the loan.
-     * 
-     * @param loanId the loan ID
+     *
+     * @param loanId
+     *            the loan ID
      * @return the line of credit ID if found, null otherwise
      */
     private Long getLineOfCreditIdForLoan(Long loanId) {
@@ -140,8 +142,9 @@ public class CustomLatePaymentFeeCalculationService {
 
     /**
      * Gets the late payment fee configured for the line of credit.
-     * 
-     * @param lineOfCreditId the line of credit ID
+     *
+     * @param lineOfCreditId
+     *            the line of credit ID
      * @return the late payment fee amount if configured, null otherwise
      */
     private BigDecimal getLatePaymentFeeForLineOfCredit(Long lineOfCreditId) {
@@ -155,8 +158,9 @@ public class CustomLatePaymentFeeCalculationService {
 
     /**
      * Gets the product type of the line of credit.
-     * 
-     * @param lineOfCreditId the line of credit ID
+     *
+     * @param lineOfCreditId
+     *            the line of credit ID
      * @return the product type (RECEIVABLE or PAYABLE), null if not found
      */
     private String getLocProductType(Long lineOfCreditId) {

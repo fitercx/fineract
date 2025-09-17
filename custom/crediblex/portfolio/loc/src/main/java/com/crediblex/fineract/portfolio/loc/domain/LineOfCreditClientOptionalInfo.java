@@ -2,14 +2,12 @@ package com.crediblex.fineract.portfolio.loc.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
-
-import java.util.Map;
 
 @Embeddable
 @AllArgsConstructor
@@ -17,7 +15,6 @@ import java.util.Map;
 @Getter
 @Setter
 public class LineOfCreditClientOptionalInfo {
-
 
     @Column(name = "client_company_name")
     private String clientCompanyName;
@@ -40,8 +37,7 @@ public class LineOfCreditClientOptionalInfo {
     @Column(name = "authorized_signatory_email")
     private String authorizedSignatoryEmail;
 
-
-    public Map<String,Object> update(Map<String,Object> actualChanges, JsonCommand command){
+    public Map<String, Object> update(Map<String, Object> actualChanges, JsonCommand command) {
         if (command.isChangeInStringParameterNamed("clientCompanyName", this.clientCompanyName)) {
             final String newValue = command.stringValueOfParameterNamed("clientCompanyName");
             actualChanges.put("clientCompanyName", newValue);

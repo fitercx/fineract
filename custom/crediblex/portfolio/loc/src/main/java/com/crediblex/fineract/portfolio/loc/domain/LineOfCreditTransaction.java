@@ -32,8 +32,8 @@ import lombok.Setter;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
 
 /**
- * Entity to track Line of Credit transaction history for audit and traceability.
- * This class records all LOC-affecting events with timestamp, user, and action metadata.
+ * Entity to track Line of Credit transaction history for audit and traceability. This class records all LOC-affecting
+ * events with timestamp, user, and action metadata.
  */
 @Entity
 @Table(name = "m_line_of_credit_transactions")
@@ -74,17 +74,25 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     /**
      * Constructor for creating a new LOC transaction record.
      *
-     * @param lineOfCredit the line of credit
-     * @param transactionType the type of transaction
-     * @param amount the transaction amount
-     * @param balanceBefore the balance before the transaction
-     * @param balanceAfter the balance after the transaction
-     * @param transactionDate the transaction date
-     * @param referenceNumber the reference number
-     * @param description the transaction description
+     * @param lineOfCredit
+     *            the line of credit
+     * @param transactionType
+     *            the type of transaction
+     * @param amount
+     *            the transaction amount
+     * @param balanceBefore
+     *            the balance before the transaction
+     * @param balanceAfter
+     *            the balance after the transaction
+     * @param transactionDate
+     *            the transaction date
+     * @param referenceNumber
+     *            the reference number
+     * @param description
+     *            the transaction description
      */
-    public LineOfCreditTransaction(LineOfCredit lineOfCredit, String transactionType, BigDecimal amount,
-            BigDecimal balanceBefore, BigDecimal balanceAfter, OffsetDateTime transactionDate, String referenceNumber, String description) {
+    public LineOfCreditTransaction(LineOfCredit lineOfCredit, String transactionType, BigDecimal amount, BigDecimal balanceBefore,
+            BigDecimal balanceAfter, OffsetDateTime transactionDate, String referenceNumber, String description) {
         this.lineOfCredit = lineOfCredit;
         this.transactionType = transactionType;
         this.amount = amount;
@@ -98,17 +106,23 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     /**
      * Static factory method for creating a disbursement transaction record.
      *
-     * @param lineOfCredit the line of credit
-     * @param disbursementAmount the disbursement amount
-     * @param balanceBefore the balance before disbursement
-     * @param balanceAfter the balance after disbursement
-     * @param transactionDate the transaction date
-     * @param loanReference the loan reference number
+     * @param lineOfCredit
+     *            the line of credit
+     * @param disbursementAmount
+     *            the disbursement amount
+     * @param balanceBefore
+     *            the balance before disbursement
+     * @param balanceAfter
+     *            the balance after disbursement
+     * @param transactionDate
+     *            the transaction date
+     * @param loanReference
+     *            the loan reference number
      * @return a new LOC transaction record
      */
-    public static LineOfCreditTransaction disbursement(LineOfCredit lineOfCredit, BigDecimal disbursementAmount,
-            BigDecimal balanceBefore, BigDecimal balanceAfter, OffsetDateTime transactionDate, String loanReference) {
-        return new LineOfCreditTransaction(lineOfCredit, "DISBURSEMENT", disbursementAmount, balanceBefore, balanceAfter,
-                transactionDate, loanReference, "Loan disbursement - LOC balance reduced");
+    public static LineOfCreditTransaction disbursement(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
+            BigDecimal balanceAfter, OffsetDateTime transactionDate, String loanReference) {
+        return new LineOfCreditTransaction(lineOfCredit, "DISBURSEMENT", disbursementAmount, balanceBefore, balanceAfter, transactionDate,
+                loanReference, "Loan disbursement - LOC balance reduced");
     }
 }

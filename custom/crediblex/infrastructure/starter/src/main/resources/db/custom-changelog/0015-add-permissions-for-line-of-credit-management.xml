@@ -6,7 +6,7 @@
 
     <changeSet id="0012-add-permissions-for-line-of-credit-management" author="crediblex">
         <comment>Add Line of Credit permissions</comment>
-        
+
         <!-- Line of Credit permissions -->
         <insert tableName="m_permission">
             <column name="grouping" value="portfolio"/>

@@ -2,6 +2,10 @@ package com.crediblex.fineract.accounting.journalentry.service;
 
 import com.crediblex.fineract.accounting.journalentry.CustomAccountingProcessorHelper;
 import com.crediblex.fineract.accounting.journalentry.journalentry.CustomLoanDTO;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.fineract.accounting.common.AccountingConstants;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
@@ -15,25 +19,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 @Primary
 @Component
 public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAccountingProcessorForLoan {
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
-    public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper, JournalEntryWritePlatformService journalEntryWritePlatformService) {
+
+    public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
+            JournalEntryWritePlatformService journalEntryWritePlatformService) {
         super(helper, journalEntryWritePlatformService);
     }
 
-
     @Override
     protected void createJournalEntriesForDisbursements(final LoanDTO loanDTOSuper, final LoanTransactionDTO loanTransactionDTO,
-                                                        final Office office) {
+            final Office office) {
 
         // loan properties
         final CustomLoanDTO loanDTO = (CustomLoanDTO) loanDTOSuper;
@@ -51,30 +51,35 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
 
         // create journal entries for the disbursement
         if (MathUtil.isGreaterThanZero(principalPortion)) {
-            this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.LOAN_PORTFOLIO.getValue(),
-                    loanProductId, paymentTypeId, loanId, transactionId, transactionDate, principalPortion);
+            this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.AccrualAccountsForLoan.LOAN_PORTFOLIO.getValue(), loanProductId, paymentTypeId, loanId,
+                    transactionId, transactionDate, principalPortion);
 
         }
         if (MathUtil.isGreaterThanZero(overpaymentPortion)) {
-            this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.OVERPAYMENT.getValue(), loanProductId,
-                    paymentTypeId, loanId, transactionId, transactionDate, overpaymentPortion);
+            this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.AccrualAccountsForLoan.OVERPAYMENT.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
+                    transactionDate, overpaymentPortion);
         }
         if (loanTransactionDTO.isLoanToLoanTransfer()) {
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode, AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId,
-                    paymentTypeId, loanId, transactionId, transactionDate, loanTransactionDTO.getAmount());
+            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
+                    transactionDate, loanTransactionDTO.getAmount());
         } else if (loanTransactionDTO.isAccountTransfer()) {
             // May not play so well with multi disbursal transactions
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode, AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(),
-                    loanProductId, paymentTypeId, loanId, transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                    transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
         } else {
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId,
-                    paymentTypeId, loanId, transactionId, transactionDate, loanTransactionDTO.getAmount());
+            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
+                    transactionDate, loanTransactionDTO.getAmount());
         }
     }
 
     @Override
     public void createJournalEntriesForLoansRepaymentAndWriteOffs(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
-                                                                  final Office office, final boolean writeOff, final boolean isIncomeFromFee) {
+            final Office office, final boolean writeOff, final boolean isIncomeFromFee) {
         // loan properties
         final Long loanProductId = loanDTO.getLoanProductId();
         final Long loanId = loanDTO.getLoanId();
@@ -102,8 +107,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.AccrualAccountsForLoan.LOAN_PORTFOLIO.getValue(), paymentTypeId);
             accountMap.put(account, principalAmount);
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
-                populateDebitAccountEntry(loanProductId, principalAmount, AccountingConstants.AccrualAccountsForLoan.GOODWILL_CREDIT.getValue(),
-                        debitAccountMapForGoodwillCredit, paymentTypeId);
+                populateDebitAccountEntry(loanProductId, principalAmount,
+                        AccountingConstants.AccrualAccountsForLoan.GOODWILL_CREDIT.getValue(), debitAccountMapForGoodwillCredit,
+                        paymentTypeId);
             }
         }
 
@@ -120,8 +126,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, interestAmount,
-                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_INTEREST.getValue(), debitAccountMapForGoodwillCredit,
-                        paymentTypeId);
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_INTEREST.getValue(),
+                        debitAccountMapForGoodwillCredit, paymentTypeId);
             }
         }
 
@@ -131,11 +137,12 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             totalDebitAmount = totalDebitAmount.add(feesAmount);
 
             if (isIncomeFromFee) {
-                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_FEES.getValue(),
-                        loanProductId, loanId, transactionId, transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
+                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
-                this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId, transactionDate, feesAmount,
-                        loanTransactionDTO.getFeePayments(), true);
+                this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
+                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments(), true);
             } else {
                 GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                         AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), paymentTypeId);
@@ -147,7 +154,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 }
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
-                populateDebitAccountEntry(loanProductId, feesAmount, AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_FEES.getValue(),
+                populateDebitAccountEntry(loanProductId, feesAmount,
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_FEES.getValue(),
                         debitAccountMapForGoodwillCredit, paymentTypeId);
             }
         }
@@ -177,15 +185,15 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
 
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, penaltiesAmount,
-                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(), debitAccountMapForGoodwillCredit,
-                        paymentTypeId);
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
+                        debitAccountMapForGoodwillCredit, paymentTypeId);
             }
         }
 
         if (overPaymentAmount != null && overPaymentAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalDebitAmount = totalDebitAmount.add(overPaymentAmount);
-            GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId, AccountingConstants.AccrualAccountsForLoan.OVERPAYMENT.getValue(),
-                    paymentTypeId);
+            GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                    AccountingConstants.AccrualAccountsForLoan.OVERPAYMENT.getValue(), paymentTypeId);
             if (accountMap.containsKey(account)) {
                 BigDecimal amount = accountMap.get(account).add(overPaymentAmount);
                 accountMap.put(account, amount);
@@ -193,8 +201,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 accountMap.put(account, overPaymentAmount);
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
-                populateDebitAccountEntry(loanProductId, overPaymentAmount, AccountingConstants.AccrualAccountsForLoan.GOODWILL_CREDIT.getValue(),
-                        debitAccountMapForGoodwillCredit, paymentTypeId);
+                populateDebitAccountEntry(loanProductId, overPaymentAmount,
+                        AccountingConstants.AccrualAccountsForLoan.GOODWILL_CREDIT.getValue(), debitAccountMapForGoodwillCredit,
+                        paymentTypeId);
             }
         }
 
@@ -209,15 +218,18 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
                 && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement() && !loanTransactionDTO.isAccountTransfer()) {
             if (writeOff) {
-                this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.LOSSES_WRITTEN_OFF.getValue(),
-                        loanProductId, paymentTypeId, loanId, transactionId, transactionDate, totalDebitAmount);
+                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.AccrualAccountsForLoan.LOSSES_WRITTEN_OFF.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, totalDebitAmount);
             } else {
                 if (loanTransactionDTO.isLoanToLoanTransfer()) {
-                    this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(),
-                            loanProductId, paymentTypeId, loanId, transactionId, transactionDate, totalDebitAmount);
+                    this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, totalDebitAmount);
                 } else if (loanTransactionDTO.isAccountTransfer()) {
-                    this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(),
-                            loanProductId, paymentTypeId, loanId, transactionId, transactionDate, totalDebitAmount);
+                    this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, totalDebitAmount);
                 } else {
                     if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                         // create debit entries
@@ -227,8 +239,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                         }
 
                     } else {
-                        this.helper.createDebitJournalEntryForLoan(office, currencyCode, AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(),
-                                loanProductId, paymentTypeId, loanId, transactionId, transactionDate, totalDebitAmount);
+                        this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                                AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId,
+                                transactionId, transactionDate, totalDebitAmount);
                     }
                 }
             }
@@ -240,8 +253,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
          ***/
         if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && loanTransactionDTO.getTransactionType().isChargeRefund()) {
             Integer incomeAccount = this.helper.getValueForFeeOrPenaltyIncomeAccount(loanTransactionDTO.getChargeRefundChargeType());
-            this.helper.createJournalEntriesForLoan(office, currencyCode, incomeAccount, AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(),
-                    loanProductId, paymentTypeId, loanId, transactionId, transactionDate, totalDebitAmount);
+            this.helper.createJournalEntriesForLoan(office, currencyCode, incomeAccount,
+                    AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
+                    transactionDate, totalDebitAmount);
         }
     }
 }

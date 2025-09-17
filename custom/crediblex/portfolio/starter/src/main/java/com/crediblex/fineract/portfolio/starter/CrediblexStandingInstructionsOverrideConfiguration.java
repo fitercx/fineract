@@ -33,7 +33,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
-
 @Configuration
 public class CrediblexStandingInstructionsOverrideConfiguration {
 
@@ -54,6 +53,7 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
             PlatformTransactionManager transactionManager) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService, fromApiJsonHelper);
+                accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService,
+                fromApiJsonHelper);
     }
 }

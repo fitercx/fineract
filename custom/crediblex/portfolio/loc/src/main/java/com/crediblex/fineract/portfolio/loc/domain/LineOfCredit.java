@@ -20,8 +20,8 @@
 package com.crediblex.fineract.portfolio.loc.domain;
 
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
-import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
@@ -108,14 +108,11 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "is_interest_upfront_or_post_disbursal", length = 20)
     private Boolean isInterestUpfrontOrPostDisbursal;
 
-
-
     @Column(name = "va")
     private String virtualAccount;
 
     @Column(name = "special_conditions", columnDefinition = "TEXT")
     private String specialConditions;
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "settlement_savings_account_id")
@@ -126,10 +123,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     @OneToMany(mappedBy = "lineOfCredit", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<LineOfCreditApprovedBuyers> approvedBuyers = new ArrayList<>();
-    
+
     @Embedded
     private LineOfCreditSummary summary;
-    
+
     @Embedded
     private LineOfCreditStateChange lineOfCreditStateChange;
 
@@ -137,7 +134,9 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     private LineOfCreditClientOptionalInfo lineOfCreditClientOptionalInfo;
 
     public void replaceCharges(List<LineOfCreditCharge> newCharges) {
-        if (this.charges == null) { this.charges = new ArrayList<>(); }
+        if (this.charges == null) {
+            this.charges = new ArrayList<>();
+        }
         this.charges.clear();
         if (newCharges != null) {
             for (LineOfCreditCharge charge : newCharges) {
@@ -147,8 +146,8 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
     }
 
-    public LineOfCreditStateChange getLineOfCreditStateChange(){
-        if(this.lineOfCreditStateChange == null){
+    public LineOfCreditStateChange getLineOfCreditStateChange() {
+        if (this.lineOfCreditStateChange == null) {
             this.lineOfCreditStateChange = new LineOfCreditStateChange();
         }
         return this.lineOfCreditStateChange;
@@ -176,11 +175,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      * Constructor for creating a new Line of Credit with all fields.
      */
     public LineOfCredit(Client client, String productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
-            BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage,
-            Integer tenorDays, String cashMarginType, BigDecimal cashMarginValue,
-            LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
-                        Boolean isInterestUpfrontOrPostDisbursal,String virtualAccount, String specialConditions,LineOfCreditClientOptionalInfo locOptionalClientInfo,
-                        List<LineOfCreditApprovedBuyers>  approvedBuyers) {
+            BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage, Integer tenorDays,
+            String cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
+            Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions,
+            LineOfCreditClientOptionalInfo locOptionalClientInfo, List<LineOfCreditApprovedBuyers> approvedBuyers) {
 
         this.client = client;
         this.productType = LocProductType.valueOf(productType.toUpperCase(Locale.ENGLISH));
@@ -209,7 +207,6 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.summary.setAvailableBalance(maximumAmount);
     }
 
-
     /**
      * Deactivate the line of credit.
      */
@@ -235,13 +232,13 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      * Check if the line of credit can be closed.
      */
     public boolean canClose() {
-        return (this.status == LocStatus.ACTIVE || this.status == LocStatus.SUSPENDED) &&  hasNoConsumedAmount();
+        return (this.status == LocStatus.ACTIVE || this.status == LocStatus.SUSPENDED) && hasNoConsumedAmount();
     }
 
-    public boolean hasNoConsumedAmount(){
-        return this.summary == null || (this.summary.getConsumedAmount() == null || this.summary.getConsumedAmount().compareTo(BigDecimal.ZERO) == 0);
+    public boolean hasNoConsumedAmount() {
+        return this.summary == null
+                || (this.summary.getConsumedAmount() == null || this.summary.getConsumedAmount().compareTo(BigDecimal.ZERO) == 0);
     }
-
 
     /**
      * Update the line of credit with changes from command.
@@ -285,7 +282,6 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             actualChanges.put("externalId", newValue);
             this.externalId = newValue;
         }
-
 
         if (command.isChangeInStringParameterNamed("currency", this.currency)) {
             final String newValue = command.stringValueOfParameterNamed("currency");
@@ -349,6 +345,5 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
         return actualChanges;
     }
-
 
 }

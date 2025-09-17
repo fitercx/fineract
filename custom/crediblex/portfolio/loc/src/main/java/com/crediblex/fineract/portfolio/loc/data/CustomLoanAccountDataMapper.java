@@ -19,6 +19,10 @@
 
 package com.crediblex.fineract.portfolio.loc.data;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Collection;
+import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -26,14 +30,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Component;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Collection;
-import java.util.List;
-
 /**
- * Mapper service for converting LoanAccountData to LocLoanAccountData with line of credit information.
- * This service extends the base loan account data with line of credit specific fields.
+ * Mapper service for converting LoanAccountData to LocLoanAccountData with line of credit information. This service
+ * extends the base loan account data with line of credit specific fields.
  */
 @Component
 public class CustomLoanAccountDataMapper {
@@ -48,7 +47,8 @@ public class CustomLoanAccountDataMapper {
     /**
      * Enhance LoanAccountData with line of credit information.
      *
-     * @param baseData the base loan account data
+     * @param baseData
+     *            the base loan account data
      * @return LocLoanAccountData with line of credit information
      */
     public CustomLoanAccountData enhanceWithLineOfCreditData(LoanAccountData baseData) {
@@ -57,12 +57,9 @@ public class CustomLoanAccountDataMapper {
         }
 
         // Get line of credit information for this loan
-        String sql = "SELECT l.line_of_credit_id as lineOfCreditId, " +
-                    "loc.name as lineOfCreditName, " +
-                    "loc.external_id as lineOfCreditExternalId " +
-                    "FROM m_loan l " +
-                    "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " +
-                    "WHERE l.id = ?";
+        String sql = "SELECT l.line_of_credit_id as lineOfCreditId, " + "loc.name as lineOfCreditName, "
+                + "loc.external_id as lineOfCreditExternalId " + "FROM m_loan l "
+                + "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " + "WHERE l.id = ?";
 
         try {
             LineOfCreditInfo locInfo = jdbcTemplate.queryForObject(sql, new LineOfCreditInfoRowMapper(), baseData.getId());
@@ -76,7 +73,8 @@ public class CustomLoanAccountDataMapper {
     /**
      * Enhance multiple LoanAccountData objects with line of credit information.
      *
-     * @param baseDataList collection of base loan account data
+     * @param baseDataList
+     *            collection of base loan account data
      * @return list of LocLoanAccountData with line of credit information
      */
     public List<CustomLoanAccountData> enhanceWithLineOfCreditData(Collection<LoanAccountData> baseDataList) {
@@ -85,24 +83,17 @@ public class CustomLoanAccountDataMapper {
         }
 
         // Extract loan IDs
-        List<Long> loanIds = baseDataList.stream()
-                .map(LoanAccountData::getId)
-                .filter(id -> id != null)
-                .toList();
+        List<Long> loanIds = baseDataList.stream().map(LoanAccountData::getId).filter(id -> id != null).toList();
 
         if (loanIds.isEmpty()) {
-            return baseDataList.stream()
-                    .map(data -> new CustomLoanAccountData(data, null, null, null))
-                    .toList();
+            return baseDataList.stream().map(data -> new CustomLoanAccountData(data, null, null, null)).toList();
         }
 
         // Get line of credit information for all loans
         String placeholders = String.join(",", loanIds.stream().map(id -> "?").toArray(String[]::new));
-        String sql = "SELECT l.id as loanId, l.line_of_credit_id as lineOfCreditId, " +
-                    "loc.name as lineOfCreditName, loc.external_id as lineOfCreditExternalId " +
-                    "FROM m_loan l " +
-                    "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " +
-                    "WHERE l.id IN (" + placeholders + ")";
+        String sql = "SELECT l.id as loanId, l.line_of_credit_id as lineOfCreditId, "
+                + "loc.name as lineOfCreditName, loc.external_id as lineOfCreditExternalId " + "FROM m_loan l "
+                + "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " + "WHERE l.id IN (" + placeholders + ")";
 
         List<LineOfCreditInfo> locInfoList = jdbcTemplate.query(sql, new LineOfCreditInfoRowMapper(), loanIds.toArray());
 
@@ -111,30 +102,27 @@ public class CustomLoanAccountDataMapper {
                 .collect(java.util.stream.Collectors.toMap(info -> info.loanId, info -> info));
 
         // Enhance each loan account data
-        return baseDataList.stream()
-                .map(data -> {
-                    LineOfCreditInfo locInfo = locInfoMap.get(data.getId());
-                    if (locInfo != null) {
-                        return new CustomLoanAccountData(data, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
-                    } else {
-                        return new CustomLoanAccountData(data, null, null, null);
-                    }
-                })
-                .toList();
+        return baseDataList.stream().map(data -> {
+            LineOfCreditInfo locInfo = locInfoMap.get(data.getId());
+            if (locInfo != null) {
+                return new CustomLoanAccountData(data, locInfo.lineOfCreditId, locInfo.lineOfCreditName, locInfo.lineOfCreditExternalId);
+            } else {
+                return new CustomLoanAccountData(data, null, null, null);
+            }
+        }).toList();
     }
 
     /**
      * Get line of credit information for a specific loan.
      *
-     * @param loanId the loan ID
+     * @param loanId
+     *            the loan ID
      * @return line of credit information or null if not found
      */
     public LineOfCreditInfo getLineOfCreditInfo(Long loanId) {
-        String sql = "SELECT l.id as loanId, l.line_of_credit_id as lineOfCreditId, " +
-                    "loc.name as lineOfCreditName, loc.external_id as lineOfCreditExternalId " +
-                    "FROM m_loan l " +
-                    "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " +
-                    "WHERE l.id = ?";
+        String sql = "SELECT l.id as loanId, l.line_of_credit_id as lineOfCreditId, "
+                + "loc.name as lineOfCreditName, loc.external_id as lineOfCreditExternalId " + "FROM m_loan l "
+                + "LEFT JOIN m_line_of_credit loc ON loc.id = l.line_of_credit_id " + "WHERE l.id = ?";
 
         try {
             return jdbcTemplate.queryForObject(sql, new LineOfCreditInfoRowMapper(), loanId);
@@ -146,7 +134,8 @@ public class CustomLoanAccountDataMapper {
     /**
      * Data class to hold line of credit information.
      */
-    private static class LineOfCreditInfo {
+    private static final class LineOfCreditInfo {
+
         Long loanId;
         Long lineOfCreditId;
         String lineOfCreditName;
@@ -157,21 +146,22 @@ public class CustomLoanAccountDataMapper {
      * Row mapper for line of credit information.
      */
     private static final class LineOfCreditInfoRowMapper implements RowMapper<LineOfCreditInfo> {
+
         @Override
         public LineOfCreditInfo mapRow(ResultSet rs, int rowNum) throws SQLException {
             LineOfCreditInfo info = new LineOfCreditInfo();
             info.loanId = rs.getLong("loanId");
-            
+
             Long lineOfCreditId = rs.getLong("lineOfCreditId");
             if (rs.wasNull()) {
                 info.lineOfCreditId = null;
             } else {
                 info.lineOfCreditId = lineOfCreditId;
             }
-            
+
             info.lineOfCreditName = rs.getString("lineOfCreditName");
             info.lineOfCreditExternalId = rs.getString("lineOfCreditExternalId");
-            
+
             return info;
         }
     }

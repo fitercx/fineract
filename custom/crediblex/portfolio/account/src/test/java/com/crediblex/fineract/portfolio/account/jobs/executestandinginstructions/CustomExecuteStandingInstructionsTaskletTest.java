@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.MonthDay;
@@ -29,8 +30,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
@@ -87,7 +86,8 @@ class CustomExecuteStandingInstructionsTaskletTest {
         when(sqlGenerator.escape(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
-                accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService, fromApiJsonHelper);
+                accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService,
+                fromApiJsonHelper);
     }
 
     @Test

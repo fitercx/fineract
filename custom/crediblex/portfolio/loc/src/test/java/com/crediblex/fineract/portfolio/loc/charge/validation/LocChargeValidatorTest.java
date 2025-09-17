@@ -33,11 +33,8 @@ class LocChargeValidatorTest {
     @DisplayName("Valid specified due date flat charge passes validation")
     void validSpecifiedDueDate() {
         Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT, false, null);
-        LocChargeCreateCommand cmd = LocChargeCreateCommand.builder()
-                .chargeId(1L)
-                .dueDate(LocalDate.now().plusDays(2))
-                .overrideAmount(BigDecimal.ONE)
-                .build();
+        LocChargeCreateCommand cmd = LocChargeCreateCommand.builder().chargeId(1L).dueDate(LocalDate.now().plusDays(2))
+                .overrideAmount(BigDecimal.ONE).build();
         assertThatCode(() -> validator.validateCreate(charge, cmd)).doesNotThrowAnyException();
     }
 
@@ -65,4 +62,3 @@ class LocChargeValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> validator.validateCreate(charge, cmd));
     }
 }
-

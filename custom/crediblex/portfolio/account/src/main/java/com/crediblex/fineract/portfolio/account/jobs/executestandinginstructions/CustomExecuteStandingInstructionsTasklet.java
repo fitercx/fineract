@@ -18,16 +18,19 @@
  */
 package com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.HashMap;
-import java.util.Map;
-
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import com.google.gson.JsonElement;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformServiceUnavailableException;
@@ -46,6 +49,9 @@ import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.Ex
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
@@ -54,18 +60,12 @@ import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanc
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.apache.fineract.infrastructure.core.api.JsonCommand;
-import org.apache.fineract.portfolio.loanaccount.domain.Loan;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
-import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 
 @Slf4j
 public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingInstructionsTasklet implements ApplicationContextAware {
@@ -86,7 +86,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService, 
+            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService,
             FromJsonHelper fromApiJsonHelper) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
@@ -192,7 +192,6 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     log.debug("Successfully processed standing instruction {} for amount {}", data.getId(), transactionAmount);
                 } catch (Exception e) {
                     failureCount.getAndIncrement();
-                    log.error("Transfer failed for standing instruction {}: {}", data.getId(), e.getMessage(), e);
                     errors.add(e);
                 }
                 processedCount++;
@@ -328,33 +327,32 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                 // After a successful transfer, the system creates a loan transaction
                 // We need to find this transaction and use its mappings (same as UI repayment)
                 Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-                
+
                 // Find the most recent repayment transaction that matches our criteria
                 // We look for the transaction by amount and date (similar to how UI gets the resourceId)
                 LoanTransaction recentTransaction = loan.getLoanTransactions().stream()
-                    .filter(t -> t.isRepayment() && 
-                             t.getAmount().compareTo(transactionAmount) == 0 &&
-                             t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
-                    .max((t1, t2) -> t1.getId().compareTo(t2.getId()))
-                    .orElse(null);
-                
+                        .filter(t -> t.isRepayment() && t.getAmount().compareTo(transactionAmount) == 0
+                                && t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
+                        .max((t1, t2) -> t1.getId().compareTo(t2.getId())).orElse(null);
+
                 if (recentTransaction != null) {
                     // Extract affected installments using the shared utility method (same logic as UI repayment)
-                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan, recentTransaction);
-                    
+                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
+                            recentTransaction);
+
                     // Add affected installments and transaction details - SAME AS UI
                     if (!affectedInstallments.isEmpty()) {
                         changes.put("affectedInstallments", affectedInstallments);
                     }
                     changes.put("transactionId", recentTransaction.getId());
                 } else {
-                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}", 
-                             data.getId(), transactionAmount);
+                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}", data.getId(),
+                            transactionAmount);
                 }
-                
+
             } catch (Exception e) {
-                log.warn("Failed to get affected installments from actual transaction for standing instruction {}: {}", 
-                         data.getId(), e.getMessage());
+                log.warn("Failed to get affected installments from actual transaction for standing instruction {}: {}", data.getId(),
+                        e.getMessage());
             }
 
             // Get client and office IDs
@@ -370,14 +368,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
             // Use JsonCommand.from() with complete payload
             Long commandClientId = (data.getToClient() != null) ? data.getToClient().getId() : null;
-            
-            JsonCommand command = JsonCommand.from(
-                    jsonCommandString, 
-                    parsedCommand, 
-                    fromApiJsonHelper,
-                    "LOAN", 
-                    loanId, 
-                    null, // subresourceId
+
+            JsonCommand command = JsonCommand.from(jsonCommandString, parsedCommand, fromApiJsonHelper, "LOAN", loanId, null, // subresourceId
                     null, // groupId
                     commandClientId, // clientId
                     loanId, // loanId
@@ -391,26 +383,21 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     ExternalId.empty() // loanExternalId
             );
 
-            CommandProcessingResult result = CommandProcessingResult.fromDetails(
-                    null, // commandId
-                    officeId,
-                    null, // groupId
-                    clientId,
-                    loanId, // loanId,
+            CommandProcessingResult result = CommandProcessingResult.fromDetails(null, // commandId
+                    officeId, null, // groupId
+                    clientId, loanId, // loanId,
                     null, // savingsId
                     loanId.toString(), // resourceIdentifier
-                    loanId,
-                    null, // gsimId
+                    loanId, null, // gsimId
                     null, // glimId
                     null, // creditBureauReportData
                     null, // transactionId
-                    changes,
-                    null, // productId
+                    changes, null, // productId
                     null, // rollbackTransaction
                     null, // subResourceId
                     ExternalId.empty(), // resourceExternalId
                     ExternalId.empty(), // subResourceExternalId
-                    ExternalId.empty()  // loanExternalId
+                    ExternalId.empty() // loanExternalId
             );
 
             // Pass the full command as the result object as well to match UI webhook structure

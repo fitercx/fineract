@@ -24,10 +24,10 @@ import lombok.Data;
 
 @Data
 public class LocChargeUpdateRequest {
+
     private Long locId; // populated by API endpoint
     private BigDecimal amount; // optional
     private LocalDate dueDate; // optional
     private String feeOnMonthDay; // optional MM-dd
     private Integer feeInterval; // optional
 }
-

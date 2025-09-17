@@ -40,6 +40,9 @@ public class LocChargeValidator {
         }
     }
 
-    private static void require(boolean condition, String msg) { if (!condition) throw new IllegalArgumentException(msg); }
+    private static void require(boolean condition, String msg) {
+        if (!condition) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
 }
-

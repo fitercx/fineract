@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Primary
 public class CredibleXLoanRepositoryWrapper extends LoanRepositoryWrapper {
+
     public CredibleXLoanRepositoryWrapper(LoanRepository repository, FineractProperties fineractProperties) {
         super(repository, fineractProperties);
     }

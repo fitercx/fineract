@@ -1,32 +1,32 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import java.math.BigDecimal;
+import java.util.List;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-
-import java.math.BigDecimal;
-import java.util.List;
 
 /**
- * Service for handling custom interest calculations for RECEIVABLE LOC loans
- * This service provides methods to adjust interest calculations after Fineract's
- * standard calculations have been performed, specifically for RECEIVABLE Line of Credit loans.
+ * Service for handling custom interest calculations for RECEIVABLE LOC loans This service provides methods to adjust
+ * interest calculations after Fineract's standard calculations have been performed, specifically for RECEIVABLE Line of
+ * Credit loans.
  */
 @Service
 public class CustomLoanInterestCalculationService {
+
     /**
-     * Adjusts interest calculations for RECEIVABLE LOC loans
-     * This method should be called after Fineract's standard interest calculations
-     * to override the interest amounts with the expected interest for RECEIVABLE loans
+     * Adjusts interest calculations for RECEIVABLE LOC loans This method should be called after Fineract's standard
+     * interest calculations to override the interest amounts with the expected interest for RECEIVABLE loans
      *
-     * @param loan The loan to adjust interest calculations for
-     * @param productType The LOC product type ("RECEIVABLE" or "PAYABLE")
-     * @param expectedInterest The expected interest amount for the loan
+     * @param loan
+     *            The loan to adjust interest calculations for
+     * @param productType
+     *            The LOC product type ("RECEIVABLE" or "PAYABLE")
+     * @param expectedInterest
+     *            The expected interest amount for the loan
      * @return true if adjustments were made, false otherwise
      */
     @Transactional
@@ -78,8 +78,10 @@ public class CustomLoanInterestCalculationService {
                         proportionalInterest = remainingInterest;
                     } else {
                         // Calculate proportional amount
-                        BigDecimal proportion = originalInterest.getAmount().divide(totalOriginalInterest.getAmount(), 10, java.math.RoundingMode.HALF_UP);
-                        proportionalInterest = totalExpectedInterest.multiplyRetainScale(proportion, new java.math.MathContext(10, java.math.RoundingMode.HALF_UP));
+                        BigDecimal proportion = originalInterest.getAmount().divide(totalOriginalInterest.getAmount(), 10,
+                                java.math.RoundingMode.HALF_UP);
+                        proportionalInterest = totalExpectedInterest.multiplyRetainScale(proportion,
+                                new java.math.MathContext(10, java.math.RoundingMode.HALF_UP));
                         remainingInterest = remainingInterest.minus(proportionalInterest);
                     }
 
@@ -96,12 +98,15 @@ public class CustomLoanInterestCalculationService {
     }
 
     /**
-     * Adjusts interest calculations for rescheduling of RECEIVABLE LOC loans
-     * This method recalculates the interest for rescheduled loans using the expected interest
+     * Adjusts interest calculations for rescheduling of RECEIVABLE LOC loans This method recalculates the interest for
+     * rescheduled loans using the expected interest
      *
-     * @param loan The loan being rescheduled
-     * @param productType The LOC product type ("RECEIVABLE" or "PAYABLE")
-     * @param expectedInterest The expected interest amount for the loan
+     * @param loan
+     *            The loan being rescheduled
+     * @param productType
+     *            The LOC product type ("RECEIVABLE" or "PAYABLE")
+     * @param expectedInterest
+     *            The expected interest amount for the loan
      * @return true if adjustments were made, false otherwise
      */
     @Transactional
@@ -119,11 +124,13 @@ public class CustomLoanInterestCalculationService {
     }
 
     /**
-     * Adjusts the principal due amount for RECEIVABLE LOC loans
-     * For RECEIVABLE loans, the principal due should be Approved Amount - Interest
+     * Adjusts the principal due amount for RECEIVABLE LOC loans For RECEIVABLE loans, the principal due should be
+     * Approved Amount - Interest
      *
-     * @param loan The loan to adjust principal due for
-     * @param correctPrincipalDue The correct principal due amount (Approved Amount - Interest)
+     * @param loan
+     *            The loan to adjust principal due for
+     * @param correctPrincipalDue
+     *            The correct principal due amount (Approved Amount - Interest)
      * @return true if adjustments were made, false otherwise
      */
     @Transactional
@@ -169,8 +176,10 @@ public class CustomLoanInterestCalculationService {
                         proportionalPrincipalDue = remainingPrincipalDue;
                     } else {
                         // Calculate proportional amount
-                        BigDecimal proportion = originalPrincipalDue.getAmount().divide(totalOriginalPrincipalDue.getAmount(), 10, java.math.RoundingMode.HALF_UP);
-                        proportionalPrincipalDue = correctPrincipalDueMoney.multiplyRetainScale(proportion, new java.math.MathContext(10, java.math.RoundingMode.HALF_UP));
+                        BigDecimal proportion = originalPrincipalDue.getAmount().divide(totalOriginalPrincipalDue.getAmount(), 10,
+                                java.math.RoundingMode.HALF_UP);
+                        proportionalPrincipalDue = correctPrincipalDueMoney.multiplyRetainScale(proportion,
+                                new java.math.MathContext(10, java.math.RoundingMode.HALF_UP));
                         remainingPrincipalDue = remainingPrincipalDue.minus(proportionalPrincipalDue);
                     }
 
