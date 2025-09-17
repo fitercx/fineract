@@ -21,7 +21,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
-import com.crediblex.fineract.portfolio.loanaccount.data.*;
+import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;

@@ -30,7 +30,11 @@ import org.apache.fineract.portfolio.charge.service.ChargeEnumerations;
 import org.apache.fineract.portfolio.common.service.DropdownReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
-import org.apache.fineract.portfolio.loanaccount.domain.*;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeReadPlatformServiceImpl;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,8 +47,8 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
     private final CustomLoanChargeRepository loanChargeRepository;
 
     public CustomLoanChargeReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
-            ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
-            LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
+                                                   ChargeDropdownReadPlatformService chargeDropdownReadPlatformService, DropdownReadPlatformService dropdownReadPlatformService,
+                                                   LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
         super(jdbcTemplate, chargeDropdownReadPlatformService, dropdownReadPlatformService, loanChargeRepository);
         this.loanChargeRepository = customLoanChargeRepository;
     }
