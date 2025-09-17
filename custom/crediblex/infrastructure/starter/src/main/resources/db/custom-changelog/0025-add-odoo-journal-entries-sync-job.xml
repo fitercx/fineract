@@ -22,20 +22,30 @@
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
-    <changeSet author="crediblex" id="odoo-job-insert">
+    <changeSet author="crediblex" id="40">
         <insert tableName="job">
             <column name="name" value="Odoo Journal Entries Sync Job"/>
             <column name="display_name" value="Odoo Journal Entries Sync Job"/>
             <column name="cron_expression" value="0 0 * * * ?"/>
-            <column name="create_time" valueDate="CURRENT_TIMESTAMP"/>
+            <column name="create_time" valueDate="${current_datetime}"/>
             <column name="task_priority" valueNumeric="5"/>
+            <column name="group_name"/>
+            <column name="previous_run_start_time"/>
+            <column name="job_key" value="Odoo Journal Entries Sync Job _ DEFAULT"/>
+            <column name="initializing_errorlog"/>
             <column name="is_active" valueBoolean="true"/>
             <column name="currently_running" valueBoolean="false"/>
             <column name="updates_allowed" valueBoolean="true"/>
             <column name="scheduler_group" valueNumeric="0"/>
             <column name="is_misfired" valueBoolean="false"/>
+            <column name="node_id" valueNumeric="1"/>
             <column name="is_mismatched_job" valueBoolean="true"/>
-            <column name="short_name" value="ODO_JSYNC"/>
         </insert>
+    </changeSet>
+    <changeSet author="crediblex" id="41">
+        <update tableName="job">
+            <column name="short_name" value="ODO_JSYNC"/>
+            <where>name='Odoo Journal Entries Sync Job'</where>
+        </update>
     </changeSet>
 </databaseChangeLog>
