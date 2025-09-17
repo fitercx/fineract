@@ -2050,8 +2050,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // Update m_loan table with the calculated values
             // Note: We need to restore the original values that were set during disbursement
             // and only update the "Paid" and "Outstanding" fields for foreclosure.
-            String updateLoanSql = "UPDATE m_loan SET principal_disbursed_derived = ?, " // Restore original
-                                                                                         // principal disbursed
+            String updateLoanSql = "UPDATE m_loan SET " + "principal_disbursed_derived = ?, " // Restore original
+                                                                                              // principal disbursed
                     + "interest_charged_derived = ?, " // Restore original interest charged
                     + "total_expected_repayment_derived = ?, " // Restore original total expected repayment
                     + "principal_outstanding_derived = 0, " + "interest_repaid_derived = ?, " + "interest_outstanding_derived = 0, "
