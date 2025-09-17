@@ -19,7 +19,7 @@ public class LoanInterestVariationsData {
     private final transient BigDecimal originalApprovedInterestRate;
 
     public LoanInterestVariationsData(LocalDate fromDate, LocalDate toDate, BigDecimal decimalValue,
-                                      BigDecimal originalApprovedInterestRate) {
+            BigDecimal originalApprovedInterestRate) {
         this.fromDate = fromDate;
         this.toDate = toDate;
         this.decimalValue = decimalValue;
@@ -28,7 +28,8 @@ public class LoanInterestVariationsData {
 
     @Override
     public String toString() {
-        return "InterestPeriod{" + "fromDate=" + fromDate + ", toDate=" + toDate + ", decimalValue=" + decimalValue +  ", originalApprovedInterestRate=" + originalApprovedInterestRate + '}';
+        return "InterestPeriod{" + "fromDate=" + fromDate + ", toDate=" + toDate + ", decimalValue=" + decimalValue
+                + ", originalApprovedInterestRate=" + originalApprovedInterestRate + '}';
     }
 
     /**
@@ -50,30 +51,27 @@ public class LoanInterestVariationsData {
         schedule = schedule.stream().sorted(Comparator.comparing(LoanSchedulePeriodData::getFromDate)).collect(Collectors.toList());
 
         // Sort variations by applicableFrom
-        if (variations == null) variations = new ArrayList<>();
-        else variations = variations.stream()
-                .sorted(Comparator.comparing(LoanTermVariationsData::getTermVariationApplicableFrom))
-                .collect(Collectors.toList());
+        if (variations == null) {
+            variations = new ArrayList<>();
+        }
+
+        else {
+            variations = variations.stream().sorted(Comparator.comparing(LoanTermVariationsData::getTermVariationApplicableFrom))
+                    .collect(Collectors.toList());
+        }
 
         LocalDate firstInstallmentDueDate = schedule.get(0).getDueDate();
 
         // Add original interest period if first variation starts after first installment
-        if (!variations.isEmpty() &&
-                variations.get(0).getTermVariationApplicableFrom().isAfter(firstInstallmentDueDate)) {
+        if (!variations.isEmpty() && variations.get(0).getTermVariationApplicableFrom().isAfter(firstInstallmentDueDate)) {
 
             LocalDate firstVariationDate = variations.get(0).getTermVariationApplicableFrom();
-            LocalDate toDate = schedule.stream()
-                    .map(LoanSchedulePeriodData::getDueDate)
-                    .filter(d -> !d.isAfter(firstVariationDate)) // <= firstVariationDate
-                    .max(LocalDate::compareTo)
-                    .orElse(firstInstallmentDueDate);
+            LocalDate toDate = schedule.stream().map(LoanSchedulePeriodData::getDueDate).filter(d -> !d.isAfter(firstVariationDate)) // <=
+                                                                                                                                     // firstVariationDate
+                    .max(LocalDate::compareTo).orElse(firstInstallmentDueDate);
 
-            result.add(new LoanInterestVariationsData(
-                    firstInstallmentDueDate,
-                    toDate,
-                    originalApprovedInterestRate,
-                    originalApprovedInterestRate
-            ));
+            result.add(new LoanInterestVariationsData(firstInstallmentDueDate, toDate, originalApprovedInterestRate,
+                    originalApprovedInterestRate));
         }
 
         // Process all variations
@@ -91,19 +89,18 @@ public class LoanInterestVariationsData {
                         .max(LocalDate::compareTo).orElse(current.getTermVariationApplicableFrom());
             } else {
                 // Last variation → take the last repayment schedule due date
-                toDate = schedule.stream().map(LoanSchedulePeriodData::getDueDate).max(LocalDate::compareTo).orElse(current.getTermVariationApplicableFrom());
+                toDate = schedule.stream().map(LoanSchedulePeriodData::getDueDate).max(LocalDate::compareTo)
+                        .orElse(current.getTermVariationApplicableFrom());
             }
 
-                        // Safeguard: extend period if fromDate == toDate
+            // Safeguard: extend period if fromDate == toDate
             if (toDate != null && toDate.isEqual(current.getTermVariationApplicableFrom())) {
-                toDate = schedule.stream()
-                        .map(LoanSchedulePeriodData::getDueDate)
-                        .filter(d -> d.isAfter(current.getTermVariationApplicableFrom()))
-                        .min(LocalDate::compareTo)
-                        .orElse(toDate);
+                toDate = schedule.stream().map(LoanSchedulePeriodData::getDueDate)
+                        .filter(d -> d.isAfter(current.getTermVariationApplicableFrom())).min(LocalDate::compareTo).orElse(toDate);
             }
 
-            result.add(new LoanInterestVariationsData(current.getTermVariationApplicableFrom(), toDate, current.getDecimalValue(), originalApprovedInterestRate));
+            result.add(new LoanInterestVariationsData(current.getTermVariationApplicableFrom(), toDate, current.getDecimalValue(),
+                    originalApprovedInterestRate));
         }
 
         return result;
