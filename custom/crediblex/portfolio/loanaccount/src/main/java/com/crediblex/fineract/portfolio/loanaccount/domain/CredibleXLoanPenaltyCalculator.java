@@ -91,13 +91,22 @@ public class CredibleXLoanPenaltyCalculator {
         BEFORE_FIRST_PENDING_INSTALLMENT, EQUAL_TO_FIRST_PENDING_INSTALLMENT, BETWEEN, EQUAL_TO_TRANSACTION_DATE, AFTER_TRANSACTION_DATE;
 
         static PenaltyApplicabilityWindow of(LocalDate chargeDueDate, LocalDate lower, LocalDate upper) {
-            if (chargeDueDate.isBefore(lower)) return BEFORE_FIRST_PENDING_INSTALLMENT;
-            if (chargeDueDate.isEqual(lower)) return EQUAL_TO_FIRST_PENDING_INSTALLMENT;
-            if (chargeDueDate.isAfter(lower) && chargeDueDate.isBefore(upper)) return BETWEEN;
-            if (chargeDueDate.isEqual(upper)) return EQUAL_TO_TRANSACTION_DATE;
+            if (chargeDueDate.isBefore(lower)) {
+                return BEFORE_FIRST_PENDING_INSTALLMENT;
+            }
+            if (chargeDueDate.isEqual(lower)) {
+                return EQUAL_TO_FIRST_PENDING_INSTALLMENT;
+            }
+            if (chargeDueDate.isAfter(lower) && chargeDueDate.isBefore(upper)) {
+                return BETWEEN;
+            }
+            if (chargeDueDate.isEqual(upper)) {
+                return EQUAL_TO_TRANSACTION_DATE;
+            }
             return AFTER_TRANSACTION_DATE;
         }
     }
+
 
     public Collection<LoanChargeData> getApplicableCharges(LocalDate transactionDate) {
         BigDecimal principalDueForInstallment = this.getPrincipalDueForTransaction(transactionDate);
