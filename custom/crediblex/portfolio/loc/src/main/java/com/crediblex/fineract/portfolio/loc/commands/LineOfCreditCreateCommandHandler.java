@@ -19,7 +19,6 @@
 
 package com.crediblex.fineract.portfolio.loc.commands;
 
-import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;

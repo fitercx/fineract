@@ -25,6 +25,12 @@ subprojects {
     apply plugin: 'java'
     apply plugin: 'io.github.kayr.gradle.ezyquery'
 
+
+    if (project.path.startsWith(':custom:crediblex')) {
+        apply plugin: 'java'
+        apply from: "${rootDir}/custom/gradle/custom-plugins.gradle"
+    }
+
     ext {
         lombokVersion = '1.18.30'
         springBootVersion = '3.4.4'
@@ -44,7 +50,7 @@ subprojects {
         }
 
         implementation("org.eclipse.persistence:org.eclipse.persistence.jpa:${eclipseLinkVersion}")
-        implementation ("org.slf4j:log4j-over-slf4j")
+
         compileOnly "org.projectlombok:lombok:${lombokVersion}"
         annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
@@ -52,7 +58,7 @@ subprojects {
         testImplementation("org.springframework.boot:spring-boot-starter-jdbc:${springBootVersion}")
         testImplementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}")
         testImplementation ("org.jacoco:org.jacoco.agent:0.8.12:runtime")
-        testImplementation ("org.slf4j:log4j-over-slf4j")
+
     }
 
 }

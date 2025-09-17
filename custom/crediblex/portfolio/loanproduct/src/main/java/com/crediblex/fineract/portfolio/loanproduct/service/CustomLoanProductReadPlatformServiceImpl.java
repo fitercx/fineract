@@ -1,6 +1,9 @@
 package com.crediblex.fineract.portfolio.loanproduct.service;
 
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Collection;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.entityaccess.service.FineractEntityAccessUtil;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -22,18 +25,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Collection;
-
 @Service
 @Primary
 public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPlatformServiceImpl {
 
-    public CustomLoanProductReadPlatformServiceImpl(PlatformSecurityContext context, JdbcTemplate jdbcTemplate, org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService chargeReadPlatformService, RateReadService rateReadService, DatabaseSpecificSQLGenerator sqlGenerator, FineractEntityAccessUtil fineractEntityAccessUtil, DelinquencyReadPlatformService delinquencyReadPlatformService, LoanProductRepository loanProductRepository) {
-        super(context, jdbcTemplate, chargeReadPlatformService, rateReadService, sqlGenerator, fineractEntityAccessUtil, delinquencyReadPlatformService, loanProductRepository);
+    public CustomLoanProductReadPlatformServiceImpl(PlatformSecurityContext context, JdbcTemplate jdbcTemplate,
+            org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService chargeReadPlatformService,
+            RateReadService rateReadService, DatabaseSpecificSQLGenerator sqlGenerator, FineractEntityAccessUtil fineractEntityAccessUtil,
+            DelinquencyReadPlatformService delinquencyReadPlatformService, LoanProductRepository loanProductRepository) {
+        super(context, jdbcTemplate, chargeReadPlatformService, rateReadService, sqlGenerator, fineractEntityAccessUtil,
+                delinquencyReadPlatformService, loanProductRepository);
     }
-
 
     @Override
     public LoanProductData retrieveLoanProduct(final Long loanProductId) {
@@ -47,9 +49,9 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
             final Collection<CreditAllocationData> creditAllocationData = retrieveCreditAllocationData(loanProductId);
             final Collection<DelinquencyBucketData> delinquencyBucketOptions = this.delinquencyReadPlatformService
                     .retrieveAllDelinquencyBuckets();
-            final CustomLoanProductMapper rm = new CustomLoanProductMapper(charges, borrowerCycleVariationDatas, rates, delinquencyBucketOptions,
-                    advancedPaymentData, creditAllocationData);
-            final String sql = "SELECT lp.is_loc_enable as isLocEnabled, "+rm.getSchema() + " where lp.id = ?";
+            final CustomLoanProductMapper rm = new CustomLoanProductMapper(charges, borrowerCycleVariationDatas, rates,
+                    delinquencyBucketOptions, advancedPaymentData, creditAllocationData);
+            final String sql = "SELECT lp.is_loc_enable as isLocEnabled, " + rm.getSchema() + " where lp.id = ?";
 
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
 
@@ -59,26 +61,23 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
 
     }
 
-
-
     private static final class CustomLoanProductMapper implements RowMapper<ExtendedLoanProductData> {
 
-        final LoanProductMapper rm ;
+        final LoanProductMapper rm;
 
         CustomLoanProductMapper(final Collection<ChargeData> charges,
-                          final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas, final Collection<RateData> rates,
-                          final Collection<DelinquencyBucketData> delinquencyBucketOptions, Collection<AdvancedPaymentData> advancedPaymentData,
-                          Collection<CreditAllocationData> creditAllocationData) {
+                final Collection<LoanProductBorrowerCycleVariationData> borrowerCycleVariationDatas, final Collection<RateData> rates,
+                final Collection<DelinquencyBucketData> delinquencyBucketOptions, Collection<AdvancedPaymentData> advancedPaymentData,
+                Collection<CreditAllocationData> creditAllocationData) {
 
-            this.rm = new LoanProductMapper(charges, borrowerCycleVariationDatas, rates, delinquencyBucketOptions,
-                    advancedPaymentData, creditAllocationData);
+            this.rm = new LoanProductMapper(charges, borrowerCycleVariationDatas, rates, delinquencyBucketOptions, advancedPaymentData,
+                    creditAllocationData);
 
         }
 
         public String getSchema() {
             return rm.loanProductSchema();
         }
-
 
         @Override
         public ExtendedLoanProductData mapRow(ResultSet rs, int rowNum) throws SQLException {

@@ -1,5 +1,9 @@
 package com.crediblex.fineract.portfolio.loanaccount.domain;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -56,24 +60,44 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-
 @Service
 @Primary
 public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJpa {
-    public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper, LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService, HolidayRepository holidayRepository, WorkingDaysRepositoryWrapper workingDaysRepository, JournalEntryWritePlatformService journalEntryWritePlatformService, NoteRepository noteRepository, BusinessEventNotifierService businessEventNotifierService, LoanUtilService loanUtilService, StandingInstructionRepository standingInstructionRepository, PostDatedChecksRepository postDatedChecksRepository, LoanCollateralManagementRepository loanCollateralManagementRepository, DelinquencyWritePlatformService delinquencyWritePlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService, DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper, DelinquencyReadPlatformService delinquencyReadPlatformService, LoanAccrualsProcessingService loanAccrualsProcessingService, LoanRepaymentScheduleTransactionProcessorFactory transactionProcessorFactory, InterestRefundServiceDelegate interestRefundServiceDelegate, LoanTransactionValidator loanTransactionValidator, LoanForeclosureValidator loanForeclosureValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanChargeService loanChargeService, LoanScheduleService loanScheduleService, LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanChargeValidator loanChargeValidator, LoanRefundService loanRefundService, LoanAccountService loanAccountService, ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
-        super(loanAccountAssembler, loanRepositoryWrapper, loanTransactionRepository, configurationDomainService, holidayRepository, workingDaysRepository, journalEntryWritePlatformService, noteRepository, businessEventNotifierService, loanUtilService, standingInstructionRepository, postDatedChecksRepository, loanCollateralManagementRepository, delinquencyWritePlatformService, defaultLoanLifecycleStateMachine, externalIdFactory, loanAccrualTransactionBusinessEventService, delinquencyEffectivePauseHelper, delinquencyReadPlatformService, loanAccrualsProcessingService, transactionProcessorFactory, interestRefundServiceDelegate, loanTransactionValidator, loanForeclosureValidator, loanDownPaymentTransactionValidator, loanChargeService, loanScheduleService, loanDownPaymentHandlerService, loanChargeValidator, loanRefundService, loanAccountService, reprocessLoanTransactionsService, loanAccountingBridgeMapper);
-    }
 
+    public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
+            LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService,
+            HolidayRepository holidayRepository, WorkingDaysRepositoryWrapper workingDaysRepository,
+            JournalEntryWritePlatformService journalEntryWritePlatformService, NoteRepository noteRepository,
+            BusinessEventNotifierService businessEventNotifierService, LoanUtilService loanUtilService,
+            StandingInstructionRepository standingInstructionRepository, PostDatedChecksRepository postDatedChecksRepository,
+            LoanCollateralManagementRepository loanCollateralManagementRepository,
+            DelinquencyWritePlatformService delinquencyWritePlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
+            ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
+            DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper, DelinquencyReadPlatformService delinquencyReadPlatformService,
+            LoanAccrualsProcessingService loanAccrualsProcessingService,
+            LoanRepaymentScheduleTransactionProcessorFactory transactionProcessorFactory,
+            InterestRefundServiceDelegate interestRefundServiceDelegate, LoanTransactionValidator loanTransactionValidator,
+            LoanForeclosureValidator loanForeclosureValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
+            LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
+            LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanChargeValidator loanChargeValidator,
+            LoanRefundService loanRefundService, LoanAccountService loanAccountService,
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
+        super(loanAccountAssembler, loanRepositoryWrapper, loanTransactionRepository, configurationDomainService, holidayRepository,
+                workingDaysRepository, journalEntryWritePlatformService, noteRepository, businessEventNotifierService, loanUtilService,
+                standingInstructionRepository, postDatedChecksRepository, loanCollateralManagementRepository,
+                delinquencyWritePlatformService, defaultLoanLifecycleStateMachine, externalIdFactory,
+                loanAccrualTransactionBusinessEventService, delinquencyEffectivePauseHelper, delinquencyReadPlatformService,
+                loanAccrualsProcessingService, transactionProcessorFactory, interestRefundServiceDelegate, loanTransactionValidator,
+                loanForeclosureValidator, loanDownPaymentTransactionValidator, loanChargeService, loanScheduleService,
+                loanDownPaymentHandlerService, loanChargeValidator, loanRefundService, loanAccountService, reprocessLoanTransactionsService,
+                loanAccountingBridgeMapper);
+    }
 
     @Override
     @Transactional
     public LoanTransaction makeChargePayment(final Loan loan, final Long chargeId, final LocalDate transactionDate,
-                                             final BigDecimal transactionAmount, final PaymentDetail paymentDetail, final String noteText, final ExternalId txnExternalId,
-                                             final Integer transactionType, Integer installmentNumber) {
+            final BigDecimal transactionAmount, final PaymentDetail paymentDetail, final String noteText, final ExternalId txnExternalId,
+            final Integer transactionType, Integer installmentNumber) {
         boolean isAccountTransfer = true;
         checkClientOrGroupActive(loan);
         if (loan.isChargedOff() && DateUtils.isBefore(transactionDate, loan.getChargedOffOnDate())) {
@@ -93,7 +117,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         final LoanTransaction newPaymentTransaction = loanTransactionType.isVatDeductionAtDisbursement()
                 ? LoanTransaction.vatDeductionAtDisbursement(loan.getOffice(), paymentAmout, paymentDetail, transactionDate, txnExternalId)
                 : LoanTransaction.loanPayment(null, loan.getOffice(), paymentAmout, paymentDetail, transactionDate, txnExternalId,
-                loanTransactionType);
+                        loanTransactionType);
 
         if (loanTransactionType.isRepaymentAtDisbursement() || loanTransactionType.isVatDeductionAtDisbursement()) {
             loan.handlePayDisbursementTransaction(chargeId, newPaymentTransaction, existingTransactionIds, existingReversedTransactionIds);

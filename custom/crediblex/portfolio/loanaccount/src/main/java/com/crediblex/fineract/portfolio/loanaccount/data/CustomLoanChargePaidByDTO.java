@@ -1,11 +1,10 @@
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
+import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByDTO;
-
-import java.math.BigDecimal;
 
 @Getter
 @Setter

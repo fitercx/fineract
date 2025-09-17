@@ -2,8 +2,6 @@ package com.crediblex.fineract.portfolio.loanaccount.data;
 
 import java.math.BigDecimal;
 import java.util.List;
-
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -17,8 +15,13 @@ public class CustomAccountingBridgeDataDTO extends AccountingBridgeDataDTO {
 
     private BigDecimal netDisbursalAmount;
 
-    public CustomAccountingBridgeDataDTO(Long loanId, Long loanProductId, Long officeId, String currencyCode, BigDecimal calculatedInterest, boolean cashBasedAccountingEnabled, boolean upfrontAccrualBasedAccountingEnabled, boolean periodicAccrualBasedAccountingEnabled, boolean isAccountTransfer, boolean isChargeOff, boolean isFraud, Long chargeOffReasonCodeValue, List<AccountingBridgeLoanTransactionDTO> newLoanTransactions,BigDecimal netDisbursalAmount) {
-        super(loanId, loanProductId, officeId, currencyCode, calculatedInterest, cashBasedAccountingEnabled, upfrontAccrualBasedAccountingEnabled, periodicAccrualBasedAccountingEnabled, isAccountTransfer, isChargeOff, isFraud, chargeOffReasonCodeValue, newLoanTransactions);
+    public CustomAccountingBridgeDataDTO(Long loanId, Long loanProductId, Long officeId, String currencyCode, BigDecimal calculatedInterest,
+            boolean cashBasedAccountingEnabled, boolean upfrontAccrualBasedAccountingEnabled, boolean periodicAccrualBasedAccountingEnabled,
+            boolean isAccountTransfer, boolean isChargeOff, boolean isFraud, Long chargeOffReasonCodeValue,
+            List<AccountingBridgeLoanTransactionDTO> newLoanTransactions, BigDecimal netDisbursalAmount) {
+        super(loanId, loanProductId, officeId, currencyCode, calculatedInterest, cashBasedAccountingEnabled,
+                upfrontAccrualBasedAccountingEnabled, periodicAccrualBasedAccountingEnabled, isAccountTransfer, isChargeOff, isFraud,
+                chargeOffReasonCodeValue, newLoanTransactions);
         this.netDisbursalAmount = netDisbursalAmount;
     }
 

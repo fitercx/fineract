@@ -1,6 +1,9 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeDataDTO;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import org.antlr.v4.runtime.misc.NotNull;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -33,30 +36,26 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-
 @Component
 @Primary
 public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessingServiceImpl {
+
     public CustomLoanAccrualProcessingServiceImpl(ExternalIdFactory externalIdFactory,
-                                                  BusinessEventNotifierService businessEventNotifierService,
-                                                  ConfigurationDomainService configurationDomainService,
-                                                  LoanRepositoryWrapper loanRepositoryWrapper,
-                                                  LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
-                                                  JournalEntryWritePlatformService journalEntryWritePlatformService,
-                                                  LoanTransactionRepository loanTransactionRepository,
-                                                  LoanScheduleGeneratorFactory loanScheduleFactory,
-                                                  @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME) ThreadPoolTaskExecutor taskExecutor,
-                                                  TransactionTemplate transactionTemplate,
-                                                  LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
-        super(externalIdFactory, businessEventNotifierService, configurationDomainService, loanRepositoryWrapper, loanAccrualTransactionBusinessEventService, journalEntryWritePlatformService, loanTransactionRepository, loanScheduleFactory, taskExecutor, transactionTemplate, loanAccountingBridgeMapper);
+            BusinessEventNotifierService businessEventNotifierService, ConfigurationDomainService configurationDomainService,
+            LoanRepositoryWrapper loanRepositoryWrapper,
+            LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
+            JournalEntryWritePlatformService journalEntryWritePlatformService, LoanTransactionRepository loanTransactionRepository,
+            LoanScheduleGeneratorFactory loanScheduleFactory,
+            @Qualifier(TaskExecutorConstant.CONFIGURABLE_TASK_EXECUTOR_BEAN_NAME) ThreadPoolTaskExecutor taskExecutor,
+            TransactionTemplate transactionTemplate, LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
+        super(externalIdFactory, businessEventNotifierService, configurationDomainService, loanRepositoryWrapper,
+                loanAccrualTransactionBusinessEventService, journalEntryWritePlatformService, loanTransactionRepository,
+                loanScheduleFactory, taskExecutor, transactionTemplate, loanAccountingBridgeMapper);
     }
 
     @Override
     protected void addAccruals(@NotNull final Loan loan, @NotNull LocalDate tillDate, final boolean periodic, final boolean isFinal,
-                               final boolean addJournal, final boolean chargeOnDueDate) {
+            final boolean addJournal, final boolean chargeOnDueDate) {
         if ((!isFinal && !loan.isOpen()) || loan.isNpa() || loan.isChargedOff()
                 || !loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()) {
             return;
@@ -79,7 +78,7 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
         final LocalDate accrualDate = isFinal
                 ? (progressiveAccrual ? (DateUtils.isBefore(lastDueDate, businessDate) ? lastDueDate : businessDate)
-                : getFinalAccrualTransactionDate(loan))
+                        : getFinalAccrualTransactionDate(loan))
                 : tillDate;
         if (progressiveAccrual && accruedTill != null && !DateUtils.isAfter(tillDate, accruedTill)) {
             if (isFinal) {
@@ -162,8 +161,8 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
                         .mapToLoanTransactionData(accrualTransaction, currency.getCode());
                 newTransactionDTOs.add(transactionDTO);
             }
-            final CustomAccountingBridgeDataDTO accountingBridgeData = new CustomAccountingBridgeDataDTO(loan.getId(), loan.getLoanProduct().getId(),
-                    loan.getOfficeId(), loan.getCurrencyCode(), loan.getSummary().getTotalInterestCharged(),
+            final CustomAccountingBridgeDataDTO accountingBridgeData = new CustomAccountingBridgeDataDTO(loan.getId(),
+                    loan.getLoanProduct().getId(), loan.getOfficeId(), loan.getCurrencyCode(), loan.getSummary().getTotalInterestCharged(),
                     loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct(),
                     loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(), false,
                     false, false, null, newTransactionDTOs, null);

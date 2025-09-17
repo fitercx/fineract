@@ -60,22 +60,22 @@ jobs:
           echo "Current Version: $CURRENT_VERSION"
           git log --oneline --no-decorate -n 1
           VERSION_BUMP=`git log --oneline --no-decorate -n 1 | grep -Eo "(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert|BREAKING CHANGE)" | head -1`
-          if [ "$VERSION_BUMP" = "BREAKING CHANGE" ]; then 
+          if [ "$VERSION_BUMP" = "BREAKING CHANGE" ]; then
             VERSION_TYPE="major"
-          elif [ "$VERSION_BUMP" = "fix" ] || [ "$VERSION_BUMP" = "perf" ]; then 
+          elif [ "$VERSION_BUMP" = "fix" ] || [ "$VERSION_BUMP" = "perf" ]; then
             VERSION_TYPE="patch"
-          else 
+          else
             VERSION_TYPE="minor"
           fi
           VNUM1=$(echo $CURRENT_VERSION | cut -d. -f1)
           VNUM2=$(echo $CURRENT_VERSION | cut -d. -f2)
           VNUM3=$(echo $CURRENT_VERSION | cut -d. -f3)
           echo "Version type: $VERSION_TYPE"
-          if [ "$VERSION_TYPE" = "major" ]; then 
+          if [ "$VERSION_TYPE" = "major" ]; then
             NEW_VERSION="$(( ${VNUM1#v} + 1 )).0.0"
-          elif [ "$VERSION_TYPE" = "minor" ]; then 
+          elif [ "$VERSION_TYPE" = "minor" ]; then
             NEW_VERSION="$VNUM1.$((VNUM2+1)).0"
-          else 
+          else
             NEW_VERSION="$VNUM1.$VNUM2.$((VNUM3+1))"
           fi
           echo "New Version: $NEW_VERSION"
@@ -123,7 +123,7 @@ jobs:
 
       - name: Login to Amazon ECR - Prod Account
         uses: aws-actions/amazon-ecr-login@v2
-        
+
       - name: Push to Production ECR
         run: |
           IMAGE_TAG="${{ env.NEW_VERSION }}"

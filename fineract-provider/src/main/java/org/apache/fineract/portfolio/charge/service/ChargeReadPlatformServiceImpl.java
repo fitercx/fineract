@@ -139,6 +139,10 @@ public class ChargeReadPlatformServiceImpl implements ChargeReadPlatformService 
         final String accountMappingForChargeConfig = this.configurationDomainServiceJpa.getAccountMappingForCharge();
         final List<GLAccountData> expenseAccountOptions = this.accountingDropdownReadPlatformService.retrieveExpenseAccountOptions();
         final List<GLAccountData> assetAccountOptions = this.accountingDropdownReadPlatformService.retrieveAssetAccountOptions();
+        final List<EnumOptionData> locChargeCalculationTypeOptions = this.chargeDropdownReadPlatformService
+                .retrieveLineOfCreditCalculationTypes();
+        final List<EnumOptionData> locChargeTimeTypeOptions = this.chargeDropdownReadPlatformService
+                .retrieveLineOfCreditCollectionTimeTypes();
 
         return ChargeData.builder().currencyOptions(currencyOptions).chargeCalculationTypeOptions(allowedChargeCalculationTypeOptions)
                 .chargeAppliesToOptions(allowedChargeAppliesToOptions).chargeTimeTypeOptions(allowedChargeTimeOptions)
@@ -150,8 +154,9 @@ public class ChargeReadPlatformServiceImpl implements ChargeReadPlatformService 
                 .clientChargeTimeTypeOptions(clientChargeTimeTypeOptions).feeFrequencyOptions(feeFrequencyOptions)
                 .incomeOrLiabilityAccountOptions(incomeOrLiabilityAccountOptions).taxGroupOptions(taxGroupOptions)
                 .shareChargeCalculationTypeOptions(shareChargeCalculationTypeOptions).shareChargeTimeTypeOptions(shareChargeTimeTypeOptions)
-                .accountMappingForChargeConfig(accountMappingForChargeConfig).expenseAccountOptions(expenseAccountOptions)
-                .assetAccountOptions(assetAccountOptions).build();
+                .lineOfCreditChargeCalculationTypeOptions(locChargeCalculationTypeOptions)
+                .lineOfCreditChargeTimeTypeOptions(locChargeTimeTypeOptions).accountMappingForChargeConfig(accountMappingForChargeConfig)
+                .expenseAccountOptions(expenseAccountOptions).assetAccountOptions(assetAccountOptions).build();
     }
 
     @Override

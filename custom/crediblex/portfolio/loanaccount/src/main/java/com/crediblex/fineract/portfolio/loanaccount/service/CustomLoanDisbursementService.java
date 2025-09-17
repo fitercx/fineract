@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import java.time.LocalDate;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -12,10 +13,10 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanDisbursementService
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 
-import java.time.LocalDate;
-
 public class CustomLoanDisbursementService extends LoanDisbursementService {
-    public CustomLoanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator, ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
+
+    public CustomLoanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator,
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
         super(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
     }
 
@@ -49,7 +50,7 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
             if ((charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
                     && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
-                    && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
+                            && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
                 if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                     charge.markAsFullyPaid();
                     // Add "Loan Charge Paid By" details to this transaction

@@ -132,8 +132,8 @@ public final class LoanRescheduleRequestData {
             final String clientName, final String loanAccountNumber, final Long clientId, final LocalDate rescheduleFromDate,
             final CodeValueData rescheduleReasonCodeValue, final Collection<LoanTermVariationsData> loanTermVariationsData) {
 
-        return new LoanRescheduleRequestData(id, loanId, statusEnum, null, rescheduleFromDate, rescheduleReasonCodeValue,
-                null, null, clientName, loanAccountNumber, clientId, null, null, loanTermVariationsData);
+        return new LoanRescheduleRequestData(id, loanId, statusEnum, null, rescheduleFromDate, rescheduleReasonCodeValue, null, null,
+                clientName, loanAccountNumber, clientId, null, null, loanTermVariationsData);
     }
 
     /**

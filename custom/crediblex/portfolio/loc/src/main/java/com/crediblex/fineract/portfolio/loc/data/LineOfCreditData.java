@@ -19,16 +19,18 @@
 
 package com.crediblex.fineract.portfolio.loc.data;
 
+import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
-
+import java.util.List;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.portfolio.client.data.ClientData;
+import org.apache.fineract.useradministration.data.AppUserData;
 
 /**
  * Immutable data object representing Line of Credit data.
@@ -43,7 +45,6 @@ public final class LineOfCreditData implements Serializable {
     private String accountNumber;
     private Long clientId;
     private ClientData client;
-    private String name;
     private String productType;
     private BigDecimal maximumAmount;
     private BigDecimal availableBalance;
@@ -60,13 +61,10 @@ public final class LineOfCreditData implements Serializable {
     private BigDecimal advancePercentage;
     private Integer tenorDays;
     private String approvedBuyers;
+    private List<String> approvedBuyersList;
     private BigDecimal processingFeePctLoc;
     private String cashMarginType;
     private BigDecimal cashMarginValue;
-    private String invHandlingFeeBasis;
-    private BigDecimal invHandlingFeePct;
-    private BigDecimal invHandlingFeeMinAmount;
-    private String invHandlingFeeCurrency;
     private LocalDate interimReviewDate;
     private String rateType;
     private BigDecimal annualInterestRate;
@@ -84,6 +82,14 @@ public final class LineOfCreditData implements Serializable {
     private String specialConditions;
     private BigDecimal latePaymentFee;
 
+    private BigDecimal maxPerDrawdown;
+    private String reviewPeriod;
+    private BigDecimal interestRateOverride;
+    private Long settlementSavingsAccountId;
+    private String settlementSavingsAccountNo;
+
+    private BigDecimal settlementSavingsAccountBalance;
+
     // Audit fields
     private LocalDate createdDate;
     private String createdByUsername;
@@ -95,16 +101,26 @@ public final class LineOfCreditData implements Serializable {
     private Collection<EnumOptionData> productTypeOptions;
     private Collection<EnumOptionData> reviewPeriodsOptions;
 
+    // Charges
+    private Collection<LocChargeData> charges;
+
     // Import fields
     private transient Integer rowIndex;
     private String dateFormat;
     private String locale;
 
-    public static LineOfCreditData template(Collection<EnumOptionData> statusOptions, Collection<EnumOptionData> productTypeOptions,
-                                            Collection<EnumOptionData> reviewPeriodsOptionsData) {
-        return LineOfCreditData.builder().statusOptions(statusOptions)
-                .productTypeOptions(productTypeOptions).reviewPeriodsOptions(reviewPeriodsOptionsData).build();
-    }
+    // New fields for approver, activator, and closer
+    private LocalDate activatedOnDate;
+    private LocalDate approvedOnDate;
+    private LocalDate closedOnDate;
+    private AppUserData approver;
+    private AppUserData activator;
+    private AppUserData closer;
 
+    public static LineOfCreditData template(Collection<EnumOptionData> statusOptions, Collection<EnumOptionData> productTypeOptions,
+            Collection<EnumOptionData> reviewPeriodsOptionsData) {
+        return LineOfCreditData.builder().statusOptions(statusOptions).productTypeOptions(productTypeOptions)
+                .reviewPeriodsOptions(reviewPeriodsOptionsData).build();
+    }
 
 }

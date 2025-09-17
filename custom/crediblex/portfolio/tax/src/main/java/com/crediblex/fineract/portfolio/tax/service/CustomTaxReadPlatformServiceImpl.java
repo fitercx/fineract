@@ -22,7 +22,11 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.fineract.accounting.common.AccountingDropdownReadPlatformService;
 import org.apache.fineract.accounting.common.AccountingEnumerations;
 import org.apache.fineract.accounting.glaccount.data.GLAccountData;
@@ -76,7 +80,6 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
         String sql = "select " + TAX_GROUP_MAPPER.getSchema() + " where tg.id=?";
         return this.jdbcTemplate.query(sql, new TaxGroupResultSetExtractor(), id).stream().findFirst().orElse(null);
     }
-
 
     private static final class TaxComponentResultSetExtractor implements ResultSetExtractor<List<TaxComponentData>> {
 
@@ -182,7 +185,7 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
         }
     }
 
-    private static class TaxComponentDataBuilder {
+    private static final class TaxComponentDataBuilder {
 
         private Long id;
         private String name;
@@ -290,7 +293,8 @@ public class CustomTaxReadPlatformServiceImpl extends TaxReadPlatformServiceImpl
 
     }
 
-    private static class TaxGroupDataBuilder {
+    private static final class TaxGroupDataBuilder {
+
         private Long id;
         private String name;
         private final Collection<TaxGroupMappingsData> taxAssociations = new ArrayList<>();
