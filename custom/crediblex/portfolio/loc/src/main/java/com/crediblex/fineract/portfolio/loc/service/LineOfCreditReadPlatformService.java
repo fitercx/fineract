@@ -20,22 +20,19 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import java.util.Collection;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import java.util.List;
 
 public interface LineOfCreditReadPlatformService {
 
-    Collection<LineOfCreditData> retrieveAllLineOfCredits();
-
-    Page<LineOfCreditData> retrieveAllLineOfCredits(Pageable pageable);
-
-    LineOfCreditData retrieveOne(Long lineOfCreditId);
+    LineOfCreditData retrieveOne(Long lineOfCreditId, Long clientId);
 
     LineOfCreditData retrieveTemplate();
 
     Collection<LineOfCreditData> retrieveAllLineOfCreditsForClient(Long clientId);
 
-    Collection<LineOfCreditData> retrieveActiveLineOfCreditsForClient(Long clientId);
+    List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoansForClient(Long clientId);
 
+    LineOfCreditData retrieveOneWithCharges(Long lineOfCreditId, Long clientId);
 }

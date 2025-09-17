@@ -74,7 +74,7 @@
         <!-- Insert data from remitter names table -->
         <sql>
             INSERT INTO dt_client_additional_data (client_id, remitter_names, created_at, updated_at)
-            SELECT 
+            SELECT
                 rn.client_id,
                 rn.full_name,
                 rn.created_at,
@@ -84,20 +84,20 @@
 
         <!-- Update with virtual account numbers where they exist -->
         <sql>
-            UPDATE dt_client_additional_data 
-            SET 
+            UPDATE dt_client_additional_data
+            SET
                 virtual_account_number = (
-                    SELECT van.virtual_account_number 
-                    FROM dt_client_virtual_account_number van 
+                    SELECT van.virtual_account_number
+                    FROM dt_client_virtual_account_number van
                     WHERE van.client_id = dt_client_additional_data.client_id
                 ),
-                updated_at = CASE 
-                    WHEN (SELECT van.updated_at FROM dt_client_virtual_account_number van WHERE van.client_id = dt_client_additional_data.client_id) > updated_at 
+                updated_at = CASE
+                    WHEN (SELECT van.updated_at FROM dt_client_virtual_account_number van WHERE van.client_id = dt_client_additional_data.client_id) > updated_at
                     THEN (SELECT van.updated_at FROM dt_client_virtual_account_number van WHERE van.client_id = dt_client_additional_data.client_id)
                     ELSE updated_at
                 END
             WHERE EXISTS (
-                SELECT 1 FROM dt_client_virtual_account_number van 
+                SELECT 1 FROM dt_client_virtual_account_number van
                 WHERE van.client_id = dt_client_additional_data.client_id
             )
         </sql>
@@ -105,14 +105,14 @@
         <!-- Insert records that only exist in virtual account number table -->
         <sql>
             INSERT INTO dt_client_additional_data (client_id, virtual_account_number, created_at, updated_at)
-            SELECT 
+            SELECT
                 van.client_id,
                 van.virtual_account_number,
                 van.created_at,
                 van.updated_at
             FROM dt_client_virtual_account_number van
             WHERE NOT EXISTS (
-                SELECT 1 FROM dt_client_additional_data cad 
+                SELECT 1 FROM dt_client_additional_data cad
                 WHERE cad.client_id = van.client_id
             )
         </sql>

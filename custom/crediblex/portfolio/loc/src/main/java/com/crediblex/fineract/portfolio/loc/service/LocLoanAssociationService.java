@@ -19,15 +19,14 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
-
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Service for managing associations between loans and line of credit facilities.
- * This service provides functionality to associate/disassociate loans with line of credit.
+ * Service for managing associations between loans and line of credit facilities. This service provides functionality to
+ * associate/disassociate loans with line of credit.
  */
 @Service
 public class LocLoanAssociationService {
@@ -44,8 +43,10 @@ public class LocLoanAssociationService {
     /**
      * Associate a loan with a line of credit.
      *
-     * @param loanId the loan ID
-     * @param lineOfCreditId the line of credit ID
+     * @param loanId
+     *            the loan ID
+     * @param lineOfCreditId
+     *            the line of credit ID
      * @return true if association was successful, false otherwise
      */
     public boolean associateLoanWithLineOfCredit(Long loanId, Long lineOfCreditId) {

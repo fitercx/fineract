@@ -1,0 +1,107 @@
+apply plugin: 'checkstyle'
+apply plugin: 'pmd'
+apply plugin: 'com.github.spotbugs'
+
+checkstyle {
+    toolVersion = '10.12.0'
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+    ignoreFailures = false
+}
+tasks.withType(Checkstyle).configureEach {
+    reports {
+        xml.required.set(false)
+        html.required.set(true)
+    }
+}
+
+pmd {
+    toolVersion = '7.0.0'
+    ruleSets = []
+    ruleSetFiles = files("$rootDir/custom/configs/pmd/ruleset.xml")
+    ignoreFailures = false
+    consoleOutput = true
+}
+
+def unifiedPmdDir = rootProject.layout.buildDirectory.dir("reports/pmd")
+
+tasks.withType(Pmd).configureEach {
+    if (project.configurations.findByName('compileClasspath') && project.sourceSets.findByName('main')) {
+        classpath = sourceSets.main.compileClasspath + sourceSets.main.output
+    }
+
+    reports {
+        xml.required.set(true)
+        html.required.set(false) // Disable individual HTML reports
+        def safeProject = project.path.replace(':','_').replaceFirst('^_','')
+        xml.outputLocation.set(unifiedPmdDir.map { it.file("${safeProject}-${name}.xml") })
+    }
+}
+
+// Add unified report task to each custom project
+if (project.path.startsWith(':custom:crediblex')) {
+    task consolidatedPmdReport {
+        description = 'Generate consolidated PMD HTML report from all XML reports'
+        dependsOn tasks.withType(Pmd)
+
+        doLast {
+            def reportDir = file("${rootProject.buildDir}/reports/pmd")
+            def xmlFiles = fileTree(reportDir).matching { include '**/*.xml' }  // Fixed: look for XML files
+
+            if (xmlFiles.isEmpty()) {
+                println "No PMD XML reports found in ${reportDir}"
+                return
+            }
+
+            def htmlReport = file("${reportDir}/consolidated-pmd-report.html")
+            def violationCount = 0
+
+            // Build HTML without DOCTYPE to avoid XML parser issues
+            def html = new StringBuilder()
+            html.append('<html><head><title>PMD Consolidated Report</title>')
+            html.append('<style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background-color:#f2f2f2;}</style>')
+            html.append('</head><body><h1>PMD Consolidated Report</h1>')
+            html.append('<table><tr><th>File</th><th>Line</th><th>Rule</th><th>Priority</th><th>Message</th></tr>')
+
+            xmlFiles.each { xmlFile ->
+                println "Processing PMD report: ${xmlFile.name}"
+                try {
+                    def xml = new XmlSlurper().parse(xmlFile)
+                    xml.file.each { file ->
+                        def fileName = file.@name.toString()
+                        file.violation.each { violation ->
+                            html.append('<tr>')
+                            html.append("<td>${fileName}</td>")
+                            html.append("<td>${violation.@beginline}</td>")
+                            html.append("<td>${violation.@rule}</td>")
+                            html.append("<td>${violation.@priority}</td>")
+                            html.append("<td>${violation.text()}</td>")
+                            html.append('</tr>')
+                            violationCount++
+                        }
+                    }
+                } catch (Exception e) {
+                    println "Error processing ${xmlFile.name}: ${e.message}"
+                }
+            }
+
+            html.append("</table><p>Total violations: ${violationCount}</p></body></html>")
+            htmlReport.text = html.toString()
+
+            println "Consolidated PMD report generated: file://${htmlReport.absolutePath}"
+            println "Total violations found: ${violationCount}"
+
+            // Fail build if violations found
+            if (violationCount > 0) {
+                throw new GradleException("PMD found ${violationCount} violations. Check report: ${htmlReport.absolutePath}")
+            }
+        }
+    }
+}
+spotbugs {
+    toolVersion = '4.7.3'
+    def excludeFile = rootProject.file('config/spotbugs/exclude.xml')
+    if (excludeFile.exists()) {
+        excludeFilter = excludeFile
+    }
+}

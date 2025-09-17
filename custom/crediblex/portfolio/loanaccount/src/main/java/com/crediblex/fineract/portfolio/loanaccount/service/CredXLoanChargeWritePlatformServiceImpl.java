@@ -1,10 +1,14 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
-
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -29,12 +33,35 @@ import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedEx
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
-import org.apache.fineract.portfolio.loanaccount.domain.*;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationTypeEnum;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJsonValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
-import org.apache.fineract.portfolio.loanaccount.service.*;
+import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeReadPlatformService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformServiceImpl;
+import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
+import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
 import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
@@ -45,9 +72,11 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @Primary
 public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlatformServiceImpl {
+
     private final LoanChargeApiJsonValidator loanChargeApiJsonValidator;
     private final ExternalIdFactory externalIdFactory;
     private final LoanAssembler loanAssembler;
@@ -61,52 +90,37 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     private final LoanAccrualsProcessingService loanAccrualsProcessingService;
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
+    private final ConfigurationDomainService configurationDomainService;
 
-    public CredXLoanChargeWritePlatformServiceImpl(
-            LoanChargeApiJsonValidator loanChargeApiJsonValidator,
-            LoanAssembler loanAssembler,
-            ChargeRepositoryWrapper chargeRepository,
-            BusinessEventNotifierService businessEventNotifierService,
-            LoanTransactionRepository loanTransactionRepository,
-            AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            LoanRepositoryWrapper loanRepositoryWrapper,
-            JournalEntryWritePlatformService journalEntryWritePlatformService,
-            LoanAccountDomainService loanAccountDomainService,
-            @Qualifier("loanChargeRepository") LoanChargeRepository loanChargeRepository,
-            LoanWritePlatformService loanWritePlatformService,
-            LoanUtilService loanUtilService,
-            LoanChargeReadPlatformService loanChargeReadPlatformService,
-            LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
-            AccountAssociationsReadPlatformService accountAssociationsReadPlatformService,
-            FromJsonHelper fromApiJsonHelper,
+    public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
+            ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
+            LoanTransactionRepository loanTransactionRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
+            LoanRepositoryWrapper loanRepositoryWrapper, JournalEntryWritePlatformService journalEntryWritePlatformService,
+            LoanAccountDomainService loanAccountDomainService, @Qualifier("loanChargeRepository") LoanChargeRepository loanChargeRepository,
+            LoanWritePlatformService loanWritePlatformService, LoanUtilService loanUtilService,
+            LoanChargeReadPlatformService loanChargeReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
+            AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, FromJsonHelper fromApiJsonHelper,
             ConfigurationDomainService configurationDomainService,
             LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
-            ExternalIdFactory externalIdFactory,
-            AccountTransferDetailRepository accountTransferDetailRepository,
-            LoanChargeAssembler loanChargeAssembler,
-            PaymentDetailWritePlatformService paymentDetailWritePlatformService,
-            NoteRepository noteRepository,
-            LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
+            ExternalIdFactory externalIdFactory, AccountTransferDetailRepository accountTransferDetailRepository,
+            LoanChargeAssembler loanChargeAssembler, PaymentDetailWritePlatformService paymentDetailWritePlatformService,
+            NoteRepository noteRepository, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
             LoanAccrualsProcessingService loanAccrualsProcessingService,
-            LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
-            LoanChargeValidator loanChargeValidator,
-            LoanScheduleService loanScheduleService,
-            ReprocessLoanTransactionsService reprocessLoanTransactionsService,
-            LoanAccountService loanAccountService,
-            LoanAdjustmentService loanAdjustmentService,
-            LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanChargeValidator loanChargeValidator1, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine1, LoanAccrualsProcessingService loanAccrualsProcessingService1, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService1) {
+            LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanChargeValidator loanChargeValidator,
+            LoanScheduleService loanScheduleService, ReprocessLoanTransactionsService reprocessLoanTransactionsService,
+            LoanAccountService loanAccountService, LoanAdjustmentService loanAdjustmentService,
+            LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanChargeValidator loanChargeValidator1,
+            LoanLifecycleStateMachine defaultLoanLifecycleStateMachine1, LoanAccrualsProcessingService loanAccrualsProcessingService1,
+            LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService1) {
 
-        super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService,
-                loanTransactionRepository, accountTransfersWritePlatformService, loanRepositoryWrapper,
-                journalEntryWritePlatformService, loanAccountDomainService, loanChargeRepository,
-                loanWritePlatformService, loanUtilService, loanChargeReadPlatformService,
-                defaultLoanLifecycleStateMachine, accountAssociationsReadPlatformService, fromApiJsonHelper,
-                configurationDomainService, loanRepaymentScheduleTransactionProcessorFactory, externalIdFactory,
-                accountTransferDetailRepository, loanChargeAssembler, paymentDetailWritePlatformService,
-                noteRepository, loanAccrualTransactionBusinessEventService, loanAccrualsProcessingService,
-                loanDownPaymentTransactionValidator, loanChargeValidator, loanScheduleService,
-                reprocessLoanTransactionsService, loanAccountService, loanAdjustmentService,
-                loanAccountingBridgeMapper);
+        super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
+                accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
+                loanChargeRepository, loanWritePlatformService, loanUtilService, loanChargeReadPlatformService,
+                defaultLoanLifecycleStateMachine, accountAssociationsReadPlatformService, fromApiJsonHelper, configurationDomainService,
+                loanRepaymentScheduleTransactionProcessorFactory, externalIdFactory, accountTransferDetailRepository, loanChargeAssembler,
+                paymentDetailWritePlatformService, noteRepository, loanAccrualTransactionBusinessEventService,
+                loanAccrualsProcessingService, loanDownPaymentTransactionValidator, loanChargeValidator, loanScheduleService,
+                reprocessLoanTransactionsService, loanAccountService, loanAdjustmentService, loanAccountingBridgeMapper);
 
         this.loanChargeApiJsonValidator = loanChargeApiJsonValidator;
         this.externalIdFactory = externalIdFactory;
@@ -121,6 +135,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine1;
         this.loanAccrualsProcessingService = loanAccrualsProcessingService1;
         this.loanAccrualTransactionBusinessEventService = loanAccrualTransactionBusinessEventService1;
+        this.configurationDomainService = configurationDomainService;
     }
 
     @Override
@@ -149,7 +164,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             paymentDetail = this.paymentDetailWritePlatformService.persistPaymentDetail(paymentDetail);
         }
 
-        LoanTransaction loanTransaction = applyChargeAdjustment(loan, loanCharge, transactionAmount, transactionDate, externalId, paymentDetail);
+        LoanTransaction loanTransaction = applyChargeAdjustment(loan, loanCharge, transactionAmount, transactionDate, externalId,
+                paymentDetail);
 
         Money currentPaid = loanCharge.getAmountPaid(loan.getCurrency());
         Money totalAdjustments = Money.zero(loan.getCurrency());
@@ -184,16 +200,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         businessEventNotifierService.notifyPostBusinessEvent(new LoanChargeAdjustmentPostBusinessEvent(loanTransaction));
 
-        return commandProcessingResultBuilder.withCommandId(command.commandId())
-                .withLoanId(loanId)
-                .withEntityId(loanChargeId)
-                .withEntityExternalId(loanCharge.getExternalId())
-                .withSubEntityId(loanTransaction.getId())
-                .withSubEntityExternalId(loanTransaction.getExternalId())
-                .with(changes)
-                .build();
+        return commandProcessingResultBuilder.withCommandId(command.commandId()).withLoanId(loanId).withEntityId(loanChargeId)
+                .withEntityExternalId(loanCharge.getExternalId()).withSubEntityId(loanTransaction.getId())
+                .withSubEntityExternalId(loanTransaction.getExternalId()).with(changes).build();
     }
-
 
     @Transactional
     @Override
@@ -264,7 +274,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
 
         loanChargeValidator.validateLoanIsNotClosed(loan, loanCharge);
-        
+
         // Custom waiver logic to fix the bug where amount_paid_derived is not preserved
         final LoanTransaction waiveTransaction = customWaiveLoanCharge(loan, loanCharge, defaultLoanLifecycleStateMachine, changes,
                 existingTransactionIds, existingReversedTransactionIds, loanInstallmentNumber, scheduleGeneratorDTO, accruedCharge,
@@ -300,49 +310,49 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     }
 
     /**
-     * Custom implementation of waiveLoanCharge that fixes the bug where amount_paid_derived
-     * is not preserved when waiving a charge that has been partially paid through adjustments.
+     * Custom implementation of waiveLoanCharge that fixes the bug where amount_paid_derived is not preserved when
+     * waiving a charge that has been partially paid through adjustments.
      */
     private LoanTransaction customWaiveLoanCharge(final Loan loan, final LoanCharge loanCharge,
             final LoanLifecycleStateMachine loanLifecycleStateMachine, final Map<String, Object> changes,
             final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds, final Integer loanInstallmentNumber,
             final ScheduleGeneratorDTO scheduleGeneratorDTO, final Money accruedCharge, final ExternalId externalId) {
-        
+
         // Get the current outstanding amount to be waived
         Money amountOutstanding = loanCharge.getAmountOutstanding(loan.getCurrency());
-        
+
         // Custom waiver logic that preserves the amountPaid
         if (loanCharge.isInstalmentFee()) {
             // For installment fees, handle the waiver manually
             final LoanInstallmentCharge chargePerInstallment = loanCharge.getInstallmentLoanCharge(loanInstallmentNumber);
             final Money installmentAmountWaived = chargePerInstallment.waive(loan.getCurrency());
-            
+
             // Update the parent charge's waived amount by adding the installment waived amount
             if (loanCharge.getAmountWaived(loan.getCurrency()).getAmount() == null) {
                 loanCharge.setAmountWaived(BigDecimal.ZERO);
             }
             BigDecimal currentWaived = loanCharge.getAmountWaived(loan.getCurrency()).getAmount();
             loanCharge.setAmountWaived(currentWaived.add(installmentAmountWaived.getAmount()));
-            
+
             // Update outstanding amount
             BigDecimal currentOutstanding = loanCharge.getAmountOutstanding(loan.getCurrency()).getAmount();
             loanCharge.setOutstandingAmount(currentOutstanding.subtract(installmentAmountWaived.getAmount()));
-            
+
             // Use updatePaidAmountBy with zero to trigger the waived flag setting logic
             // This will call the logic that sets this.waived = true when waivedAmount.isGreaterThanZero()
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
-            
+
         } else {
             // For non-installment fees, manually set the values to preserve amountPaid
             // Set the waived amount to the outstanding amount only (not the total amount)
             loanCharge.setAmountWaived(amountOutstanding.getAmount());
             loanCharge.setOutstandingAmount(BigDecimal.ZERO);
-            
+
             // Use updatePaidAmountBy with zero to trigger the waived flag setting logic
             // This will call the logic that sets this.waived = true when waivedAmount.isGreaterThanZero()
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
         }
-        
+
         Money amountWaived = loanCharge.getAmountWaived(loan.getCurrency());
         changes.put("amount", amountWaived.getAmount());
 
@@ -401,20 +411,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 waiveLoanChargeTransaction.getAmount(loan.getCurrency()).getAmount(), loanInstallmentNumber);
         waiveLoanChargeTransaction.getLoanChargesPaid().add(loanChargePaidBy);
         loan.addLoanTransaction(waiveLoanChargeTransaction);
-        
+
         // Handle schedule regeneration and transaction reprocessing manually
-        if (loan.isCumulativeSchedule() && loan.isInterestBearingAndInterestRecalculationEnabled()
-                && DateUtils.isBefore(loanCharge.getDueLocalDate(), businessDate)) {
-            // For complex cases, we need to handle schedule regeneration
-            // Since we can't access the loanScheduleService directly, we'll use a simpler approach
-            loan.updateLoanSummaryDerivedFields();
-            loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
-        } else {
-            // For simpler cases, just update the loan and return the transaction
-            loan.updateLoanSummaryDerivedFields();
-            loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
-        }
-        
+
+        loan.updateLoanSummaryDerivedFields();
+        loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
+
         return waiveLoanChargeTransaction;
     }
 }

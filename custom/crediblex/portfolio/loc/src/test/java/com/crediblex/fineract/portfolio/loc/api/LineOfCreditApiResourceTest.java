@@ -104,7 +104,7 @@ class LineOfCreditApiResourceTest {
     void setUp() {
         given(context.authenticatedUser()).willReturn(appUser);
         given(apiRequestParameterHelper.process(uriInfo.getQueryParameters())).willReturn(settings);
-        
+
         // Set up the test request
         LINE_OF_CREDIT_REQUEST.setClientId(34L);
         LINE_OF_CREDIT_REQUEST.setName("Test Credit Line");
@@ -141,8 +141,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(appUser).validateHasReadPermission("LINE_OF_CREDIT");
 
         // when & then
-        assertThatThrownBy(() -> underTest.retrieveTemplate(CLIENT_ID, uriInfo))
-                .isInstanceOf(NoAuthorizationException.class)
+        assertThatThrownBy(() -> underTest.retrieveTemplate(CLIENT_ID, uriInfo)).isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verifyNoInteractions(readPlatformService);
@@ -174,8 +173,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(appUser).validateHasReadPermission("LINE_OF_CREDIT");
 
         // when & then
-        assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, LINE_OF_CREDIT_ID, uriInfo))
-                .isInstanceOf(NoAuthorizationException.class)
+        assertThatThrownBy(() -> underTest.retrieveOne(CLIENT_ID, LINE_OF_CREDIT_ID, uriInfo)).isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verifyNoInteractions(readPlatformService);
@@ -200,17 +198,16 @@ class LineOfCreditApiResourceTest {
     @Test
     void create_WithNoPermission_ShouldThrowException() {
         // given
-        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService)
+                .logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.create(CLIENT_ID, LINE_OF_CREDIT_REQUEST))
-                .isInstanceOf(NoAuthorizationException.class)
+        assertThatThrownBy(() -> underTest.create(CLIENT_ID, LINE_OF_CREDIT_REQUEST)).isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
     }
-
 
     @Test
     void update_WithValidPermission_ShouldUpdateCreditLine() {
@@ -230,12 +227,12 @@ class LineOfCreditApiResourceTest {
     @Test
     void update_WithNoPermission_ShouldThrowException() {
         // given
-        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService)
+                .logCommandSource(any(CommandWrapper.class));
 
         // when & then
         assertThatThrownBy(() -> underTest.update(CLIENT_ID, LINE_OF_CREDIT_ID, LINE_OF_CREDIT_REQUEST))
-                .isInstanceOf(NoAuthorizationException.class)
-                .hasMessage("No permission");
+                .isInstanceOf(NoAuthorizationException.class).hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
@@ -260,12 +257,12 @@ class LineOfCreditApiResourceTest {
     @Test
     void activate_WithNoPermission_ShouldThrowException() {
         // given
-        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService)
+                .logCommandSource(any(CommandWrapper.class));
 
         // when & then
         assertThatThrownBy(() -> underTest.activate(CLIENT_ID, LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST))
-                .isInstanceOf(NoAuthorizationException.class)
-                .hasMessage("No permission");
+                .isInstanceOf(NoAuthorizationException.class).hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
@@ -304,12 +301,12 @@ class LineOfCreditApiResourceTest {
     @Test
     void deactivate_WithNoPermission_ShouldThrowException() {
         // given
-        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService)
+                .logCommandSource(any(CommandWrapper.class));
 
         // when & then
         assertThatThrownBy(() -> underTest.deactivate(CLIENT_ID, LINE_OF_CREDIT_ID, LINE_OF_CREDIT_ACTION_REQUEST))
-                .isInstanceOf(NoAuthorizationException.class)
-                .hasMessage("No permission");
+                .isInstanceOf(NoAuthorizationException.class).hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
         verifyNoInteractions(toApiJsonSerializer);
@@ -349,11 +346,11 @@ class LineOfCreditApiResourceTest {
     @Test
     void delete_WithNoPermission_ShouldThrowException() {
         // given
-        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
+        doThrow(new NoAuthorizationException("No permission")).when(commandsSourceWritePlatformService)
+                .logCommandSource(any(CommandWrapper.class));
 
         // when & then
-        assertThatThrownBy(() -> underTest.delete(CLIENT_ID, LINE_OF_CREDIT_ID))
-                .isInstanceOf(NoAuthorizationException.class)
+        assertThatThrownBy(() -> underTest.delete(CLIENT_ID, LINE_OF_CREDIT_ID)).isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verify(commandsSourceWritePlatformService).logCommandSource(any(CommandWrapper.class));
@@ -363,10 +360,8 @@ class LineOfCreditApiResourceTest {
     @Test
     void retrieveAllForClient_WithValidPermission_ShouldReturnClientCreditLines() {
         // given
-        Collection<LineOfCreditData> expectedCreditLines = Arrays.asList(
-                createLineOfCreditData(1L, CLIENT_ID, "Credit Line 1"),
-                createLineOfCreditData(2L, CLIENT_ID, "Credit Line 2")
-        );
+        Collection<LineOfCreditData> expectedCreditLines = Arrays.asList(createLineOfCreditData(1L, CLIENT_ID, "Credit Line 1"),
+                createLineOfCreditData(2L, CLIENT_ID, "Credit Line 2"));
 
         doNothing().when(appUser).validateHasReadPermission("LINE_OF_CREDIT");
         given(readPlatformService.retrieveAllLineOfCreditsForClient(CLIENT_ID)).willReturn(expectedCreditLines);
@@ -388,8 +383,7 @@ class LineOfCreditApiResourceTest {
         doThrow(new NoAuthorizationException("No permission")).when(appUser).validateHasReadPermission("LINE_OF_CREDIT");
 
         // when & then
-        assertThatThrownBy(() -> underTest.retrieveAllForClient(CLIENT_ID, uriInfo))
-                .isInstanceOf(NoAuthorizationException.class)
+        assertThatThrownBy(() -> underTest.retrieveAllForClient(CLIENT_ID, uriInfo)).isInstanceOf(NoAuthorizationException.class)
                 .hasMessage("No permission");
 
         verifyNoInteractions(readPlatformService);
@@ -405,7 +399,7 @@ class LineOfCreditApiResourceTest {
         when(data.getMaximumAmount()).thenReturn(new BigDecimal("5000000.00"));
         when(data.getAvailableBalance()).thenReturn(new BigDecimal("5000000.00"));
         when(data.getConsumedAmount()).thenReturn(BigDecimal.ZERO);
-        when(data.getActivationStatus()).thenReturn(new EnumOptionData(0L, "INACTIVE", "INACTIVE"));
+        when(data.getStatus()).thenReturn(new EnumOptionData(0L, "INACTIVE", "INACTIVE"));
         when(data.getStartDate()).thenReturn(LocalDate.of(2025, 1, 1));
         when(data.getEndDate()).thenReturn(LocalDate.of(2025, 12, 31));
         return data;

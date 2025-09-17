@@ -1,10 +1,12 @@
 package com.crediblex.fineract.portfolio.client;
 
+import java.util.Collections;
 import org.apache.fineract.commands.service.CommandProcessingService;
 import org.apache.fineract.infrastructure.accountnumberformat.domain.AccountNumberFormatRepositoryWrapper;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
@@ -27,27 +29,40 @@ import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.domain.SavingsProductRepository;
 import org.apache.fineract.portfolio.savings.service.SavingsApplicationProcessWritePlatformService;
-import org.apache.fineract.infrastructure.core.data.ApiParameterError;
-import java.util.Collections;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 @Service
 @Primary
 public class CredibleXClientWritePlatformServiceJpaRepositoryImpl extends ClientWritePlatformServiceJpaRepositoryImpl {
-    public CredibleXClientWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, ClientRepositoryWrapper clientRepository, ClientNonPersonRepositoryWrapper clientNonPersonRepository, OfficeRepositoryWrapper officeRepositoryWrapper, NoteRepository noteRepository, GroupRepository groupRepository, ClientDataValidator fromApiJsonDeserializer, AccountNumberGenerator accountNumberGenerator, StaffRepositoryWrapper staffRepository, CodeValueRepositoryWrapper codeValueRepository, LoanRepositoryWrapper loanRepositoryWrapper, SavingsAccountRepositoryWrapper savingsRepositoryWrapper, SavingsProductRepository savingsProductRepository, SavingsApplicationProcessWritePlatformService savingsApplicationProcessWritePlatformService, CommandProcessingService commandProcessingService, ConfigurationDomainService configurationDomainService, AccountNumberFormatRepositoryWrapper accountNumberFormatRepository, FromJsonHelper fromApiJsonHelper, AddressWritePlatformService addressWritePlatformService, ClientFamilyMembersWritePlatformService clientFamilyMembersWritePlatformService, BusinessEventNotifierService businessEventNotifierService, EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, ExternalIdFactory externalIdFactory) {
-        super(context, clientRepository, clientNonPersonRepository, officeRepositoryWrapper, noteRepository, groupRepository, fromApiJsonDeserializer, accountNumberGenerator, staffRepository, codeValueRepository, loanRepositoryWrapper, savingsRepositoryWrapper, savingsProductRepository, savingsApplicationProcessWritePlatformService, commandProcessingService, configurationDomainService, accountNumberFormatRepository, fromApiJsonHelper, addressWritePlatformService, clientFamilyMembersWritePlatformService, businessEventNotifierService, entityDatatableChecksWritePlatformService, externalIdFactory);
+
+    public CredibleXClientWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context, ClientRepositoryWrapper clientRepository,
+            ClientNonPersonRepositoryWrapper clientNonPersonRepository, OfficeRepositoryWrapper officeRepositoryWrapper,
+            NoteRepository noteRepository, GroupRepository groupRepository, ClientDataValidator fromApiJsonDeserializer,
+            AccountNumberGenerator accountNumberGenerator, StaffRepositoryWrapper staffRepository,
+            CodeValueRepositoryWrapper codeValueRepository, LoanRepositoryWrapper loanRepositoryWrapper,
+            SavingsAccountRepositoryWrapper savingsRepositoryWrapper, SavingsProductRepository savingsProductRepository,
+            SavingsApplicationProcessWritePlatformService savingsApplicationProcessWritePlatformService,
+            CommandProcessingService commandProcessingService, ConfigurationDomainService configurationDomainService,
+            AccountNumberFormatRepositoryWrapper accountNumberFormatRepository, FromJsonHelper fromApiJsonHelper,
+            AddressWritePlatformService addressWritePlatformService,
+            ClientFamilyMembersWritePlatformService clientFamilyMembersWritePlatformService,
+            BusinessEventNotifierService businessEventNotifierService,
+            EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, ExternalIdFactory externalIdFactory) {
+        super(context, clientRepository, clientNonPersonRepository, officeRepositoryWrapper, noteRepository, groupRepository,
+                fromApiJsonDeserializer, accountNumberGenerator, staffRepository, codeValueRepository, loanRepositoryWrapper,
+                savingsRepositoryWrapper, savingsProductRepository, savingsApplicationProcessWritePlatformService, commandProcessingService,
+                configurationDomainService, accountNumberFormatRepository, fromApiJsonHelper, addressWritePlatformService,
+                clientFamilyMembersWritePlatformService, businessEventNotifierService, entityDatatableChecksWritePlatformService,
+                externalIdFactory);
     }
 
     @Override
     public CommandProcessingResult createClient(final JsonCommand command) {
         String externalId = command.stringValueOfParameterNamed("externalId");
         if (externalId == null || externalId.trim().isEmpty()) {
-            ApiParameterError error = ApiParameterError.parameterError(
-                    "validation.msg.client.externalId.required",
-                    "The parameter externalId is required",
-                    "externalId"
-            );
+            ApiParameterError error = ApiParameterError.parameterError("validation.msg.client.externalId.required",
+                    "The parameter externalId is required", "externalId");
             throw new PlatformApiDataValidationException(Collections.singletonList(error));
         }
         return super.createClient(command);

@@ -37,7 +37,8 @@ public enum ChargeTimeType {
     SHAREACCOUNT_ACTIVATION(13, "chargeTimeType.activation"), // only for loan
     SHARE_PURCHASE(14, "chargeTimeType.sharespurchase"), SHARE_REDEEM(15, "chargeTimeType.sharesredeem"),
 
-    SAVINGS_NOACTIVITY_FEE(16, "chargeTimeType.savingsNoActivityFee");
+    SAVINGS_NOACTIVITY_FEE(16, "chargeTimeType.savingsNoActivityFee"), LINE_OF_CREDIT_ACTIVATION(17,
+            "chargeTimeType.lineOfCreditActivation");
 
     private final Integer value;
     private final String code;
@@ -80,6 +81,10 @@ public enum ChargeTimeType {
     public static Object[] validShareValues() {
         return new Integer[] { ChargeTimeType.SHAREACCOUNT_ACTIVATION.getValue(), ChargeTimeType.SHARE_PURCHASE.getValue(),
                 ChargeTimeType.SHARE_REDEEM.getValue() };
+    }
+
+    public static Object[] validLineOfCreditValues() {
+        return new Integer[] { ChargeTimeType.LINE_OF_CREDIT_ACTIVATION.getValue() };
     }
 
     public static ChargeTimeType fromInt(final Integer chargeTime) {
@@ -133,6 +138,9 @@ public enum ChargeTimeType {
                 break;
                 case 16:
                     chargeTimeType = SAVINGS_NOACTIVITY_FEE;
+                break;
+                case 17:
+                    chargeTimeType = LINE_OF_CREDIT_ACTIVATION;
                 break;
                 default:
                     chargeTimeType = INVALID;
@@ -221,5 +229,13 @@ public enum ChargeTimeType {
 
     public boolean isSharesRedeem() {
         return this.equals(ChargeTimeType.SHARE_REDEEM);
+    }
+
+    public boolean isLineOfCreditActivation() {
+        return this.equals(ChargeTimeType.LINE_OF_CREDIT_ACTIVATION);
+    }
+
+    public boolean isAllowedLineOfCreditChargeTime() {
+        return isLineOfCreditActivation();
     }
 }

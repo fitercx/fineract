@@ -1,10 +1,9 @@
 package com.crediblex.fineract.accounting.journalentry.data;
 
+import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.accounting.journalentry.data.ChargePaymentDTO;
-
-import java.math.BigDecimal;
 
 @Setter
 @Getter

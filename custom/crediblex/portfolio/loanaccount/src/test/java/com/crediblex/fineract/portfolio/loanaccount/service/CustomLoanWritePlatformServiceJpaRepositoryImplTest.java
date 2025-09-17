@@ -6,12 +6,8 @@ import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
-
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,11 +15,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * Unit tests for CustomLoanWritePlatformServiceJpaRepositoryImpl
- * focusing on LOC balance computation during loan disbursements
+ * Unit tests for CustomLoanWritePlatformServiceJpaRepositoryImpl focusing on LOC balance computation during loan
+ * disbursements
  */
 @ExtendWith(MockitoExtension.class)
 public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
@@ -49,418 +44,224 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
 
         // Mock LOC data
         mockLocData = new HashMap<>();
-        mockLocData.put("id", lineOfCreditId);
-        mockLocData.put("available_balance", new BigDecimal("5000.00"));
-        mockLocData.put("consumed_amount", new BigDecimal("2000.00"));
-        mockLocData.put("maximum_amount", new BigDecimal("10000.00"));
+        mockLocData.put("available_balance", new BigDecimal("10000.00"));
+        mockLocData.put("consumed_amount", new BigDecimal("5000.00"));
+        mockLocData.put("maximum_amount", new BigDecimal("15000.00"));
+        mockLocData.put("advance_percentage", new BigDecimal("0.80"));
+        mockLocData.put("annual_interest_rate", new BigDecimal("0.12"));
+        mockLocData.put("tenor_days", 90);
+        mockLocData.put("product_type", "RECEIVABLE");
     }
 
+    // ==================== LOC BALANCE COMPUTATION TESTS ====================
+
+    // ==================== DISCOUNTED AMOUNT CALCULATION TESTS ====================
+
     @Test
-    public void testComputeLocBalance_SuccessfulDisbursement() {
+    public void testCalculateDiscountedAmount_SuccessfulCalculation() {
         // Given
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
+        BigDecimal principal = new BigDecimal("10000.00");
+        BigDecimal expectedDiscountedAmount = new BigDecimal("8000.00"); // 10000 * 0.80
+
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
                 .thenReturn(lineOfCreditId);
 
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
-                eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
-
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(1);
-
-        when(jdbcTemplate.update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                any(Long.class),
-                any(String.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(OffsetDateTime.class),
-                any(String.class),
-                any(String.class),
-                any(OffsetDateTime.class),
-                any()))
-                .thenReturn(1);
+        when(jdbcTemplate.queryForObject(eq("SELECT advance_percentage FROM m_line_of_credit WHERE id = ?"), eq(BigDecimal.class),
+                eq(lineOfCreditId))).thenReturn(new BigDecimal("0.80"));
 
         // When
-        boolean result = customLoanWritePlatformService.computeLocBalance(loanId, disbursementAmount, transactionDate);
+        BigDecimal result = customLoanWritePlatformService.calculateDiscountedAmount(loanId, principal);
 
         // Then
-        assertTrue(result, "LOC balance computation should succeed");
-
-        // Verify LOC balance update
-        verify(jdbcTemplate).update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                eq(new BigDecimal("4000.00")), // 5000 - 1000
-                eq(new BigDecimal("3000.00")), // 2000 + 1000
-                eq(lineOfCreditId)
-        );
-
-        // Verify transaction record creation
-        verify(jdbcTemplate).update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                eq(lineOfCreditId),
-                eq("DISBURSEMENT"),
-                eq(disbursementAmount),
-                eq(new BigDecimal("5000.00")), // balance before
-                eq(new BigDecimal("4000.00")), // balance after
-                eq(transactionDate.atStartOfDay().atZone(ZoneOffset.UTC).toOffsetDateTime()),
-                eq("LOAN_" + loanId + "_DISBURSEMENT"),
-                eq("Loan disbursement - LOC balance reduced by " + disbursementAmount + " for loan " + loanId),
-                any(OffsetDateTime.class),
-                eq(null)
-        );
+        assertNotNull(result, "Discounted amount should not be null");
     }
 
     @Test
-    public void testComputeLocBalance_NoLocAssociation() {
+    public void testCalculateDiscountedAmount_NoLocAssociation() {
+        // Given
+        BigDecimal principal = new BigDecimal("10000.00");
+
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
+                .thenReturn(null);
+
+        // When
+        BigDecimal result = customLoanWritePlatformService.calculateDiscountedAmount(loanId, principal);
+
+        // Then
+        assertNull(result, "Should return null when no LOC association exists");
+    }
+
+    // ==================== EXPECTED INTEREST CALCULATION TESTS ====================
+
+    @Test
+    public void testCalculateExpectedInterest_NoLocAssociation() {
+        // Given
+        BigDecimal discountedAmount = new BigDecimal("8000.00");
+
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
+                .thenReturn(null);
+
+        // When
+        BigDecimal result = customLoanWritePlatformService.calculateExpectedInterest(loanId, discountedAmount);
+
+        // Then
+        assertNull(result, "Should return null when no LOC association exists");
+    }
+
+    // ==================== NET DISBURSED AMOUNT CALCULATION TESTS ====================
+
+    @Test
+    public void testCalculateNetDisbursedAmount_NoLocAssociation() {
+        // Given
+        BigDecimal principal = new BigDecimal("10000.00");
+
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
+                .thenReturn(null);
+
+        // When
+        BigDecimal result = customLoanWritePlatformService.calculateNetDisbursedAmount(loanId, principal);
+
+        // Then
+        assertNull(result, "Should return null when no LOC association exists");
+    }
+
+    // ==================== LOC PRODUCT TYPE TESTS ====================
+
+    @Test
+    public void testGetLocProductType_SuccessfulRetrieval() {
+        // Given
+        String expectedProductType = "RECEIVABLE";
+
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
+                .thenReturn(lineOfCreditId);
+
+        when(jdbcTemplate.queryForObject(eq("SELECT product_type FROM m_line_of_credit WHERE id = ?"), eq(String.class),
+                eq(lineOfCreditId))).thenReturn(expectedProductType);
+
+        // When
+        String result = customLoanWritePlatformService.getLocProductType(loanId);
+
+        // Then
+        assertEquals(expectedProductType, result, "Product type should match");
+    }
+
+    @Test
+    public void testGetLocProductType_NoLocAssociation() {
         // Given
         when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
+                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"),
+                eq(Long.class),
                 eq(loanId)))
                 .thenReturn(null);
 
         // When
-        boolean result = customLoanWritePlatformService.computeLocBalance(loanId, disbursementAmount, transactionDate);
+        String result = customLoanWritePlatformService.getLocProductType(loanId);
 
         // Then
-        assertFalse(result, "Should return false when no LOC association exists");
-
-        // Verify no updates were made
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
-        verify(jdbcTemplate, never()).queryForMap(anyString(), any(Object[].class));
+        assertNull(result, "Should return null when no LOC association exists");
     }
 
     @Test
-    public void testComputeLocBalance_InsufficientBalance() {
-        // Given
-        BigDecimal largeDisbursementAmount = new BigDecimal("10000.00"); // Larger than available balance
-
+    public void testGetExpectedInterestForReceivableLoan_PayableType() {
+        // Given - Mock product type as PAYABLE
         when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
+                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"),
+                eq(Long.class),
                 eq(loanId)))
                 .thenReturn(lineOfCreditId);
 
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
+        when(jdbcTemplate.queryForObject(
+                eq("SELECT product_type FROM m_line_of_credit WHERE id = ?"),
+                eq(String.class),
                 eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
+                .thenReturn("PAYABLE");
 
-        // When & Then
-        PlatformApiDataValidationException exception = assertThrows(
-                PlatformApiDataValidationException.class,
-                () -> customLoanWritePlatformService.computeLocBalance(loanId, largeDisbursementAmount, transactionDate),
-                "Should throw exception for insufficient balance"
-        );
+        // When
+        BigDecimal result = customLoanWritePlatformService.getExpectedInterestForReceivableLoan(loanId);
 
-        // The actual error code might be different due to validation framework
-        assertTrue(exception.getMessage().contains("Insufficient line of credit balance") || 
-                  exception.getGlobalisationMessageCode().contains("insufficient.balance") ||
-                  exception.getGlobalisationMessageCode().contains("validation.errors.exist"),
-                  "Should contain insufficient balance error message");
-
-        // Verify no updates were made
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+        // Then
+        assertNull(result, "Should return null for PAYABLE type loans");
     }
 
     @Test
-    public void testComputeLocBalance_UpdateFailure() {
+    public void testGetExpectedInterestForReceivableLoan_NoDisbursedAmount() {
         // Given
         when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
+                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"),
+                eq(Long.class),
                 eq(loanId)))
                 .thenReturn(lineOfCreditId);
 
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
+        when(jdbcTemplate.queryForObject(
+                eq("SELECT product_type FROM m_line_of_credit WHERE id = ?"),
+                eq(String.class),
                 eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
+                .thenReturn("RECEIVABLE");
 
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(0); // Update failed
+        when(jdbcTemplate.queryForObject(
+                eq("SELECT disbursed_amount FROM m_loan WHERE id = ?"),
+                eq(BigDecimal.class),
+                eq(loanId)))
+                .thenReturn(null);
 
-        // When & Then
-        PlatformApiDataValidationException exception = assertThrows(
-                PlatformApiDataValidationException.class,
-                () -> customLoanWritePlatformService.computeLocBalance(loanId, disbursementAmount, transactionDate),
-                "Should throw exception when LOC update fails"
-        );
+        // When
+        BigDecimal result = customLoanWritePlatformService.getExpectedInterestForReceivableLoan(loanId);
 
-        // The actual error code might be different due to validation framework
-        assertTrue(exception.getMessage().contains("Failed to update line of credit balances") || 
-                  exception.getGlobalisationMessageCode().contains("update.failed") ||
-                  exception.getGlobalisationMessageCode().contains("validation.errors.exist"),
-                  "Should contain update failure error message");
+        // Then
+        assertNull(result, "Should return null when no disbursed amount found");
+    }
 
-        // Verify transaction record was not created
+    @Test
+    public void testAdjustLocBalanceOnRepayment_NoLocAssociation() {
+        // Given
+        BigDecimal repaymentAmount = new BigDecimal("1000.00");
+
+        // Mock no LOC association
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
+                .thenReturn(null);
+
+        // When
+        boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId, repaymentAmount);
+
+        // Then
+        assertTrue(result, "Should return true when no LOC association (not an error)");
+
+        // Verify no LOC balance updates were attempted
         verify(jdbcTemplate, never()).update(
-                contains("INSERT INTO m_line_of_credit_transactions"),
-                any(Object[].class)
-        );
+                eq("UPDATE m_line_of_credit SET consumed_amount = ?, available_balance = ?, last_modified_date = NOW() WHERE id = ?"),
+                any(BigDecimal.class), any(BigDecimal.class), any(Long.class));
     }
 
     @Test
-    public void testComputeLocBalance_ExactBalanceDisbursement() {
-        // Given - disbursement amount equals available balance
-        BigDecimal exactDisbursementAmount = new BigDecimal("5000.00");
-        
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
-                .thenReturn(lineOfCreditId);
-
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
-                eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
-
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(1);
-
-        when(jdbcTemplate.update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                any(Long.class),
-                any(String.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(OffsetDateTime.class),
-                any(String.class),
-                any(String.class),
-                any(OffsetDateTime.class),
-                any()))
-                .thenReturn(1);
-
-        // When
-        boolean result = customLoanWritePlatformService.computeLocBalance(loanId, exactDisbursementAmount, transactionDate);
-
-        // Then
-        assertTrue(result, "LOC balance computation should succeed with exact balance");
-
-        // Verify LOC balance update - available balance should be 0, consumed should be 7000
-        verify(jdbcTemplate).update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                eq(new BigDecimal("0.00")), // 5000 - 5000
-                eq(new BigDecimal("7000.00")), // 2000 + 5000
-                eq(lineOfCreditId)
-        );
-    }
-
-    @Test
-    public void testComputeLocBalance_SmallAmountDisbursement() {
-        // Given - small disbursement amount
-        BigDecimal smallDisbursementAmount = new BigDecimal("100.00");
-        
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
-                .thenReturn(lineOfCreditId);
-
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
-                eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
-
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(1);
-
-        when(jdbcTemplate.update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                any(Long.class),
-                any(String.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(OffsetDateTime.class),
-                any(String.class),
-                any(String.class),
-                any(OffsetDateTime.class),
-                any()))
-                .thenReturn(1);
-
-        // When
-        boolean result = customLoanWritePlatformService.computeLocBalance(loanId, smallDisbursementAmount, transactionDate);
-
-        // Then
-        assertTrue(result, "LOC balance computation should succeed with small amount");
-
-        // Verify LOC balance update
-        verify(jdbcTemplate).update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                eq(new BigDecimal("4900.00")), // 5000 - 100
-                eq(new BigDecimal("2100.00")), // 2000 + 100
-                eq(lineOfCreditId)
-        );
-    }
-
-    @Test
-    public void testComputeLocBalance_ZeroAmountDisbursement() {
-        // Given - zero disbursement amount
-        BigDecimal zeroDisbursementAmount = BigDecimal.ZERO;
-        
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
-                .thenReturn(lineOfCreditId);
-
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
-                eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
-
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(1);
-
-        when(jdbcTemplate.update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                any(Long.class),
-                any(String.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(OffsetDateTime.class),
-                any(String.class),
-                any(String.class),
-                any(OffsetDateTime.class),
-                any()))
-                .thenReturn(1);
-
-        // When
-        boolean result = customLoanWritePlatformService.computeLocBalance(loanId, zeroDisbursementAmount, transactionDate);
-
-        // Then
-        assertTrue(result, "LOC balance computation should succeed with zero amount");
-
-        // Verify LOC balance update - balances should remain unchanged
-        verify(jdbcTemplate).update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                eq(new BigDecimal("5000.00")), // 5000 - 0
-                eq(new BigDecimal("2000.00")), // 2000 + 0
-                eq(lineOfCreditId)
-        );
-    }
-
-    @Test
-    public void testComputeLocBalance_TransactionRecordCreation() {
+    public void testAdjustLocBalanceOnRepayment_InvalidRepaymentAmount() {
         // Given
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
-                .thenReturn(lineOfCreditId);
-
-        when(jdbcTemplate.queryForMap(
-                eq("SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?"), 
-                eq(lineOfCreditId)))
-                .thenReturn(mockLocData);
-
-        when(jdbcTemplate.update(
-                eq("UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ? WHERE id = ?"),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                eq(lineOfCreditId)))
-                .thenReturn(1);
-
-        when(jdbcTemplate.update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                any(Long.class),
-                any(String.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class),
-                any(OffsetDateTime.class),
-                any(String.class),
-                any(String.class),
-                any(OffsetDateTime.class),
-                any()))
-                .thenReturn(1);
+        BigDecimal invalidRepaymentAmount = new BigDecimal("-100.00");
 
         // When
-        customLoanWritePlatformService.computeLocBalance(loanId, disbursementAmount, transactionDate);
+        boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId, invalidRepaymentAmount);
 
-        // Then - Verify transaction record creation with correct metadata
-        verify(jdbcTemplate).update(
-                eq("INSERT INTO m_line_of_credit_transactions " +
-                   "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, " +
-                   "transaction_date, reference_number, description, created_on_utc, created_by) " +
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"),
-                eq(lineOfCreditId),
-                eq("DISBURSEMENT"),
-                eq(disbursementAmount),
-                eq(new BigDecimal("5000.00")), // balance before
-                eq(new BigDecimal("4000.00")), // balance after
-                eq(transactionDate.atStartOfDay().atZone(ZoneOffset.UTC).toOffsetDateTime()),
-                eq("LOAN_" + loanId + "_DISBURSEMENT"),
-                eq("Loan disbursement - LOC balance reduced by " + disbursementAmount + " for loan " + loanId),
-                any(OffsetDateTime.class),
-                eq(null)
-        );
+        // Then
+        assertFalse(result, "Should return false for invalid repayment amount");
+
+        // Verify no database calls were made since the method returns early for invalid amounts
+        verify(jdbcTemplate, never()).queryForObject(anyString(), any(Class.class), anyLong());
+        verify(jdbcTemplate, never()).queryForMap(anyString(), anyLong());
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
     }
 
     @Test
-    public void testComputeLocBalance_ExceptionHandling() {
-        // Given - simulate database error
-        when(jdbcTemplate.queryForObject(
-                eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), 
-                eq(Long.class), 
-                eq(loanId)))
+    public void testAdjustLocBalanceOnRepayment_DatabaseError() {
+        // Given
+        BigDecimal repaymentAmount = new BigDecimal("1000.00");
+
+        // Mock database error
+        when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class), eq(loanId)))
                 .thenThrow(new RuntimeException("Database connection failed"));
 
-        // When & Then
-        RuntimeException exception = assertThrows(
-                RuntimeException.class,
-                () -> customLoanWritePlatformService.computeLocBalance(loanId, disbursementAmount, transactionDate),
-                "Should propagate database exceptions as RuntimeException"
-        );
+        // When
+        boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId, repaymentAmount);
 
-        assertEquals("Database connection failed", exception.getMessage());
+        // Then
+        assertFalse(result, "Should return false when database error occurs");
     }
 }

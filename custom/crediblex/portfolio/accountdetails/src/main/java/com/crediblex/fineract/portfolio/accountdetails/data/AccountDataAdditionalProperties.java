@@ -19,7 +19,9 @@
 
 package com.crediblex.fineract.portfolio.accountdetails.data;
 
-public class AccountDataAdditionalProperties {
+public final class AccountDataAdditionalProperties {
+
+    private AccountDataAdditionalProperties() {}
 
     public static String TOTAL_LATE_FEES = "totalLateFees";
     public static String EFFECTIVE_INSTALLMENT_AMOUNT = "effectiveInstallmentAmount";

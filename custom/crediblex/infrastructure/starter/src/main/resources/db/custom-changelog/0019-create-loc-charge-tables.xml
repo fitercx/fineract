@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements. See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership. The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied. See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Phase 2: Schema for Line of Credit Charges (Option 1 - no dedicated LOC transaction ledger) -->
+
+    <!-- Create m_line_of_credit_charge -->
+    <changeSet author="crediblex" id="1" context="postgresql">
+        <preConditions onFail="MARK_RAN" >
+            <not>
+                <tableExists tableName="m_line_of_credit_charge"/>
+            </not>
+        </preConditions>
+        <createTable tableName="m_line_of_credit_charge">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="line_of_credit_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="charge_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_penalty" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="charge_time_enum" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="charge_due_date" type="DATE"/>
+            <column name="fee_on_month" type="INT"/>
+            <column name="fee_on_day" type="INT"/>
+            <column name="fee_interval" type="INT"/>
+            <column name="charge_calculation_enum" type="INT"/>
+            <column name="free_withdrawal_count" type="INT"/>
+            <column name="charge_reset_date" type="DATE"/>
+            <column name="calculation_percentage" type="DECIMAL(19,6)"/>
+            <column name="calculation_on_amount" type="DECIMAL(19,6)"/>
+            <column name="amount" type="DECIMAL(19,6)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount_paid_derived" type="DECIMAL(19,6)"/>
+            <column name="amount_waived_derived" type="DECIMAL(19,6)"/>
+            <column name="amount_writtenoff_derived" type="DECIMAL(19,6)"/>
+            <column name="amount_outstanding_derived" type="DECIMAL(19,6)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_paid_derived" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="waived" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="is_active" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="inactivated_on_date" type="DATE"/>
+            <column name="created_on_utc" type="TIMESTAMP WITH TIME ZONE"/>
+            <column name="created_by" type="BIGINT"/>
+            <column name="last_modified_on_utc" type="TIMESTAMP WITH TIME ZONE"/>
+            <column name="last_modified_by" type="BIGINT"/>
+        </createTable>
+    </changeSet>
+
+    <!-- Create m_line_of_credit_charge_paid_by -->
+    <changeSet author="crediblex" id="2" context="postgresql">
+        <preConditions onFail="MARK_RAN" >
+            <not>
+                <tableExists tableName="m_line_of_credit_charge_paid_by"/>
+            </not>
+        </preConditions>
+        <createTable tableName="m_line_of_credit_charge_paid_by">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="savings_account_transaction_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="line_of_credit_charge_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="DECIMAL(19,6)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <!-- Foreign keys -->
+    <changeSet author="crediblex" id="3">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit_charge"/>
+                <tableExists tableName="m_line_of_credit"/>
+                <tableExists tableName="m_charge"/>
+                <not><foreignKeyConstraintExists foreignKeyName="FK_loc_charge_loc"/></not>
+            </and>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge" baseColumnNames="line_of_credit_id"
+                                 referencedTableName="m_line_of_credit" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_loc" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge" baseColumnNames="charge_id"
+                                 referencedTableName="m_charge" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_definition" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+    </changeSet>
+
+    <changeSet author="crediblex" id="4">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit_charge_paid_by"/>
+                <tableExists tableName="m_line_of_credit_charge"/>
+                <tableExists tableName="m_savings_account_transaction"/>
+                <not><foreignKeyConstraintExists foreignKeyName="FK_loc_charge_paid_by_charge"/></not>
+            </and>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge_paid_by" baseColumnNames="line_of_credit_charge_id"
+                                 referencedTableName="m_line_of_credit_charge" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_paid_by_charge" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge_paid_by" baseColumnNames="savings_account_transaction_id"
+                                 referencedTableName="m_savings_account_transaction" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_paid_by_savings_txn" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+    </changeSet>
+
+    <!-- Audit foreign keys for created_by / last_modified_by (optional) -->
+    <changeSet author="crediblex" id="5">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit_charge"/>
+                <tableExists tableName="m_appuser"/>
+                <not><foreignKeyConstraintExists foreignKeyName="FK_loc_charge_created_by"/></not>
+            </and>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge" baseColumnNames="created_by"
+                                 referencedTableName="m_appuser" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_created_by" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_charge" baseColumnNames="last_modified_by"
+                                 referencedTableName="m_appuser" referencedColumnNames="id"
+                                 constraintName="FK_loc_charge_last_modified_by" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+    </changeSet>
+
+    <!-- Indexes -->
+    <changeSet author="crediblex" id="6">
+        <preConditions onFail="MARK_RAN" >
+            <tableExists tableName="m_line_of_credit_charge"/>
+        </preConditions>
+        <createIndex tableName="m_line_of_credit_charge" indexName="idx_loc_charge_loc_id">
+            <column name="line_of_credit_id"/>
+        </createIndex>
+        <createIndex tableName="m_line_of_credit_charge" indexName="idx_loc_charge_due_date">
+            <column name="charge_due_date"/>
+        </createIndex>
+        <createIndex tableName="m_line_of_credit_charge" indexName="idx_loc_charge_status_lookup">
+            <column name="line_of_credit_id"/>
+            <column name="is_paid_derived"/>
+            <column name="is_active"/>
+            <column name="charge_due_date"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet author="crediblex" id="7">
+        <preConditions onFail="MARK_RAN" >
+            <tableExists tableName="m_line_of_credit_charge_paid_by"/>
+        </preConditions>
+        <createIndex tableName="m_line_of_credit_charge_paid_by" indexName="idx_loc_charge_paid_by_charge_id">
+            <column name="line_of_credit_charge_id"/>
+        </createIndex>
+        <createIndex tableName="m_line_of_credit_charge_paid_by" indexName="idx_loc_charge_paid_by_savings_txn_id">
+            <column name="savings_account_transaction_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

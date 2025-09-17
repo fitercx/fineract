@@ -19,11 +19,12 @@
 
 package com.crediblex.fineract.portfolio.loc.domain;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import java.util.List;
 import java.util.Optional;
-
-import com.crediblex.fineract.portfolio.loc.data.LocActivationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -32,45 +33,19 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long> {
 
-    /**
-     * Find all line of credits by client ID.
-     *
-     * @param clientId
-     *            the client ID
-     * @return list of line of credits
-     */
-    List<LineOfCredit> findByClientId(Long clientId);
+    @Query("""
+            SELECT new com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary(
+                l.id,
+                l.externalId,
+                l.productType
+            )
+            FROM LineOfCredit l
+            WHERE l.status = com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE
+              AND l.currency = :currency
+            """)
+    List<LineOfCreditSummary> findActiveSummariesByCurrency(@Param("currency") String currency);
 
-    /**
-     * Find line of credit by client ID and name.
-     *
-     * @param clientId
-     *            the client ID
-     * @param name
-     *            the line of credit name
-     * @return optional line of credit
-     */
-    Optional<LineOfCredit> findByClientIdAndName(Long clientId, String name);
+    Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
 
-    /**
-     * Check if a line of credit exists by client ID and name.
-     *
-     * @param clientId
-     *            the client ID
-     * @param name
-     *            the line of credit name
-     * @return true if exists, false otherwise
-     */
-    boolean existsByClientIdAndName(Long clientId, String name);
-
-    /**
-     * Find all line of credits by client ID and activation status.
-     *
-     * @param clientId
-     *            the client ID
-     * @param activationStatus
-     *            the activation status
-     * @return list of line of credits
-     */
-    List<LineOfCredit> findByClientIdAndActivationStatus(Long clientId, LocActivationStatus activationStatus);
+    Optional<LineOfCredit> findByExternalId(String externalId);
 }

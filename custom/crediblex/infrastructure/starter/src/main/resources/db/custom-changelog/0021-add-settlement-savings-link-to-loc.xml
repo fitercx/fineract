@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <changeSet id="1" author="crediblex">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <tableExists tableName="m_savings_account"/>
+                <not>
+                    <columnExists tableName="m_line_of_credit" columnName="settlement_savings_account_id"/>
+                </not>
+            </and>
+        </preConditions>
+        <addColumn tableName="m_line_of_credit">
+            <column name="settlement_savings_account_id" type="BIGINT"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="2" author="crediblex">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <columnExists tableName="m_line_of_credit" columnName="settlement_savings_account_id"/>
+                <not>
+                    <foreignKeyConstraintExists foreignKeyName="FK_loc_settlement_savings"/>
+                </not>
+            </and>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="m_line_of_credit" baseColumnNames="settlement_savings_account_id"
+                                 referencedTableName="m_savings_account" referencedColumnNames="id"
+                                 constraintName="FK_loc_settlement_savings" onDelete="RESTRICT" onUpdate="RESTRICT"/>
+    </changeSet>
+
+    <changeSet id="3" author="crediblex">
+        <preConditions onFail="MARK_RAN" >
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <columnExists tableName="m_line_of_credit" columnName="settlement_savings_account_id"/>
+                <not>
+                    <indexExists tableName="m_line_of_credit" indexName="idx_loc_settlement_savings"/>
+                </not>
+            </and>
+        </preConditions>
+        <createIndex tableName="m_line_of_credit" indexName="idx_loc_settlement_savings">
+            <column name="settlement_savings_account_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

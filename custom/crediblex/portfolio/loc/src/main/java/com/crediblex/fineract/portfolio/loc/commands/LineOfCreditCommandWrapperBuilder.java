@@ -29,6 +29,7 @@ public class LineOfCreditCommandWrapperBuilder {
     private Long entityId;
     private String href;
     private String json = "{}";
+    private Long clientId;
 
     public LineOfCreditCommandWrapperBuilder createLineOfCredit() {
         this.actionName = "CREATE";
@@ -40,23 +41,25 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder updateLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "UPDATE";
-        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
     }
 
-    public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId) {
+    public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
         this.actionName = "ACTIVATE";
-        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
     }
 
-    public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId) {
+    public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId, final Long clientId) {
+        this.clientId = clientId;
         this.actionName = "DEACTIVATE";
-        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -64,7 +67,25 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder deleteLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "DELETE";
-        this.entityName =  LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId;
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder approveLineOfCredit(final Long lineOfCreditId, final Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "APPROVE";
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId;
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder closeLineOfCredit(final Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "CLOSE";
+        this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -76,7 +97,7 @@ public class LineOfCreditCommandWrapperBuilder {
     }
 
     public CommandWrapper build() {
-        return new CommandWrapper(null, null, null, null, null, this.actionName, this.entityName, this.entityId, null, this.href, this.json,
-                null, null, null, null, null, null, null, null);
+        return new CommandWrapper(null, null, clientId, null, null, this.actionName, this.entityName, this.entityId, null, this.href,
+                this.json, null, null, null, null, null, null, null, null);
     }
 }

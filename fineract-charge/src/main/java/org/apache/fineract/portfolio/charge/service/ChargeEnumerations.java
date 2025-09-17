@@ -103,6 +103,10 @@ public final class ChargeEnumerations {
                 optionData = new EnumOptionData(ChargeTimeType.SAVINGS_NOACTIVITY_FEE.getValue().longValue(),
                         ChargeTimeType.SAVINGS_NOACTIVITY_FEE.getCode(), "Saving No Activity Fee");
             break;
+            case LINE_OF_CREDIT_ACTIVATION:
+                optionData = new EnumOptionData(ChargeTimeType.LINE_OF_CREDIT_ACTIVATION.getValue().longValue(),
+                        ChargeTimeType.LINE_OF_CREDIT_ACTIVATION.getCode(), "Line Of Credit Activation");
+            break;
             default:
                 optionData = new EnumOptionData(ChargeTimeType.INVALID.getValue().longValue(), ChargeTimeType.INVALID.getCode(), "Invalid");
             break;
@@ -129,6 +133,10 @@ public final class ChargeEnumerations {
             break;
             case SHARES:
                 optionData = new EnumOptionData(ChargeAppliesTo.SHARES.getValue().longValue(), ChargeAppliesTo.SHARES.getCode(), "Shares");
+            break;
+            case LINE_OF_CREDIT:
+                optionData = new EnumOptionData(ChargeAppliesTo.LINE_OF_CREDIT.getValue().longValue(),
+                        ChargeAppliesTo.LINE_OF_CREDIT.getCode(), "Line Of Credit");
             break;
             default:
                 optionData = new EnumOptionData(ChargeAppliesTo.INVALID.getValue().longValue(), ChargeAppliesTo.INVALID.getCode(),

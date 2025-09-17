@@ -4,28 +4,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
 
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.rescheduleloan.data.LoanRescheduleRequestData;
-import org.apache.fineract.portfolio.loanaccount.rescheduleloan.data.LoanRescheduleRequestStatusEnumData;
-import org.apache.fineract.portfolio.loanaccount.rescheduleloan.domain.LoanRescheduleRequest;
-import org.apache.fineract.portfolio.loanaccount.rescheduleloan.domain.LoanRescheduleRequestRepository;
 import org.apache.fineract.portfolio.loanaccount.rescheduleloan.data.LoanRescheduleRequestEnumerations;
-import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.loanaccount.rescheduleloan.data.LoanRescheduleRequestStatusEnumData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -84,31 +75,22 @@ public class CustomLoanRescheduleRequestReadPlatformServiceImplTest {
         Boolean recalculateInterest = true;
         Integer rescheduleFromInstallment = 5;
 
-        LoanRescheduleRequestData requestData = LoanRescheduleRequestData.instance(
-                1L, // id
-                loanId,
-                statusEnumData,
-                rescheduleFromInstallment,
-                rescheduleFromDate,
-                rescheduleReasonCodeValue,
-                rescheduleReasonComment,
+        LoanRescheduleRequestData requestData = LoanRescheduleRequestData.instance(1L, // id
+                loanId, statusEnumData, rescheduleFromInstallment, rescheduleFromDate, rescheduleReasonCodeValue, rescheduleReasonComment,
                 null, // timeline
-                clientName,
-                loanAccountNumber,
-                clientId,
-                recalculateInterest, // This should be true, not null
+                clientName, loanAccountNumber, clientId, recalculateInterest, // This should be true, not null
                 Collections.emptyList(), // reasons
-                Collections.emptyList()  // variations data
+                Collections.emptyList() // variations data
         );
 
         mockRescheduleRequests.add(requestData);
 
         // Mock the JDBC query execution
-        when(jdbcTemplate.query(Mockito.anyString(), Mockito.any(RowMapper.class), Mockito.eq(loanId)))
-                .thenReturn(mockRescheduleRequests);
+        when(jdbcTemplate.query(Mockito.anyString(), Mockito.any(RowMapper.class), Mockito.eq(loanId))).thenReturn(mockRescheduleRequests);
 
         // When
-        List<LoanRescheduleRequestData> result = customLoanRescheduleRequestReadPlatformService.retrieveAllRescheduleRequests(command, loanId);
+        List<LoanRescheduleRequestData> result = customLoanRescheduleRequestReadPlatformService.retrieveAllRescheduleRequests(command,
+                loanId);
 
         // Then
         assertNotNull(result);
@@ -135,11 +117,11 @@ public class CustomLoanRescheduleRequestReadPlatformServiceImplTest {
         mockCodeValues.add(CodeValueData.instance(1L, "Economic difficulties"));
         mockCodeValues.add(CodeValueData.instance(2L, "Change in payment cycle"));
 
-        when(codeValueReadPlatformService.retrieveCodeValuesByCode(loanRescheduleReason))
-                .thenReturn(mockCodeValues);
+        when(codeValueReadPlatformService.retrieveCodeValuesByCode(loanRescheduleReason)).thenReturn(mockCodeValues);
 
         // When
-        LoanRescheduleRequestData result = customLoanRescheduleRequestReadPlatformService.retrieveAllRescheduleReasons(loanRescheduleReason);
+        LoanRescheduleRequestData result = customLoanRescheduleRequestReadPlatformService
+                .retrieveAllRescheduleReasons(loanRescheduleReason);
 
         // Then
         assertNotNull(result);
@@ -164,21 +146,10 @@ public class CustomLoanRescheduleRequestReadPlatformServiceImplTest {
         Boolean recalculateInterest = true;
         Integer rescheduleFromInstallment = 5;
 
-        LoanRescheduleRequestData mockRequestData = LoanRescheduleRequestData.instance(
-                requestId,
-                loanId,
-                statusEnumData,
-                rescheduleFromInstallment,
-                rescheduleFromDate,
-                rescheduleReasonCodeValue,
-                rescheduleReasonComment,
-                null, // timeline
-                clientName,
-                loanAccountNumber,
-                clientId,
-                recalculateInterest,
-                Collections.emptyList(), // reasons
-                Collections.emptyList()  // variations data
+        LoanRescheduleRequestData mockRequestData = LoanRescheduleRequestData.instance(requestId, loanId, statusEnumData,
+                rescheduleFromInstallment, rescheduleFromDate, rescheduleReasonCodeValue, rescheduleReasonComment, null, // timeline
+                clientName, loanAccountNumber, clientId, recalculateInterest, Collections.emptyList(), // reasons
+                Collections.emptyList() // variations data
         );
 
         // Mock the JDBC query execution

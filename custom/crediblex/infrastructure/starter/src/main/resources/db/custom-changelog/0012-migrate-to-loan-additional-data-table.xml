@@ -71,7 +71,7 @@
         <!-- Insert data from loan remitter dp info table -->
         <sql>
             INSERT INTO dt_loan_additional_data (loan_id, remitter_name, dp_name, created_at, updated_at)
-            SELECT 
+            SELECT
                 lrdi.loan_id,
                 lrdi.remitter_name,
                 lrdi.dp_name,
