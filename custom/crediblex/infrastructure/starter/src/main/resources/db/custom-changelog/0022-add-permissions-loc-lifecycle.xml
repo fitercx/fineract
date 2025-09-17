@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    <changeSet id="1" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="APPROVE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="APPROVE"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="CLOSE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="CLOSE"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>
+

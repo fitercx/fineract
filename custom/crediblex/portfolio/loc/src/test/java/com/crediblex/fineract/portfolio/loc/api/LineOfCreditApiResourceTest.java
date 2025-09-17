@@ -32,7 +32,6 @@ import static org.mockito.Mockito.when;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
-import com.crediblex.fineract.portfolio.loc.data.ProductType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import jakarta.ws.rs.core.UriInfo;
 import java.math.BigDecimal;
@@ -406,7 +405,7 @@ class LineOfCreditApiResourceTest {
         when(data.getMaximumAmount()).thenReturn(new BigDecimal("5000000.00"));
         when(data.getAvailableBalance()).thenReturn(new BigDecimal("5000000.00"));
         when(data.getConsumedAmount()).thenReturn(BigDecimal.ZERO);
-        when(data.getActivationStatus()).thenReturn(new EnumOptionData(0L, "INACTIVE", "INACTIVE"));
+        when(data.getStatus()).thenReturn(new EnumOptionData(0L, "INACTIVE", "INACTIVE"));
         when(data.getStartDate()).thenReturn(LocalDate.of(2025, 1, 1));
         when(data.getEndDate()).thenReturn(LocalDate.of(2025, 12, 31));
         return data;

@@ -23,7 +23,9 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
+import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
@@ -44,7 +46,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @Primary
 public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlatformServiceImpl {
@@ -61,6 +65,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     private final LoanAccrualsProcessingService loanAccrualsProcessingService;
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
+    private final ConfigurationDomainService configurationDomainService;
 
     public CredXLoanChargeWritePlatformServiceImpl(
             LoanChargeApiJsonValidator loanChargeApiJsonValidator,
@@ -121,6 +126,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine1;
         this.loanAccrualsProcessingService = loanAccrualsProcessingService1;
         this.loanAccrualTransactionBusinessEventService = loanAccrualTransactionBusinessEventService1;
+        this.configurationDomainService = configurationDomainService;
     }
 
     @Override

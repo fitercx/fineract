@@ -21,16 +21,14 @@ package com.crediblex.fineract.portfolio.loc.data;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
-@Schema(description = "Request DTO for Line of Credit action operations (activate/deactivate)")
+@Schema(description = "Request DTO for Line of Credit action operations (approve/activate/close)")
 public class LineOfCreditActionRequest {
 
     @Schema(example = "yyyy-MM-dd", description = "Format of the dates provided")
@@ -38,6 +36,26 @@ public class LineOfCreditActionRequest {
 
     @Schema(example = "en", description = "Locale to interpret the date format")
     private String locale;
+
+    @Schema(example = "2023-09-15", description = "Date for the action (approval/activation/closure date)")
+    private String actionDate;
+
+    @Schema(example = "Line of credit approved after review", description = "Optional note for the action")
+    private String note;
+
+    // Constructor with default dateFormat and locale for backward compatibility
+    public LineOfCreditActionRequest(String dateFormat, String locale) {
+        this.dateFormat = dateFormat;
+        this.locale = locale;
+    }
+
+    // Constructor with all fields
+    public LineOfCreditActionRequest(String dateFormat, String locale, String actionDate, String note) {
+        this.dateFormat = dateFormat;
+        this.locale = locale;
+        this.actionDate = actionDate;
+        this.note = note;
+    }
 
     public String toJson() {
         try {

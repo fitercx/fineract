@@ -30,9 +30,6 @@ public interface LineOfCreditWritePlatformService {
     CommandProcessingResult createLineOfCredit(JsonCommand command);
 
     @Transactional
-    CommandProcessingResult createLineOfCredit(LineOfCreditRequest request);
-
-    @Transactional
     CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
     @Transactional
@@ -43,4 +40,10 @@ public interface LineOfCreditWritePlatformService {
 
     @Transactional
     CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId);
+
+    @Transactional
+    CommandProcessingResult approveLineOfCredit(Long lineOfCreditId, JsonCommand command);
+
+    @Transactional
+    CommandProcessingResult closeLineOfCredit(Long lineOfCreditId, JsonCommand command);
 }

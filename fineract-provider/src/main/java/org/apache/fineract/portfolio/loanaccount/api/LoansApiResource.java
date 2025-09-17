@@ -480,7 +480,7 @@ public class LoansApiResource {
             @QueryParam("accountNo") @Parameter(description = "accountNo") final String accountNo,
             @QueryParam("associations") @Parameter(description = "associations") final String associations,
             @QueryParam("clientId") @Parameter(description = "clientId") final Long clientId,
-            @QueryParam("status") @Parameter(description = "status") final String status) {
+            @QueryParam("status") @Parameter(description = "status") final String status,@QueryParam("locId") final Long locId) {
 
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
 
@@ -489,7 +489,8 @@ public class LoansApiResource {
         sqlValidator.validate(accountNo);
         sqlValidator.validate(externalId);
         final SearchParameters searchParameters = SearchParameters.builder().accountNo(accountNo).sortOrder(sortOrder)
-                .externalId(externalId).offset(offset).limit(limit).orderBy(orderBy).status(status).clientId(clientId).build();
+                .externalId(externalId).offset(offset).limit(limit).orderBy(orderBy).status(status).clientId(clientId)
+                .locId(locId).build();
 
         final Page<LoanAccountData> loanBasicDetails = this.loanReadPlatformService.retrieveAll(searchParameters);
         final Set<String> associationParameters = ApiParameterHelper.extractAssociationsForResponseIfProvided(uriInfo.getQueryParameters());

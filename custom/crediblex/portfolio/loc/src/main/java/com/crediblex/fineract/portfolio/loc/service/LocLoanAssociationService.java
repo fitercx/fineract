@@ -20,7 +20,7 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 
-import com.crediblex.fineract.portfolio.loc.repository.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;

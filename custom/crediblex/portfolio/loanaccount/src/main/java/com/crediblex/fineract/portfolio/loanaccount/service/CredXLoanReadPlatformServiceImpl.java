@@ -33,6 +33,10 @@ import java.util.*;
 import java.sql.Date;
 
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
+import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
+import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.ApiFacingEnum;
@@ -50,10 +54,14 @@ import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
+import org.apache.fineract.portfolio.accountdetails.data.LoanAccountSummaryData;
+import org.apache.fineract.portfolio.accountdetails.domain.AccountType;
 import org.apache.fineract.portfolio.accountdetails.service.AccountDetailsReadPlatformService;
 import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 import org.apache.fineract.portfolio.calendar.data.CalendarData;
 import org.apache.fineract.portfolio.calendar.service.CalendarReadPlatformService;
+import org.apache.fineract.portfolio.charge.data.ChargeData;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService;
 import org.apache.fineract.portfolio.client.domain.ClientEnumerations;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
@@ -62,6 +70,7 @@ import org.apache.fineract.portfolio.common.service.CommonEnumerations;
 import org.apache.fineract.portfolio.delinquency.data.DelinquencyRangeData;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
 import org.apache.fineract.portfolio.floatingrates.service.FloatingRatesReadPlatformService;
+import org.apache.fineract.portfolio.fund.data.FundData;
 import org.apache.fineract.portfolio.fund.service.FundReadPlatformService;
 import org.apache.fineract.portfolio.group.data.GroupGeneralData;
 import org.apache.fineract.portfolio.group.service.GroupReadPlatformService;
@@ -76,6 +85,8 @@ import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTransactionMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.*;
+import org.apache.fineract.portfolio.loanproduct.data.TransactionProcessingStrategyData;
+import org.apache.fineract.portfolio.loanproduct.domain.InterestMethod;
 import org.apache.fineract.portfolio.loanproduct.service.LoanDropdownReadPlatformService;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
@@ -87,6 +98,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
+import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
+
 @Service
 @Primary
 public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImpl {
@@ -96,6 +109,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
+    private final PlatformSecurityContext context;
+    private final LineOfCreditRepository lineOfCreditRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -113,7 +128,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
-            CredXLoanTransactionRepository credXLoanTransactionRepository) {
+            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -126,6 +141,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
+        this.context = context;
+        this.lineOfCreditRepository = lineOfCreditRepository;
     }
 
     @Override
@@ -893,5 +910,97 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     }
 
+    @Override
+    public LoanAccountData retrieveLoanProductDetailsTemplate(final Long productId, final Long clientId, final Long groupId) {
+
+        this.context.authenticatedUser();
+
+        final ExtendedLoanProductData loanProduct = (ExtendedLoanProductData) this.loanProductReadPlatformService.retrieveLoanProduct(productId);
+        final Collection<EnumOptionData> loanTermFrequencyTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveLoanTermFrequencyTypeOptions();
+        final Collection<EnumOptionData> repaymentFrequencyTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveRepaymentFrequencyTypeOptions();
+        final Collection<EnumOptionData> repaymentFrequencyNthDayTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveRepaymentFrequencyOptionsForNthDayOfMonth();
+        final Collection<EnumOptionData> repaymentFrequencyDaysOfWeekTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveRepaymentFrequencyOptionsForDaysOfWeek();
+        final Collection<EnumOptionData> interestRateFrequencyTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveInterestRateFrequencyTypeOptions();
+        final Collection<EnumOptionData> amortizationTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveLoanAmortizationTypeOptions();
+        Collection<EnumOptionData> interestTypeOptions = null;
+        if (loanProduct.isLinkedToFloatingInterestRates()) {
+            interestTypeOptions = List.of(interestType(InterestMethod.DECLINING_BALANCE));
+        } else {
+            interestTypeOptions = this.loanDropdownReadPlatformService.retrieveLoanInterestTypeOptions();
+        }
+        final Collection<EnumOptionData> interestCalculationPeriodTypeOptions = this.loanDropdownReadPlatformService
+                .retrieveLoanInterestRateCalculatedInPeriodOptions();
+        final Collection<FundData> fundOptions = this.fundReadPlatformService.retrieveAllFunds();
+        final Collection<TransactionProcessingStrategyData> repaymentStrategyOptions = this.loanDropdownReadPlatformService
+                .retrieveTransactionProcessingStrategies();
+        final Collection<CodeValueData> loanPurposeOptions = this.codeValueReadPlatformService.retrieveCodeValuesByCode("LoanPurpose");
+        final Collection<CodeValueData> loanCollateralOptions = this.codeValueReadPlatformService
+                .retrieveCodeValuesByCode("LoanCollateral");
+        Collection<ChargeData> chargeOptions = null;
+        if (loanProduct.getMultiDisburseLoan()) {
+            chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
+                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT});
+        } else {
+            chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
+                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT, ChargeTimeType.TRANCHE_DISBURSEMENT});
+        }
+
+        Integer loanCycleCounter = null;
+        if (loanProduct.isUseBorrowerCycle()) {
+            if (clientId == null) {
+                loanCycleCounter = retriveLoanCounter(groupId, AccountType.GROUP.getValue(), loanProduct.getId());
+            } else {
+                loanCycleCounter = retriveLoanCounter(clientId, loanProduct.getId());
+            }
+        }
+
+        Collection<LoanAccountSummaryData> activeLoanOptions = null;
+        if (loanProduct.isCanUseForTopup() && clientId != null) {
+            activeLoanOptions = this.accountDetailsReadPlatformService.retrieveClientActiveLoanAccountSummary(clientId);
+        } else if (loanProduct.isCanUseForTopup() && groupId != null) {
+            activeLoanOptions = this.accountDetailsReadPlatformService.retrieveGroupActiveLoanAccountSummary(groupId);
+        }
+
+        List<LineOfCreditSummary> lineOfCreditSummaries = null;
+        Boolean isLocEnabled = false;
+        if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled") && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
+            isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
+            lineOfCreditSummaries = this.lineOfCreditRepository.findActiveSummariesByCurrency(loanProduct.getCurrency().getCode());
+        }
+
+        ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();
+
+        loanAccountData.withProductData(loanProduct, loanCycleCounter) //
+                .setTermFrequencyTypeOptions(loanTermFrequencyTypeOptions) //
+                .setRepaymentFrequencyTypeOptions(repaymentFrequencyTypeOptions) //
+                .setRepaymentFrequencyNthDayTypeOptions(repaymentFrequencyNthDayTypeOptions) //
+                .setRepaymentFrequencyDaysOfWeekTypeOptions(repaymentFrequencyDaysOfWeekTypeOptions) //
+                .setTransactionProcessingStrategyOptions(repaymentStrategyOptions) //
+                .setInterestRateFrequencyTypeOptions(interestRateFrequencyTypeOptions) //
+                .setAmortizationTypeOptions(amortizationTypeOptions) //
+                .setInterestTypeOptions(interestTypeOptions) //
+                .setInterestCalculationPeriodTypeOptions(interestCalculationPeriodTypeOptions) //
+                .setFundOptions(fundOptions) //
+                .setChargeOptions(chargeOptions) //
+                .setLoanPurposeOptions(loanPurposeOptions) //
+                .setLoanCollateralOptions(loanCollateralOptions) //
+                .setClientActiveLoanOptions(activeLoanOptions) //
+                .setLoanScheduleTypeOptions(LoanScheduleType.getValuesAsEnumOptionDataList()) //
+                .setLoanScheduleProcessingTypeOptions(LoanScheduleProcessingType.getValuesAsEnumOptionDataList());//
+
+        if (lineOfCreditSummaries != null && !lineOfCreditSummaries.isEmpty()) {
+            loanAccountData.getAdditionalProperties().put("lineOfCreditOptions", lineOfCreditSummaries);
+            loanAccountData.getAdditionalProperties().put("isLocEnabled", isLocEnabled);
+        }
+
+        return loanAccountData;
+
+    }
 
 }

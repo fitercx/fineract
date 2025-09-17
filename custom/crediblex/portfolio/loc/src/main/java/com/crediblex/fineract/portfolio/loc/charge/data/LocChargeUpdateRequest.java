@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements. See the NOTICE file
  * distributed with this work for additional information
@@ -16,16 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.crediblex.fineract.portfolio.loc.data;
+package com.crediblex.fineract.portfolio.loc.charge.data;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import lombok.Data;
 
-@Schema(description = "Enum for line of credit product types")
-public enum ProductType {
-    
-    @Schema(description = "Receivable product type")
-    RECEIVABLE,
-    
-    @Schema(description = "Payable product type")
-    PAYABLE
+@Data
+public class LocChargeUpdateRequest {
+    private Long locId; // populated by API endpoint
+    private BigDecimal amount; // optional
+    private LocalDate dueDate; // optional
+    private String feeOnMonthDay; // optional MM-dd
+    private Integer feeInterval; // optional
 }
+

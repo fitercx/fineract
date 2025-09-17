@@ -155,13 +155,13 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     private final PlatformSecurityContext context;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
-    private final LoanProductReadPlatformService loanProductReadPlatformService;
+    protected final LoanProductReadPlatformService loanProductReadPlatformService;
     private final ClientReadPlatformService clientReadPlatformService;
     private final GroupReadPlatformService groupReadPlatformService;
-    private final LoanDropdownReadPlatformService loanDropdownReadPlatformService;
-    private final FundReadPlatformService fundReadPlatformService;
-    private final ChargeReadPlatformService chargeReadPlatformService;
-    private final CodeValueReadPlatformService codeValueReadPlatformService;
+    protected final LoanDropdownReadPlatformService loanDropdownReadPlatformService;
+    protected final FundReadPlatformService fundReadPlatformService;
+    protected final ChargeReadPlatformService chargeReadPlatformService;
+    protected final CodeValueReadPlatformService codeValueReadPlatformService;
     private final CalendarReadPlatformService calendarReadPlatformService;
     private final StaffReadPlatformService staffReadPlatformService;
     private final PaginationHelper paginationHelper;
@@ -170,7 +170,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     private final FloatingRatesReadPlatformService floatingRatesReadPlatformService;
     private final LoanUtilService loanUtilService;
     private final ConfigurationDomainService configurationDomainService;
-    private final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
+    protected final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
     private final ColumnValidator columnValidator;
     protected final DatabaseSpecificSQLGenerator sqlGenerator;
     protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
@@ -363,6 +363,12 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                 sqlBuilder.append(" and l.client_id = ?");
                 extraCriterias.add(searchParameters.getClientId());
                 arrayPos = arrayPos + 1;
+            }
+
+            if(searchParameters.getLocId() != null){
+                sqlBuilder.append(" and l.line_of_credit_id = ?");
+                extraCriterias.add(searchParameters.getLocId());
+                arrayPos = arrayPos +1;
             }
 
             if (searchParameters.hasOrderBy()) {

@@ -260,6 +260,15 @@ public class Charge extends AbstractPersistableCustom<Long> {
                 baseDataValidator.reset().parameter("chargeTimeType").value(this.chargeTimeType)
                         .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.time.for.loan");
             }
+        } else if (isLineOfCreditCharge()) {
+            if (!isAllowedLineOfCreditChargeTime()) {
+                baseDataValidator.reset().parameter("chargeTimeType").value(this.chargeTimeType)
+                        .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.time.for.lineOfCredit");
+            }
+            if (!isAllowedLineOfCreditChargeCalculationType()) {
+                baseDataValidator.reset().parameter("chargeCalculationType").value(this.chargeCalculation)
+                        .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.calculation.type.for.lineOfCredit");
+            }
         }
 
         if (isPercentageOfApprovedAmount()) {
@@ -324,6 +333,10 @@ public class Charge extends AbstractPersistableCustom<Long> {
         return ChargeAppliesTo.fromInt(this.chargeAppliesTo).isClientCharge();
     }
 
+    public boolean isLineOfCreditCharge() {
+        return ChargeAppliesTo.fromInt(this.chargeAppliesTo).isLineOfCreditCharge();
+    }
+
     public boolean isAllowedSavingsChargeTime() {
         return ChargeTimeType.fromInt(this.chargeTimeType).isAllowedSavingsChargeTime();
     }
@@ -334,6 +347,14 @@ public class Charge extends AbstractPersistableCustom<Long> {
 
     public boolean isAllowedClientChargeCalculationType() {
         return ChargeCalculationType.fromInt(this.chargeCalculation).isAllowedClientChargeCalculationType();
+    }
+
+    public boolean isAllowedLineOfCreditChargeTime() {
+        return ChargeTimeType.fromInt(this.chargeTimeType).isAllowedLineOfCreditChargeTime();
+    }
+
+    public boolean isAllowedLineOfCreditChargeCalculationType() {
+        return ChargeCalculationType.fromInt(this.chargeCalculation).isAllowedLineOfCreditChargeCalculationType();
     }
 
     public boolean isPercentageOfApprovedAmount() {
@@ -449,6 +470,11 @@ public class Charge extends AbstractPersistableCustom<Long> {
                     baseDataValidator.reset().parameter("chargeTimeType").value(this.chargeTimeType)
                             .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.time.for.client");
                 }
+            } else if (isLineOfCreditCharge()) {
+                if (!isAllowedLineOfCreditChargeTime()) {
+                    baseDataValidator.reset().parameter("chargeTimeType").value(this.chargeTimeType)
+                            .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.time.for.lineOfCredit");
+                }
             }
         }
 
@@ -531,6 +557,11 @@ public class Charge extends AbstractPersistableCustom<Long> {
                 if (!isAllowedClientChargeCalculationType()) {
                     baseDataValidator.reset().parameter("chargeCalculationType").value(this.chargeCalculation)
                             .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.calculation.type.for.client");
+                }
+            } else if (isLineOfCreditCharge()) {
+                if (!isAllowedLineOfCreditChargeCalculationType()) {
+                    baseDataValidator.reset().parameter("chargeCalculationType").value(this.chargeCalculation)
+                            .failWithCodeNoParameterAddedToErrorCode("not.allowed.charge.calculation.type.for.lineOfCredit");
                 }
             }
         }

@@ -43,16 +43,7 @@ public class LineOfCreditCreateCommandHandler implements NewCommandSourceHandler
     @Override
     @Transactional
     public CommandProcessingResult processCommand(JsonCommand command) {
-        try {
-            // Parse JSON to LineOfCreditRequest object
-            final LineOfCreditRequest request = objectMapper.readValue(command.json(), LineOfCreditRequest.class);
-            
-            // Use the new method that accepts LineOfCreditRequest directly
-            return this.writePlatformService.createLineOfCredit(request);
-        } catch (Exception e) {
-            log.error("Error parsing LineOfCreditRequest from JSON: {}", e.getMessage());
-            // Fallback to the original method if parsing fails
-            return this.writePlatformService.createLineOfCredit(command);
-        }
+        return this.writePlatformService.createLineOfCredit(command);
+
     }
 }

@@ -667,7 +667,7 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
                     if (!LoanScheduleType.PROGRESSIVE.equals(loanProduct.getLoanProductRelatedDetail().getLoanScheduleType())) {
                         baseDataValidator.reset().parameter(LoanApiConstants.daysInYearCustomStrategyParameterName).failWithCode(
                                 "days.in.year.custom.strategy.is.only.supported.for.progressive.loan.schedule.type",
-                                "daysInYearCustomStrategy is only supported for progressive loan schedule type");
+                                      "daysInYearCustomStrategy is only supported for progressive loan schedule type");
                     }
 
                     if (!DaysInYearType.ACTUAL.getValue().equals(loanProduct.getLoanProductRelatedDetail().getDaysInYearType())) {

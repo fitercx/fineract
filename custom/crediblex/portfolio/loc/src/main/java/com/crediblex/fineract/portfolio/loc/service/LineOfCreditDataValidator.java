@@ -54,6 +54,16 @@ public class LineOfCreditDataValidator {
 
     private final FromJsonHelper fromApiJsonHelper;
     private final JdbcTemplate jdbcTemplate;
+    private static final List<String> SUPPORTED_PARAMTERS = Arrays.asList(
+            "locale", "dateFormat", "clientId", "name", "productType", "maximumAmount", "startDate", "endDate",
+            "approvedCreditFacilityAmount", "externalId", "activationDate", "currencyCode", "advancePercentage",
+            "tenorDays", "approvedBuyers", "cashMarginType", "cashMarginValue",
+            "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
+            "clientCompanyName", "clientContactPersonName", "clientContactPersonPhone", "clientContactPersonEmail",
+            "authorizedSignatoryName", "authorizedSignatoryPhone", "authorizedSignatoryEmail", "va",
+            "distributionPartner", "bankTransferFee", "specialConditions", "maxPerDrawdown",
+            "reviewPeriod", "interestRateOverride", "settlementSavingsAccountId", "charges"
+    );
 
     public void validateForCreate(String json) {
         if (json == null) {
@@ -67,23 +77,11 @@ public class LineOfCreditDataValidator {
         // Check for unsupported parameters - lineOfCreditId should not be in request body
         final Type typeOfMap = new TypeToken<Map<String, Object>>() {
         }.getType();
-        final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
-                "locale", "dateFormat", "clientId", "name", "productType", "maximumAmount", "startDate", "endDate",
-                "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
-                "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
-                "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
-                "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
-                "clientCompanyName", "clientContactPersonName", "clientContactPersonPhone", "clientContactPersonEmail",
-                "authorizedSignatoryName", "authorizedSignatoryPhone", "authorizedSignatoryEmail", "va",
-                "distributionPartner", "bankTransferFee", "specialConditions", "latePaymentFee"
-        ));
+        final Set<String> supportedParameters = new HashSet<>(SUPPORTED_PARAMTERS);
         this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, supportedParameters);
 
         final Long clientId = this.fromApiJsonHelper.extractLongNamed("clientId", element);
         baseDataValidator.reset().parameter("clientId").value(clientId).notNull().integerGreaterThanZero();
-
-        final String name = this.fromApiJsonHelper.extractStringNamed("name", element);
-        baseDataValidator.reset().parameter("name").value(name).notBlank().notExceedingLengthOf(100);
 
         final String productType = this.fromApiJsonHelper.extractStringNamed("productType", element);
         baseDataValidator.reset().parameter("productType").value(productType).notBlank().notExceedingLengthOf(50);
@@ -96,8 +94,11 @@ public class LineOfCreditDataValidator {
         final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
         baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
 
-        final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
-        baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+        LocalDate endDate = null;
+        if (fromApiJsonHelper.parameterExists("endDate", element)) {
+            endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
+            baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
+        }
 
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             baseDataValidator.reset().parameter("endDate").value(endDate).failWithCode("end.date.cannot.be.before.start.date");
@@ -121,16 +122,7 @@ public class LineOfCreditDataValidator {
 
         final Type typeOfMap = new TypeToken<Map<String, Object>>() {
         }.getType();
-        final Set<String> supportedParameters = new HashSet<>(Arrays.asList(
-                "locale", "dateFormat", "name", "productType", "maximumAmount", "startDate", "endDate",
-                "approvedCreditFacilityAmount", "externalId", "activationDate", "currency", "advancePercentage",
-                "tenorDays", "approvedBuyers", "processingFeePctLoc", "cashMarginType", "cashMarginValue",
-                "invHandlingFeeBasis", "invHandlingFeePct", "invHandlingFeeMinAmount", "invHandlingFeeCurrency",
-                "interimReviewDate", "rateType", "annualInterestRate", "isInterestUpfrontOrPostDisbursal",
-                "clientCompanyName", "clientContactPersonName", "clientContactPersonPhone", "clientContactPersonEmail",
-                "authorizedSignatoryName", "authorizedSignatoryPhone", "authorizedSignatoryEmail", "va",
-                "distributionPartner", "bankTransferFee", "specialConditions", "latePaymentFee"
-        ));
+        final Set<String> supportedParameters = new HashSet<>(SUPPORTED_PARAMTERS);
 
         // Create a filtered JSON without clientId for the unsupported parameters check
         String filteredJson = json;
@@ -170,42 +162,10 @@ public class LineOfCreditDataValidator {
             baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
         }
 
-        // Validate new fields for update
-        if (this.fromApiJsonHelper.parameterExists("approvedCreditFacilityAmount", element) ||
-                this.fromApiJsonHelper.parameterExists("externalId", element) ||
-                this.fromApiJsonHelper.parameterExists("activationDate", element) ||
-                this.fromApiJsonHelper.parameterExists("currency", element) ||
-                this.fromApiJsonHelper.parameterExists("advancePercentage", element) ||
-                this.fromApiJsonHelper.parameterExists("tenorDays", element) ||
-                this.fromApiJsonHelper.parameterExists("approvedBuyers", element) ||
-                this.fromApiJsonHelper.parameterExists("processingFeePctLoc", element) ||
-                this.fromApiJsonHelper.parameterExists("cashMarginType", element) ||
-                this.fromApiJsonHelper.parameterExists("cashMarginValue", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeBasis", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeePct", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeMinAmount", element) ||
-                this.fromApiJsonHelper.parameterExists("invHandlingFeeCurrency", element) ||
-                this.fromApiJsonHelper.parameterExists("interimReviewDate", element) ||
-                this.fromApiJsonHelper.parameterExists("rateType", element) ||
-                this.fromApiJsonHelper.parameterExists("annualInterestRate", element) ||
-                this.fromApiJsonHelper.parameterExists("isInterestUpfrontOrPostDisbursal", element) ||
-                this.fromApiJsonHelper.parameterExists("clientCompanyName", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonName", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonPhone", element) ||
-                this.fromApiJsonHelper.parameterExists("clientContactPersonEmail", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryName", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryPhone", element) ||
-                this.fromApiJsonHelper.parameterExists("authorizedSignatoryEmail", element) ||
-                this.fromApiJsonHelper.parameterExists("va", element) ||
-                this.fromApiJsonHelper.parameterExists("distributionPartner", element) ||
-                this.fromApiJsonHelper.parameterExists("bankTransferFee", element) ||
-                this.fromApiJsonHelper.parameterExists("specialConditions", element) ||
-                this.fromApiJsonHelper.parameterExists("latePaymentFee", element)) {
 
-            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-            validateNewFields(element, baseDataValidator, dateFormat, locale);
-        }
+        final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
+        final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
+        validateNewFields(element, baseDataValidator, dateFormat, locale);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
@@ -218,10 +178,8 @@ public class LineOfCreditDataValidator {
         }
 
         // Validate external ID
-        if (this.fromApiJsonHelper.parameterExists("externalId", element)) {
-            final String externalId = this.fromApiJsonHelper.extractStringNamed("externalId", element);
-            baseDataValidator.reset().parameter("externalId").value(externalId).notExceedingLengthOf(100);
-        }
+        final String externalId = this.fromApiJsonHelper.extractStringNamed("externalId", element);
+        baseDataValidator.reset().parameter("externalId").value(externalId).notBlank().notExceedingLengthOf(100);
 
         // Validate activation date
         if (this.fromApiJsonHelper.parameterExists("activationDate", element)) {
@@ -235,22 +193,11 @@ public class LineOfCreditDataValidator {
             baseDataValidator.reset().parameter("currency").value(currency).notExceedingLengthOf(10);
         }
 
-        // Validate advance percentage
-        if (this.fromApiJsonHelper.parameterExists("advancePercentage", element)) {
-            final BigDecimal advancePercentage = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("advancePercentage", element);
-            baseDataValidator.reset().parameter("advancePercentage").value(advancePercentage).positiveAmount();
-        }
 
         // Validate tenor days
         if (this.fromApiJsonHelper.parameterExists("tenorDays", element)) {
             final Integer tenorDays = this.fromApiJsonHelper.extractIntegerNamed("tenorDays", element, locale);
             baseDataValidator.reset().parameter("tenorDays").value(tenorDays).positiveAmount();
-        }
-
-        // Validate processing fee percentage
-        if (this.fromApiJsonHelper.parameterExists("processingFeePctLoc", element)) {
-            final BigDecimal processingFeePctLoc = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("processingFeePctLoc", element);
-            baseDataValidator.reset().parameter("processingFeePctLoc").value(processingFeePctLoc).positiveAmount();
         }
 
         // Validate cash margin type
@@ -259,35 +206,6 @@ public class LineOfCreditDataValidator {
             baseDataValidator.reset().parameter("cashMarginType").value(cashMarginType).notExceedingLengthOf(50);
         }
 
-        // Validate cash margin value
-        if (this.fromApiJsonHelper.parameterExists("cashMarginValue", element)) {
-            final BigDecimal cashMarginValue = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("cashMarginValue", element);
-            baseDataValidator.reset().parameter("cashMarginValue").value(cashMarginValue).positiveAmount();
-        }
-
-        // Validate invoice handling fee basis
-        if (this.fromApiJsonHelper.parameterExists("invHandlingFeeBasis", element)) {
-            final String invHandlingFeeBasis = this.fromApiJsonHelper.extractStringNamed("invHandlingFeeBasis", element);
-            baseDataValidator.reset().parameter("invHandlingFeeBasis").value(invHandlingFeeBasis).notExceedingLengthOf(50);
-        }
-
-        // Validate invoice handling fee percentage
-        if (this.fromApiJsonHelper.parameterExists("invHandlingFeePct", element)) {
-            final BigDecimal invHandlingFeePct = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("invHandlingFeePct", element);
-            baseDataValidator.reset().parameter("invHandlingFeePct").value(invHandlingFeePct).positiveAmount();
-        }
-
-        // Validate invoice handling fee min amount
-        if (this.fromApiJsonHelper.parameterExists("invHandlingFeeMinAmount", element)) {
-            final BigDecimal invHandlingFeeMinAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("invHandlingFeeMinAmount", element);
-            baseDataValidator.reset().parameter("invHandlingFeeMinAmount").value(invHandlingFeeMinAmount).positiveAmount();
-        }
-
-        // Validate invoice handling fee currency
-        if (this.fromApiJsonHelper.parameterExists("invHandlingFeeCurrency", element)) {
-            final String invHandlingFeeCurrency = this.fromApiJsonHelper.extractStringNamed("invHandlingFeeCurrency", element);
-            baseDataValidator.reset().parameter("invHandlingFeeCurrency").value(invHandlingFeeCurrency).notExceedingLengthOf(10);
-        }
 
         // Validate interim review date
         if (this.fromApiJsonHelper.parameterExists("interimReviewDate", element)) {
@@ -305,12 +223,6 @@ public class LineOfCreditDataValidator {
         if (this.fromApiJsonHelper.parameterExists("annualInterestRate", element)) {
             final BigDecimal annualInterestRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("annualInterestRate", element);
             baseDataValidator.reset().parameter("annualInterestRate").value(annualInterestRate).positiveAmount();
-        }
-
-        // Validate interest upfront or post disbursal
-        if (this.fromApiJsonHelper.parameterExists("isInterestUpfrontOrPostDisbursal", element)) {
-            final String isInterestUpfrontOrPostDisbursal = this.fromApiJsonHelper.extractStringNamed("isInterestUpfrontOrPostDisbursal", element);
-            baseDataValidator.reset().parameter("isInterestUpfrontOrPostDisbursal").value(isInterestUpfrontOrPostDisbursal).notExceedingLengthOf(20);
         }
 
         // Validate client company name
@@ -367,17 +279,7 @@ public class LineOfCreditDataValidator {
             baseDataValidator.reset().parameter("distributionPartner").value(distributionPartner).notExceedingLengthOf(255);
         }
 
-        // Validate bank transfer fee
-        if (this.fromApiJsonHelper.parameterExists("bankTransferFee", element)) {
-            final BigDecimal bankTransferFee = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("bankTransferFee", element);
-            baseDataValidator.reset().parameter("bankTransferFee").value(bankTransferFee).positiveAmount();
-        }
 
-        // Validate late payment fee
-        if (this.fromApiJsonHelper.parameterExists("latePaymentFee", element)) {
-            final BigDecimal latePaymentFee = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("latePaymentFee", element);
-            baseDataValidator.reset().parameter("latePaymentFee").value(latePaymentFee).positiveAmount();
-        }
     }
 
     /**
@@ -438,7 +340,6 @@ public class LineOfCreditDataValidator {
 
         try {
             Map<String, Object> result = jdbcTemplate.queryForMap(sql, lineOfCreditId);
-            BigDecimal currentMaximumAmount = (BigDecimal) result.get("maximum_amount");
             BigDecimal consumedAmount = (BigDecimal) result.get("consumed_amount");
 
             // Check if the new limit is less than the currently utilized balance
