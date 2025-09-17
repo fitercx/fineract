@@ -27,7 +27,7 @@
             <column name="name" value="Odoo Journal Entries Sync Job"/>
             <column name="display_name" value="Odoo Journal Entries Sync Job"/>
             <column name="cron_expression" value="0 0 * * * ?"/>
-            <column name="create_time" valueDate="${current_datetime}"/>
+            <column name="create_time" valueDate="now()"/>
             <column name="task_priority" valueNumeric="5"/>
             <column name="group_name"/>
             <column name="previous_run_start_time"/>
@@ -40,12 +40,7 @@
             <column name="is_misfired" valueBoolean="false"/>
             <column name="node_id" valueNumeric="1"/>
             <column name="is_mismatched_job" valueBoolean="true"/>
+            <column name="short_name" value="ODOOSYNC"/>
         </insert>
-    </changeSet>
-    <changeSet author="crediblex" id="41">
-        <update tableName="job">
-            <column name="short_name" value="ODO_JSYNC"/>
-            <where>name='Odoo Journal Entries Sync Job'</where>
-        </update>
     </changeSet>
 </databaseChangeLog>
