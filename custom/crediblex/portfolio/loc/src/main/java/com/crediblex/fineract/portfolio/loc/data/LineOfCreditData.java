@@ -84,6 +84,9 @@ public final class LineOfCreditData implements Serializable {
 
     private BigDecimal maxPerDrawdown;
     private String reviewPeriod;
+    private String loanOfficer;
+    private String repaymentStrategy;
+    private Integer tenorUtilized;
     private BigDecimal interestRateOverride;
     private Long settlementSavingsAccountId;
     private String settlementSavingsAccountNo;

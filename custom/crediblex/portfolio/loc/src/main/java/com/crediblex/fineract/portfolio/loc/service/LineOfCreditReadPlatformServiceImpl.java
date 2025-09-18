@@ -105,6 +105,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     loc.authorized_signatory_email as authorizedSignatoryEmail,
                     loc.va as virtualAccount,
                     loc.special_conditions as specialConditions,
+                    loc.max_per_drawdown as maxPerDrawdown,
+                    loc.review_period as reviewPeriod,
+                    loc.loan_officer as loanOfficer,
+                    loc.repayment_strategy as repaymentStrategy,
+                    loc.late_payment_fee as latePaymentFee,
                     loc.annual_interest_rate  as annualInterestRate,
                     loc.settlement_savings_account_id as settlementSavingsAccountId,
                     ssa.account_no as settlementSavingsAccountNo,
@@ -189,6 +194,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String authorizedSignatoryEmail = rs.getString("authorizedSignatoryEmail");
             final String virtualAccount = rs.getString("virtualAccount");
             final String specialConditions = rs.getString("specialConditions");
+            final BigDecimal maxPerDrawdown = rs.getBigDecimal("maxPerDrawdown");
+            final String reviewPeriod = rs.getString("reviewPeriod");
+            final String loanOfficer = rs.getString("loanOfficer");
+            final String repaymentStrategy = rs.getString("repaymentStrategy");
+            final BigDecimal latePaymentFee = rs.getBigDecimal("latePaymentFee");
             final Long settlementSavingsAccountId = JdbcSupport.getLong(rs, "settlementSavingsAccountId");
             final String settlementSavingsAccountNo = rs.getString("settlementSavingsAccountNo");
             final BigDecimal settlementSavingsAccountBalance = rs.getBigDecimal("settlementSavingsAccountBalance");
@@ -215,7 +225,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .clientContactPersonPhone(clientContactPersonPhone).clientContactPersonEmail(clientContactPersonEmail)
                     .authorizedSignatoryName(authorizedSignatoryName).authorizedSignatoryPhone(authorizedSignatoryPhone)
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(virtualAccount).specialConditions(specialConditions)
-                    .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
+                    .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
+                    .latePaymentFee(latePaymentFee).settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
                     .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
                     .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate)
                     .approvedOnDate(approvedOnDate).closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
@@ -307,6 +318,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .append("loc.authorized_signatory_email as locAuthorizedSignatoryEmail, loc.va as locVa, ")
                     .append("loc.distribution_partner as locDistributionPartner, loc.bank_transfer_fee as locBankTransferFee, ")
                     .append("loc.special_conditions as locSpecialConditions, loc.late_payment_fee as locLatePaymentFee, ")
+                    .append("loc.max_per_drawdown as locMaxPerDrawdown, loc.review_period as locReviewPeriod, ")
+                    .append("loc.loan_officer as locLoanOfficer, loc.repayment_strategy as locRepaymentStrategy, ")
                     .append("loc.created_on_utc as locCreatedDate, loc.created_by as locCreatedBy, ")
                     .append("loc.last_modified_on_utc as locLastModifiedDate, loc.last_modified_by as locLastModifiedBy, loc.va as accountNumber, ")
 
@@ -417,6 +430,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal latePaymentFee = rs.getBigDecimal("locLatePaymentFee");
             final BigDecimal maxPerDrawdown = rs.getBigDecimal("locMaxPerDrawdown");
             final String reviewPeriod = rs.getString("reviewPeriod");
+            final String loanOfficer = rs.getString("locLoanOfficer");
+            final String repaymentStrategy = rs.getString("locRepaymentStrategy");
             final BigDecimal interestRateOverride = rs.getBigDecimal("interestRateOverride");
             final Long settlementSavingsAccountId = rs.getObject("settlementSavingsAccountId") != null
                     ? rs.getLong("settlementSavingsAccountId")
@@ -446,8 +461,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .authorizedSignatoryName(authorizedSignatoryName).authorizedSignatoryPhone(authorizedSignatoryPhone)
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(accountNumber).distributionPartner(distributionPartner)
                     .bankTransferFee(bankTransferFee).specialConditions(specialConditions).latePaymentFee(latePaymentFee)
-                    .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).interestRateOverride(interestRateOverride)
-                    .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
+                    .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
+                    .interestRateOverride(interestRateOverride).settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
                     .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
                     .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).build();
         }

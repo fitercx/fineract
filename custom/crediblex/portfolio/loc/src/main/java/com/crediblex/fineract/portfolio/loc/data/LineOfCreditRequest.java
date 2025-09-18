@@ -140,6 +140,12 @@ public class LineOfCreditRequest {
     @Schema(example = "QUARTERLY", description = "Review period for the line of credit")
     private String reviewPeriod;
 
+    @Schema(example = "John Smith", description = "Loan officer assigned to the line of credit")
+    private String loanOfficer;
+
+    @Schema(example = "MONTHLY_INSTALLMENTS", description = "Repayment strategy for the line of credit")
+    private String repaymentStrategy;
+
     @Schema(example = "12.75", description = "Interest rate override percentage")
     private String interestRateOverride;
 
