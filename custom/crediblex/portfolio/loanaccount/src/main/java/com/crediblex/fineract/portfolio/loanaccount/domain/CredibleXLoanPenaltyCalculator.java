@@ -146,7 +146,7 @@ public class CredibleXLoanPenaltyCalculator {
                 .collect(Collectors.toList());
     }
 
-    public BigDecimal calculateTotalPrincipalDue(LocalDate transactionDate) {
+    public BigDecimal calculateTotalOutstandingPrincipal(LocalDate transactionDate) {
         LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 
@@ -155,10 +155,10 @@ public class CredibleXLoanPenaltyCalculator {
                                                                                                             // first
                                                                                                             // pending
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
-                .map(ExtendedLoanSchedulePeriodData::getPrincipalDue).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(ExtendedLoanSchedulePeriodData::getPrincipalOutstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    public BigDecimal calculateTotalInterestDue(LocalDate transactionDate) {
+    public BigDecimal calculateTotalOutstandingInterest(LocalDate transactionDate) {
         LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 

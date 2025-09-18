@@ -11,6 +11,6 @@ import lombok.Setter;
 public class BackdatedRepaymentPenaltyDTO {
 
     private final BigDecimal penaltyAmountDue;
-    private final BigDecimal principalAmountDue;
-    private final BigDecimal interestAmountDue;
+    private final BigDecimal principalOutstanding;
+    private final BigDecimal interestOutstanding;
 }

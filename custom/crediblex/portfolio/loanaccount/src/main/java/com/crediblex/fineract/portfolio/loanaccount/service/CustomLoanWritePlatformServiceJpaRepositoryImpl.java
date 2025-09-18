@@ -45,12 +45,10 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.LoanDisburs
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanDisbursalTransactionBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
-import org.apache.fineract.organisation.holiday.domain.Holiday;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
-import org.apache.fineract.organisation.workingdays.domain.WorkingDays;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
@@ -66,7 +64,6 @@ import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
 import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulkDisbursalCommand;
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
-import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
@@ -997,17 +994,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             loanChargeRepository.deactivateCharges(loanId, chargeIds);
         }
-
-        final boolean allowTransactionsOnHoliday = this.configurationDomainService.allowTransactionsOnHolidayEnabled();
-        final List<Holiday> holidays = this.holidayRepository.findByOfficeIdAndGreaterThanDate(loan.getOfficeId(), transactionDate);
-        final WorkingDays workingDays = this.workingDaysRepository.findOne();
-        final boolean allowTransactionsOnNonWorkingDay = this.configurationDomainService.allowTransactionsOnNonWorkingDayEnabled();
-        final boolean isHolidayEnabled = this.configurationDomainService.isRescheduleRepaymentsOnHolidaysEnabled();
-        HolidayDetailDTO holidayDetailDTO = new HolidayDetailDTO(isHolidayEnabled, holidays, workingDays, allowTransactionsOnHoliday,
-                allowTransactionsOnNonWorkingDay);
-        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, transactionDate,
-                holidayDetailDTO);
-        this.loanScheduleService.regenerateRepaymentScheduleWithInterestRecalculation(loan, scheduleGeneratorDTO);
 
         CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
                 isRecoveryRepayment, chargeRefundChargeType);

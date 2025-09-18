@@ -99,7 +99,8 @@ public class LoanRepaymentsSummaryDAO {
                     .add(penaltyChargesOutstanding);
 
             return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(installmentNumber, toLocalDateSafe(dueDate), isComplete,
-                    principalDue, penaltyChargesExpectedDue, totalPaidForPeriod, totalOutstandingForPeriod, interestOutstanding);
+                    principalDue, penaltyChargesExpectedDue, totalPaidForPeriod, totalOutstandingForPeriod, interestOutstanding,
+                    principalOutstanding);
         }
 
         private LocalDate toLocalDateSafe(Date date) {

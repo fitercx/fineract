@@ -33,11 +33,13 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
 
     public static LoanSchedulePeriodData paymentsSummaryPeriod(final Integer periodNumber, final LocalDate dueDate,
             final Boolean isComplete, final BigDecimal principalDue, final BigDecimal penaltyChargesDue,
-            final BigDecimal totalPaidForPeriod, final BigDecimal totalOutstandingForPeriod, final BigDecimal interestOutstanding) {
+            final BigDecimal totalPaidForPeriod, final BigDecimal totalOutstandingForPeriod, final BigDecimal interestOutstanding,
+            final BigDecimal principalOutstanding) {
 
         return builder().period(periodNumber).dueDate(dueDate).complete(isComplete).principalDue(principalDue)
                 .penaltyChargesDue(penaltyChargesDue).totalPaidForPeriod(totalPaidForPeriod)
-                .totalOutstandingForPeriod(totalOutstandingForPeriod).interestOutstanding(interestOutstanding).build();
+                .totalOutstandingForPeriod(totalOutstandingForPeriod).interestOutstanding(interestOutstanding)
+                .principalOutstanding(principalOutstanding).build();
     }
 
     public ExtendedLoanSchedulePeriodData(Integer period, LocalDate fromDate, LocalDate dueDate, LocalDate obligationsMetOnDate,
