@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -114,6 +114,21 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "special_conditions", columnDefinition = "TEXT")
     private String specialConditions;
 
+    @Column(name = "max_per_drawdown", precision = 19, scale = 6)
+    private BigDecimal maxPerDrawdown;
+
+    @Column(name = "review_period", length = 100)
+    private String reviewPeriod;
+
+    @Column(name = "loan_officer")
+    private String loanOfficer;
+
+    @Column(name = "repayment_strategy")
+    private String repaymentStrategy;
+
+    @Column(name = "late_payment_fee", precision = 19, scale = 6)
+    private BigDecimal latePaymentFee;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "settlement_savings_account_id")
     private SavingsAccount settlementSavingsAccount;
@@ -177,7 +192,8 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public LineOfCredit(Client client, String productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
             BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage, Integer tenorDays,
             String cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
-            Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions,
+            Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions, BigDecimal maxPerDrawdown,
+            String reviewPeriod, String loanOfficer, String repaymentStrategy, BigDecimal latePaymentFee,
             LineOfCreditClientOptionalInfo locOptionalClientInfo, List<LineOfCreditApprovedBuyers> approvedBuyers) {
 
         this.client = client;
@@ -199,8 +215,12 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.isInterestUpfrontOrPostDisbursal = isInterestUpfrontOrPostDisbursal;
         this.virtualAccount = virtualAccount;
         this.specialConditions = specialConditions;
+        this.maxPerDrawdown = maxPerDrawdown;
+        this.reviewPeriod = reviewPeriod;
+        this.loanOfficer = loanOfficer;
+        this.repaymentStrategy = repaymentStrategy;
+        this.latePaymentFee = latePaymentFee;
         this.lineOfCreditClientOptionalInfo = locOptionalClientInfo;
-        // Use the helper method to properly establish bidirectional relationship
         this.replaceApprovedBuyers(approvedBuyers);
 
         this.summary = LineOfCreditSummary.getInitialState();
@@ -212,13 +232,6 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      */
     public void deactivate() {
         this.status = LocStatus.INACTIVE;
-    }
-
-    /**
-     * Mark the line of credit as submitted.
-     */
-    public void markSubmitted() {
-        this.status = LocStatus.SUBMITTED;
     }
 
     /**
@@ -343,6 +356,29 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.specialConditions = newValue;
         }
 
+        if (command.isChangeInBigDecimalParameterNamed("maxPerDrawdown", this.maxPerDrawdown)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("maxPerDrawdown");
+            actualChanges.put("maxPerDrawdown", newValue);
+            this.maxPerDrawdown = newValue;
+        }
+
+        if (command.isChangeInStringParameterNamed("reviewPeriod", this.reviewPeriod)) {
+            final String newValue = command.stringValueOfParameterNamed("reviewPeriod");
+            actualChanges.put("reviewPeriod", newValue);
+            this.reviewPeriod = newValue;
+        }
+
+        if (command.isChangeInStringParameterNamed("repaymentStrategy", this.repaymentStrategy)) {
+            final String newValue = command.stringValueOfParameterNamed("repaymentStrategy");
+            actualChanges.put("repaymentStrategy", newValue);
+            this.repaymentStrategy = newValue;
+        }
+
+        if (command.isChangeInBigDecimalParameterNamed("latePaymentFee", this.latePaymentFee)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("latePaymentFee");
+            actualChanges.put("latePaymentFee", newValue);
+            this.latePaymentFee = newValue;
+        }
         return actualChanges;
     }
 

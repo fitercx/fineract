@@ -102,6 +102,20 @@ public class LineOfCreditAssembler {
                 ? command.stringValueOfParameterNamed("specialConditions")
                 : null;
 
+        final BigDecimal maxPerDrawdown = command.hasParameter("maxPerDrawdown") ? command.bigDecimalValueOfParameterNamed("maxPerDrawdown")
+                : null;
+
+        final String reviewPeriod = command.hasParameter("reviewPeriod") ? command.stringValueOfParameterNamed("reviewPeriod") : null;
+
+        final String loanOfficer = command.hasParameter("loanOfficer") ? command.stringValueOfParameterNamed("loanOfficer") : null;
+
+        final String repaymentStrategy = command.hasParameter("repaymentStrategy")
+                ? command.stringValueOfParameterNamed("repaymentStrategy")
+                : null;
+
+        final BigDecimal latePaymentFee = command.hasParameter("latePaymentFee") ? command.bigDecimalValueOfParameterNamed("latePaymentFee")
+                : null;
+
         final Long clientId = command.longValueOfParameterNamed("clientId");
 
         final Client client = this.clientRepository.findOneWithNotFoundDetection(clientId);
@@ -124,7 +138,8 @@ public class LineOfCreditAssembler {
 
         final LineOfCredit lineOfCredit = new LineOfCredit(client, productType, maximumAmount, startDate, endDate,
                 approvedCreditFacilityAmount, externalId, currency, advancePercentage, tenorDays, cashMarginType, cashMarginValue, null,
-                rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, va, specialConditions, optionalClientInfo, approvedBuyers);
+                rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, va, specialConditions, maxPerDrawdown, reviewPeriod,
+                loanOfficer, repaymentStrategy, latePaymentFee, optionalClientInfo, approvedBuyers);
         if (settlementAccount != null) {
             lineOfCredit.setSettlementSavingsAccount(settlementAccount);
         }

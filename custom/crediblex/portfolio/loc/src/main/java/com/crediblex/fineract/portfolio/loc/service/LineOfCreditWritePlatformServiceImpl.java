@@ -422,6 +422,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Override
     @Transactional
     public CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
+        this.dataValidator.validateForDeactivation(lineOfCreditId);
         final LineOfCredit loc = this.lineOfCreditRepository.findById(lineOfCreditId)
                 .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
                         "lineOfCreditId"));
