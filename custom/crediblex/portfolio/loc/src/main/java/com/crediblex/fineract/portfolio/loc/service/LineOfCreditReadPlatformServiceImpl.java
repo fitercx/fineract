@@ -226,10 +226,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .authorizedSignatoryName(authorizedSignatoryName).authorizedSignatoryPhone(authorizedSignatoryPhone)
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(virtualAccount).specialConditions(specialConditions)
                     .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
-                    .latePaymentFee(latePaymentFee).settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
-                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
-                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate)
-                    .approvedOnDate(approvedOnDate).closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
+                    .latePaymentFee(latePaymentFee).settlementSavingsAccountId(settlementSavingsAccountId)
+                    .settlementSavingsAccountNo(settlementSavingsAccountNo).settlementSavingsAccountBalance(settlementSavingsAccountBalance)
+                    .createdDate(createdDate).createdByUsername(createdBy).lastModifiedDate(lastModifiedDate)
+                    .lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate).approvedOnDate(approvedOnDate)
+                    .closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
         }
 
         private AppUserData createAppUserData(String firstName, String lastName) {
@@ -462,9 +463,10 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(accountNumber).distributionPartner(distributionPartner)
                     .bankTransferFee(bankTransferFee).specialConditions(specialConditions).latePaymentFee(latePaymentFee)
                     .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
-                    .interestRateOverride(interestRateOverride).settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
-                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
-                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).build();
+                    .interestRateOverride(interestRateOverride).settlementSavingsAccountId(settlementSavingsAccountId)
+                    .settlementSavingsAccountNo(settlementSavingsAccountNo).settlementSavingsAccountBalance(settlementSavingsAccountBalance)
+                    .createdDate(createdDate).createdByUsername(createdBy).lastModifiedDate(lastModifiedDate)
+                    .lastModifiedByUsername(lastModifiedBy).build();
         }
 
         /**

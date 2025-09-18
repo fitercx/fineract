@@ -33,7 +33,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -41,7 +40,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -186,18 +184,17 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     /**
      * Default constructor.
      */
-    protected LineOfCredit() {
-    }
+    protected LineOfCredit() {}
 
     /**
      * Constructor for creating a new Line of Credit with all fields.
      */
     public LineOfCredit(Client client, String productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
-                        BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage, Integer tenorDays,
-                        String cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
-                        Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions, BigDecimal maxPerDrawdown,
-                        String reviewPeriod, String loanOfficer, String repaymentStrategy, BigDecimal latePaymentFee,
-                        LineOfCreditClientOptionalInfo locOptionalClientInfo, List<LineOfCreditApprovedBuyers> approvedBuyers) {
+            BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage, Integer tenorDays,
+            String cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
+            Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions, BigDecimal maxPerDrawdown,
+            String reviewPeriod, String loanOfficer, String repaymentStrategy, BigDecimal latePaymentFee,
+            LineOfCreditClientOptionalInfo locOptionalClientInfo, List<LineOfCreditApprovedBuyers> approvedBuyers) {
 
         this.client = client;
         this.productType = LocProductType.valueOf(productType.toUpperCase(Locale.ENGLISH));
@@ -224,7 +221,6 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.repaymentStrategy = repaymentStrategy;
         this.latePaymentFee = latePaymentFee;
         this.lineOfCreditClientOptionalInfo = locOptionalClientInfo;
-        // Use the helper method to properly establish bidirectional relationship
         this.replaceApprovedBuyers(approvedBuyers);
 
         this.summary = LineOfCreditSummary.getInitialState();

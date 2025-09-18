@@ -55,7 +55,8 @@ public class LineOfCreditDataValidator {
             "annualInterestRate", "isInterestUpfrontOrPostDisbursal", "clientCompanyName", "clientContactPersonName",
             "clientContactPersonPhone", "clientContactPersonEmail", "authorizedSignatoryName", "authorizedSignatoryPhone",
             "authorizedSignatoryEmail", "va", "distributionPartner", "bankTransferFee", "specialConditions", "maxPerDrawdown",
-            "reviewPeriod", "loanOfficer", "repaymentStrategy", "latePaymentFee", "interestRateOverride", "settlementSavingsAccountId", "charges");
+            "reviewPeriod", "loanOfficer", "repaymentStrategy", "latePaymentFee", "interestRateOverride", "settlementSavingsAccountId",
+            "charges");
 
     public void validateForCreate(String json) {
         if (json == null) {

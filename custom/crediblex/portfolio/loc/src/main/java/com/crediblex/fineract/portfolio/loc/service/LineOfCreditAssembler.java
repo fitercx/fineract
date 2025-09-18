@@ -102,24 +102,18 @@ public class LineOfCreditAssembler {
                 ? command.stringValueOfParameterNamed("specialConditions")
                 : null;
 
-        final BigDecimal maxPerDrawdown = command.hasParameter("maxPerDrawdown")
-                ? command.bigDecimalValueOfParameterNamed("maxPerDrawdown")
+        final BigDecimal maxPerDrawdown = command.hasParameter("maxPerDrawdown") ? command.bigDecimalValueOfParameterNamed("maxPerDrawdown")
                 : null;
 
-        final String reviewPeriod = command.hasParameter("reviewPeriod")
-                ? command.stringValueOfParameterNamed("reviewPeriod")
-                : null;
+        final String reviewPeriod = command.hasParameter("reviewPeriod") ? command.stringValueOfParameterNamed("reviewPeriod") : null;
 
-        final String loanOfficer = command.hasParameter("loanOfficer")
-                ? command.stringValueOfParameterNamed("loanOfficer")
-                : null;
+        final String loanOfficer = command.hasParameter("loanOfficer") ? command.stringValueOfParameterNamed("loanOfficer") : null;
 
         final String repaymentStrategy = command.hasParameter("repaymentStrategy")
                 ? command.stringValueOfParameterNamed("repaymentStrategy")
                 : null;
 
-        final BigDecimal latePaymentFee = command.hasParameter("latePaymentFee")
-                ? command.bigDecimalValueOfParameterNamed("latePaymentFee")
+        final BigDecimal latePaymentFee = command.hasParameter("latePaymentFee") ? command.bigDecimalValueOfParameterNamed("latePaymentFee")
                 : null;
 
         final Long clientId = command.longValueOfParameterNamed("clientId");
