@@ -21,10 +21,14 @@ package com.crediblex.fineract.integration.job;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @AutoConfiguration
 @ConditionalOnClass(name = "org.springframework.batch.core.Job")
 @ConditionalOnProperty(name = "odoo.enabled", havingValue = "true", matchIfMissing = false)
-@ComponentScan("com.crediblex.fineract.integration.job")
+@ComponentScan({ "com.crediblex.fineract.integration.job", "com.crediblex.fineract.integration.odoo" })
+@EnableJpaRepositories(basePackages = "com.crediblex.fineract.integration.odoo.domain")
+@EntityScan(basePackages = "com.crediblex.fineract.integration.odoo.domain")
 public class CrediblexJobAutoConfiguration {}

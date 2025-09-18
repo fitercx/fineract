@@ -20,6 +20,8 @@
 dependencies {
     implementation(project(':fineract-core'))
     implementation(project(':fineract-provider'))
+    implementation(project(':fineract-accounting'))
+    implementation(project(':fineract-loan'))
 
     // Required for JAX-RS REST API resources
     implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
