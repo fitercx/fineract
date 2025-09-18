@@ -164,9 +164,8 @@ tasks.register('mergeSwaggerSpecs') {
             throw new GradleException("Custom swagger file not found: ${customSwaggerFile}")
         }
 
-        var jsonSlurper = new JsonSlurper();
-        def coreSpec = jsonSlurper.parseText(coreSwaggerFile.text)
-        def customSpec = jsonSlurper.parseText(customSwaggerFile.text)
+        def coreSpec = new JsonSlurper().parseText(coreSwaggerFile.text)
+        def customSpec = new JsonSlurper().parseText(customSwaggerFile.text)
 
         // Merge paths from custom spec into core spec
         if (customSpec.paths) {

@@ -47,7 +47,7 @@ public final class LoanScheduleValidator {
     /**
      * The parameters supported for this command.
      */
-    static final Set<String> SUPPORTED_PARAMETERS = new HashSet<>(Arrays.asList(LoanApiConstants.idParameterName,
+    public static final Set<String> SUPPORTED_PARAMETERS = new HashSet<>(Arrays.asList(LoanApiConstants.idParameterName,
             LoanApiConstants.clientIdParameterName, LoanApiConstants.groupIdParameterName, LoanApiConstants.loanTypeParameterName,
             LoanApiConstants.calendarIdParameterName, LoanApiConstants.productIdParameterName, LoanApiConstants.accountNoParameterName,
             LoanApiConstants.externalIdParameterName, LoanApiConstants.fundIdParameterName, LoanApiConstants.loanOfficerIdParameterName,

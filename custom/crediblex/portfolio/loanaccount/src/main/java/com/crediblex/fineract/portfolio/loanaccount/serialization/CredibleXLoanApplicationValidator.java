@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import jakarta.annotation.PostConstruct;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -109,6 +110,12 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
 
         this.credibleXLoanRepositoryWrapper = credibleXLoanRepositoryWrapper;
         this.locLoanApplicationValidator = locLoanApplicationValidator;
+    }
+
+    @PostConstruct
+    public void postInitialize() {
+        LoanApplicationValidator.SUPPORTED_PARAMETERS.add("lineOfCreditId");
+        LoanScheduleValidator.SUPPORTED_PARAMETERS.add("lineOfCreditId");
     }
 
     /**
