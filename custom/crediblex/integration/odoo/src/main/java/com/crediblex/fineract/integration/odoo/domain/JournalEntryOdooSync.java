@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
 @Table(name = "journal_entry_odoo_sync")
 @Data
 @NoArgsConstructor
-public class JournalEntryOdooSync extends AbstractPersistableCustom {
+public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "journal_entry_id", nullable = false, unique = true)
