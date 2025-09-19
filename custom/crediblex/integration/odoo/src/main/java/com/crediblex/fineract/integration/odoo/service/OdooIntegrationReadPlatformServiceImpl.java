@@ -24,7 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Implementation of Odoo integration read platform service
@@ -41,6 +42,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private static final String ERROR_KEY = "error";
 
     private final OdooApiClient odooApiClient;
+    
+    // Cache for account mappings to avoid repeated Odoo calls
+    private final Map<String, Integer> accountMappingCache = new ConcurrentHashMap<>();
+    private final Map<String, Integer> journalMappingCache = new ConcurrentHashMap<>();
 
     @Override
     public Map<String, Object> testConnection() {
@@ -72,5 +77,134 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 TIMESTAMP_KEY, System.currentTimeMillis()
             );
         }
+    }
+
+    @Override
+    public Integer getOdooAccountId(String fineractAccountCode) {
+        if (fineractAccountCode == null) {
+            return null;
+        }
+
+        // Check cache first
+        if (accountMappingCache.containsKey(fineractAccountCode)) {
+            return accountMappingCache.get(fineractAccountCode);
+        }
+
+        try {
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                log.error("Failed to authenticate with Odoo for account mapping");
+                return null;
+            }
+
+            // Search for account by code in Odoo
+            List<Object> domain = Arrays.asList(
+                Arrays.asList("code", "=", fineractAccountCode)
+            );
+
+            List<Map<String, Object>> accounts = odooApiClient.searchRead(
+                uid, 
+                "account.account", 
+                domain, 
+                Arrays.asList("id", "code", "name")
+            );
+
+            if (!accounts.isEmpty()) {
+                Map<String, Object> account = accounts.get(0);
+                Integer accountId = ((Number) account.get("id")).intValue();
+                
+                // Cache the mapping
+                accountMappingCache.put(fineractAccountCode, accountId);
+                
+                log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", 
+                    fineractAccountCode, accountId, account.get("name"));
+                
+                return accountId;
+            } else {
+                log.warn("No Odoo account found for Fineract account code: {}", fineractAccountCode);
+                return null;
+            }
+
+        } catch (Exception e) {
+            log.error("Error mapping account code '{}' to Odoo", fineractAccountCode, e);
+            return null;
+        }
+    }
+
+    @Override
+    public Integer getDefaultJournalId() {
+        String journalKey = "default";
+        
+        // Check cache first
+        if (journalMappingCache.containsKey(journalKey)) {
+            return journalMappingCache.get(journalKey);
+        }
+
+        try {
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                log.error("Failed to authenticate with Odoo for journal mapping");
+                return null;
+            }
+
+            // Search for a journal with type 'general' or 'miscellaneous'
+            List<Object> domain = Arrays.asList(
+                Arrays.asList("type", "in", Arrays.asList("general", "miscellaneous"))
+            );
+
+            List<Map<String, Object>> journals = odooApiClient.searchRead(
+                uid, 
+                "account.journal", 
+                domain, 
+                Arrays.asList("id", "name", "code", "type")
+            );
+
+            if (!journals.isEmpty()) {
+                Map<String, Object> journal = journals.get(0);
+                Integer journalId = ((Number) journal.get("id")).intValue();
+                
+                // Cache the mapping
+                journalMappingCache.put(journalKey, journalId);
+                
+                log.debug("Using default journal ID: {} ({}) for journal entries", 
+                    journalId, journal.get("name"));
+                
+                return journalId;
+            } else {
+                log.error("No suitable journal found in Odoo for journal entries");
+                return null;
+            }
+
+        } catch (Exception e) {
+            log.error("Error getting default journal from Odoo", e);
+            return null;
+        }
+    }
+
+    @Override
+    public Integer getJournalIdForTransaction(String transactionType) {
+        // You can implement specific logic here to map different transaction types
+        // to different journals in Odoo
+        
+        // For now, return the default journal
+        return getDefaultJournalId();
+    }
+
+    @Override
+    public void clearAccountMappingCache() {
+        accountMappingCache.clear();
+        journalMappingCache.clear();
+        log.info("Cleared Odoo account mapping cache");
+    }
+
+    @Override
+    public void preloadAccountMappings(List<String> fineractAccountCodes) {
+        log.info("Preloading account mappings for {} accounts", fineractAccountCodes.size());
+        
+        for (String accountCode : fineractAccountCodes) {
+            getOdooAccountId(accountCode);
+        }
+        
+        log.info("Completed preloading account mappings");
     }
 }

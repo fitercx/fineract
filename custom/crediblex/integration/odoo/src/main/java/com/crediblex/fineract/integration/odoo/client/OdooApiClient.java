@@ -37,10 +37,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * Odoo API client for connecting to Odoo ERP system
@@ -136,6 +133,122 @@ public class OdooApiClient {
             this.authenticated = false;
             return null;
         }
+    }
+
+    /**
+     * Execute a method on an Odoo model
+     */
+    @SuppressWarnings("unchecked")
+    public Object executeKw(Integer uid, String model, String method, List<Object> args, Map<String, Object> kwargs) {
+        try {
+            Map<String, Object> request = new HashMap<>();
+            request.put("jsonrpc", "2.0");
+            request.put("method", "call");
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("service", "object");
+            params.put("method", "execute_kw");
+
+            List<Object> executeArgs = new ArrayList<>();
+            executeArgs.add(odooProperties.getDatabase());
+            executeArgs.add(uid);
+            executeArgs.add(odooProperties.getPassword());
+            executeArgs.add(model);
+            executeArgs.add(method);
+            executeArgs.add(args);
+            if (kwargs != null && !kwargs.isEmpty()) {
+                executeArgs.add(kwargs);
+            }
+
+            params.put("args", executeArgs);
+            request.put("params", params);
+            request.put("id", generateRequestId());
+
+            Map<String, Object> response = makeRequest("/jsonrpc", request);
+
+            if (response.containsKey("error")) {
+                log.error("Failed to execute method {}::{}: {}", model, method, response.get("error"));
+                return null;
+            }
+
+            return response.get("result");
+
+        } catch (Exception e) {
+            log.error("Exception while executing method {}::{}", model, method, e);
+            return null;
+        }
+    }
+
+    /**
+     * Search for records in Odoo
+     */
+    @SuppressWarnings("unchecked")
+    public List<Integer> search(Integer uid, String model, List<Object> domain) {
+        Object result = executeKw(uid, model, "search", Arrays.asList(domain), null);
+        if (result instanceof List) {
+            List<Object> resultList = (List<Object>) result;
+            return resultList.stream()
+                .map(obj -> obj instanceof Number ? ((Number) obj).intValue() : null)
+                .filter(Objects::nonNull)
+                .toList();
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Read records from Odoo
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> read(Integer uid, String model, List<Integer> ids, List<String> fields) {
+        Object result = executeKw(uid, model, "read", Arrays.asList(ids), 
+            fields != null ? Map.of("fields", fields) : null);
+        if (result instanceof List) {
+            return (List<Map<String, Object>>) result;
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Search and read records in one call
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> searchRead(Integer uid, String model, List<Object> domain, List<String> fields) {
+        Map<String, Object> kwargs = new HashMap<>();
+        if (fields != null) {
+            kwargs.put("fields", fields);
+        }
+
+        Object result = executeKw(uid, model, "search_read", Arrays.asList(domain), kwargs);
+        if (result instanceof List) {
+            return (List<Map<String, Object>>) result;
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Create a record in Odoo
+     */
+    public Long create(Integer uid, String model, Map<String, Object> values) {
+        Object result = executeKw(uid, model, "create", Arrays.asList(values), null);
+        if (result instanceof Number) {
+            return ((Number) result).longValue();
+        }
+        return null;
+    }
+
+    /**
+     * Call a specific method on records
+     */
+    public Object callMethod(Integer uid, String model, String method, List<Object> recordIds) {
+        return executeKw(uid, model, method, Arrays.asList(recordIds), null);
+    }
+
+    /**
+     * Post an account move (journal entry)
+     */
+    public Boolean postAccountMove(Integer uid, Long moveId) {
+        Object result = callMethod(uid, "account.move", "action_post", Arrays.asList(moveId));
+        return result != null;
     }
 
     @SuppressWarnings("unchecked")

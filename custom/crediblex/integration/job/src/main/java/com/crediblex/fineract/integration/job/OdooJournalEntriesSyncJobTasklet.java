@@ -21,6 +21,7 @@ package com.crediblex.fineract.integration.job;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
 import com.crediblex.fineract.integration.odoo.service.JournalEntryOdooTrackingService;
+import com.crediblex.fineract.integration.odoo.service.OdooJournalEntryService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
     private final JournalEntryOdooSyncRepository journalEntryOdooSyncRepository;
     private final JournalEntryOdooTrackingService journalEntryOdooTrackingService;
+    private final OdooJournalEntryService odooJournalEntryService;
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
@@ -55,16 +57,29 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
             for (JournalEntryOdooSync sync : pendingEntries) {
                 try {
-                    // TODO: Replace with actual Odoo service call
-                    // Long odooMoveId = odooService.postJournalEntry(sync.getJournalEntry());
+                    // Validate the journal entry before posting
+                    if (!odooJournalEntryService.canPostToOdoo(sync.getJournalEntry())) {
+                        String errorMsg = "Journal entry validation failed";
+                        log.warn("Skipping journal entry {} - {}", sync.getJournalEntry().getId(), errorMsg);
+                        journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+                        failureCount++;
+                        continue;
+                    }
 
-                    // For now, simulate successful posting
-                    Long simulatedOdooMoveId = System.currentTimeMillis(); // Temporary simulation
-                    journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), simulatedOdooMoveId);
+                    // Post journal entry to Odoo
+                    Long odooMoveId = odooJournalEntryService.postJournalEntryToOdoo(sync.getJournalEntry());
 
-                    log.debug("Successfully posted journal entry {} to Odoo with move ID: {}", sync.getJournalEntry().getId(),
-                            simulatedOdooMoveId);
-                    successCount++;
+                    if (odooMoveId != null) {
+                        journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), odooMoveId);
+                        log.info("Successfully posted journal entry {} to Odoo with move ID: {}", 
+                                sync.getJournalEntry().getId(), odooMoveId);
+                        successCount++;
+                    } else {
+                        String errorMsg = "Failed to create move in Odoo";
+                        log.error("Failed to post journal entry {} to Odoo", sync.getJournalEntry().getId());
+                        journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+                        failureCount++;
+                    }
 
                 } catch (Exception e) {
                     log.error("Failed to post journal entry {} to Odoo", sync.getJournalEntry().getId(), e);

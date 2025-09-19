@@ -18,6 +18,7 @@
  */
 package com.crediblex.fineract.integration.odoo.service;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,4 +32,39 @@ public interface OdooIntegrationReadPlatformService {
      * @return Map containing connection test results
      */
     Map<String, Object> testConnection();
+
+    /**
+     * Get Odoo account ID for a Fineract GL account code
+     * 
+     * @param fineractAccountCode Fineract GL account code
+     * @return Odoo account ID or null if not found
+     */
+    Integer getOdooAccountId(String fineractAccountCode);
+
+    /**
+     * Get default journal ID for journal entries
+     * 
+     * @return Default journal ID or null if not found
+     */
+    Integer getDefaultJournalId();
+
+    /**
+     * Get journal ID based on transaction type
+     * 
+     * @param transactionType Transaction type
+     * @return Journal ID or null if not found
+     */
+    Integer getJournalIdForTransaction(String transactionType);
+
+    /**
+     * Clear account mapping cache
+     */
+    void clearAccountMappingCache();
+
+    /**
+     * Preload account mappings for commonly used accounts
+     * 
+     * @param fineractAccountCodes List of Fineract account codes to preload
+     */
+    void preloadAccountMappings(List<String> fineractAccountCodes);
 }
