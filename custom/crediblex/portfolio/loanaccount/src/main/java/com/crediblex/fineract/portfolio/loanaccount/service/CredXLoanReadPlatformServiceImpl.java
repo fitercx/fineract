@@ -465,7 +465,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " topup.topup_amount as topupAmount, l.last_closed_business_date as lastClosedBusinessDate,l.overpaidon_date as overpaidOnDate, "
                     + " l.is_charged_off as isChargedOff, l.charge_off_reason_cv_id as chargeOffReasonId, codec.code_value as chargeOffReason, l.charged_off_on_date as chargedOffOnDate, l.enable_down_payment as enableDownPayment, l.disbursed_amount_percentage_for_down_payment as disbursedAmountPercentageForDownPayment, l.enable_auto_repayment_for_down_payment as enableAutoRepaymentForDownPayment,"
                     + " cobu.username as chargedOffByUsername, cobu.firstname as chargedOffByFirstname, cobu.lastname as chargedOffByLastname, l.loan_schedule_type as loanScheduleType, l.loan_schedule_processing_type as loanScheduleProcessingType, "
-                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate " //
+                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate, "
+                    + " llocp.line_of_credit_id as lineOfCreditId, " + " llocp.invoice_no as invoiceNo, llocp.invoice_date as invoiceDate, "
+                    + " llocp.invoice_due_date as invoiceDueDate, llocp.invoice_currency as invoiceCurrency, "
+                    + " llocp.invoice_amount as invoiceAmount, llocp.disapproved_amount as disapprovedAmount, "
+                    + " llocp.approved_receivable_amount as approvedReceivableAmount, llocp.advance_percentage as advancePercentage, "
+                    + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails, "
+                    + " llocp.exchange_rate as exchangeRate, llocp.markup as markup, "
+                    + " llocp.amount_in_facility_currency as amountInFacilityCurrency, "
+                    + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
                     + " left join m_loan_recalculation_details lir on lir.loan_id = l.id join m_currency rc on rc."
@@ -485,7 +493,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " left join m_code_value codec on codec.id = l.charge_off_reason_cv_id"
                     + " left join m_product_loan_variable_installment_config lpvi on lpvi.loan_product_id = l.product_id"
                     + " left join m_loan_topup as topup on l.id = topup.loan_id"
-                    + " left join m_loan as topuploan on topuploan.id = topup.closure_loan_id ";
+                    + " left join m_loan as topuploan on topuploan.id = topup.closure_loan_id "
+                    + " left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ";
 
         }
 
@@ -869,7 +878,83 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 
+            extractLocDetails(extendedLoanAccountData, rs);
+
             return extendedLoanAccountData;
+
+        }
+
+        private void extractLocDetails(ExtendedLoanAccountData extendedLoanAccountData, ResultSet rs) throws SQLException {
+
+            // Extract LOC params fields from the result set
+            final Long locLineOfCreditId = JdbcSupport.getLong(rs, LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID);
+            final String locInvoiceNo = rs.getString(LoanAccountAdditionalProperties.INVOICE_NO);
+            final LocalDate locInvoiceDate = JdbcSupport.getLocalDate(rs, LoanAccountAdditionalProperties.INVOICE_DATE);
+            final LocalDate locInvoiceDueDate = JdbcSupport.getLocalDate(rs, LoanAccountAdditionalProperties.INVOICE_DUE_DATE);
+            final String locInvoiceCurrency = rs.getString(LoanAccountAdditionalProperties.INVOICE_CURRENCY);
+            final BigDecimal locInvoiceAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.INVOICE_AMOUNT);
+            final BigDecimal locDisapprovedAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT);
+            final BigDecimal locApprovedReceivableAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT);
+            final BigDecimal locAdvancePercentage = rs.getBigDecimal(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE);
+            final BigDecimal locAmountAfterAdvance = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE);
+            final String locBuyerDetails = rs.getString(LoanAccountAdditionalProperties.BUYER_DETAILS);
+            final BigDecimal locExchangeRate = rs.getBigDecimal(LoanAccountAdditionalProperties.EXCHANGE_RATE);
+            final BigDecimal locMarkup = rs.getBigDecimal(LoanAccountAdditionalProperties.MARKUP);
+            final BigDecimal locAmountInFacilityCurrency = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY);
+            final BigDecimal locApprovedPayableAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT);
+            final String locSupplierDetails = rs.getString(LoanAccountAdditionalProperties.SUPPLIER_DETAILS);
+
+            if (locLineOfCreditId != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID, locLineOfCreditId);
+            }
+            if (locInvoiceNo != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_NO, locInvoiceNo);
+            }
+            if (locInvoiceDate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_DATE, locInvoiceDate);
+            }
+            if (locInvoiceDueDate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, locInvoiceDueDate);
+            }
+            if (locInvoiceCurrency != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_CURRENCY, locInvoiceCurrency);
+            }
+            if (locInvoiceAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_AMOUNT, locInvoiceAmount);
+            }
+            if (locDisapprovedAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, locDisapprovedAmount);
+            }
+            if (locApprovedReceivableAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT,
+                        locApprovedReceivableAmount);
+            }
+            if (locAdvancePercentage != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, locAdvancePercentage);
+            }
+            if (locAmountAfterAdvance != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, locAmountAfterAdvance);
+            }
+            if (locBuyerDetails != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.BUYER_DETAILS, locBuyerDetails);
+            }
+            if (locExchangeRate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.EXCHANGE_RATE, locExchangeRate);
+            }
+            if (locMarkup != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.MARKUP, locMarkup);
+            }
+            if (locAmountInFacilityCurrency != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY,
+                        locAmountInFacilityCurrency);
+            }
+            if (locApprovedPayableAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
+                        locApprovedPayableAmount);
+            }
+            if (locSupplierDetails != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, locSupplierDetails);
+            }
 
         }
     }
