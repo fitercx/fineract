@@ -1,16 +1,25 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import static com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID;
+
+import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.exception.LineOfCreditIsNotAvailableException;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationValidator;
-import com.crediblex.fineract.portfolio.loc.service.LocLoanApplicationWritePlatformServiceJpaRepositoryImpl;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
 import com.google.gson.JsonObject;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
+import java.util.Map;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
@@ -52,9 +61,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends LoanApplicationWritePlatformServiceJpaRepositoryImpl {
 
     private final BusinessEventNotifierService businessEventNotifierService;
-    private final LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService;
-    private final LocLoanApplicationValidator locLoanApplicationValidator;
     private final CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService;
+    private final LoanLineOfCreditParamsRepository loanLocParamsRepository;
+    private final FromJsonHelper fromApiJsonHelper;
+    private final LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
 
     public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator,
@@ -68,9 +78,9 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService,
-            BusinessEventNotifierService businessEventNotifierService1,
-            LocLoanApplicationWritePlatformServiceJpaRepositoryImpl locLoanApplicationService,
-            LocLoanApplicationValidator locLoanApplicationValidator, CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService) {
+            BusinessEventNotifierService businessEventNotifierService1, CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService,
+            LoanLineOfCreditParamsRepository loanLocParamsRepository, FromJsonHelper fromApiJsonHelper,
+            LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler,
                 loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository,
                 accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService,
@@ -78,9 +88,10 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 gsimReadPlatformService, defaultLoanLifecycleStateMachine, loanAccrualsProcessingService,
                 loanDownPaymentTransactionValidator, loanScheduleService);
         this.businessEventNotifierService = businessEventNotifierService1;
-        this.locLoanApplicationService = locLoanApplicationService;
-        this.locLoanApplicationValidator = locLoanApplicationValidator;
+        this.fromApiJsonHelper = fromApiJsonHelper;
         this.customLoanService = customLoanService;
+        this.loanLocParamsRepository = loanLocParamsRepository;
+        this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
     }
 
     @Transactional
@@ -88,8 +99,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     public CommandProcessingResult submitApplication(final JsonCommand command) {
 
         try {
-
-            locLoanApplicationValidator.validateLineOfCredit(command.parsedJson());
             // Validations (prior assembling) - use standard validation
             this.loanApplicationValidator.validateForCreate(command);
 
@@ -99,6 +108,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             this.loanApplicationValidator.validateForCreate(loan);
             // Need to flush to gather loan id
             this.loanRepositoryWrapper.saveAndFlush(loan);
+
+            processLoanApplicationWithLineOfCredit(command, loan);
             // Account number regeneration (need loan id...)
             this.loanAssembler.accountNumberGeneration(command, loan);
             // Save interest recalculation calendar
@@ -126,13 +137,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             // Trigger business event
             businessEventNotifierService.notifyPostBusinessEvent(new LoanCreatedBusinessEvent(loan));
 
-            // Process with line of credit
-            if (loan.getId() != null) {
-                boolean success = locLoanApplicationService.processLoanApplicationWithLineOfCredit(command, loan.getId());
-                if (!success) {
-                    log.error("Failed to associate loan {} with line of credit", loan.getId());
-                }
-            }
             // Building response
             return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loan.getId())
                     .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
@@ -145,6 +149,144 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             handleDataIntegrityIssues(command, throwable, dve);
             return CommandProcessingResult.empty();
         }
+    }
+
+    @Transactional
+    @Override
+    public CommandProcessingResult modifyApplication(final Long loanId, final JsonCommand command) {
+        CommandProcessingResult result = super.modifyApplication(loanId, command);
+        if (result.getResourceId() > 0 && result.getChanges() != null) {
+            updateWithLineOfCreditParams(command, loanId, result);
+        }
+        return result;
+    }
+
+    private void updateWithLineOfCreditParams(JsonCommand command, Long loanId, CommandProcessingResult changes) {
+        if (command.parsedJson() == null) {
+            return;
+        }
+
+        // Find existing entity or create new one if it doesn't exist
+        LoanLineOfCreditParams entity = loanLocParamsRepository.findByLoanId(loanId).orElse(null);
+
+        if (entity != null) {
+            final Map<String, Object> actualChanges = entity.updateFromJson(command);
+
+            // Handle LineOfCredit relationship change if detected
+            if (actualChanges.containsKey(LINE_OF_CREDIT_ID)) {
+                final Long newLineOfCreditId = (Long) actualChanges.get(LINE_OF_CREDIT_ID);
+                if (newLineOfCreditId != null) {
+                    final LineOfCredit newLineOfCredit = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(newLineOfCreditId);
+                    entity.updateLineOfCredit(newLineOfCredit);
+                } else {
+                    loanLocParamsRepository.delete(entity);
+                }
+            }
+
+            if (!actualChanges.isEmpty()) {
+                loanLocParamsRepository.saveAndFlush(entity);
+
+                // Add changes to the command processing result
+                if (changes != null) {
+                    changes.getChanges().putAll(actualChanges);
+                }
+            }
+        } else {
+            // Create new entity if it doesn't exist and we have the required parameters
+            if (hasAnyLocParam(command)) {
+                final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+                // Get the LineOfCredit from the command or use existing logic
+                LineOfCredit lineOfCredit = getLineOfCreditFromCommand(command).orElse(null);
+
+                if (lineOfCredit != null) {
+                    entity = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
+                    loanLocParamsRepository.saveAndFlush(entity);
+
+                    // Add all new values as changes
+                    if (changes != null) {
+                        if (entity.getLineOfCredit() != null) {
+                            changes.getChanges().put(LINE_OF_CREDIT_ID, entity.getLineOfCredit().getId());
+                        }
+                        if (entity.getInvoiceNo() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_NO, entity.getInvoiceNo());
+                        }
+                        if (entity.getInvoiceDate() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_DATE, entity.getInvoiceDate());
+                        }
+                        if (entity.getInvoiceDueDate() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, entity.getInvoiceDueDate());
+                        }
+                        if (entity.getInvoiceCurrency() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_CURRENCY, entity.getInvoiceCurrency());
+                        }
+                        if (entity.getInvoiceAmount() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_AMOUNT, entity.getInvoiceAmount());
+                        }
+                        // Track new LOC-related fields
+                        if (entity.getDisapprovedAmount() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, entity.getDisapprovedAmount());
+                        }
+                        if (entity.getApprovedReceivableAmount() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT,
+                                    entity.getApprovedReceivableAmount());
+                        }
+                        if (entity.getAdvancePercentage() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, entity.getAdvancePercentage());
+                        }
+                        if (entity.getAmountAfterAdvance() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, entity.getAmountAfterAdvance());
+                        }
+                        if (entity.getBuyerDetails() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.BUYER_DETAILS, entity.getBuyerDetails());
+                        }
+                        // Track additional LOC-related fields
+                        if (entity.getExchangeRate() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.EXCHANGE_RATE, entity.getExchangeRate());
+                        }
+                        if (entity.getMarkup() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.MARKUP, entity.getMarkup());
+                        }
+                        if (entity.getAmountInFacilityCurrency() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY,
+                                    entity.getAmountInFacilityCurrency());
+                        }
+                        if (entity.getApprovedPayableAmount() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
+                                    entity.getApprovedPayableAmount());
+                        }
+                        if (entity.getSupplierDetails() != null) {
+                            changes.getChanges().put(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, entity.getSupplierDetails());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean hasAnyLocParam(JsonCommand command) {
+        return command.hasParameter(LINE_OF_CREDIT_ID) || command.hasParameter(LoanAccountAdditionalProperties.INVOICE_NO)
+                || command.hasParameter(LoanAccountAdditionalProperties.INVOICE_DATE)
+                || command.hasParameter(LoanAccountAdditionalProperties.INVOICE_DUE_DATE)
+                || command.hasParameter(LoanAccountAdditionalProperties.INVOICE_CURRENCY)
+                || command.hasParameter(LoanAccountAdditionalProperties.INVOICE_AMOUNT)
+                || command.hasParameter(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT)
+                || command.hasParameter(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE)
+                || command.hasParameter(LoanAccountAdditionalProperties.BUYER_DETAILS)
+                || command.hasParameter(LoanAccountAdditionalProperties.EXCHANGE_RATE)
+                || command.hasParameter(LoanAccountAdditionalProperties.MARKUP)
+                || command.hasParameter(LoanAccountAdditionalProperties.SUPPLIER_DETAILS);
+    }
+
+    private Optional<LineOfCredit> getLineOfCreditFromCommand(JsonCommand command) {
+        if (command.hasParameter(LINE_OF_CREDIT_ID)) {
+            final Long lineOfCreditId = command.longValueOfParameterNamed(LINE_OF_CREDIT_ID);
+            if (lineOfCreditId != null) {
+                return Optional.of(lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId));
+            }
+        }
+
+        return Optional.empty();
     }
 
     // TODO: Refactor method.
@@ -186,4 +328,25 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         // For non-RECEIVABLE loans or if adjustment fails, proceed with standard approval
         return super.approveApplication(loanId, command);
     }
+
+    public void processLoanApplicationWithLineOfCredit(final JsonCommand command, final Loan loan) {
+
+        Long lineOfCreditId = fromApiJsonHelper.extractLongNamed(LINE_OF_CREDIT_ID, command.parsedJson());
+
+        // If we have a line of credit ID, associate it with the loan
+        if (lineOfCreditId != null && loan != null) {
+
+            LineOfCredit lineOfCredit = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId);
+
+            if (!lineOfCredit.canDrawDown(loan.getExpectedDisbursementDate())) {
+                throw new LineOfCreditIsNotAvailableException(lineOfCredit.getExternalId());
+            }
+
+            LoanLineOfCreditParams loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
+            loanLocParamsRepository.save(loanLocParams);
+
+        }
+
+    }
+
 }

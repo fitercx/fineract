@@ -382,4 +382,9 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return actualChanges;
     }
 
+    public boolean canDrawDown(LocalDate expectedDisbursementDate) {
+        return this.status == LocStatus.ACTIVE && this.lineOfCreditStateChange != null
+                && this.lineOfCreditStateChange.getActivateOnDate() != null
+                && (expectedDisbursementDate.isAfter(this.lineOfCreditStateChange.getActivateOnDate()));
+    }
 }
