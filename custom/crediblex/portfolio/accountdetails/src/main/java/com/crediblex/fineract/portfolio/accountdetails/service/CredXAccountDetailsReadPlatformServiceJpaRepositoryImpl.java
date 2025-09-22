@@ -101,7 +101,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             }
         }
 
-        namedWhereClause = namedWhereClause + " and l.line_of_credit_id is null ";
+        namedWhereClause = namedWhereClause + " and mlcp.line_of_credit_id is null ";
         String currentDate = DateUtils.getLocalDateOfTenant().toString();
         params.addValue("currentDate", currentDate);
 
@@ -191,7 +191,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" left join m_appuser cobu on cobu.id = l.charged_off_by_userid")
                     .append(" left join m_loan_arrears_aging la on la.loan_id = l.id")
                     .append(" left join glim_accounts glim on glim.id=l.glim_id")
-                    .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id");
+                    .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id")
+                    .append(" left join m_loan_line_of_credit_params  mlcp on mlcp.loan_id = l.id");
 
             return accountsSummary.toString();
         }

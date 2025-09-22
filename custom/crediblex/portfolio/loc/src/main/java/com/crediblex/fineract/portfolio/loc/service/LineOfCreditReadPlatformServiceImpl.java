@@ -286,8 +286,9 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .append("l.principal_disbursed_derived as loanAmount, l.total_outstanding_derived as loanOutstandingBalance, ")
                     .append("l.total_repayment_derived as loanAmountPaid, l.loan_status_id as loanStatusId ")
 
-                    .append("FROM m_line_of_credit loc ").append("LEFT JOIN m_loan l ON l.line_of_credit_id = loc.id ")
-                    .append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ");
+                    .append("FROM m_line_of_credit loc ")
+                    .append("LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id ")
+                    .append("LEFT JOIN m_loan l ON l.id = mlcp.loan_id ").append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ");
 
             return sql.toString();
         }
@@ -337,8 +338,9 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .append("l.disbursedon_date as loanActualDisbursementDate, l.closedon_date as loanClosedOnDate, ")
                     .append("l.net_disbursal_amount as loanNetDisbursedAmount, l.fixed_emi_amount as loanInstallmentAmount ")
 
-                    .append("FROM m_line_of_credit loc ").append("LEFT JOIN m_loan l ON l.line_of_credit_id = loc.id ")
-                    .append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ")
+                    .append("FROM m_line_of_credit loc ")
+                    .append("LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id ")
+                    .append("LEFT JOIN m_loan l ON l.id = mlcp.loan_id ").append("LEFT JOIN m_product_loan lp ON lp.id = l.product_id ")
                     .append("LEFT JOIN m_currency curr ON curr.code = l.currency_code ");
 
             return sql.toString();
