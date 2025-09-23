@@ -42,4 +42,13 @@ public interface JournalEntryOdooSyncRepository extends JpaRepository<JournalEnt
 
     @Query("SELECT COUNT(j) FROM JournalEntryOdooSync j WHERE j.isPostedToOdoo = false")
     long countUnpostedEntries();
+
+    @Query("SELECT j FROM JournalEntryOdooSync j WHERE j.loanId = :loanId AND j.isPostedToOdoo = false")
+    List<JournalEntryOdooSync> findUnpostedEntriesByLoanId(@Param("loanId") Long loanId);
+
+    @Query("SELECT DISTINCT j.loanId FROM JournalEntryOdooSync j WHERE j.isPostedToOdoo = false AND j.loanId IS NOT NULL")
+    List<Long> findDistinctLoanIdsWithUnpostedEntries();
+
+    @Query("SELECT j FROM JournalEntryOdooSync j WHERE j.loanId = :loanId")
+    List<JournalEntryOdooSync> findByLoanId(@Param("loanId") Long loanId);
 }

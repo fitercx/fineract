@@ -26,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.infrastructure.event.business.domain.journalentry.LoanJournalEntryCreatedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,7 @@ public class JournalEntryOdooTrackingService {
 
     private final BusinessEventNotifierService businessEventNotifierService;
     private final JournalEntryOdooSyncRepository journalEntryOdooSyncRepository;
+    private final LoanTransactionRepository loanTransactionRepository;
 
     @PostConstruct
     public void addListeners() {
@@ -59,13 +62,40 @@ public class JournalEntryOdooTrackingService {
         
         // Check if tracking record already exists
         if (journalEntryOdooSyncRepository.findByJournalEntryId(journalEntry.getId()).isEmpty()) {
-            JournalEntryOdooSync trackingRecord = new JournalEntryOdooSync(journalEntry);
+            // Get loan ID from loan transaction if available
+            Long loanId = null;
+            if (journalEntry.getLoanTransactionId() != null) {
+                loanId = getLoanIdFromTransactionId(journalEntry.getLoanTransactionId());
+            }
+            
+            JournalEntryOdooSync trackingRecord = new JournalEntryOdooSync(journalEntry, loanId);
             journalEntryOdooSyncRepository.save(trackingRecord);
             
-            log.info("Created Odoo sync tracking record for journal entry ID: {}", journalEntry.getId());
+            log.info("Created Odoo sync tracking record for journal entry ID: {} with loan ID: {}", 
+                journalEntry.getId(), loanId);
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
         }
+    }
+
+    /**
+     * Get loan ID from loan transaction ID
+     */
+    private Long getLoanIdFromTransactionId(Long loanTransactionId) {
+        if (loanTransactionId == null) {
+            return null;
+        }
+        
+        try {
+            LoanTransaction loanTransaction = loanTransactionRepository.findById(loanTransactionId).orElse(null);
+            if (loanTransaction != null && loanTransaction.getLoan() != null) {
+                return loanTransaction.getLoan().getId();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get loan ID for transaction ID: {}", loanTransactionId, e);
+        }
+        
+        return null;
     }
 
     @Transactional

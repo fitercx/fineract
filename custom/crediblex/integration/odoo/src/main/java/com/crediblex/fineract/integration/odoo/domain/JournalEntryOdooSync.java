@@ -36,6 +36,9 @@ public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
     @JoinColumn(name = "journal_entry_id", nullable = false, unique = true)
     private JournalEntry journalEntry;
 
+    @Column(name = "loan_id")
+    private Long loanId;
+
     @Column(name = "is_posted_to_odoo", nullable = false)
     private Boolean isPostedToOdoo = false;
 
@@ -61,7 +64,22 @@ public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
 
     public JournalEntryOdooSync(JournalEntry journalEntry) {
         this.journalEntry = journalEntry;
+        this.loanId = journalEntry.getLoanTransactionId() != null ? 
+            getLoanIdFromTransactionId(journalEntry.getLoanTransactionId()) : null;
         this.isPostedToOdoo = false;
+    }
+
+    public JournalEntryOdooSync(JournalEntry journalEntry, Long loanId) {
+        this.journalEntry = journalEntry;
+        this.loanId = loanId;
+        this.isPostedToOdoo = false;
+    }
+
+    private Long getLoanIdFromTransactionId(Long loanTransactionId) {
+        // This is a placeholder - we'll need to query the loan transaction table
+        // For now, this method should be implemented to get loan ID from transaction ID
+        // We'll update the service to pass the loan ID directly
+        return null;
     }
 
     public void markAsPosted(Long odooMoveId) {

@@ -23,6 +23,8 @@ import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncReposi
 import com.crediblex.fineract.integration.odoo.service.JournalEntryOdooTrackingService;
 import com.crediblex.fineract.integration.odoo.service.OdooJournalEntryService;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.StepContribution;
@@ -52,10 +54,60 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             List<JournalEntryOdooSync> pendingEntries = journalEntryOdooSyncRepository.findPendingEntries();
             log.info("Found {} pending journal entries to sync to Odoo", pendingEntries.size());
 
+            // Group entries by loan ID (entries without loan ID will be processed individually)
+            Map<Long, List<JournalEntryOdooSync>> entriesByLoanId = pendingEntries.stream()
+                .filter(entry -> entry.getLoanId() != null)
+                .collect(Collectors.groupingBy(JournalEntryOdooSync::getLoanId));
+
+            // Get entries without loan ID (savings transactions, manual entries, etc.)
+            List<JournalEntryOdooSync> entriesWithoutLoanId = pendingEntries.stream()
+                .filter(entry -> entry.getLoanId() == null)
+                .collect(Collectors.toList());
+
             int successCount = 0;
             int failureCount = 0;
+            int movesCreated = 0;
 
-            for (JournalEntryOdooSync sync : pendingEntries) {
+            // Process entries grouped by loan ID
+            for (Map.Entry<Long, List<JournalEntryOdooSync>> loanGroup : entriesByLoanId.entrySet()) {
+                Long loanId = loanGroup.getKey();
+                List<JournalEntryOdooSync> loanEntries = loanGroup.getValue();
+                
+                log.info("Processing {} journal entries for loan ID: {}", loanEntries.size(), loanId);
+                
+                try {
+                    // Post all journal entries for this loan as a single move
+                    Long odooMoveId = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
+
+                    if (odooMoveId != null) {
+                        // Mark all entries in this loan as posted
+                        for (JournalEntryOdooSync sync : loanEntries) {
+                            journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), odooMoveId);
+                            successCount++;
+                        }
+                        movesCreated++;
+                        log.info("Successfully posted {} journal entries for loan {} to Odoo with move ID: {}", 
+                                loanEntries.size(), loanId, odooMoveId);
+                    } else {
+                        String errorMsg = "Failed to create move in Odoo for loan " + loanId;
+                        for (JournalEntryOdooSync sync : loanEntries) {
+                            journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+                            failureCount++;
+                        }
+                        log.error("Failed to post journal entries for loan {} to Odoo", loanId);
+                    }
+
+                } catch (Exception e) {
+                    log.error("Failed to post journal entries for loan {} to Odoo", loanId, e);
+                    for (JournalEntryOdooSync sync : loanEntries) {
+                        journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), e.getMessage());
+                        failureCount++;
+                    }
+                }
+            }
+
+            // Process entries without loan ID individually i.e. cash margin etc
+            for (JournalEntryOdooSync sync : entriesWithoutLoanId) {
                 try {
                     // Validate the journal entry before posting
                     if (!odooJournalEntryService.canPostToOdoo(sync.getJournalEntry())) {
@@ -74,6 +126,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         log.info("Successfully posted journal entry {} to Odoo with move ID: {}", 
                                 sync.getJournalEntry().getId(), odooMoveId);
                         successCount++;
+                        movesCreated++;
                     } else {
                         String errorMsg = "Failed to create move in Odoo";
                         log.error("Failed to post journal entry {} to Odoo", sync.getJournalEntry().getId());
@@ -88,7 +141,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 }
             }
 
-            log.info("Odoo Journal Entries Sync Job completed - Success: {}, Failures: {}", successCount, failureCount);
+            log.info("Odoo Journal Entries Sync Job completed - Success: {}, Failures: {}, Moves Created: {}", 
+                    successCount, failureCount, movesCreated);
 
         } catch (Exception e) {
             log.error("Error during Odoo Journal Entries Sync Job execution", e);

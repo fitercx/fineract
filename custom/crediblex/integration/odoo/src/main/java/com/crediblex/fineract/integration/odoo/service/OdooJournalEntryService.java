@@ -19,6 +19,7 @@
 package com.crediblex.fineract.integration.odoo.service;
 
 import com.crediblex.fineract.integration.odoo.client.OdooApiClient;
+import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Service for posting Fineract journal entries to Odoo
@@ -124,7 +126,7 @@ public class OdooJournalEntryService {
         BigDecimal amount = fineractEntry.getAmount();
 
         // Determine if this is a debit or credit entry
-        boolean isDebit = fineractEntry.getType().equals(JournalEntryType.DEBIT);
+        boolean isDebit = fineractEntry.isDebitEntry();
 
         if (isDebit) {
             // Debit line
@@ -242,5 +244,167 @@ public class OdooJournalEntryService {
         }
 
         return true;
+    }
+
+    /**
+     * Post multiple journal entries for a loan as a single account move in Odoo
+     */
+    public Long postJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+        try {
+            // Authenticate with Odoo
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                log.error("Failed to authenticate with Odoo");
+                return null;
+            }
+
+            // Get journal ID
+            Integer journalId = odooIntegrationService.getDefaultJournalId();
+            if (journalId == null) {
+                log.error("Could not find suitable journal in Odoo");
+                return null;
+            }
+
+            // Group journal entries by debit/credit and account
+            List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream()
+                .map(JournalEntryOdooSync::getJournalEntry)
+                .toList();
+
+            // Validate all entries
+            for (JournalEntry entry : journalEntries) {
+                if (!canPostToOdoo(entry)) {
+                    log.error("Journal entry {} failed validation", entry.getId());
+                    return null;
+                }
+            }
+
+            // Create the account move with multiple lines
+            Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, journalEntries, journalId);
+            
+            Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
+            if (odooMoveId == null) {
+                log.error("Failed to create account move in Odoo for loan {}", loanId);
+                return null;
+            }
+
+            // Post the move (from draft to posted state)
+            Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
+            if (!posted) {
+                log.warn("Created move {} in Odoo but failed to post it", odooMoveId);
+                // Return the ID anyway as the move was created
+            }
+
+            log.info("Successfully posted {} journal entries for loan {} to Odoo as move {}", 
+                journalEntries.size(), loanId, odooMoveId);
+            
+            return odooMoveId;
+
+        } catch (Exception e) {
+            log.error("Exception while posting journal entries for loan {} to Odoo", loanId, e);
+            return null;
+        }
+    }
+
+    /**
+     * Build account move values for multiple journal entries of a loan
+     */
+    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId) {
+        Map<String, Object> moveValues = new HashMap<>();
+        
+        // Use the first entry's date as move date
+        JournalEntry firstEntry = journalEntries.get(0);
+        moveValues.put("journal_id", journalId);
+        moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
+        moveValues.put("ref", "Fineract Loan " + loanId + " - JEs: " + 
+            journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
+        moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
+
+        // Build consolidated line items
+        List<Object> lines = buildConsolidatedMoveLines(journalEntries);
+        moveValues.put("line_ids", lines);
+
+        return moveValues;
+    }
+
+    /**
+     * Build consolidated move lines from multiple journal entries
+     */
+    private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries) {
+        List<Object> lines = new ArrayList<>();
+        
+        // Group by account and type to consolidate amounts
+        Map<String, Map<String, BigDecimal>> accountAmounts = new HashMap<>();
+        
+        for (JournalEntry entry : journalEntries) {
+            String accountCode = entry.getGlAccount().getGlCode();
+            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
+            
+            if (accountId == null) {
+                log.warn("Could not map account {} to Odoo, skipping entry {}", accountCode, entry.getId());
+                continue;
+            }
+            
+            String accountKey = accountId.toString();
+            accountAmounts.putIfAbsent(accountKey, new HashMap<>());
+            Map<String, BigDecimal> amounts = accountAmounts.get(accountKey);
+            
+            if (entry.isDebitEntry()) {
+                amounts.merge("debit", entry.getAmount(), BigDecimal::add);
+            } else {
+                amounts.merge("credit", entry.getAmount(), BigDecimal::add);
+            }
+        }
+        
+        // Create move lines from consolidated amounts
+        for (Map.Entry<String, Map<String, BigDecimal>> accountEntry : accountAmounts.entrySet()) {
+            Integer accountId = Integer.valueOf(accountEntry.getKey());
+            Map<String, BigDecimal> amounts = accountEntry.getValue();
+            
+            BigDecimal debitAmount = amounts.getOrDefault("debit", BigDecimal.ZERO);
+            BigDecimal creditAmount = amounts.getOrDefault("credit", BigDecimal.ZERO);
+            
+            // Net the amounts
+            BigDecimal netAmount = debitAmount.subtract(creditAmount);
+            
+            if (netAmount.compareTo(BigDecimal.ZERO) != 0) {
+                Map<String, Object> line = new HashMap<>();
+                line.put("account_id", accountId);
+                
+                if (netAmount.compareTo(BigDecimal.ZERO) > 0) {
+                    line.put("debit", netAmount);
+                    line.put("credit", BigDecimal.ZERO);
+                } else {
+                    line.put("debit", BigDecimal.ZERO);
+                    line.put("credit", netAmount.abs());
+                }
+                
+                line.put("name", "Fineract consolidated entry for account " + accountId);
+                
+                // Add line using Odoo's line creation format: (0, 0, values)
+                lines.add(Arrays.asList(0, 0, line));
+            }
+        }
+        
+        return lines;
+    }
+
+    /**
+     * Build narration for loan entries
+     */
+    private String buildLoanNarration(Long loanId, List<JournalEntry> journalEntries) {
+        StringBuilder narration = new StringBuilder();
+        narration.append("Fineract Loan ID: ").append(loanId);
+        narration.append("\nJournal Entries: ");
+        
+        journalEntries.forEach(entry -> {
+            narration.append("\n- JE ").append(entry.getId());
+            if (entry.getDescription() != null && !entry.getDescription().trim().isEmpty()) {
+                narration.append(": ").append(entry.getDescription());
+            }
+            String entryType = entry.isDebitEntry() ? "DEBIT" : "CREDIT";
+            narration.append(" (").append(entryType).append(" ").append(entry.getAmount()).append(")");
+        });
+
+        return narration.toString();
     }
 }
