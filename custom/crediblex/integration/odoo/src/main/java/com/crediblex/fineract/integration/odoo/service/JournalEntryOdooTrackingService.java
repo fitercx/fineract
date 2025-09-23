@@ -20,6 +20,7 @@ package com.crediblex.fineract.integration.odoo.service;
 
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
+import com.crediblex.fineract.accounting.journalentry.SavingsJournalEntryCreatedBusinessEvent;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,15 @@ public class JournalEntryOdooTrackingService {
                 log.error("Error creating journal entry tracking record", e);
             }
         });
+        
+        businessEventNotifierService.addPostBusinessEventListener(SavingsJournalEntryCreatedBusinessEvent.class, event -> {
+            try {
+                JournalEntry journalEntry = event.get();
+                createTrackingRecord(journalEntry);
+            } catch (Exception e) {
+                log.error("Error creating savings journal entry tracking record", e);
+            }
+        });
     }
 
     @Transactional
@@ -67,6 +77,7 @@ public class JournalEntryOdooTrackingService {
             if (journalEntry.getLoanTransactionId() != null) {
                 loanId = getLoanIdFromTransactionId(journalEntry.getLoanTransactionId());
             }
+            // Note: For savings transactions, we don't set loanId as they're not related to loans
             
             JournalEntryOdooSync trackingRecord = new JournalEntryOdooSync(journalEntry, loanId);
             journalEntryOdooSyncRepository.save(trackingRecord);

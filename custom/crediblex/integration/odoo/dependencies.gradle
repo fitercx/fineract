@@ -22,6 +22,7 @@ dependencies {
     implementation(project(':fineract-provider'))
     implementation(project(':fineract-accounting'))
     implementation(project(':fineract-loan'))
+    implementation(project(':custom:crediblex:accounting:journalentry'))
 
     // Required for JAX-RS REST API resources
     implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
