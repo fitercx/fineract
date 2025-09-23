@@ -36,9 +36,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -49,7 +51,9 @@ import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
+import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
+import org.apache.fineract.infrastructure.core.service.SearchParameters;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
@@ -100,7 +104,6 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleD
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleProcessingType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
-import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTransactionMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargePaidByReadService;
@@ -115,6 +118,7 @@ import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
 import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
+import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -130,7 +134,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final PlatformSecurityContext context;
     private final LineOfCreditRepository lineOfCreditRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
@@ -147,7 +150,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             ColumnValidator columnValidator, DatabaseSpecificSQLGenerator sqlGenerator,
             DelinquencyReadPlatformService delinquencyReadPlatformService, LoanTransactionRepository loanTransactionRepository,
             LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
-            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
+            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper,
+            org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
             CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
@@ -162,7 +166,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
-        this.context = context;
         this.lineOfCreditRepository = lineOfCreditRepository;
     }
 
@@ -1100,6 +1103,99 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         return loanAccountData;
 
+    }
+
+    @Override
+    public Page<LoanAccountData> retrieveAll(final SearchParameters searchParameters) {
+
+        final AppUser currentUser = this.context.authenticatedUser();
+        final String hierarchy = currentUser.getOffice().getHierarchy();
+        final String hierarchySearchString = hierarchy + "%";
+        final LoanReadPlatformServiceImpl.LoanMapper loanMapper = new LoanReadPlatformServiceImpl.LoanMapper(sqlGenerator,
+                delinquencyReadPlatformService);
+
+        final StringBuilder sqlBuilder = new StringBuilder(200);
+        sqlBuilder.append("select " + sqlGenerator.calcFoundRows() + " ");
+        sqlBuilder.append(loanMapper.loanSchema());
+
+        // TODO - for time being this will data scope list of loans returned to
+        // only loans that have a client associated.
+        // to support scenario where loan has group_id only OR client_id will
+        // probably require a UNION query
+        // but that at present is an edge case
+        sqlBuilder.append(" join m_office o on (o.id = c.office_id or o.id = g.office_id) ");
+        sqlBuilder.append(" left join m_office transferToOffice on transferToOffice.id = c.transfer_to_office_id ");
+
+        if (searchParameters.getLocId() != null) {
+            sqlBuilder.append(" left join m_loan_line_of_credit_params loc on loc.loan_id = l.id ");
+
+        }
+        sqlBuilder.append(" where ( o.hierarchy like ? or transferToOffice.hierarchy like ?)");
+
+        int arrayPos = 2;
+        List<Object> extraCriterias = new ArrayList<>();
+        extraCriterias.add(hierarchySearchString);
+        extraCriterias.add(hierarchySearchString);
+
+        if (searchParameters != null) {
+
+            if (StringUtils.isNotBlank(searchParameters.getStatus())) {
+                sqlBuilder.append(" and l.loan_status_id = ?");
+                extraCriterias.add(Integer.parseInt(searchParameters.getStatus()));
+                arrayPos = arrayPos + 1;
+            }
+
+            if (StringUtils.isNotBlank(searchParameters.getExternalId())) {
+                sqlBuilder.append(" and l.external_id = ?");
+                extraCriterias.add(searchParameters.getExternalId());
+                arrayPos = arrayPos + 1;
+            }
+            if (searchParameters.getOfficeId() != null) {
+                sqlBuilder.append("and c.office_id =?");
+                extraCriterias.add(searchParameters.getOfficeId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (StringUtils.isNotBlank(searchParameters.getAccountNo())) {
+                sqlBuilder.append(" and l.account_no = ?");
+                extraCriterias.add(searchParameters.getAccountNo());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.getClientId() != null) {
+                sqlBuilder.append(" and l.client_id = ?");
+                extraCriterias.add(searchParameters.getClientId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.getLocId() != null) {
+                sqlBuilder.append(" and loc.line_of_credit_id = ?");
+                extraCriterias.add(searchParameters.getLocId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.hasOrderBy()) {
+                sqlBuilder.append(" order by ").append(searchParameters.getOrderBy());
+                this.columnValidator.validateSqlInjection(sqlBuilder.toString(), searchParameters.getOrderBy());
+
+                if (searchParameters.hasSortOrder()) {
+                    sqlBuilder.append(' ').append(searchParameters.getSortOrder());
+                    this.columnValidator.validateSqlInjection(sqlBuilder.toString(), searchParameters.getSortOrder());
+                }
+            }
+
+            if (searchParameters.hasLimit()) {
+                sqlBuilder.append(" ");
+                if (searchParameters.hasOffset()) {
+                    sqlBuilder.append(sqlGenerator.limit(searchParameters.getLimit(), searchParameters.getOffset()));
+                } else {
+                    sqlBuilder.append(sqlGenerator.limit(searchParameters.getLimit()));
+                }
+            }
+        }
+        final Object[] objectArray = extraCriterias.toArray();
+        final Object[] finalObjectArray = Arrays.copyOf(objectArray, arrayPos);
+        return this.paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray, loanMapper);
     }
 
 }

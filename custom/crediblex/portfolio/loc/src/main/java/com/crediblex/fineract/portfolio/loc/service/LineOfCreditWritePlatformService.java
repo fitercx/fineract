@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 public interface LineOfCreditWritePlatformService {
 
     @Transactional
-    CommandProcessingResult createLineOfCredit(JsonCommand command);
+    CommandProcessingResult createLineOfCredit(JsonCommand command, Long clientId);
 
     @Transactional
     CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command);

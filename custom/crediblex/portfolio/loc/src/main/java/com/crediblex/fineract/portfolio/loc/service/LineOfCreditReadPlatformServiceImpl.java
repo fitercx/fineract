@@ -23,6 +23,8 @@ import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeReadService;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
+import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
+import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.data.LocReviewPeriods;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
@@ -44,6 +46,8 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.organisation.staff.data.StaffData;
+import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
 import org.apache.fineract.portfolio.accountdetails.data.LoanAccountSummaryData;
 import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 import org.apache.fineract.portfolio.client.data.ClientData;
@@ -67,75 +71,73 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private final JdbcTemplate jdbcTemplate;
     private final ClientReadPlatformService clientReadPlatformService;
     private final LineOfCreditChargeReadService chargeReadService;
+    private final StaffReadPlatformService staffReadPlatformService;
 
     private static final class LineOfCreditExtractor implements ResultSetExtractor<LineOfCreditData> {
 
         public String schema() {
             return """
                     loc.id as id,
-                    loc.client_id as clientId,
-                    loc.external_id as externalId,
-                    loc.product_type as productType,
-                    loc.maximum_amount as maximumAmount,
-                    loc.available_balance as availableBalance,
-                    loc.consumed_amount as consumedAmount,
-                    loc.total_draw_down_count_derived as totalDrawDownCountDerived,
-                    loc.total_of_fees_derived as totalOfFeesDerived,
-                    loc.net_outstanding_amount_derived as netOutstandingAmountDerived,
-                    loc.activation_status as activationStatus,
-                    loc.start_date as startDate,
-                    loc.end_date as endDate,
-                    loc.approved_credit_facility_amount as approvedCreditFacilityAmount,
-                    loc.activation_date as activationDate,
-                    loc.currency as currency,
-                    loc.advance_percentage as advancePercentage,
-                    loc.tenor_days as tenorDays,
-                    loc.cash_margin_type as cashMarginType,
-                    loc.cash_margin_value as cashMarginValue,
-                    loc.interim_review_date as interimReviewDate,
-                    loc.rate_type as rateType,
-                    loc.annual_interest_rate as annualInterestRate,
-                    loc.is_interest_upfront_or_post_disbursal as isInterestUpfrontOrPostDisbursal,
-                    loc.client_company_name as clientCompanyName,
-                    loc.client_contact_person_name as clientContactPersonName,
-                    loc.client_contact_person_phone as clientContactPersonPhone,
-                    loc.client_contact_person_email as clientContactPersonEmail,
-                    loc.authorized_signatory_name as authorizedSignatoryName,
-                    loc.authorized_signatory_phone as authorizedSignatoryPhone,
-                    loc.authorized_signatory_email as authorizedSignatoryEmail,
-                    loc.va as virtualAccount,
-                    loc.special_conditions as specialConditions,
-                    loc.max_per_drawdown as maxPerDrawdown,
-                    loc.review_period as reviewPeriod,
-                    loc.loan_officer as loanOfficer,
-                    loc.repayment_strategy as repaymentStrategy,
-                    loc.late_payment_fee as latePaymentFee,
-                    loc.annual_interest_rate  as annualInterestRate,
-                    loc.settlement_savings_account_id as settlementSavingsAccountId,
-                    ssa.account_no as settlementSavingsAccountNo,
-                    ssa.account_balance_derived as settlementSavingsAccountBalance,
-                    loc.created_on_utc as createdDate,
-                    loc.created_by as createdBy,
-                    loc.last_modified_on_utc as lastModifiedDate,
-                    loc.last_modified_by as lastModifiedBy,
-                    mlocab.name as approvedBuyerName,
-                    loc.activated_on_date as activatedOnDate,
-                    loc.approved_on_date as approvedOnDate,
-                    loc.closed_on_date as closedOnDate,
-                    ap.firstname as approverFirstName,
-                    ap.lastname as approverLastName,
-                    ac.firstname as activatorFirstName,
-                    ac.lastname as activatorLastName,
-                    cl.firstname as closerFirstName,
-                    cl.lastname as closerLastName
-                    from
-                    m_line_of_credit loc
-                    left join m_savings_account ssa on
-                    ssa.id = loc.settlement_savings_account_id
-                    left join m_line_of_credit_approved_buyers mlocab on mlocab.line_of_credit_id = loc.id
-                    left join m_appuser ac on ac.id = loc.activated_by_user_id
-                    left join m_appuser ap on ap.id = loc.approved_by_user_id
-                    left join m_appuser cl on cl.id = loc.closed_by_user_id
+                     loc.client_id as clientId,
+                     loc.external_id as externalId,
+                     loc.product_type as productType,
+                     loc.maximum_amount as maximumAmount,
+                     loc.available_balance as availableBalance,
+                     loc.consumed_amount as consumedAmount,
+                     loc.total_draw_down_count_derived as totalDrawDownCountDerived,
+                     loc.total_of_fees_derived as totalOfFeesDerived,
+                     loc.net_outstanding_amount_derived as netOutstandingAmountDerived,
+                     loc.activation_status as activationStatus,
+                     loc.start_date as startDate,
+                     loc.end_date as endDate,
+                     loc.approved_credit_facility_amount as approvedCreditFacilityAmount,
+                     loc.currency as currency,
+                     loc.advance_percentage as advancePercentage,
+                     loc.tenor_days as tenorDays,
+                     loc.cash_margin_type as cashMarginType,
+                     loc.cash_margin_value as cashMarginValue,
+                     loc.interim_review_date as interimReviewDate,
+                     loc.rate_type as rateType,
+                     loc.annual_interest_rate as annualInterestRate,
+                     loc.client_company_name as clientCompanyName,
+                     loc.client_contact_person_name as clientContactPersonName,
+                     loc.client_contact_person_phone as clientContactPersonPhone,
+                     loc.client_contact_person_email as clientContactPersonEmail,
+                     loc.authorized_signatory_name as authorizedSignatoryName,
+                     loc.authorized_signatory_phone as authorizedSignatoryPhone,
+                     loc.authorized_signatory_email as authorizedSignatoryEmail,
+                     loc.va as virtualAccount,
+                     loc.special_conditions as specialConditions,
+                     loc.review_period as reviewPeriod,
+                     loc.loan_officer_id as loanOfficerId,
+                     loc.distribution_partner as distributionPartner,
+                     loc.interest_charge_time as interestChargeTime,
+                     loc.settlement_savings_account_id as settlementSavingsAccountId,
+                     ssa.account_no as settlementSavingsAccountNo,
+                     ssa.account_balance_derived as settlementSavingsAccountBalance,
+                     loc.created_on_utc as createdDate,
+                     loc.created_by as createdBy,
+                     loc.last_modified_on_utc as lastModifiedDate,
+                     loc.last_modified_by as lastModifiedBy,
+                     mlocab.name as approvedBuyerName,
+                     loc.activated_on_date as activatedOnDate,
+                     loc.approved_on_date as approvedOnDate,
+                     loc.closed_on_date as closedOnDate,
+                     ap.firstname as approverFirstName,
+                     ap.lastname as approverLastName,
+                     ac.firstname as activatorFirstName,
+                     ac.lastname as activatorLastName,
+                     cl.firstname as closerFirstName,
+                     cl.lastname as closerLastName,
+                     lo.display_name as loanOfficerName
+                     from
+                     m_line_of_credit loc
+                     left join m_savings_account ssa on ssa.id = loc.settlement_savings_account_id
+                     left join m_line_of_credit_approved_buyers mlocab on mlocab.line_of_credit_id = loc.id
+                     left join m_appuser ac on ac.id = loc.activated_by_user_id
+                     left join m_appuser ap on ap.id = loc.approved_by_user_id
+                     left join m_appuser cl on cl.id = loc.closed_by_user_id
+                     left join m_staff lo on lo.id = loc.loan_officer_id
                     """;
         }
 
@@ -175,7 +177,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final LocalDate endDate = JdbcSupport.getLocalDate(rs, "endDate");
             final BigDecimal approvedCreditFacilityAmount = rs.getBigDecimal("approvedCreditFacilityAmount");
             final String externalId = rs.getString("externalId");
-            final LocalDate activationDate = JdbcSupport.getLocalDate(rs, "activationDate");
+
             final String currency = rs.getString("currency");
             final BigDecimal advancePercentage = rs.getBigDecimal("advancePercentage");
             final Integer tenorDays = JdbcSupport.getInteger(rs, "tenorDays");
@@ -184,7 +186,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final LocalDate interimReviewDate = JdbcSupport.getLocalDate(rs, "interimReviewDate");
             final String rateType = rs.getString("rateType");
             final BigDecimal annualInterestRate = rs.getBigDecimal("annualInterestRate");
-            final String isInterestUpfrontOrPostDisbursal = rs.getString("isInterestUpfrontOrPostDisbursal");
+
             final String clientCompanyName = rs.getString("clientCompanyName");
             final String clientContactPersonName = rs.getString("clientContactPersonName");
             final String clientContactPersonPhone = rs.getString("clientContactPersonPhone");
@@ -194,11 +196,13 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String authorizedSignatoryEmail = rs.getString("authorizedSignatoryEmail");
             final String virtualAccount = rs.getString("virtualAccount");
             final String specialConditions = rs.getString("specialConditions");
-            final BigDecimal maxPerDrawdown = rs.getBigDecimal("maxPerDrawdown");
-            final String reviewPeriod = rs.getString("reviewPeriod");
-            final String loanOfficer = rs.getString("loanOfficer");
-            final String repaymentStrategy = rs.getString("repaymentStrategy");
-            final BigDecimal latePaymentFee = rs.getBigDecimal("latePaymentFee");
+
+            final Integer reviewPeriod = JdbcSupport.getInteger(rs, "reviewPeriod");
+            final Long loanOfficerId = JdbcSupport.getLong(rs, "loanOfficerId");
+            final String distributionPartner = rs.getString("distributionPartner");
+            final String interestChargeTime = rs.getString("interestChargeTime");
+            final String loanOfficerName = rs.getString("loanOfficerName");
+
             final Long settlementSavingsAccountId = JdbcSupport.getLong(rs, "settlementSavingsAccountId");
             final String settlementSavingsAccountNo = rs.getString("settlementSavingsAccountNo");
             final BigDecimal settlementSavingsAccountBalance = rs.getBigDecimal("settlementSavingsAccountBalance");
@@ -217,20 +221,19 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
                     .availableBalance(availableBalance).consumedAmount(consumedAmount)
                     .status(getActivationStatusEnumOptionData(activationStatus)).startDate(startDate).endDate(endDate)
-                    .approvedCreditFacilityAmount(approvedCreditFacilityAmount).externalId(externalId).activationDate(activationDate)
-                    .currency(currency).advancePercentage(advancePercentage).tenorDays(tenorDays).cashMarginType(cashMarginType)
+                    .approvedCreditFacilityAmount(approvedCreditFacilityAmount).externalId(externalId).currency(currency)
+                    .advancePercentage(advancePercentage).tenorDays(tenorDays).cashMarginType(cashMarginType)
                     .cashMarginValue(cashMarginValue).interimReviewDate(interimReviewDate).rateType(rateType)
-                    .annualInterestRate(annualInterestRate).isInterestUpfrontOrPostDisbursal(isInterestUpfrontOrPostDisbursal)
-                    .clientCompanyName(clientCompanyName).clientContactPersonName(clientContactPersonName)
-                    .clientContactPersonPhone(clientContactPersonPhone).clientContactPersonEmail(clientContactPersonEmail)
-                    .authorizedSignatoryName(authorizedSignatoryName).authorizedSignatoryPhone(authorizedSignatoryPhone)
-                    .authorizedSignatoryEmail(authorizedSignatoryEmail).va(virtualAccount).specialConditions(specialConditions)
-                    .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
-                    .latePaymentFee(latePaymentFee).settlementSavingsAccountId(settlementSavingsAccountId)
-                    .settlementSavingsAccountNo(settlementSavingsAccountNo).settlementSavingsAccountBalance(settlementSavingsAccountBalance)
-                    .createdDate(createdDate).createdByUsername(createdBy).lastModifiedDate(lastModifiedDate)
-                    .lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate).approvedOnDate(approvedOnDate)
-                    .closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
+                    .interestChargeTime(interestChargeTime).annualInterestRate(annualInterestRate).clientCompanyName(clientCompanyName)
+                    .clientContactPersonName(clientContactPersonName).clientContactPersonPhone(clientContactPersonPhone)
+                    .clientContactPersonEmail(clientContactPersonEmail).authorizedSignatoryName(authorizedSignatoryName)
+                    .authorizedSignatoryPhone(authorizedSignatoryPhone).authorizedSignatoryEmail(authorizedSignatoryEmail)
+                    .va(virtualAccount).specialConditions(specialConditions).reviewPeriod(reviewPeriod).loanOfficerId(loanOfficerId)
+                    .loanOfficerName(loanOfficerName).distributionPartner(distributionPartner)
+                    .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
+                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
+                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate)
+                    .approvedOnDate(approvedOnDate).closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
         }
 
         private AppUserData createAppUserData(String firstName, String lastName) {
@@ -406,12 +409,10 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final LocalDate startDate = rs.getDate("locStartDate") != null ? rs.getDate("locStartDate").toLocalDate() : null;
             final LocalDate endDate = rs.getDate("locEndDate") != null ? rs.getDate("locEndDate").toLocalDate() : null;
             final String externalId = rs.getString("locExternalId");
-            final LocalDate activationDate = rs.getDate("locActivationDate") != null ? rs.getDate("locActivationDate").toLocalDate() : null;
             final String currency = rs.getString("locCurrency");
             final BigDecimal advancePercentage = rs.getBigDecimal("locAdvancePercentage");
             final Integer tenorDays = rs.getObject("locTenorDays") != null ? rs.getInt("locTenorDays") : null;
             final String approvedBuyers = rs.getString("locApprovedBuyers");
-            final BigDecimal processingFeePctLoc = rs.getBigDecimal("locProcessingFeePctLoc");
             final String cashMarginType = rs.getString("locCashMarginType");
             final BigDecimal cashMarginValue = rs.getBigDecimal("locCashMarginValue");
             final LocalDate interimReviewDate = rs.getDate("locInterimReviewDate") != null
@@ -419,7 +420,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     : null;
             final String rateType = rs.getString("locRateType");
             final BigDecimal annualInterestRate = rs.getBigDecimal("locAnnualInterestRate");
-            final String isInterestUpfrontOrPostDisbursal = rs.getString("locIsInterestUpfrontOrPostDisbursal");
             final String clientCompanyName = rs.getString("locClientCompanyName");
             final String clientContactPersonName = rs.getString("locClientContactPersonName");
             final String clientContactPersonPhone = rs.getString("locClientContactPersonPhone");
@@ -428,13 +428,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String authorizedSignatoryPhone = rs.getString("locAuthorizedSignatoryPhone");
             final String authorizedSignatoryEmail = rs.getString("locAuthorizedSignatoryEmail");
             final String distributionPartner = rs.getString("locDistributionPartner");
-            final BigDecimal bankTransferFee = rs.getBigDecimal("locBankTransferFee");
             final String specialConditions = rs.getString("locSpecialConditions");
-            final BigDecimal latePaymentFee = rs.getBigDecimal("locLatePaymentFee");
-            final BigDecimal maxPerDrawdown = rs.getBigDecimal("locMaxPerDrawdown");
-            final String reviewPeriod = rs.getString("reviewPeriod");
-            final String loanOfficer = rs.getString("locLoanOfficer");
-            final String repaymentStrategy = rs.getString("locRepaymentStrategy");
+
             final BigDecimal interestRateOverride = rs.getBigDecimal("interestRateOverride");
             final Long settlementSavingsAccountId = rs.getObject("settlementSavingsAccountId") != null
                     ? rs.getLong("settlementSavingsAccountId")
@@ -455,20 +450,17 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
                     .availableBalance(availableBalance).consumedAmount(consumedAmount)
                     .status(getActivationStatusEnumOptionData(activationStatus)).startDate(startDate).endDate(endDate)
-                    .externalId(externalId).activationDate(activationDate).currency(currency).advancePercentage(advancePercentage)
-                    .tenorDays(tenorDays).approvedBuyers(approvedBuyers).processingFeePctLoc(processingFeePctLoc)
-                    .cashMarginType(cashMarginType).cashMarginValue(cashMarginValue).interimReviewDate(interimReviewDate).rateType(rateType)
-                    .annualInterestRate(annualInterestRate).isInterestUpfrontOrPostDisbursal(isInterestUpfrontOrPostDisbursal)
+                    .externalId(externalId).currency(currency).advancePercentage(advancePercentage).tenorDays(tenorDays)
+                    .approvedBuyers(approvedBuyers).cashMarginType(cashMarginType).cashMarginValue(cashMarginValue)
+                    .interimReviewDate(interimReviewDate).rateType(rateType).annualInterestRate(annualInterestRate)
                     .clientCompanyName(clientCompanyName).clientContactPersonName(clientContactPersonName)
                     .clientContactPersonPhone(clientContactPersonPhone).clientContactPersonEmail(clientContactPersonEmail)
                     .authorizedSignatoryName(authorizedSignatoryName).authorizedSignatoryPhone(authorizedSignatoryPhone)
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(accountNumber).distributionPartner(distributionPartner)
-                    .bankTransferFee(bankTransferFee).specialConditions(specialConditions).latePaymentFee(latePaymentFee)
-                    .maxPerDrawdown(maxPerDrawdown).reviewPeriod(reviewPeriod).loanOfficer(loanOfficer).repaymentStrategy(repaymentStrategy)
-                    .interestRateOverride(interestRateOverride).settlementSavingsAccountId(settlementSavingsAccountId)
-                    .settlementSavingsAccountNo(settlementSavingsAccountNo).settlementSavingsAccountBalance(settlementSavingsAccountBalance)
-                    .createdDate(createdDate).createdByUsername(createdBy).lastModifiedDate(lastModifiedDate)
-                    .lastModifiedByUsername(lastModifiedBy).build();
+                    .specialConditions(specialConditions).reviewPeriod(null).annualInterestRate(interestRateOverride)
+                    .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
+                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
+                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).build();
         }
 
         /**
@@ -572,12 +564,28 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
     @Override
     public LineOfCreditData retrieveTemplate() {
-        this.context.authenticatedUser();
-        final Collection<EnumOptionData> activationStatusOptions = getActivationStatusOptions();
-        final Collection<EnumOptionData> productTypeOptions = getProductTypeOptions();
-        final Collection<EnumOptionData> reviewPeriodsOptions = getReviewPeriodsOptions();
+        final Collection<EnumOptionData> activationStatusOptions = Arrays.stream(LocStatus.values()).map(LocStatus::getEnumOptionData)
+                .toList();
 
-        return LineOfCreditData.template(activationStatusOptions, productTypeOptions, reviewPeriodsOptions);
+        final Collection<EnumOptionData> productTypeOptions = Arrays.stream(LocProductType.values()).map(LocProductType::getEnumOptionsData)
+                .collect(Collectors.toList());
+        final Collection<EnumOptionData> reviewPeriodsOptions = Arrays.stream(LocReviewPeriods.values())
+                .map(LocReviewPeriods::getEnumOptionsData).collect(Collectors.toList());
+        final Collection<EnumOptionData> cashMarginTypeOptions = Arrays.stream(LocCashMarginType.values())
+                .map(LocCashMarginType::getEnumOptionsData).toList();
+        final Collection<EnumOptionData> interestChargeTime = Arrays.stream(LocInterestChargeTime.values())
+                .map(LocInterestChargeTime::getEnumOptionsData).toList();
+
+        Collection<StaffData> loanOfficers = null;
+        Long officeId = this.context.authenticatedUser().getOffice().getId();
+
+        if (officeId != null) {
+            loanOfficers = this.staffReadPlatformService.retrieveAllLoanOfficersInOfficeById(officeId);
+        }
+
+        return LineOfCreditData.builder().statusOptions(activationStatusOptions).productTypeOptions(productTypeOptions)
+                .reviewPeriodsOptions(reviewPeriodsOptions).cashMarginTypeOptions(cashMarginTypeOptions).loanOfficers(loanOfficers)
+                .interestChargeTimeOptions(interestChargeTime).build();
     }
 
     @Override
@@ -596,18 +604,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             lineOfCredit.setClient(clientData);
         }
         return lineOfCredit;
-    }
-
-    private Collection<EnumOptionData> getActivationStatusOptions() {
-        return Arrays.stream(LocStatus.values()).map(LocStatus::getEnumOptionData).toList();
-    }
-
-    private Collection<EnumOptionData> getProductTypeOptions() {
-        return Arrays.stream(LocProductType.values()).map(LocProductType::getEnumOptionsData).collect(Collectors.toList());
-    }
-
-    private Collection<EnumOptionData> getReviewPeriodsOptions() {
-        return Arrays.stream(LocReviewPeriods.values()).map(LocReviewPeriods::getEnumOptionsData).collect(Collectors.toList());
     }
 
     /**
@@ -634,6 +630,20 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
         } catch (final EmptyResultDataAccessException e) {
             return null;
+        }
+    }
+
+    @Override
+    public Integer getTotalOfActiveLoans(Long lineOfCreditId) {
+
+        try {
+            final String sql = "SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp " + "JOIN m_loan l ON l.id = mlcp.loan_id "
+                    + "WHERE mlcp.line_of_credit_id = ? AND l.loan_status_id IN (300, 600)"; // 300: Active, 600:
+                                                                                             // Overpaid
+
+            return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
+        } catch (final EmptyResultDataAccessException e) {
+            return 0;
         }
     }
 

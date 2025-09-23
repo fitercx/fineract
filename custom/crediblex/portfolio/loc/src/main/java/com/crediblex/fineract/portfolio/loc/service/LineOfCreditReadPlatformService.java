@@ -35,4 +35,6 @@ public interface LineOfCreditReadPlatformService {
     List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoansForClient(Long clientId);
 
     LineOfCreditData retrieveOneWithCharges(Long lineOfCreditId, Long clientId);
+
+    Integer getTotalOfActiveLoans(Long lineOfCreditId);
 }

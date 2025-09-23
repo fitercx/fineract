@@ -1,15 +1,19 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
+import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
+import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditClientOptionalInfo;
-import com.google.gson.JsonArray;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
-import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.portfolio.client.domain.Client;
 import org.apache.fineract.portfolio.client.domain.ClientRepositoryWrapper;
@@ -24,126 +28,96 @@ public class LineOfCreditAssembler {
     private final SavingsAccountRepository savingsAccountRepository;
     private final ClientRepositoryWrapper clientRepository;
 
-    protected LineOfCredit assembleFrom(final JsonCommand command) {
-        final String productType = command.stringValueOfParameterNamed("productType");
-        final BigDecimal maximumAmount = command.bigDecimalValueOfParameterNamed("maximumAmount");
-        final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
-        final LocalDate endDate = command.localDateValueOfParameterNamed("endDate");
-
-        final BigDecimal approvedCreditFacilityAmount = command.hasParameter("approvedCreditFacilityAmount")
-                ? command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount")
-                : null;
-        final String externalId = command.hasParameter("externalId") ? command.stringValueOfParameterNamed("externalId") : null;
-        final String currency = command.hasParameter("currencyCode") ? command.stringValueOfParameterNamed("currencyCode") : null;
-        final BigDecimal advancePercentage = command.hasParameter("advancePercentage")
-                ? command.bigDecimalValueOfParameterNamed("advancePercentage")
-                : null;
-        final Integer tenorDays = command.hasParameter("tenorDays") ? command.integerValueOfParameterNamed("tenorDays") : null;
-
-        List<LineOfCreditApprovedBuyers> approvedBuyers;
-        if (command.parameterExists("approvedBuyers")) {
-            approvedBuyers = new ArrayList<>();
-            JsonArray dpArray = command.arrayOfParameterNamed("approvedBuyers");
-            if (dpArray != null) {
-                dpArray.forEach(
-                        t -> approvedBuyers.add(new LineOfCreditApprovedBuyers(t.getAsJsonObject().get("name").getAsString(), null)));
-            }
-
-        } else {
-            approvedBuyers = null;
-        }
-
-        final String cashMarginType = command.hasParameter("cashMarginType") ? command.stringValueOfParameterNamed("cashMarginType") : null;
-        final BigDecimal cashMarginValue = command.hasParameter("cashMarginValue")
-                ? command.bigDecimalValueOfParameterNamed("cashMarginValue")
-                : null;
-
-        final String rateType = command.hasParameter("rateType") ? command.stringValueOfParameterNamed("rateType") : null;
-        final BigDecimal annualInterestRate = command.hasParameter("annualInterestRate")
-                ? command.bigDecimalValueOfParameterNamed("annualInterestRate")
-                : null;
-        final Boolean isInterestUpfrontOrPostDisbursal = command.hasParameter("isInterestUpfrontOrPostDisbursal")
-                ? command.booleanObjectValueOfParameterNamed("isInterestUpfrontOrPostDisbursal")
-                : null;
-
-        final String clientCompanyName = command.hasParameter("clientCompanyName")
-                ? command.stringValueOfParameterNamed("clientCompanyName")
-                : null;
-        final String clientContactPersonName = command.hasParameter("clientContactPersonName")
-                ? command.stringValueOfParameterNamed("clientContactPersonName")
-                : null;
-        final String clientContactPersonPhone = command.hasParameter("clientContactPersonPhone")
-                ? command.stringValueOfParameterNamed("clientContactPersonPhone")
-                : null;
-        final String clientContactPersonEmail = command.hasParameter("clientContactPersonEmail")
-                ? command.stringValueOfParameterNamed("clientContactPersonEmail")
-                : null;
-        final String authorizedSignatoryName = command.hasParameter("authorizedSignatoryName")
-                ? command.stringValueOfParameterNamed("authorizedSignatoryName")
-                : null;
-        final String authorizedSignatoryPhone = command.hasParameter("authorizedSignatoryPhone")
-                ? command.stringValueOfParameterNamed("authorizedSignatoryPhone")
-                : null;
-        final String authorizedSignatoryEmail = command.hasParameter("authorizedSignatoryEmail")
-                ? command.stringValueOfParameterNamed("authorizedSignatoryEmail")
-                : null;
-
-        LineOfCreditClientOptionalInfo optionalClientInfo = new LineOfCreditClientOptionalInfo(clientCompanyName, clientContactPersonName,
-                clientContactPersonPhone, clientContactPersonEmail, authorizedSignatoryName, authorizedSignatoryPhone,
-                authorizedSignatoryEmail);
-
-        final String va = command.hasParameter("va") ? command.stringValueOfParameterNamed("va") : null;
-
-        final String distributionPartner = command.hasParameter("distributionPartner")
-                ? command.stringValueOfParameterNamed("distributionPartner")
-                : null;
-
-        final String specialConditions = command.hasParameter("specialConditions")
-                ? command.stringValueOfParameterNamed("specialConditions")
-                : null;
-
-        final BigDecimal maxPerDrawdown = command.hasParameter("maxPerDrawdown") ? command.bigDecimalValueOfParameterNamed("maxPerDrawdown")
-                : null;
-
-        final String reviewPeriod = command.hasParameter("reviewPeriod") ? command.stringValueOfParameterNamed("reviewPeriod") : null;
-
-        final String loanOfficer = command.hasParameter("loanOfficer") ? command.stringValueOfParameterNamed("loanOfficer") : null;
-
-        final String repaymentStrategy = command.hasParameter("repaymentStrategy")
-                ? command.stringValueOfParameterNamed("repaymentStrategy")
-                : null;
-
-        final BigDecimal latePaymentFee = command.hasParameter("latePaymentFee") ? command.bigDecimalValueOfParameterNamed("latePaymentFee")
-                : null;
-
-        final Long clientId = command.longValueOfParameterNamed("clientId");
-
+    public LineOfCredit assembleFrom(final LineOfCreditRequest request, final Long clientId) {
+        // Get client first
         final Client client = this.clientRepository.findOneWithNotFoundDetection(clientId);
 
-        // settlement savings account linkage (optional)
-        SavingsAccount settlementAccount = null;
-        if (command.hasParameter("settlementSavingsAccountId")) {
-            final Long settlementId = command.longValueOfParameterNamed("settlementSavingsAccountId");
-            if (settlementId != null) {
-                settlementAccount = savingsAccountRepository.findById(settlementId)
-                        .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.settlement.savings.not.found",
-                                "Settlement savings account not found", "settlementSavingsAccountId"));
+        // Extract basic fields from request
+        final LocProductType productType = LocProductType.fromInt(request.getProductType());
+        final BigDecimal maximumAmount = new BigDecimal(request.getMaxCreditLimit().toString());
 
-                if (!settlementAccount.getCurrency().getCode().equals(currency)) {
-                    throw new PlatformApiDataValidationException("error.msg.loc.currency.mismatch.settlement.savings",
-                            "LOC currency must match settlement savings account currency", "currency");
-                }
+        // Parse dates using the provided format and locale
+        final Locale locale = Locale.forLanguageTag(request.getLocale());
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(request.getDateFormat(), locale);
+        final LocalDate startDate = LocalDate.parse(request.getStartDate(), formatter);
+        final LocalDate endDate = request.getEndDate() != null ? LocalDate.parse(request.getEndDate(), formatter) : null;
+
+        final String externalId = request.getExternalId();
+        final String currency = request.getCurrencyCode();
+        final BigDecimal advancePercentage = request.getAdvancePercentage() != null ? new BigDecimal(request.getAdvancePercentage()) : null;
+        final Integer tenorDays = request.getTenorDays();
+
+        // Handle approved buyers
+        List<LineOfCreditApprovedBuyers> approvedBuyers = null;
+        if (request.getApprovedBuyers() != null && !request.getApprovedBuyers().isEmpty()) {
+            approvedBuyers = new ArrayList<>();
+            for (LineOfCreditRequest.ApprovedBuyer buyer : request.getApprovedBuyers()) {
+                approvedBuyers.add(new LineOfCreditApprovedBuyers(buyer.getName(), null));
             }
         }
 
-        final LineOfCredit lineOfCredit = new LineOfCredit(client, productType, maximumAmount, startDate, endDate,
-                approvedCreditFacilityAmount, externalId, currency, advancePercentage, tenorDays, cashMarginType, cashMarginValue, null,
-                rateType, annualInterestRate, isInterestUpfrontOrPostDisbursal, va, specialConditions, maxPerDrawdown, reviewPeriod,
-                loanOfficer, repaymentStrategy, latePaymentFee, optionalClientInfo, approvedBuyers);
+        // Convert cash margin type from Integer to Enum
+        final LocCashMarginType cashMarginType = request.getCashMarginType() != null
+                ? LocCashMarginType.fromInt(request.getCashMarginType())
+                : null;
+        final BigDecimal cashMarginValue = request.getCashMarginValue() != null ? new BigDecimal(request.getCashMarginValue().toString())
+                : null;
+
+        // Parse interim review date if provided
+        final LocalDate interimReviewDate = request.getInterimReviewDate() != null
+                ? LocalDate.parse(request.getInterimReviewDate(), formatter)
+                : null;
+
+        // Set rateType to null as it's not in the request payload
+        final LocInterestChargeTime interestPaymentType = LocInterestChargeTime.fromInt(request.getInterestChargeTime());
+
+        final BigDecimal annualInterestRate = request.getAnnualInterestRate() != null
+                ? new BigDecimal(request.getAnnualInterestRate().toString())
+                : null;
+
+        // Create optional client info from request
+        LineOfCreditClientOptionalInfo optionalClientInfo = new LineOfCreditClientOptionalInfo(request.getClientCompanyName(),
+                request.getClientContactPersonName(), request.getClientContactPersonPhone(), request.getClientContactPersonEmail(),
+                request.getAuthorizedSignatoryName(), request.getAuthorizedSignatoryPhone(), request.getAuthorizedSignatoryEmail());
+
+        final String va = request.getVirtualAccount();
+        final String distributionPartner = request.getDistributionPartner();
+        final String specialConditions = request.getSpecialConditions();
+
+        final Integer reviewPeriod = request.getReviewPeriod();
+
+        final Long loanOfficerId = request.getLoanOfficerId();
+
+        // Convert interestChargeTime from Integer to Enum
+        final LocInterestChargeTime interestChargeTime = request.getInterestChargeTime() != null
+                ? LocInterestChargeTime.fromInt(request.getInterestChargeTime())
+                : null;
+
+        // Handle settlement savings account linkage (optional)
+        SavingsAccount settlementAccount = null;
+        if (request.getSettlementSavingsAccountId() != null) {
+            final Long settlementId = request.getSettlementSavingsAccountId().longValue();
+            settlementAccount = savingsAccountRepository.findById(settlementId)
+                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.settlement.savings.not.found",
+                            "Settlement savings account not found", "settlementSavingsAccountId"));
+
+            if (!settlementAccount.getCurrency().getCode().equals(currency)) {
+                throw new PlatformApiDataValidationException("error.msg.loc.currency.mismatch.settlement.savings",
+                        "LOC currency must match settlement savings account currency", "currency");
+            }
+        }
+
+        // Create LineOfCredit using the updated constructor
+        final LineOfCredit lineOfCredit = new LineOfCredit(client, productType, maximumAmount, startDate, endDate, null, externalId,
+                currency, advancePercentage, tenorDays, cashMarginType, cashMarginValue, interimReviewDate, interestPaymentType,
+                annualInterestRate, va, specialConditions, reviewPeriod, loanOfficerId, distributionPartner, interestChargeTime,
+                optionalClientInfo, approvedBuyers);
+
         if (settlementAccount != null) {
             lineOfCredit.setSettlementSavingsAccount(settlementAccount);
         }
 
         return lineOfCredit;
     }
+
 }
