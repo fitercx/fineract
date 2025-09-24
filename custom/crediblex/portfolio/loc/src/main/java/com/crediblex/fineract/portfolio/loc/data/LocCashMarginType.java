@@ -18,36 +18,38 @@
  */
 package com.crediblex.fineract.portfolio.loc.data;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Objects;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
-@Schema(description = "Enum for line of credit product types")
-public enum LocProductType {
+@Getter
+public enum LocCashMarginType {
 
-    RECEIVABLE(1, "Receivable product type"), PAYABLE(2, "Payable product type");
+    PERCENTAGE(1, "locCashMarginType.percentage", "Percentage"), FLAT(2, "locCashMarginType.fixedAmount", "Flat");
 
     private final Integer value;
+    private final String code;
     private final String description;
 
-    LocProductType(final Integer value, final String description) {
+    LocCashMarginType(int value, String code, String description) {
         this.value = value;
+        this.code = code;
         this.description = description;
+    }
+
+    public static LocCashMarginType fromInt(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        for (LocCashMarginType type : LocCashMarginType.values()) {
+            if (Objects.equals(type.getValue(), value)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Invalid cash margin type: " + value);
     }
 
     public EnumOptionData getEnumOptionsData() {
         return new EnumOptionData(this.value.longValue(), this.name(), this.description);
-    }
-
-    public static LocProductType fromInt(final Integer productType) {
-        LocProductType locProductType = null;
-        if (productType != null) {
-            for (final LocProductType type : LocProductType.values()) {
-                if (type.value.equals(productType)) {
-                    locProductType = type;
-                    break;
-                }
-            }
-        }
-        return locProductType;
     }
 }

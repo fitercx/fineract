@@ -111,6 +111,8 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
     public void postInitialize() {
         LoanApplicationValidator.SUPPORTED_PARAMETERS
                 .addAll(LoanAccountAdditionalProperties.getAllLoanAccountAdditionalPropertiesParameters());
+        LoanScheduleValidator.SUPPORTED_PARAMETERS
+                .addAll(LoanAccountAdditionalProperties.getAllLoanAccountAdditionalPropertiesParameters());
     }
 
     protected void validateForCreate(final JsonElement element) {

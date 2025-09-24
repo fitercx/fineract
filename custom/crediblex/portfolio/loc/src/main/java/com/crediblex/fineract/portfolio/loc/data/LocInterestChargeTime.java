@@ -18,36 +18,39 @@
  */
 package com.crediblex.fineract.portfolio.loc.data;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Objects;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
-@Schema(description = "Enum for line of credit product types")
-public enum LocProductType {
+@Getter
+public enum LocInterestChargeTime {
 
-    RECEIVABLE(1, "Receivable product type"), PAYABLE(2, "Payable product type");
+    UPFRONT(1, "locInterestChargeTime.upfront", "Upfront"), POST_DISBURSEMENT(2, "locInterestChargeTime.postdisbursement",
+            "Post Disbursement");
 
     private final Integer value;
+    private final String code;
     private final String description;
 
-    LocProductType(final Integer value, final String description) {
-        this.value = value;
+    LocInterestChargeTime(int value, String code, String description) {
         this.description = description;
+        this.value = value;
+        this.code = code;
+    }
+
+    public static LocInterestChargeTime fromInt(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        for (LocInterestChargeTime type : LocInterestChargeTime.values()) {
+            if (Objects.equals(type.getValue(), value)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Invalid interest charge time: " + value);
     }
 
     public EnumOptionData getEnumOptionsData() {
         return new EnumOptionData(this.value.longValue(), this.name(), this.description);
-    }
-
-    public static LocProductType fromInt(final Integer productType) {
-        LocProductType locProductType = null;
-        if (productType != null) {
-            for (final LocProductType type : LocProductType.values()) {
-                if (type.value.equals(productType)) {
-                    locProductType = type;
-                    break;
-                }
-            }
-        }
-        return locProductType;
     }
 }

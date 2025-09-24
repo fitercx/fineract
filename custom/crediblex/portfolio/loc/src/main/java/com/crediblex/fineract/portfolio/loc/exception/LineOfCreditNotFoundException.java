@@ -8,4 +8,8 @@ public class LineOfCreditNotFoundException extends AbstractPlatformResourceNotFo
         super("error.msg.line.of.credit.id.invalid", "Line of Credit with identifier " + id + " does not exist", id);
     }
 
+    public LineOfCreditNotFoundException(final String id) {
+        super("error.msg.line.of.credit.externalId.invalid", "Line of Credit with external identifier " + id + " does not exist", id);
+    }
+
 }

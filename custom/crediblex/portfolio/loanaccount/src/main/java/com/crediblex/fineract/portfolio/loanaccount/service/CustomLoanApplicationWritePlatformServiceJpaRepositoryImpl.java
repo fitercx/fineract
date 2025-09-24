@@ -12,6 +12,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import com.google.gson.JsonObject;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -61,7 +63,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends LoanApplicationWritePlatformServiceJpaRepositoryImpl {
 
     private final BusinessEventNotifierService businessEventNotifierService;
-    private final CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService;
+
     private final LoanLineOfCreditParamsRepository loanLocParamsRepository;
     private final FromJsonHelper fromApiJsonHelper;
     private final LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
@@ -78,9 +80,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanRepository loanRepository, GSIMReadPlatformService gsimReadPlatformService,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService,
-            BusinessEventNotifierService businessEventNotifierService1, CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanService,
-            LoanLineOfCreditParamsRepository loanLocParamsRepository, FromJsonHelper fromApiJsonHelper,
-            LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
+            BusinessEventNotifierService businessEventNotifierService1, LoanLineOfCreditParamsRepository loanLocParamsRepository,
+            FromJsonHelper fromApiJsonHelper, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler,
                 loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository,
                 accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService,
@@ -89,7 +90,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 loanDownPaymentTransactionValidator, loanScheduleService);
         this.businessEventNotifierService = businessEventNotifierService1;
         this.fromApiJsonHelper = fromApiJsonHelper;
-        this.customLoanService = customLoanService;
         this.loanLocParamsRepository = loanLocParamsRepository;
         this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
     }
@@ -295,15 +295,18 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
         try {
             // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
-            String productType = customLoanService.getLocProductType(loanId);
-            if (LocProductType.RECEIVABLE.name().equals(productType)) {
+            Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLocParamsRepository.findByLoanId(loanId);
+            boolean isReceivable = lineOfCreditParams.isPresent()
+                    && LocProductType.RECEIVABLE == lineOfCreditParams.get().getLineOfCredit().getProductType();
+
+            if (isReceivable) {
                 // Get the original approved amount from the command
                 BigDecimal originalApprovedAmount = command
                         .bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
 
                 if (originalApprovedAmount != null) {
                     // Calculate the discounted amount (this will be the new approved amount)
-                    BigDecimal discountedAmount = customLoanService.calculateDiscountedAmount(loanId, originalApprovedAmount);
+                    BigDecimal discountedAmount = calculateDiscountedAmount(loanId, lineOfCreditParams.get(), originalApprovedAmount);
 
                     // Create a modified JSON object with the discounted amount
                     JsonObject modifiedJson = command.parsedJson().getAsJsonObject().deepCopy();
@@ -346,6 +349,31 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             loanLocParamsRepository.save(loanLocParams);
 
         }
+
+    }
+
+    /**
+     * Calculates the discounted amount based on the principal and advance percentage from the associated Line of
+     * Credit. This method: 1. Retrieves the loan's associated Line of Credit 2. Gets the advance percentage from the
+     * LOC 3. Calculates the discounted amount as principal * advance_percentage
+     *
+     * @param loanId
+     *            the loan ID
+     * @param principal
+     *            the principal amount to be discounted
+     * @return the discounted amount (principal * advance_percentage), or null if no LOC association exists
+     */
+    public BigDecimal calculateDiscountedAmount(Long loanId, LoanLineOfCreditParams lineOfCreditParams, BigDecimal principal) {
+
+        BigDecimal advancePercentage = lineOfCreditParams.getLineOfCredit().getAdvancePercentage();
+
+        if (advancePercentage == null) {
+            throw new PlatformApiDataValidationException("error.msg.loc.discounted.amount.calculation.failed",
+                    "Failed to calculate discounted amount from Line of Credit", "loanId", loanId);
+        }
+
+        BigDecimal advancePercentageDecimal = advancePercentage.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
+        return principal.multiply(advancePercentageDecimal);
 
     }
 

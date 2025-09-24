@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import java.math.BigDecimal;
 import java.util.List;
 import org.apache.fineract.organisation.monetary.domain.Money;
@@ -22,20 +21,14 @@ public class CustomLoanInterestCalculationService {
      * interest calculations to override the interest amounts with the expected interest for RECEIVABLE loans
      *
      * @param loan
-     *            The loan to adjust interest calculations for
-     * @param productType
-     *            The LOC product type ("RECEIVABLE" or "PAYABLE")
+     *            The loan to adjust interest calculations for The LOC product type ("RECEIVABLE" or "PAYABLE")
      * @param expectedInterest
      *            The expected interest amount for the loan
      * @return true if adjustments were made, false otherwise
      */
     @Transactional
-    public boolean adjustInterestCalculationsForReceivableLoan(Loan loan, String productType, BigDecimal expectedInterest) {
+    public boolean adjustInterestCalculationsForReceivableLoan(Loan loan, BigDecimal expectedInterest) {
         try {
-            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
-                return false;
-            }
-
             if (expectedInterest == null) {
                 return false;
             }
@@ -91,32 +84,6 @@ public class CustomLoanInterestCalculationService {
             }
 
             return true;
-
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /**
-     * Adjusts interest calculations for rescheduling of RECEIVABLE LOC loans This method recalculates the interest for
-     * rescheduled loans using the expected interest
-     *
-     * @param loan
-     *            The loan being rescheduled
-     * @param productType
-     *            The LOC product type ("RECEIVABLE" or "PAYABLE")
-     * @param expectedInterest
-     *            The expected interest amount for the loan
-     * @return true if adjustments were made, false otherwise
-     */
-    @Transactional
-    public boolean adjustInterestCalculationsForRescheduling(Loan loan, String productType, BigDecimal expectedInterest) {
-        try {
-            if (!LocProductType.RECEIVABLE.name().equals(productType)) {
-                return false;
-            }
-
-            return adjustInterestCalculationsForReceivableLoan(loan, productType, expectedInterest);
 
         } catch (Exception e) {
             return false;
