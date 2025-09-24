@@ -179,4 +179,8 @@ public interface LoanProductConstants {
 
     // Line of Credit
     String IS_LOC_ENABLED_PARAM_NAME = "isLocEnabled";
+
+    // Factor Rate Product
+    String FACTOR_RATE_PRODUCT_ENABLED_PARAM_NAME = "factorRateProductEnabled";
+    String FACTOR_RATE_PARAM_NAME = "factorRate";
 }
