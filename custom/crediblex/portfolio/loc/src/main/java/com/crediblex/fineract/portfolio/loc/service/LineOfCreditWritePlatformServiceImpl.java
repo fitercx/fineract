@@ -116,6 +116,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
+
                         throw new PlatformApiDataValidationException("error.msg.loc.charge.invalid.appliesTo",
                                 "Charge not configured for Line Of Credit", "chargeId");
                     }
@@ -138,8 +139,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         overrideAmount = fromJsonHelper.extractBigDecimalNamed("amount", charge, Locale.ENGLISH);
                     }
 
-                    Boolean isActive = fromJsonHelper.extractBooleanNamed("active", charge);
-                    LineOfCreditCharge instance = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount, isActive);
+                    LineOfCreditCharge instance = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
+                    instance.setLineOfCredit(lineOfCredit);
                     newCharges.add(instance);
 
                     log.debug("Created LOC charge: chargeId={}, amount={}, overrideAmount={}", chargeId, instance.getAmount(),
@@ -202,11 +203,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         idx++;
                         continue;
                     }
-                    Long chargeId = fromJsonHelper.extractLongNamed("chargeId", chargeElem);
-                    if (chargeId == null) {
-                        throw new PlatformApiDataValidationException("error.msg.loc.charge.chargeId.required", "Charge chargeId required",
-                                "charges[" + idx + "]");
-                    }
+                    Long chargeId = chargeElem.getAsJsonObject().get("id").getAsLong();
+
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
                         throw new PlatformApiDataValidationException("error.msg.loc.charge.invalid.appliesTo",
@@ -224,8 +222,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed("overrideAmount", chargeElem));
                     }
 
-                    Boolean isActive = fromJsonHelper.extractBooleanNamed("active", chargeElem);
-                    LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount, isActive);
+                    LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
+                    newCharge.setLineOfCredit(lineOfCredit);
                     newCharges.add(newCharge);
                     idx++;
                 }
