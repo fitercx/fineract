@@ -23,6 +23,12 @@ public class LineOfCreditRepositoryWrapper {
                 .orElseThrow(() -> new LineOfCreditNotFoundException("with externalId: " + externalId));
     }
 
+    public void findByExternalIdWithFoundException(final String externalId) {
+        this.lineOfCreditRepository.findByExternalId(externalId).ifPresent(t -> {
+            throw new LineOfCreditNotFoundException("Line of Credit with externalId: " + externalId + " already exists");
+        });
+    }
+
     public void delete(final LineOfCredit loc) {
         this.lineOfCreditRepository.delete(loc);
     }

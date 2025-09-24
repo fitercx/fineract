@@ -87,7 +87,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         LineOfCreditRequest lcr = this.dataValidator.validateForCreate(command.json());
         LineOfCredit lineOfCredit = this.lineOfCreditAssembler.assembleFrom(lcr, clientId);
 
-        lineOfCreditRepository.findByExternalIdWithNotFoundDetection(lineOfCredit.getExternalId());
+        lineOfCreditRepository.findByExternalIdWithFoundException(lineOfCredit.getExternalId());
 
         if (command.hasParameter("charges")) {
             JsonElement root = fromJsonHelper.parse(command.json());

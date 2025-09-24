@@ -1073,7 +1073,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled")
                 && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
             isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
-            lineOfCreditSummaries = this.lineOfCreditRepository.findActiveSummariesByCurrency(loanProduct.getCurrency().getCode());
+            lineOfCreditSummaries = this.lineOfCreditRepository
+                    .findActiveSummariesByCurrencyAndClientId(loanProduct.getCurrency().getCode(), clientId);
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();

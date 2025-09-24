@@ -37,13 +37,17 @@ public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long
             SELECT new com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary(
                 l.id,
                 l.externalId,
-                l.productType
+                l.productType,
+                l.annualInterestRate,
+                l.summary.availableBalance,
+                l.advancePercentage
             )
             FROM LineOfCredit l
             WHERE l.status = com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE
-              AND l.currency = :currency
+              AND l.currency = :currency AND l.client.id = :clientId
             """)
-    List<LineOfCreditSummary> findActiveSummariesByCurrency(@Param("currency") String currency);
+    List<LineOfCreditSummary> findActiveSummariesByCurrencyAndClientId(@Param("currency") String currency,
+            @Param("clientId") Long clientId);
 
     Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
 
