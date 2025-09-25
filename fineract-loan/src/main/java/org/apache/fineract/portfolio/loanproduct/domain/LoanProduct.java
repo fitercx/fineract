@@ -233,6 +233,12 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "repayment_start_date_type_enum", nullable = false)
     private RepaymentStartDateType repaymentStartDateType;
 
+    @Column(name = "is_factor_rate_product")
+    private boolean factorRateProductEnabled;
+
+    @Column(name = "factor_rate")
+    private BigDecimal factorRate;
+
     public void updateLoanProductInRelatedClasses() {
         if (this.isInterestRecalculationEnabled()) {
             this.productInterestRecalculationDetails.updateProduct(this);

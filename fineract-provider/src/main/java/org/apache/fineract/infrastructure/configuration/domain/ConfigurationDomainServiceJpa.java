@@ -527,4 +527,11 @@ public class ConfigurationDomainServiceJpa implements ConfigurationDomainService
     public boolean isImmediateChargeAccrualPostMaturityEnabled() {
         return getGlobalConfigurationPropertyData(GlobalConfigurationConstants.ENABLE_IMMEDIATE_CHARGE_ACCRUAL_POST_MATURITY).isEnabled();
     }
+
+    @Override
+    public Long retrieveMaximumProductFactorRate() {
+        final GlobalConfigurationPropertyData property = getGlobalConfigurationPropertyData(
+                GlobalConfigurationConstants.MAXIMUM_PRODUCT_FACTOR_RATE);
+        return property.getValue();
+    }
 }
