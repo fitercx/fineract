@@ -315,7 +315,7 @@ public class OdooJournalEntryService {
         JournalEntry firstEntry = journalEntries.get(0);
         moveValues.put("journal_id", journalId);
         moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
-        moveValues.put("ref", "Fineract Loan " + loanId + " - JEs: " + 
+        moveValues.put("ref", "Haider Loan " + loanId + " - JEs: " + 
             journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
         moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
 
@@ -378,7 +378,7 @@ public class OdooJournalEntryService {
                     line.put("credit", netAmount.abs());
                 }
                 
-                line.put("name", "Fineract consolidated entry for account " + accountId);
+                line.put("name", "Haider consolidated entry for account " + accountId);
                 
                 // Add line using Odoo's line creation format: (0, 0, values)
                 lines.add(Arrays.asList(0, 0, line));
@@ -393,7 +393,7 @@ public class OdooJournalEntryService {
      */
     private String buildLoanNarration(Long loanId, List<JournalEntry> journalEntries) {
         StringBuilder narration = new StringBuilder();
-        narration.append("Fineract Loan ID: ").append(loanId);
+        narration.append("Haider Loan ID: ").append(loanId);
         narration.append("\nJournal Entries: ");
         
         journalEntries.forEach(entry -> {
