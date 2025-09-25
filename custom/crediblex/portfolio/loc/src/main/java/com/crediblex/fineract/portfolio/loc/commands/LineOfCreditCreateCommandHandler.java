@@ -19,7 +19,6 @@
 
 package com.crediblex.fineract.portfolio.loc.commands;
 
-import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +42,7 @@ public class LineOfCreditCreateCommandHandler implements NewCommandSourceHandler
     @Override
     @Transactional
     public CommandProcessingResult processCommand(JsonCommand command) {
-        return this.writePlatformService.createLineOfCredit(command);
+        return this.writePlatformService.createLineOfCredit(command, command.getClientId());
 
     }
 }

@@ -34,4 +34,3 @@ class LocChargeConstantsTest {
         assertThat(LocChargeConstants.isSupportedChargeTime(null)).isFalse();
     }
 }
-

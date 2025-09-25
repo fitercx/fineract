@@ -42,7 +42,8 @@ class LineOfCreditChargeDomainServiceTest {
     @Test
     @DisplayName("Create flat specified due date charge")
     void createFlatSpecifiedDueDate() {
-        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT, BigDecimal.valueOf(50), false, null, null);
+        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT, BigDecimal.valueOf(50), false, null,
+                null);
         var applied = service.create(loc, charge, null, LocalDate.now().plusDays(3), null, null);
         assertThat(applied.getAmount()).isEqualTo(BigDecimal.valueOf(50));
         assertThat(applied.getAmountOutstanding()).isEqualTo(BigDecimal.valueOf(50));
@@ -52,8 +53,8 @@ class LineOfCreditChargeDomainServiceTest {
     @Test
     @DisplayName("Percent charge base applied later")
     void percentChargeApplyBase() {
-        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.PERCENT_OF_AMOUNT, BigDecimal.valueOf(10), false,
-                null, null); // 10%
+        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.PERCENT_OF_AMOUNT, BigDecimal.valueOf(10),
+                false, null, null); // 10%
         var applied = service.create(loc, charge, null, LocalDate.now().plusDays(1), null, null);
         assertThat(applied.getAmount()).isZero(); // not computed yet
         service.applyPercentBase(applied, BigDecimal.valueOf(200));
@@ -64,7 +65,8 @@ class LineOfCreditChargeDomainServiceTest {
     @Test
     @DisplayName("Partial then full payment")
     void payInTwoSteps() {
-        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT, BigDecimal.valueOf(100), false, null, null);
+        Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT, BigDecimal.valueOf(100), false, null,
+                null);
         var applied = service.create(loc, charge, null, LocalDate.now().plusDays(2), null, null);
         service.pay(applied, BigDecimal.valueOf(30));
         assertThat(applied.getAmountOutstanding()).isEqualByComparingTo("70");
@@ -95,8 +97,7 @@ class LineOfCreditChargeDomainServiceTest {
     void rejectUnsupportedCalcType() {
         Charge charge = mockCharge(ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.PERCENT_OF_DISBURSEMENT_AMOUNT,
                 BigDecimal.valueOf(5), false, null, null);
-        assertThrows(IllegalArgumentException.class,
-                () -> service.create(loc, charge, null, LocalDate.now().plusDays(1), null, null));
+        assertThrows(IllegalArgumentException.class, () -> service.create(loc, charge, null, LocalDate.now().plusDays(1), null, null));
     }
 
     @Test

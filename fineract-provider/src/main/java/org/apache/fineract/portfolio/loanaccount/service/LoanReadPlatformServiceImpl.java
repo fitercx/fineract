@@ -152,7 +152,7 @@ import org.springframework.util.CollectionUtils;
 public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, LoanReadPlatformServiceCommon {
 
     protected final JdbcTemplate jdbcTemplate;
-    private final PlatformSecurityContext context;
+    protected final PlatformSecurityContext context;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
     protected final LoanProductReadPlatformService loanProductReadPlatformService;
@@ -164,14 +164,14 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     protected final CodeValueReadPlatformService codeValueReadPlatformService;
     private final CalendarReadPlatformService calendarReadPlatformService;
     private final StaffReadPlatformService staffReadPlatformService;
-    private final PaginationHelper paginationHelper;
+    protected final PaginationHelper paginationHelper;
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
     private final FloatingRatesReadPlatformService floatingRatesReadPlatformService;
     private final LoanUtilService loanUtilService;
     private final ConfigurationDomainService configurationDomainService;
     protected final AccountDetailsReadPlatformService accountDetailsReadPlatformService;
-    private final ColumnValidator columnValidator;
+    protected final ColumnValidator columnValidator;
     protected final DatabaseSpecificSQLGenerator sqlGenerator;
     protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
     private final LoanTransactionRepository loanTransactionRepository;
@@ -363,12 +363,6 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                 sqlBuilder.append(" and l.client_id = ?");
                 extraCriterias.add(searchParameters.getClientId());
                 arrayPos = arrayPos + 1;
-            }
-
-            if(searchParameters.getLocId() != null){
-                sqlBuilder.append(" and l.line_of_credit_id = ?");
-                extraCriterias.add(searchParameters.getLocId());
-                arrayPos = arrayPos +1;
             }
 
             if (searchParameters.hasOrderBy()) {
@@ -647,12 +641,12 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
         return loanId;
     }
 
-    private static final class LoanMapper implements RowMapper<LoanAccountData> {
+    public static final class LoanMapper implements RowMapper<LoanAccountData> {
 
         private final DatabaseSpecificSQLGenerator sqlGenerator;
         private final DelinquencyReadPlatformService delinquencyReadPlatformService;
 
-        LoanMapper(DatabaseSpecificSQLGenerator sqlGenerator, DelinquencyReadPlatformService delinquencyReadPlatformService) {
+        public LoanMapper(DatabaseSpecificSQLGenerator sqlGenerator, DelinquencyReadPlatformService delinquencyReadPlatformService) {
             this.sqlGenerator = sqlGenerator;
             this.delinquencyReadPlatformService = delinquencyReadPlatformService;
         }

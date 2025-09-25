@@ -19,23 +19,28 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
+
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
-
+import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
+import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.util.*;
-import java.sql.Date;
-
-import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
-import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
-import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -46,7 +51,9 @@ import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
+import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
+import org.apache.fineract.infrastructure.core.service.SearchParameters;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
@@ -74,17 +81,36 @@ import org.apache.fineract.portfolio.fund.data.FundData;
 import org.apache.fineract.portfolio.fund.service.FundReadPlatformService;
 import org.apache.fineract.portfolio.group.data.GroupGeneralData;
 import org.apache.fineract.portfolio.group.service.GroupReadPlatformService;
-import org.apache.fineract.portfolio.loanaccount.data.*;
-import org.apache.fineract.portfolio.loanaccount.domain.*;
+import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanInterestRecalculationData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanSummaryData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
+import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLoanData;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSubStatus;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleProcessingType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
-import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTransactionMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
-import org.apache.fineract.portfolio.loanaccount.service.*;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargePaidByReadService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl;
+import org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanTransactionRelationReadService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanproduct.data.TransactionProcessingStrategyData;
 import org.apache.fineract.portfolio.loanproduct.domain.InterestMethod;
 import org.apache.fineract.portfolio.loanproduct.service.LoanDropdownReadPlatformService;
@@ -92,13 +118,12 @@ import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
 import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
+import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-
-import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
 @Service
 @Primary
@@ -109,7 +134,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final PlatformSecurityContext context;
     private final LineOfCreditRepository lineOfCreditRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
@@ -126,7 +150,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             ColumnValidator columnValidator, DatabaseSpecificSQLGenerator sqlGenerator,
             DelinquencyReadPlatformService delinquencyReadPlatformService, LoanTransactionRepository loanTransactionRepository,
             LoanChargePaidByReadService loanChargePaidByReadService, LoanTransactionRelationReadService loanTransactionRelationReadService,
-            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper, LoanMapper loanMapper,
+            LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper,
+            org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
             CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
@@ -141,7 +166,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
-        this.context = context;
         this.lineOfCreditRepository = lineOfCreditRepository;
     }
 
@@ -163,11 +187,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         boolean manuallyReversed = false;
         final Collection<PaymentTypeData> paymentTypeOptions = paymentTypeReadPlatformService.retrieveAllPaymentTypes();
 
-        return new LoanTransactionData(
-                null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
-                principalPortion, interestDue, feeDue, penaltyDue, null, null, paymentTypeOptions,
-                ExternalId.empty(), null, null, null, manuallyReversed, loanId, ExternalId.empty()
-        );
+        return new LoanTransactionData(null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
+                principalPortion, interestDue, feeDue, penaltyDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null, null,
+                manuallyReversed, loanId, ExternalId.empty());
     }
 
     @Override
@@ -197,7 +219,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         boolean isOverdue = period.getDueDate().isBefore(DateUtils.getLocalDateOfTenant());
-        
+
         Money penaltyAmount = Money.of(currencyData, period.getPenaltyChargesDue());
         Money totalPaidAmount = Money.of(currencyData, period.getTotalPaidForPeriod());
 
@@ -221,7 +243,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return ExtendedLoanSchedulePeriodData.Status.SCHEDULED;
     }
 
-
     @Override
     public LoanAccountData retrieveOne(final Long loanId) {
 
@@ -242,17 +263,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             sqlBuilder.append(" left join m_office transferToOffice on transferToOffice.id = c.transfer_to_office_id ");
             sqlBuilder.append(" where l.id=? and ( o.hierarchy like ? or transferToOffice.hierarchy like ?)");
 
-            final List<LoanTermVariationsData> loanTermVariationsData = this.jdbcTemplate.query(loanTermsVariationSql,loanTermsVariationsRowMapper, loanId);
-            final List<LoanSchedulePeriodData> loanSchedulePeriodData = this.jdbcTemplate.query(loanSchedulePeriodSql, loanSchedulePeriodRowMapper, loanId);
-            final LoanAccountData loanAccountData = this.jdbcTemplate.queryForObject(sqlBuilder.toString(), loanRowMapper, loanId, hierarchySearchString, hierarchySearchString);
+            final List<LoanTermVariationsData> loanTermVariationsData = this.jdbcTemplate.query(loanTermsVariationSql,
+                    loanTermsVariationsRowMapper, loanId);
+            final List<LoanSchedulePeriodData> loanSchedulePeriodData = this.jdbcTemplate.query(loanSchedulePeriodSql,
+                    loanSchedulePeriodRowMapper, loanId);
+            final LoanAccountData loanAccountData = this.jdbcTemplate.queryForObject(sqlBuilder.toString(), loanRowMapper, loanId,
+                    hierarchySearchString, hierarchySearchString);
 
-            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData.buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData);
+            List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData
+                    .buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData);
 
             if (loanAccountData instanceof ExtendedLoanAccountData extended) {
-                extended.addCustomParameter(
-                        LoanAccountAdditionalProperties.LOAN_INTEREST_VARIATIONS,
-                        loanInterestVariationsData
-                );
+                extended.addCustomParameter(LoanAccountAdditionalProperties.LOAN_INTEREST_VARIATIONS, loanInterestVariationsData);
             }
             return loanAccountData;
         } catch (final EmptyResultDataAccessException e) {
@@ -260,74 +282,70 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
     }
 
-        private static final class LoanTermVariationsMapper implements RowMapper<LoanTermVariationsData> {
+    private static final class LoanTermVariationsMapper implements RowMapper<LoanTermVariationsData> {
 
         LoanTermVariationsMapper() {}
-            @Override
-            public LoanTermVariationsData mapRow(ResultSet rs, int rowNum) throws SQLException {
-                Date applicableSqlDate = rs.getDate("applicable_date");
-                LocalDate applicableDate = (applicableSqlDate != null) ? ((java.sql.Date) applicableSqlDate).toLocalDate() : null;
 
-                Date valueSqlDate = rs.getDate("date_value");
-                LocalDate dateValue = (valueSqlDate != null) ? ((java.sql.Date) valueSqlDate).toLocalDate() : null;
+        @Override
+        public LoanTermVariationsData mapRow(ResultSet rs, int rowNum) throws SQLException {
+            Date applicableSqlDate = rs.getDate("applicable_date");
+            LocalDate applicableDate = (applicableSqlDate != null) ? ((java.sql.Date) applicableSqlDate).toLocalDate() : null;
 
-                // Safe extraction for numeric
-                BigDecimal decimalValue = rs.getBigDecimal("decimal_value"); // getBigDecimal already returns null if column is null
+            Date valueSqlDate = rs.getDate("date_value");
+            LocalDate dateValue = (valueSqlDate != null) ? ((java.sql.Date) valueSqlDate).toLocalDate() : null;
 
-                // Safe extraction for boolean: use getObject to handle SQL NULL properly
-                Boolean isSpecificToInstallment = rs.getObject("is_specific_to_installment") != null
-                        ? rs.getBoolean("is_specific_to_installment")
-                        : null;
-                return new LoanTermVariationsData(
-                        rs.getLong("id"),
-                        rs.getInt("term_type"),
-                        applicableDate,
-                        decimalValue,
-                        dateValue,
-                        isSpecificToInstallment != null && isSpecificToInstallment // convert to primitive if your constructor needs boolean
-                );
-            }
+            // Safe extraction for numeric
+            BigDecimal decimalValue = rs.getBigDecimal("decimal_value"); // getBigDecimal already returns null if column
+                                                                         // is null
 
-            public String loanTermVariationSchema() {
-                return """
-            WITH ranked_variations AS (
-                SELECT
-                    id,
-                    term_type,
-                    applicable_date,
-                    decimal_value,
-                    date_value,
-                    is_specific_to_installment,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY applicable_date
-                        ORDER BY created_on_utc DESC
-                    ) AS rn
-                FROM m_loan_term_variations
-                WHERE loan_id = ?
-                      AND term_type = 10
-            )
-            SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
-            FROM ranked_variations
-            WHERE rn = 1
-            ORDER BY applicable_date
-            """;
-            }
+            // Safe extraction for boolean: use getObject to handle SQL NULL properly
+            Boolean isSpecificToInstallment = rs.getObject("is_specific_to_installment") != null
+                    ? rs.getBoolean("is_specific_to_installment")
+                    : null;
+            return new LoanTermVariationsData(rs.getLong("id"), rs.getInt("term_type"), applicableDate, decimalValue, dateValue,
+                    isSpecificToInstallment != null && isSpecificToInstallment // convert to primitive if your
+                                                                               // constructor needs boolean
+            );
+        }
+
+        public String loanTermVariationSchema() {
+            return """
+                    WITH ranked_variations AS (
+                        SELECT
+                            id,
+                            term_type,
+                            applicable_date,
+                            decimal_value,
+                            date_value,
+                            is_specific_to_installment,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY applicable_date
+                                ORDER BY created_on_utc DESC
+                            ) AS rn
+                        FROM m_loan_term_variations
+                        WHERE loan_id = ?
+                              AND term_type = 10
+                    )
+                    SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
+                    FROM ranked_variations
+                    WHERE rn = 1
+                    ORDER BY applicable_date
+                    """;
+        }
     }
 
     private static final class LoanSchedulePeriodMapper implements RowMapper<LoanSchedulePeriodData> {
 
         LoanSchedulePeriodMapper() {}
+
         @Override
         public LoanSchedulePeriodData mapRow(ResultSet rs, int rowNum) throws SQLException {
-            return LoanSchedulePeriodData.repaymentOnlyPeriod(
-                    rs.getInt("installment"),
-                    toLocalDateSafe(rs.getDate("fromdate")),
-                    toLocalDateSafe(rs.getDate("duedate")),
-                    BigDecimal.ZERO,   // principalDue
-                    BigDecimal.ZERO,   // outstandingLoanBalance
-                    BigDecimal.ZERO,   // interestDue
-                    BigDecimal.ZERO,   // feeDue
-                    BigDecimal.ZERO    // penaltyDue
+            return LoanSchedulePeriodData.repaymentOnlyPeriod(rs.getInt("installment"), toLocalDateSafe(rs.getDate("fromdate")),
+                    toLocalDateSafe(rs.getDate("duedate")), BigDecimal.ZERO, // principalDue
+                    BigDecimal.ZERO, // outstandingLoanBalance
+                    BigDecimal.ZERO, // interestDue
+                    BigDecimal.ZERO, // feeDue
+                    BigDecimal.ZERO // penaltyDue
             );
         }
 
@@ -337,14 +355,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         public String loanSchedulePeriodSchema() {
             return """
-        select
-            installment,
-            fromdate,
-            duedate
-        from m_loan_repayment_schedule mlrs 
-        where loan_id = ? 
-        order by installment asc
-        """;
+                    select
+                        installment,
+                        fromdate,
+                        duedate
+                    from m_loan_repayment_schedule mlrs
+                    where loan_id = ?
+                    order by installment asc
+                    """;
         }
 
     }
@@ -450,7 +468,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " topup.topup_amount as topupAmount, l.last_closed_business_date as lastClosedBusinessDate,l.overpaidon_date as overpaidOnDate, "
                     + " l.is_charged_off as isChargedOff, l.charge_off_reason_cv_id as chargeOffReasonId, codec.code_value as chargeOffReason, l.charged_off_on_date as chargedOffOnDate, l.enable_down_payment as enableDownPayment, l.disbursed_amount_percentage_for_down_payment as disbursedAmountPercentageForDownPayment, l.enable_auto_repayment_for_down_payment as enableAutoRepaymentForDownPayment,"
                     + " cobu.username as chargedOffByUsername, cobu.firstname as chargedOffByFirstname, cobu.lastname as chargedOffByLastname, l.loan_schedule_type as loanScheduleType, l.loan_schedule_processing_type as loanScheduleProcessingType, "
-                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate " //
+                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate, "
+                    + " llocp.line_of_credit_id as lineOfCreditId, " + " llocp.invoice_no as invoiceNo, llocp.invoice_date as invoiceDate, "
+                    + " llocp.invoice_due_date as invoiceDueDate, llocp.invoice_currency as invoiceCurrency, "
+                    + " llocp.invoice_amount as invoiceAmount, llocp.disapproved_amount as disapprovedAmount, "
+                    + " llocp.approved_receivable_amount as approvedReceivableAmount, llocp.advance_percentage as advancePercentage, "
+                    + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails, "
+                    + " llocp.exchange_rate as exchangeRate, llocp.markup as markup, "
+                    + " llocp.amount_in_facility_currency as amountInFacilityCurrency, "
+                    + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
                     + " left join m_loan_recalculation_details lir on lir.loan_id = l.id join m_currency rc on rc."
@@ -470,9 +496,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " left join m_code_value codec on codec.id = l.charge_off_reason_cv_id"
                     + " left join m_product_loan_variable_installment_config lpvi on lpvi.loan_product_id = l.product_id"
                     + " left join m_loan_topup as topup on l.id = topup.loan_id"
-                    + " left join m_loan as topuploan on topuploan.id = topup.closure_loan_id ";
+                    + " left join m_loan as topuploan on topuploan.id = topup.closure_loan_id "
+                    + " left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ";
 
         }
+
         @Override
         public ExtendedLoanAccountData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
 
@@ -828,39 +856,111 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
             final Boolean isRestructured = rs.getBoolean("isRestructured");
 
-            ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(
-                    id, accountNo, status, externalId, clientId, clientAccountNo, clientName,
-                    clientOfficeId, clientExternalId, groupData, loanType, loanProductId, loanProductName, loanProductDescription,
-                    isLoanProductLinkedToFloatingRate, fundId, fundName, loanPurposeId, loanPurposeName, loanOfficerId, loanOfficerName,
-                    currencyData, proposedPrincipal, principal, approvedPrincipal, netDisbursalAmount, totalOverpaid, inArrearsTolerance,
-                    termFrequency, termPeriodFrequencyType, numberOfRepayments, repaymentEvery, repaymentFrequencyType, null, null,
-                    transactionStrategyCode, transactionStrategyName, amortizationType, interestRatePerPeriod, interestRateFrequencyType,
-                    annualInterestRate, interestType, isFloatingInterestRate, interestRateDifferential, interestCalculationPeriodType,
-                    allowPartialPeriodInterestCalcualtion, expectedFirstRepaymentOnDate, graceOnPrincipalPayment,
-                    recurringMoratoriumOnPrincipalPeriods, graceOnInterestPayment, graceOnInterestCharged, interestChargedFromDate,
-                    timeline, loanSummary, feeChargesDueAtDisbursementCharged, syncDisbursementWithMeeting, loanCounter, loanProductCounter,
-                    multiDisburseLoan, canDefineInstallmentAmount, fixedEmiAmount, outstandingLoanBalance, inArrears, graceOnArrearsAgeing,
-                    isNPA, daysInMonthType, daysInYearType, isInterestRecalculationEnabled, interestRecalculationData,
-                    createStandingInstructionAtDisbursement, isvariableInstallmentsAllowed, minimumGap, maximumGap, loanSubStatus,
-                    canUseForTopup, isTopup, closureLoanId, closureLoanAccountNo, topupAmount, isEqualAmortization,
-                    fixedPrincipalPercentagePerInstallment, delinquencyRange, disallowExpectedDisbursements, isFraud,
-                    lastClosedBusinessDate, overpaidOnDate, isChargedOff, enableDownPayment, disbursedAmountPercentageForDownPayment,
-                    enableAutoRepaymentForDownPayment, enableInstallmentLevelDelinquency, loanScheduleType.asEnumOptionData(),
-                    loanScheduleProcessingType.asEnumOptionData(), fixedLength, chargeOffBehaviour.getValueAsStringEnumOptionData(),
-                    interestRecognitionOnDisbursementDate, daysInYearCustomStrategy, enableIncomeCapitalization,
-                    capitalizedIncomeCalculationType, capitalizedIncomeStrategy
-            );
+            ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(id, accountNo, status, externalId,
+                    clientId, clientAccountNo, clientName, clientOfficeId, clientExternalId, groupData, loanType, loanProductId,
+                    loanProductName, loanProductDescription, isLoanProductLinkedToFloatingRate, fundId, fundName, loanPurposeId,
+                    loanPurposeName, loanOfficerId, loanOfficerName, currencyData, proposedPrincipal, principal, approvedPrincipal,
+                    netDisbursalAmount, totalOverpaid, inArrearsTolerance, termFrequency, termPeriodFrequencyType, numberOfRepayments,
+                    repaymentEvery, repaymentFrequencyType, null, null, transactionStrategyCode, transactionStrategyName, amortizationType,
+                    interestRatePerPeriod, interestRateFrequencyType, annualInterestRate, interestType, isFloatingInterestRate,
+                    interestRateDifferential, interestCalculationPeriodType, allowPartialPeriodInterestCalcualtion,
+                    expectedFirstRepaymentOnDate, graceOnPrincipalPayment, recurringMoratoriumOnPrincipalPeriods, graceOnInterestPayment,
+                    graceOnInterestCharged, interestChargedFromDate, timeline, loanSummary, feeChargesDueAtDisbursementCharged,
+                    syncDisbursementWithMeeting, loanCounter, loanProductCounter, multiDisburseLoan, canDefineInstallmentAmount,
+                    fixedEmiAmount, outstandingLoanBalance, inArrears, graceOnArrearsAgeing, isNPA, daysInMonthType, daysInYearType,
+                    isInterestRecalculationEnabled, interestRecalculationData, createStandingInstructionAtDisbursement,
+                    isvariableInstallmentsAllowed, minimumGap, maximumGap, loanSubStatus, canUseForTopup, isTopup, closureLoanId,
+                    closureLoanAccountNo, topupAmount, isEqualAmortization, fixedPrincipalPercentagePerInstallment, delinquencyRange,
+                    disallowExpectedDisbursements, isFraud, lastClosedBusinessDate, overpaidOnDate, isChargedOff, enableDownPayment,
+                    disbursedAmountPercentageForDownPayment, enableAutoRepaymentForDownPayment, enableInstallmentLevelDelinquency,
+                    loanScheduleType.asEnumOptionData(), loanScheduleProcessingType.asEnumOptionData(), fixedLength,
+                    chargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate, daysInYearCustomStrategy,
+                    enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
 
             // Adding custom parameters for CredibleX requirements
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 
+            extractLocDetails(extendedLoanAccountData, rs);
+
             return extendedLoanAccountData;
 
         }
-    }
-    
 
+        private void extractLocDetails(ExtendedLoanAccountData extendedLoanAccountData, ResultSet rs) throws SQLException {
+
+            // Extract LOC params fields from the result set
+            final Long locLineOfCreditId = JdbcSupport.getLong(rs, LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID);
+            final String locInvoiceNo = rs.getString(LoanAccountAdditionalProperties.INVOICE_NO);
+            final LocalDate locInvoiceDate = JdbcSupport.getLocalDate(rs, LoanAccountAdditionalProperties.INVOICE_DATE);
+            final LocalDate locInvoiceDueDate = JdbcSupport.getLocalDate(rs, LoanAccountAdditionalProperties.INVOICE_DUE_DATE);
+            final String locInvoiceCurrency = rs.getString(LoanAccountAdditionalProperties.INVOICE_CURRENCY);
+            final BigDecimal locInvoiceAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.INVOICE_AMOUNT);
+            final BigDecimal locDisapprovedAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT);
+            final BigDecimal locApprovedReceivableAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT);
+            final BigDecimal locAdvancePercentage = rs.getBigDecimal(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE);
+            final BigDecimal locAmountAfterAdvance = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE);
+            final String locBuyerDetails = rs.getString(LoanAccountAdditionalProperties.BUYER_DETAILS);
+            final BigDecimal locExchangeRate = rs.getBigDecimal(LoanAccountAdditionalProperties.EXCHANGE_RATE);
+            final BigDecimal locMarkup = rs.getBigDecimal(LoanAccountAdditionalProperties.MARKUP);
+            final BigDecimal locAmountInFacilityCurrency = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY);
+            final BigDecimal locApprovedPayableAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT);
+            final String locSupplierDetails = rs.getString(LoanAccountAdditionalProperties.SUPPLIER_DETAILS);
+
+            if (locLineOfCreditId != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID, locLineOfCreditId);
+            }
+            if (locInvoiceNo != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_NO, locInvoiceNo);
+            }
+            if (locInvoiceDate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_DATE, locInvoiceDate);
+            }
+            if (locInvoiceDueDate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, locInvoiceDueDate);
+            }
+            if (locInvoiceCurrency != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_CURRENCY, locInvoiceCurrency);
+            }
+            if (locInvoiceAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_AMOUNT, locInvoiceAmount);
+            }
+            if (locDisapprovedAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, locDisapprovedAmount);
+            }
+            if (locApprovedReceivableAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT,
+                        locApprovedReceivableAmount);
+            }
+            if (locAdvancePercentage != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, locAdvancePercentage);
+            }
+            if (locAmountAfterAdvance != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, locAmountAfterAdvance);
+            }
+            if (locBuyerDetails != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.BUYER_DETAILS, locBuyerDetails);
+            }
+            if (locExchangeRate != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.EXCHANGE_RATE, locExchangeRate);
+            }
+            if (locMarkup != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.MARKUP, locMarkup);
+            }
+            if (locAmountInFacilityCurrency != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY,
+                        locAmountInFacilityCurrency);
+            }
+            if (locApprovedPayableAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
+                        locApprovedPayableAmount);
+            }
+            if (locSupplierDetails != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, locSupplierDetails);
+            }
+
+        }
+    }
 
     @Override
     public Collection<DisbursementData> retrieveLoanDisbursementDetails(final Long loanId) {
@@ -915,7 +1015,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         this.context.authenticatedUser();
 
-        final ExtendedLoanProductData loanProduct = (ExtendedLoanProductData) this.loanProductReadPlatformService.retrieveLoanProduct(productId);
+        final ExtendedLoanProductData loanProduct = (ExtendedLoanProductData) this.loanProductReadPlatformService
+                .retrieveLoanProduct(productId);
         final Collection<EnumOptionData> loanTermFrequencyTypeOptions = this.loanDropdownReadPlatformService
                 .retrieveLoanTermFrequencyTypeOptions();
         final Collection<EnumOptionData> repaymentFrequencyTypeOptions = this.loanDropdownReadPlatformService
@@ -945,10 +1046,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Collection<ChargeData> chargeOptions = null;
         if (loanProduct.getMultiDisburseLoan()) {
             chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
-                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT});
+                    new ChargeTimeType[] { ChargeTimeType.OVERDUE_INSTALLMENT });
         } else {
             chargeOptions = this.chargeReadPlatformService.retrieveLoanProductApplicableCharges(productId,
-                    new ChargeTimeType[]{ChargeTimeType.OVERDUE_INSTALLMENT, ChargeTimeType.TRANCHE_DISBURSEMENT});
+                    new ChargeTimeType[] { ChargeTimeType.OVERDUE_INSTALLMENT, ChargeTimeType.TRANCHE_DISBURSEMENT });
         }
 
         Integer loanCycleCounter = null;
@@ -969,9 +1070,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         List<LineOfCreditSummary> lineOfCreditSummaries = null;
         Boolean isLocEnabled = false;
-        if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled") && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
+        if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled")
+                && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
             isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
-            lineOfCreditSummaries = this.lineOfCreditRepository.findActiveSummariesByCurrency(loanProduct.getCurrency().getCode());
+            lineOfCreditSummaries = this.lineOfCreditRepository
+                    .findActiveSummariesByCurrencyAndClientId(loanProduct.getCurrency().getCode(), clientId);
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();
@@ -1001,6 +1104,99 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         return loanAccountData;
 
+    }
+
+    @Override
+    public Page<LoanAccountData> retrieveAll(final SearchParameters searchParameters) {
+
+        final AppUser currentUser = this.context.authenticatedUser();
+        final String hierarchy = currentUser.getOffice().getHierarchy();
+        final String hierarchySearchString = hierarchy + "%";
+        final LoanReadPlatformServiceImpl.LoanMapper loanMapper = new LoanReadPlatformServiceImpl.LoanMapper(sqlGenerator,
+                delinquencyReadPlatformService);
+
+        final StringBuilder sqlBuilder = new StringBuilder(200);
+        sqlBuilder.append("select " + sqlGenerator.calcFoundRows() + " ");
+        sqlBuilder.append(loanMapper.loanSchema());
+
+        // TODO - for time being this will data scope list of loans returned to
+        // only loans that have a client associated.
+        // to support scenario where loan has group_id only OR client_id will
+        // probably require a UNION query
+        // but that at present is an edge case
+        sqlBuilder.append(" join m_office o on (o.id = c.office_id or o.id = g.office_id) ");
+        sqlBuilder.append(" left join m_office transferToOffice on transferToOffice.id = c.transfer_to_office_id ");
+
+        if (searchParameters.getLocId() != null) {
+            sqlBuilder.append(" left join m_loan_line_of_credit_params loc on loc.loan_id = l.id ");
+
+        }
+        sqlBuilder.append(" where ( o.hierarchy like ? or transferToOffice.hierarchy like ?)");
+
+        int arrayPos = 2;
+        List<Object> extraCriterias = new ArrayList<>();
+        extraCriterias.add(hierarchySearchString);
+        extraCriterias.add(hierarchySearchString);
+
+        if (searchParameters != null) {
+
+            if (StringUtils.isNotBlank(searchParameters.getStatus())) {
+                sqlBuilder.append(" and l.loan_status_id = ?");
+                extraCriterias.add(Integer.parseInt(searchParameters.getStatus()));
+                arrayPos = arrayPos + 1;
+            }
+
+            if (StringUtils.isNotBlank(searchParameters.getExternalId())) {
+                sqlBuilder.append(" and l.external_id = ?");
+                extraCriterias.add(searchParameters.getExternalId());
+                arrayPos = arrayPos + 1;
+            }
+            if (searchParameters.getOfficeId() != null) {
+                sqlBuilder.append("and c.office_id =?");
+                extraCriterias.add(searchParameters.getOfficeId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (StringUtils.isNotBlank(searchParameters.getAccountNo())) {
+                sqlBuilder.append(" and l.account_no = ?");
+                extraCriterias.add(searchParameters.getAccountNo());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.getClientId() != null) {
+                sqlBuilder.append(" and l.client_id = ?");
+                extraCriterias.add(searchParameters.getClientId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.getLocId() != null) {
+                sqlBuilder.append(" and loc.line_of_credit_id = ?");
+                extraCriterias.add(searchParameters.getLocId());
+                arrayPos = arrayPos + 1;
+            }
+
+            if (searchParameters.hasOrderBy()) {
+                sqlBuilder.append(" order by ").append(searchParameters.getOrderBy());
+                this.columnValidator.validateSqlInjection(sqlBuilder.toString(), searchParameters.getOrderBy());
+
+                if (searchParameters.hasSortOrder()) {
+                    sqlBuilder.append(' ').append(searchParameters.getSortOrder());
+                    this.columnValidator.validateSqlInjection(sqlBuilder.toString(), searchParameters.getSortOrder());
+                }
+            }
+
+            if (searchParameters.hasLimit()) {
+                sqlBuilder.append(" ");
+                if (searchParameters.hasOffset()) {
+                    sqlBuilder.append(sqlGenerator.limit(searchParameters.getLimit(), searchParameters.getOffset()));
+                } else {
+                    sqlBuilder.append(sqlGenerator.limit(searchParameters.getLimit()));
+                }
+            }
+        }
+        final Object[] objectArray = extraCriterias.toArray();
+        final Object[] finalObjectArray = Arrays.copyOf(objectArray, arrayPos);
+        return this.paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray, loanMapper);
     }
 
 }

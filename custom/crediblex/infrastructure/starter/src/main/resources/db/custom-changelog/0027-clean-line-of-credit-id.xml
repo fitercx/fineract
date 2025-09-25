@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+       http://www.liquibase.org/xml/ns/dbchangelog
+       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+
+        <changeSet id="1" author="crediblex">
+            <comment>Add new columns and constraints.</comment>
+            <addColumn tableName="m_line_of_credit">
+                <column name="distribution_partner" type="varchar(255)"/>
+                <column name="interest_charge_time" type="varchar(50)"/>
+                <column name="loan_officer_id" type="bigint"/>
+            </addColumn>
+            <addForeignKeyConstraint baseTableName="m_line_of_credit"
+                                     baseColumnNames="loan_officer_id"
+                                     referencedTableName="m_staff"
+                                     referencedColumnNames="id"
+                                     constraintName="fk_loc_loan_officer_m_staff"
+                                     deferrable="false" initiallyDeferred="false"/>
+        </changeSet>
+
+        <changeSet id="2" author="crediblex" >
+            <comment>Drop obsolete columns no longer in entity.</comment>
+            <dropColumn tableName="m_line_of_credit" columnName="is_interest_upfront_or_post_disbursal"/>
+            <dropColumn tableName="m_line_of_credit" columnName="loan_officer"/>
+            <dropColumn tableName="m_line_of_credit" columnName="repayment_strategy"/>
+            <dropColumn tableName="m_line_of_credit" columnName="tenor_utilized"/>
+            <dropColumn tableName="m_line_of_credit" columnName="late_payment_fee"/>
+            <dropColumn tableName="m_line_of_credit" columnName="max_per_drawdown"/>
+        </changeSet>
+
+        <changeSet id="4" author="crediblex">
+            <preConditions onFail="MARK_RAN">
+                <columnExists tableName="m_line_of_credit" columnName="review_period"/>
+            </preConditions>
+            <addColumn tableName="m_line_of_credit">
+                <column name="review_period_int" type="integer"/>
+            </addColumn>
+            <sql>
+                UPDATE m_line_of_credit
+                SET review_period_int = NULLIF(review_period,'')::int
+                WHERE review_period IS NOT NULL AND trim(review_period) &lt;&gt; '';
+            </sql>
+            <dropColumn tableName="m_line_of_credit" columnName="review_period"/>
+            <renameColumn tableName="m_line_of_credit" oldColumnName="review_period_int" newColumnName="review_period" columnDataType="integer"/>
+        </changeSet>
+
+        <changeSet id="5" author="crediblex" context="ddl">
+            <comment>Optional indexes for new columns if queried.</comment>
+            <createIndex tableName="m_line_of_credit" indexName="idx_loc_loan_officer_id">
+                <column name="loan_officer_id"/>
+            </createIndex>
+            <rollback>
+                <dropIndex tableName="m_line_of_credit" indexName="idx_loc_loan_officer_id"/>
+            </rollback>
+        </changeSet>
+
+    <changeSet id="6" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="m_loan" columnName="line_of_credit_id"/>
+        </preConditions>
+
+        <dropColumn tableName="m_loan" columnName="line_of_credit_id"/>
+    </changeSet>
+
+</databaseChangeLog>

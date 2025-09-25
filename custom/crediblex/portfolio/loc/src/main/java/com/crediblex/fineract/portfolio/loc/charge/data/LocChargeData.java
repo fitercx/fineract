@@ -8,6 +8,7 @@ import lombok.Value;
 @Value
 @Builder
 public class LocChargeData {
+
     Long id;
     Long chargeDefinitionId;
     boolean penalty;
@@ -25,4 +26,3 @@ public class LocChargeData {
     boolean waived;
     boolean active;
 }
-

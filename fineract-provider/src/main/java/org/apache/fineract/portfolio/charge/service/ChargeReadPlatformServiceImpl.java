@@ -155,9 +155,8 @@ public class ChargeReadPlatformServiceImpl implements ChargeReadPlatformService 
                 .incomeOrLiabilityAccountOptions(incomeOrLiabilityAccountOptions).taxGroupOptions(taxGroupOptions)
                 .shareChargeCalculationTypeOptions(shareChargeCalculationTypeOptions).shareChargeTimeTypeOptions(shareChargeTimeTypeOptions)
                 .lineOfCreditChargeCalculationTypeOptions(locChargeCalculationTypeOptions)
-                .lineOfCreditChargeTimeTypeOptions(locChargeTimeTypeOptions)
-                .accountMappingForChargeConfig(accountMappingForChargeConfig).expenseAccountOptions(expenseAccountOptions)
-                .assetAccountOptions(assetAccountOptions).build();
+                .lineOfCreditChargeTimeTypeOptions(locChargeTimeTypeOptions).accountMappingForChargeConfig(accountMappingForChargeConfig)
+                .expenseAccountOptions(expenseAccountOptions).assetAccountOptions(assetAccountOptions).build();
     }
 
     @Override

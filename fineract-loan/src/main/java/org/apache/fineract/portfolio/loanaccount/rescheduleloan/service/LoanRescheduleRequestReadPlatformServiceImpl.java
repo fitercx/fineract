@@ -185,7 +185,6 @@ public class LoanRescheduleRequestReadPlatformServiceImpl implements LoanResched
 
     }
 
-
     protected static final class LoanRescheduleRequestRowMapperForBulkApproval implements RowMapper<LoanRescheduleRequestData> {
 
         public String schema() {

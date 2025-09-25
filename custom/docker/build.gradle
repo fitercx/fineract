@@ -20,6 +20,7 @@ description = 'Fineract Custom Docker Image'
 
 apply plugin: 'java'
 apply plugin: 'com.google.cloud.tools.jib'
+apply plugin: 'io.swagger.core.v3.swagger-gradle-plugin'
 apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.dependencies.gradle"
 
 jib {
@@ -109,4 +110,142 @@ jib {
             println "Building to local Docker daemon: fineract-custom:latest"
         }
     }
+}
+
+
+import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
+import org.apache.tools.ant.filters.ReplaceTokens
+
+tasks.register('prepareCustomInputYaml') {
+    outputs.file("${buildDir}/tmp/swagger/fineract-custom-input.yaml")
+
+    doLast {
+        copy {
+            from file("${rootDir}/fineract-provider/config/swagger/fineract-input.yaml.template")
+            into file("${buildDir}/tmp/swagger")
+            rename { String filename -> return 'fineract-custom-input.yaml' }
+            filter(ReplaceTokens, tokens: [VERSION: "${project.version}".toString()])
+        }
+    }
+}
+
+resolve {
+    logging.captureStandardOutput LogLevel.INFO
+    outputFileName = 'fineract-custom'
+    outputFormat = 'JSONANDYAML'
+    prettyPrint = false
+    classpath = sourceSets.main.runtimeClasspath
+    buildClasspath = classpath
+    outputDir = file("${buildDir}/classes/java/main/static")
+    openApiFile = file("${buildDir}/tmp/swagger/fineract-custom-input.yaml")
+    sortOutput = true
+    dependsOn(prepareCustomInputYaml)
+}
+
+// Task to merge core fineract.json with custom fineract-custom.json
+tasks.register('mergeSwaggerSpecs') {
+    description = 'Merge core fineract.json with custom APIs to create unified swagger spec'
+
+    def coreSwaggerFile = file("${rootDir}/fineract-provider/build/classes/java/main/static/fineract.json")
+    def customSwaggerFile = file("${buildDir}/classes/java/main/static/fineract-custom.json")
+    def mergedSwaggerFile = file("${buildDir}/classes/java/main/static/fineract.json")
+
+    inputs.files(coreSwaggerFile, customSwaggerFile)
+    outputs.file(mergedSwaggerFile)
+
+    dependsOn(':fineract-provider:resolve', 'resolve')
+
+    doLast {
+        if (!coreSwaggerFile.exists()) {
+            throw new GradleException("Core swagger file not found: ${coreSwaggerFile}")
+        }
+        if (!customSwaggerFile.exists()) {
+            throw new GradleException("Custom swagger file not found: ${customSwaggerFile}")
+        }
+
+        def coreSpec = new JsonSlurper().parseText(coreSwaggerFile.text)
+        def customSpec = new JsonSlurper().parseText(customSwaggerFile.text)
+
+        // Merge paths from custom spec into core spec
+        if (customSpec.paths) {
+            if (!coreSpec.paths) {
+                coreSpec.paths = [:]
+            }
+            customSpec.paths.each { path, methods ->
+                if (coreSpec.paths[path]) {
+                    // Merge methods for existing paths
+                    methods.each { method, definition ->
+                        coreSpec.paths[path][method] = definition
+                    }
+                } else {
+                    // Add new paths
+                    coreSpec.paths[path] = methods
+                }
+            }
+        }
+
+        // Merge components/schemas from custom spec into core spec
+        if (customSpec.components?.schemas) {
+            if (!coreSpec.components) {
+                coreSpec.components = [:]
+            }
+            if (!coreSpec.components.schemas) {
+                coreSpec.components.schemas = [:]
+            }
+            customSpec.components.schemas.each { schemaName, schema ->
+                coreSpec.components.schemas[schemaName] = schema
+            }
+        }
+
+        // Merge tags from custom spec into core spec
+        if (customSpec.tags) {
+            if (!coreSpec.tags) {
+                coreSpec.tags = []
+            }
+            customSpec.tags.each { tag ->
+                // Only add if tag doesn't already exist
+                if (!coreSpec.tags.find { it.name == tag.name }) {
+                    coreSpec.tags.add(tag)
+                }
+            }
+        }
+
+        // Write merged spec
+        def json = new JsonBuilder(coreSpec)
+        mergedSwaggerFile.text = json.toPrettyString()
+
+        println "Merged swagger specs: ${coreSpec.paths?.size() ?: 0} paths total"
+    }
+}
+
+// Task to copy merged swagger spec to fineract-provider for Swagger UI
+tasks.register('copyMergedSwaggerToProvider') {
+    description = 'Copy merged swagger spec to fineract-provider static resources for Swagger UI'
+
+    def mergedSwaggerFile = file("${buildDir}/classes/java/main/static/fineract.json")
+    def providerSwaggerFile = file("${rootDir}/fineract-provider/build/classes/java/main/static/fineract.json")
+
+    inputs.file(mergedSwaggerFile)
+    outputs.file(providerSwaggerFile)
+
+    dependsOn(mergeSwaggerSpecs)
+
+    doLast {
+        if (!mergedSwaggerFile.exists()) {
+            throw new GradleException("Merged swagger file not found: ${mergedSwaggerFile}")
+        }
+        // Ensure the target directory exists
+        providerSwaggerFile.parentFile.mkdirs()
+
+        // Copy merged swagger spec to replace the original
+        providerSwaggerFile.text = mergedSwaggerFile.text
+
+        println "Copied merged swagger spec to fineract-provider: ${providerSwaggerFile}"
+    }
+}
+
+// Make jib tasks depend on swagger merging
+tasks.matching { it.name.startsWith('jib') }.configureEach {
+    dependsOn(copyMergedSwaggerToProvider)
 }

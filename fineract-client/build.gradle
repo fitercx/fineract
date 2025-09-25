@@ -23,6 +23,11 @@ apply from: 'dependencies.gradle'
 
 // TODO: @vidakovic we should publish this lib to Maven Central; do in separate PR
 
+
+// Define custom swagger file path for builds that include custom APIs
+ext['customSwaggerFile'] = "$rootDir/custom/docker/build/classes/java/main/static/fineract-custom.json".toString()
+
+
 openApiMeta {
     generatorName = 'Fineract'
     packageName = 'org.apache.fineract.client'
@@ -58,6 +63,32 @@ task buildJavaSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateT
     generateApiTests = false
     ignoreFileOverride = "$projectDir/.openapi-generator-ignore"
     dependsOn(':fineract-provider:resolve')
+}
+
+// Custom client generation tasks that include paystack APIs
+task buildCustomJavaSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateTask) {
+    generatorName = 'java'
+    verbose = false
+    validateSpec = false
+    skipValidateSpec = true
+    inputSpec = "file:///$customSwaggerFile"
+    outputDir = "$buildDir/generated/temp-java-custom".toString()
+    templateDir = "$projectDir/src/main/resources/templates/java"
+    groupId = 'org.apache.fineract'
+    apiPackage = 'org.apache.fineract.client.services'
+    invokerPackage = 'org.apache.fineract.client'
+    modelPackage = 'org.apache.fineract.client.models'
+    configOptions = [
+            dateLibrary: 'java8',
+            useRxJava2: 'false',
+            library: 'retrofit2',
+            hideGenerationTimestamp: 'true',
+            containerDefaultToNull: 'true'
+    ]
+    generateModelTests = false
+    generateApiTests = false
+    ignoreFileOverride = "$projectDir/.openapi-generator-ignore"
+    dependsOn(':custom:docker:resolve')
 }
 
 task buildTypescriptAngularSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateTask){

@@ -23,19 +23,31 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
 @Schema(description = "Enum for line of credit product types")
 public enum LocProductType {
-    RECEIVABLE(1,"Receivable product type"), PAYABLE(2,"Payable product type");
+
+    RECEIVABLE(1, "Receivable product type"), PAYABLE(2, "Payable product type");
 
     private final Integer value;
     private final String description;
-
 
     LocProductType(final Integer value, final String description) {
         this.value = value;
         this.description = description;
     }
 
-
     public EnumOptionData getEnumOptionsData() {
         return new EnumOptionData(this.value.longValue(), this.name(), this.description);
+    }
+
+    public static LocProductType fromInt(final Integer productType) {
+        LocProductType locProductType = null;
+        if (productType != null) {
+            for (final LocProductType type : LocProductType.values()) {
+                if (type.value.equals(productType)) {
+                    locProductType = type;
+                    break;
+                }
+            }
+        }
+        return locProductType;
     }
 }

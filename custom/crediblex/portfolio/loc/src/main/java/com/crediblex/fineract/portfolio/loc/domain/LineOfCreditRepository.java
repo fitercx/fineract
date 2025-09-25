@@ -19,10 +19,9 @@
 
 package com.crediblex.fineract.portfolio.loc.domain;
 
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import java.util.List;
 import java.util.Optional;
-
-import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -35,16 +34,20 @@ import org.springframework.stereotype.Repository;
 public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long> {
 
     @Query("""
-        SELECT new com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary(
-            l.id,
-            l.externalId,
-            l.productType
-        )
-        FROM LineOfCredit l
-        WHERE l.status = com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE
-          AND l.currency = :currency
-        """)
-    List<LineOfCreditSummary> findActiveSummariesByCurrency(@Param("currency") String currency);
+            SELECT new com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary(
+                l.id,
+                l.externalId,
+                l.productType,
+                l.annualInterestRate,
+                l.summary.availableBalance,
+                l.advancePercentage
+            )
+            FROM LineOfCredit l
+            WHERE l.status = com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE
+              AND l.currency = :currency AND l.client.id = :clientId
+            """)
+    List<LineOfCreditSummary> findActiveSummariesByCurrencyAndClientId(@Param("currency") String currency,
+            @Param("clientId") Long clientId);
 
     Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
 

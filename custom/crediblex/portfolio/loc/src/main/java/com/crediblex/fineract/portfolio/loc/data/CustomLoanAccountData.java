@@ -24,8 +24,8 @@ import lombok.Setter;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 
 /**
- * Extension of LoanAccountData to include Line of Credit information.
- * This class adds line of credit specific fields to the standard loan account data.
+ * Extension of LoanAccountData to include Line of Credit information. This class adds line of credit specific fields to
+ * the standard loan account data.
  */
 @Getter
 @Setter
@@ -41,16 +41,20 @@ public class CustomLoanAccountData extends LoanAccountData {
      * Default constructor.
      */
     public CustomLoanAccountData() {
-        super();
+
     }
 
     /**
      * Constructor that takes a base LoanAccountData and adds line of credit information.
      *
-     * @param baseData the base loan account data
-     * @param lineOfCreditId the line of credit ID
-     * @param lineOfCreditName the line of credit name
-     * @param lineOfCreditExternalId the line of credit external ID
+     * @param baseData
+     *            the base loan account data
+     * @param lineOfCreditId
+     *            the line of credit ID
+     * @param lineOfCreditName
+     *            the line of credit name
+     * @param lineOfCreditExternalId
+     *            the line of credit external ID
      */
     public CustomLoanAccountData(LoanAccountData baseData, Long lineOfCreditId, String lineOfCreditName, String lineOfCreditExternalId) {
         // Copy basic fields from base data using reflection or manual copying
@@ -112,7 +116,7 @@ public class CustomLoanAccountData extends LoanAccountData {
             this.setLocale(baseData.getLocale());
             this.setDateFormat(baseData.getDateFormat());
         }
-        
+
         // Set line of credit specific fields
         this.lineOfCreditId = lineOfCreditId;
         this.lineOfCreditName = lineOfCreditName;

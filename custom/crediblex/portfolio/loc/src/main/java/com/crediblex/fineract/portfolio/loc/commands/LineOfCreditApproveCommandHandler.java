@@ -24,4 +24,3 @@ public class LineOfCreditApproveCommandHandler implements NewCommandSourceHandle
         return this.writePlatformService.approveLineOfCredit(command.entityId(), command);
     }
 }
-

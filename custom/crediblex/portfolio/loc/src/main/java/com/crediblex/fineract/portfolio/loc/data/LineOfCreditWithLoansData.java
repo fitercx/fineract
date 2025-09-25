@@ -26,8 +26,8 @@ import lombok.RequiredArgsConstructor;
 import org.apache.fineract.portfolio.accountdetails.data.LoanAccountSummaryData;
 
 /**
- * Data object representing a Line of Credit with its associated loans.
- * This is used by the ResultSetExtractor to efficiently group LOC data with loan data.
+ * Data object representing a Line of Credit with its associated loans. This is used by the ResultSetExtractor to
+ * efficiently group LOC data with loan data.
  */
 @Getter
 @RequiredArgsConstructor

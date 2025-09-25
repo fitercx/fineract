@@ -4,6 +4,12 @@ import com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDT
 import com.crediblex.fineract.accounting.journalentry.journalentry.CustomLoanDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeDataDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomLoanChargePaidByDTO;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.fineract.accounting.closure.domain.GLClosureRepository;
 import org.apache.fineract.accounting.financialactivityaccount.domain.FinancialActivityAccountRepositoryWrapper;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
@@ -29,27 +35,26 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
 
     private final JournalEntryRepository journalEntryRepository;
     private final BusinessEventNotifierService businessEventNotifierService;
 
-    public CustomAccountingProcessorHelper(JournalEntryRepository glJournalEntryRepository, ProductToGLAccountMappingRepository accountMappingRepository, FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository, GLAccountRepository glAccountRepository, OfficeRepository officeRepository, AccountTransfersReadPlatformService accountTransfersReadPlatformService, ChargeRepositoryWrapper chargeRepositoryWrapper, BusinessEventNotifierService businessEventNotifierService) {
-        super(glJournalEntryRepository, accountMappingRepository, financialActivityAccountRepository, closureRepository, glAccountRepository, officeRepository, accountTransfersReadPlatformService, chargeRepositoryWrapper, businessEventNotifierService);
+    public CustomAccountingProcessorHelper(JournalEntryRepository glJournalEntryRepository,
+            ProductToGLAccountMappingRepository accountMappingRepository,
+            FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository,
+            GLAccountRepository glAccountRepository, OfficeRepository officeRepository,
+            AccountTransfersReadPlatformService accountTransfersReadPlatformService, ChargeRepositoryWrapper chargeRepositoryWrapper,
+            BusinessEventNotifierService businessEventNotifierService) {
+        super(glJournalEntryRepository, accountMappingRepository, financialActivityAccountRepository, closureRepository,
+                glAccountRepository, officeRepository, accountTransfersReadPlatformService, chargeRepositoryWrapper,
+                businessEventNotifierService);
         this.journalEntryRepository = glJournalEntryRepository;
         this.businessEventNotifierService = businessEventNotifierService;
     }
 
     @Override
-    public LoanDTO populateLoanDtoFromDTO(
-            final AccountingBridgeDataDTO accountingBridgeData) {
+    public LoanDTO populateLoanDtoFromDTO(final AccountingBridgeDataDTO accountingBridgeData) {
         final Long loanId = accountingBridgeData.getLoanId();
         final Long loanProductId = accountingBridgeData.getLoanProductId();
         final Long officeId = accountingBridgeData.getOfficeId();
@@ -88,14 +93,13 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                 List<LoanChargePaidByDTO> loanChargesPaidData = loanTxnDto.getLoanChargesPaid();
                 for (final LoanChargePaidByDTO loanChargePaid : loanChargesPaidData) {
 
-
                     final Long chargeId = loanChargePaid.getChargeId();
                     final Long loanChargeId = loanChargePaid.getLoanChargeId();
                     final boolean isPenalty = loanChargePaid.getIsPenalty();
                     final BigDecimal chargeAmountPaid = loanChargePaid.getAmount();
                     final CustomChargePaymentDTO chargePaymentDTO = new CustomChargePaymentDTO(chargeId, chargeAmountPaid, loanChargeId);
 
-                    if(loanChargePaid instanceof CustomLoanChargePaidByDTO){
+                    if (loanChargePaid instanceof CustomLoanChargePaidByDTO) {
                         CustomLoanChargePaidByDTO loanChargePaidByDTO = (CustomLoanChargePaidByDTO) loanChargePaid;
                         chargePaymentDTO.setTaxGroupId(loanChargePaidByDTO.getTaxGroupId());
                         chargePaymentDTO.setIncomeGLAccountId(loanChargePaidByDTO.getIncomeGLAccountId());
@@ -103,7 +107,6 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                         chargePaymentDTO.setTaxGroupName(loanChargePaidByDTO.getTaxGroupName());
                         chargePaymentDTO.setTaxAmount(loanChargePaidByDTO.getTaxAmount());
                     }
-
 
                     if (isPenalty) {
                         penaltyPaymentDetails.add(chargePaymentDTO);
@@ -132,21 +135,24 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             newLoanTransactions.add(transaction);
         }
 
-        return new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled, upfrontAccrualBasedAccountingEnabled,
-                periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff, isLoanMarkedAsFraud,
-                chargeOffReasonCodeValue,(accountingBridgeData instanceof CustomAccountingBridgeDataDTO) ? ((CustomAccountingBridgeDataDTO)accountingBridgeData).getNetDisbursalAmount() : null);
+        return new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled,
+                upfrontAccrualBasedAccountingEnabled, periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff,
+                isLoanMarkedAsFraud, chargeOffReasonCodeValue,
+                (accountingBridgeData instanceof CustomAccountingBridgeDataDTO)
+                        ? ((CustomAccountingBridgeDataDTO) accountingBridgeData).getNetDisbursalAmount()
+                        : null);
     }
 
     public void createCreditJournalEntryForLoanCharges(final Office office, final String currencyCode, final Long loanId,
-                                                       final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
-                                                       final List<ChargePaymentDTO> chargePaymentDTOs, final boolean isTax) {
+            final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
+            final List<ChargePaymentDTO> chargePaymentDTOs, final boolean isTax) {
         createJournalEntriesForTaxPaymentInternal(office, currencyCode, loanId, transactionId, transactionDate, totalAmount,
                 chargePaymentDTOs, true);
     }
 
     private void createJournalEntriesForTaxPaymentInternal(final Office office, final String currencyCode, final Long loanId,
-                                                           final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
-                                                           final List<ChargePaymentDTO> chargePaymentDTOs, final boolean isCredit) {
+            final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
+            final List<ChargePaymentDTO> chargePaymentDTOs, final boolean isCredit) {
         final Map<GLAccount, BigDecimal> creditDetailsMap = new LinkedHashMap<>();
         for (final ChargePaymentDTO chargePaymentDTOSuper : chargePaymentDTOs) {
 

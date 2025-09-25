@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface LineOfCreditChargePaidByRepository extends JpaRepository<LineOfCreditChargePaidBy, Long> {
+
     @Query("SELECT p FROM LineOfCreditChargePaidBy p WHERE p.savingsAccountTransaction.id = :txnId")
     List<LineOfCreditChargePaidBy> findBySavingsTxn(@Param("txnId") Long txnId);
 
