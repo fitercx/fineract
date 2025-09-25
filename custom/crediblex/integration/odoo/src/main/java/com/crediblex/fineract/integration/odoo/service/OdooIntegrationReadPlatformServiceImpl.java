@@ -147,9 +147,9 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 return null;
             }
 
-            // Search for a journal with type 'general' or 'miscellaneous'
+            // Search for journal with code 'BNK5'
             List<Object> domain = Arrays.asList(
-                Arrays.asList("type", "in", Arrays.asList("general", "miscellaneous"))
+                Arrays.asList("code", "=", "BNK5")
             );
 
             List<Map<String, Object>> journals = odooApiClient.searchRead(
@@ -166,12 +166,12 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 // Cache the mapping
                 journalMappingCache.put(journalKey, journalId);
                 
-                log.debug("Using default journal ID: {} ({}) for journal entries", 
+                log.debug("Using journal ID: {} ({}) with code 'BNK5' for journal entries", 
                     journalId, journal.get("name"));
                 
                 return journalId;
             } else {
-                log.error("No suitable journal found in Odoo for journal entries");
+                log.error("No journal found in Odoo with code 'BNK5'");
                 return null;
             }
 
