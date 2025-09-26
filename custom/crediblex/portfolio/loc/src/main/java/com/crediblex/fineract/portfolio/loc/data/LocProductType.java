@@ -19,8 +19,10 @@
 package com.crediblex.fineract.portfolio.loc.data;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
+@Getter
 @Schema(description = "Enum for line of credit product types")
 public enum LocProductType {
 

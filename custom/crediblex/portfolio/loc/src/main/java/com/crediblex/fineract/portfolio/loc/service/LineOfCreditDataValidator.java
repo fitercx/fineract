@@ -88,6 +88,9 @@ public class LineOfCreditDataValidator {
 
     private void validateNewFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
 
+        // Always validate required fields for both create and edit operations
+        validateRequiredFields(request, baseDataValidator);
+
         if (request.getCashMarginType() != null) {
             baseDataValidator.reset().parameter("cashMarginType").value(request.getCashMarginType())
                     .anyOfNotNull(LocCashMarginType.FLAT.getValue(), LocCashMarginType.PERCENTAGE.getValue());
@@ -103,14 +106,40 @@ public class LineOfCreditDataValidator {
                 baseDataValidator.reset().parameter("interimReviewDate").value(interimReviewDate)
                         .failWithCode("interim.review.date.cannot.be.in.the.past");
             }
-
         }
 
         if (request.getInterestPaymentType() != null) {
             baseDataValidator.reset().parameter("interestPaymentType").value(request.getInterestPaymentType())
                     .anyOfNotNull(LocInterestChargeTime.UPFRONT.getValue(), LocInterestChargeTime.UPFRONT.getValue());
         }
+    }
 
+    /**
+     * Validates required fields that must always be present for both create and edit operations
+     */
+    private void validateRequiredFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
+        // Validate annual interest rate is always provided
+        baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().integerGreaterThanZero();
+
+        // Validate advance percentage is always provided
+        baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage()).notNull().notBlank();
+
+        // Additional validation for advance percentage - ensure it's a valid percentage
+        if (request.getAdvancePercentage() != null && !request.getAdvancePercentage().trim().isEmpty()) {
+            try {
+                BigDecimal percentage = new BigDecimal(request.getAdvancePercentage().trim());
+                if (percentage.compareTo(BigDecimal.ZERO) <= 0 || percentage.compareTo(new BigDecimal("100")) > 0) {
+                    baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage())
+                            .failWithCode("advance.percentage.invalid.range", "Advance percentage must be between 0 and 100");
+                }
+            } catch (NumberFormatException e) {
+                baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage())
+                        .failWithCode("advance.percentage.invalid.format", "Advance percentage must be a valid number");
+            }
+        }
+
+        // Validate tenor days is always provided
+        baseDataValidator.reset().parameter("tenorDays").value(request.getTenorDays()).notNull().integerGreaterThanZero();
     }
 
     /**

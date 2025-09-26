@@ -175,7 +175,7 @@ public class LoanScheduleAssembler {
         return assembleLoanApplicationTermsFrom(element, loanProduct);
     }
 
-    private LoanApplicationTerms assembleLoanApplicationTermsFrom(final JsonElement element, final LoanProduct loanProduct) {
+    protected LoanApplicationTerms assembleLoanApplicationTermsFrom(final JsonElement element, final LoanProduct loanProduct) {
 
         final Boolean allowOverridingAmortization = loanProduct.getLoanConfigurableAttributes().getAmortizationBoolean();
         final Boolean allowOverridingArrearsTolerance = loanProduct.getLoanConfigurableAttributes().getArrearsToleranceBoolean();

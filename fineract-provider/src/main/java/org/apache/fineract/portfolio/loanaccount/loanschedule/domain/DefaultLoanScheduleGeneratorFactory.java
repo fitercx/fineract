@@ -35,10 +35,11 @@ public class DefaultLoanScheduleGeneratorFactory implements LoanScheduleGenerato
         return switch (loanScheduleType) {
             case CUMULATIVE -> cumulativeLoanScheduleGenerator(interestMethod);
             case PROGRESSIVE -> progressiveLoanScheduleGenerator(interestMethod);
+            case LINE_OF_CREDIT -> null;
         };
     }
 
-    private LoanScheduleGenerator cumulativeLoanScheduleGenerator(final InterestMethod interestMethod) {
+    protected LoanScheduleGenerator cumulativeLoanScheduleGenerator(final InterestMethod interestMethod) {
         return switch (interestMethod) {
             case FLAT -> cumulativeFlatInterestLoanScheduleGenerator;
             case DECLINING_BALANCE -> cumulativeDecliningBalanceInterestLoanScheduleGenerator;
@@ -46,7 +47,7 @@ public class DefaultLoanScheduleGeneratorFactory implements LoanScheduleGenerato
         };
     }
 
-    private LoanScheduleGenerator progressiveLoanScheduleGenerator(final InterestMethod interestMethod) {
+    protected LoanScheduleGenerator progressiveLoanScheduleGenerator(final InterestMethod interestMethod) {
         return progressiveLoanScheduleGenerator;
     }
 

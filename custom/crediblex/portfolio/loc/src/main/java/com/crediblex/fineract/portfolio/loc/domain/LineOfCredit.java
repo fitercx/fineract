@@ -260,10 +260,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public Map<String, Object> update(JsonCommand command) {
         final Map<String, Object> actualChanges = new LinkedHashMap<>();
 
-        if (command.isChangeInStringParameterNamed("productType", this.productType.name())) {
-            final String newValue = command.stringValueOfParameterNamed("productType");
+        if (command.isChangeInIntegerParameterNamed("productType", this.productType.getValue())) {
+            final Integer newValue = command.integerValueOfParameterNamed("productType");
             actualChanges.put("productType", newValue);
-            this.productType = LocProductType.valueOf(newValue);
+            this.productType = LocProductType.fromInt(newValue);
         }
 
         if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {
@@ -285,10 +285,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
 
         // New fields update logic
-        if (command.isChangeInBigDecimalParameterNamed("approvedCreditFacilityAmount", this.approvedCreditFacilityAmount)) {
-            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount");
-            actualChanges.put("approvedCreditFacilityAmount", newValue);
-            this.approvedCreditFacilityAmount = newValue;
+        if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("maximumAmount");
+            actualChanges.put("maximumAmount", newValue);
+            this.maximumAmount = newValue;
         }
 
         if (command.isChangeInStringParameterNamed("externalId", this.externalId)) {
