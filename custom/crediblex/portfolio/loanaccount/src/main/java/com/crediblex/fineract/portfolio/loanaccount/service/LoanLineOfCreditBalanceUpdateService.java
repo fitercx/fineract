@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -37,8 +39,10 @@ public class LoanLineOfCreditBalanceUpdateService {
      * @param loanTransactionType
      *            the type of transaction (disbursement, repayment, refund, etc.)
      */
-    public void computeLocBalance(Long loanId, BigDecimal amount, Optional<LoanLineOfCreditParams> lineOfCreditParamsOptional,
-            LocalDate transactionDate, LoanTransactionType loanTransactionType) {
+    @Transactional
+    public void computeLocBalance(Long loanId, BigDecimal amount, BigDecimal interest,
+            Optional<LoanLineOfCreditParams> lineOfCreditParamsOptional, LocalDate transactionDate,
+            LoanTransactionType loanTransactionType) {
 
         if (lineOfCreditParamsOptional.isEmpty()) {
             return;
@@ -56,6 +60,13 @@ public class LoanLineOfCreditBalanceUpdateService {
         LocalDate latestTransactionDate = latestTransaction.map(LineOfCreditTransaction::getTransactionDate).orElse(LocalDate.MIN);
 
         boolean isBackdatedTransaction = transactionDate.isBefore(latestTransactionDate);
+
+        if (lineOfCreditParams.getLineOfCredit().getProductType() == LocProductType.RECEIVABLE
+                && (loanTransactionType.isDisbursement() || loanTransactionType.isRefundForActiveLoan())) {
+
+            amount = amount.add(interest);
+
+        }
 
         // 1. Check for insufficient balance (only relevant for real-time disbursements)
         if (loanTransactionType.isDisbursement() && currentAvailableBalance.compareTo(amount) < 0 && !isBackdatedTransaction) {

@@ -4,7 +4,6 @@ import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInsta
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
@@ -158,9 +157,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
             JdbcTemplate jdbcTemplate, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditTransactionRepository lineOfCreditTransactionRepository,
-            LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            LoanLineOfCreditBalanceUpdateService getLineOfCreditBalanceUpdateService) {
+            LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -294,10 +291,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                  */
                 recalculateSchedule = true;
             }
-            // For all LOC loans, use the approved_principal from database for LOC balance adjustments
-            BigDecimal locBalanceAmount = loan.getApprovedPrincipal().add(loan.getTotalInterest());
 
-            updateLocBalance(loanId, locBalanceAmount, actualDisbursementDate, LoanTransactionType.DISBURSEMENT);
+            updateLocBalance(loanId, loan.getApprovedPrincipal(), loan.getTotalInterest(), actualDisbursementDate,
+                    LoanTransactionType.DISBURSEMENT);
 
             regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
                     rescheduledRepaymentDate);
@@ -529,6 +525,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 disburseLoan(command, configurationDomainService.isPaymentTypeApplicableForDisbursementCharge(), paymentDetail, loan,
                         currentUser, changes, scheduleGeneratorDTO);
 
+                updateLocBalance(loan.getId(), loan.getApprovedPrincipal(), loan.getTotalInterest(), actualDisbursementDate,
+                        LoanTransactionType.DISBURSEMENT);
                 loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
                 LocalDate firstInstallmentDueDate = loan.fetchRepaymentScheduleInstallment(1).getDueDate();
@@ -658,7 +656,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
 
                 BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
-                updateLocBalance(loanId, transactionAmount, command.localDateValueOfParameterNamed("transactionDate"),
+                updateLocBalance(loanId, transactionAmount, null, command.localDateValueOfParameterNamed("transactionDate"),
                         LoanTransactionType.REPAYMENT);
 
                 // Find the specific transaction that was just created using the resourceId (transaction ID)
@@ -721,7 +719,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 transactionDate = DateUtils.getBusinessLocalDate();
             }
 
-            updateLocBalance(loanId, disbursalAmount, transactionDate, LoanTransactionType.REFUND);
+            updateLocBalance(loanId, disbursalAmount, loan.getTotalInterest(), transactionDate, LoanTransactionType.REFUND_FOR_ACTIVE_LOAN);
 
         }
         return result;
@@ -759,19 +757,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             // Reverse the LOC balance adjustments (opposite of what happens during repayment)
-            updateLocBalance(loanId, repaymentAmount, transactionDate, transactionToAdjust.getTypeOf());
+            updateLocBalance(loanId, repaymentAmount, null, transactionDate, transactionToAdjust.getTypeOf());
 
         }
 
         return result;
     }
 
-    private void updateLocBalance(Long loanId, BigDecimal amount, LocalDate transactionDate, LoanTransactionType transactionType) {
+    private void updateLocBalance(Long loanId, BigDecimal amount, BigDecimal interest, LocalDate transactionDate,
+            LoanTransactionType transactionType) {
         Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
 
         if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0 && locProductTypeOpt.isPresent()) {
             // For repayments, we reduce the LOC balance (i.e. free up credit)
-            lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, locProductTypeOpt, transactionDate, transactionType);
+            lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, interest, locProductTypeOpt, transactionDate,
+                    transactionType);
         }
 
     }
