@@ -412,15 +412,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     private void applyInitialCharges(LineOfCredit loc) {
 
-        if (loc.getSettlementSavingsAccount() == null) {
-            log.warn("No settlement savings account configured for LOC {}, skipping charge application", loc.getId());
-            return;
-        }
-
         List<LineOfCreditCharge> charges = locChargeRepository.findUnpaidOrdered(loc.getId());
         if (charges.isEmpty()) {
             log.info("No unpaid charges found for LOC {}", loc.getId());
             return;
+        }
+
+        if (loc.getSettlementSavingsAccount() == null) {
+            throw new PlatformApiDataValidationException("error.msg.loc.settlement.savings.required",
+                    "Settlement savings account required to deduct initial charges", "settlementSavingsAccountId");
         }
 
         MonetaryCurrency currency = loc.getSettlementSavingsAccount().getCurrency();
@@ -464,62 +464,46 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
-            log.info("No outstanding amount to charge for LOC {}", loc.getId());
             return;
         }
 
-        log.info("Total charge amount {} for LOC {}", total, loc.getId());
+        // Generate JSON command for savings account withdrawal
+        JsonObject object = new JsonObject();
+        object.addProperty("transactionAmount", total);
+        object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
+        object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
+        object.addProperty("locale", "en");
+        object.addProperty("paymentTypeId", 1); // Assuming 1 is a valid payment type ID
+        object.addProperty("note", "LOC charges deduction for LOC ID: " + loc.getId());
 
-        try {
-            // Generate JSON command for savings account withdrawal
-            JsonObject object = new JsonObject();
-            object.addProperty("transactionAmount", total);
-            object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
-            object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
-            object.addProperty("locale", "en");
-            object.addProperty("paymentTypeId", 1); // Assuming 1 is a valid payment type ID
-            object.addProperty("note", "LOC charges deduction for LOC ID: " + loc.getId());
+        JsonCommand withdrawalCommand = JsonCommand.from(object.toString(), object, fromJsonHelper, null, null, null, null, null, null,
+                loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
 
-            JsonCommand withdrawalCommand = JsonCommand.from(object.toString(), object, fromJsonHelper, null, null, null, null, null, null,
-                    loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
+        // Execute savings withdrawal
+        CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(),
+                withdrawalCommand);
 
-            // Execute savings withdrawal
-            CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService
-                    .withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
+        // Get the created transaction for linking to charges
+        SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
+                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.savings.transaction.not.found",
+                        "Savings transaction not found", "transactionId"));
 
-            // Get the created transaction for linking to charges
-            SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.savings.transaction.not.found",
-                            "Savings transaction not found", "transactionId"));
-
-            log.info("Created savings withdrawal transaction {} for amount {} on LOC {}", aggregateTxn.getId(), total, loc.getId());
-
-            // Allocate to each charge
-            int chargesProcessed = 0;
-            for (LineOfCreditCharge charge : charges) {
-                if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
-                    continue;
-                }
-                BigDecimal outstanding = charge.getAmountOutstanding();
-                if (outstanding == null || outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-                    continue;
-                }
-
-                locChargeDomainService.pay(charge, outstanding, false);
-                locChargeRepository.save(charge);
-
-                LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
-                locChargePaidByRepository.save(paidBy);
-
-                log.debug("Processed payment for charge {} with amount {}", charge.getId(), outstanding);
-                chargesProcessed++;
+        for (LineOfCreditCharge charge : charges) {
+            if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
+                continue;
+            }
+            BigDecimal outstanding = charge.getAmountOutstanding();
+            if (outstanding == null || outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
             }
 
-            log.info("Successfully processed {} charges for LOC {}", chargesProcessed, loc.getId());
+            locChargeDomainService.pay(charge, outstanding, false);
+            locChargeRepository.save(charge);
 
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.loc.charge.application.failed", "Failed to apply initial charges",
-                    "charges", e);
+            LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
+            locChargePaidByRepository.save(paidBy);
+
         }
+
     }
 }

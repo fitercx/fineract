@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loc.data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import lombok.Builder;
 import lombok.Getter;
@@ -16,7 +17,7 @@ public final class LineOfCreditTransactionData implements Serializable {
     private final BigDecimal amount;
     private final BigDecimal balanceBefore;
     private final BigDecimal balanceAfter;
-    private final OffsetDateTime transactionDate;
+    private final LocalDate transactionDate;
     private final String referenceNumber;
     private final String description;
     private final OffsetDateTime createdOn;

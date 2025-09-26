@@ -9,7 +9,6 @@ import com.crediblex.fineract.portfolio.loanaccount.exception.LineOfCreditIsNotA
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
-import com.google.gson.JsonObject;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,7 +19,6 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -289,49 +287,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         return Optional.empty();
     }
 
-    // TODO: Refactor method.
-    @Override
-    @Transactional
-    public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
-        try {
-            // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
-            Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLocParamsRepository.findByLoanId(loanId);
-            boolean isReceivable = lineOfCreditParams.isPresent()
-                    && LocProductType.RECEIVABLE == lineOfCreditParams.get().getLineOfCredit().getProductType();
-
-            if (isReceivable) {
-                // Get the original approved amount from the command
-                BigDecimal originalApprovedAmount = command
-                        .bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
-
-                if (originalApprovedAmount != null) {
-                    // Calculate the discounted amount (this will be the new approved amount)
-                    BigDecimal discountedAmount = calculateDiscountedAmount(loanId, lineOfCreditParams.get(), originalApprovedAmount);
-
-                    // Create a modified JSON object with the discounted amount
-                    JsonObject modifiedJson = command.parsedJson().getAsJsonObject().deepCopy();
-                    modifiedJson.addProperty(LoanApiConstants.approvedLoanAmountParameterName, discountedAmount);
-
-                    // Create a new command with the modified JSON
-                    JsonCommand modifiedCommand = JsonCommand.fromExistingCommand(command, modifiedJson);
-
-                    log.info("Adjusted approved amount for RECEIVABLE LOC loan {}: original={}, discounted={}", loanId,
-                            originalApprovedAmount, discountedAmount);
-
-                    // Call the parent implementation with the modified command
-                    return super.approveApplication(loanId, modifiedCommand);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to adjust approved amount for RECEIVABLE LOC loan {}: {}. Proceeding with standard approval.", loanId,
-                    e.getMessage());
-            // Don't fail the approval if LOC adjustment fails, proceed with standard approval
-        }
-
-        // For non-RECEIVABLE loans or if adjustment fails, proceed with standard approval
-        return super.approveApplication(loanId, command);
-    }
-
     public void processLoanApplicationWithLineOfCredit(final JsonCommand command, final Loan loan) {
 
         Long lineOfCreditId = fromApiJsonHelper.extractLongNamed(LINE_OF_CREDIT_ID, command.parsedJson());
@@ -348,33 +303,39 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanLineOfCreditParams loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             loanLocParamsRepository.save(loanLocParams);
 
+            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+
+                BigDecimal advanceAmount = getApprovedReceivableAmount(loan, loanLocParams);
+
+                loan.setApprovedPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
+                loan.setNetDisbursalAmount(advanceAmount.subtract(loan.getTotalInterest()));
+                loan.getLoanRepaymentScheduleDetail().setPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
+
+                loan.updateLoanSummaryDerivedFields();
+                loan.updateLoanSummaryAndStatus();
+
+                this.loanRepositoryWrapper.saveAndFlush(loan);
+
+                loanLocParamsRepository.saveAndFlush(loanLocParams);
+            }
+
         }
 
     }
 
-    /**
-     * Calculates the discounted amount based on the principal and advance percentage from the associated Line of
-     * Credit. This method: 1. Retrieves the loan's associated Line of Credit 2. Gets the advance percentage from the
-     * LOC 3. Calculates the discounted amount as principal * advance_percentage
-     *
-     * @param loanId
-     *            the loan ID
-     * @param principal
-     *            the principal amount to be discounted
-     * @return the discounted amount (principal * advance_percentage), or null if no LOC association exists
-     */
-    public BigDecimal calculateDiscountedAmount(Long loanId, LoanLineOfCreditParams lineOfCreditParams, BigDecimal principal) {
+    private static BigDecimal getApprovedReceivableAmount(Loan loan, LoanLineOfCreditParams loanLocParams) {
+        BigDecimal disapprovedAmount = loanLocParams.getDisapprovedAmount() != null ? loanLocParams.getDisapprovedAmount()
+                : BigDecimal.ZERO;
+        BigDecimal advancePercentage = loanLocParams.getAdvancePercentage() != null ? loanLocParams.getAdvancePercentage()
+                : BigDecimal.ZERO;
 
-        BigDecimal advancePercentage = lineOfCreditParams.getLineOfCredit().getAdvancePercentage();
-
-        if (advancePercentage == null) {
-            throw new PlatformApiDataValidationException("error.msg.loc.discounted.amount.calculation.failed",
-                    "Failed to calculate discounted amount from Line of Credit", "loanId", loanId);
+        // Calculate the amount after advance
+        BigDecimal amountAfterAdvance = loan.getPrincipal().getAmount().subtract(disapprovedAmount);
+        if (amountAfterAdvance.compareTo(BigDecimal.ZERO) < 0) {
+            amountAfterAdvance = BigDecimal.ZERO;
         }
 
-        BigDecimal advancePercentageDecimal = advancePercentage.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        return principal.multiply(advancePercentageDecimal);
-
+        return amountAfterAdvance.multiply(advancePercentage).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
 }

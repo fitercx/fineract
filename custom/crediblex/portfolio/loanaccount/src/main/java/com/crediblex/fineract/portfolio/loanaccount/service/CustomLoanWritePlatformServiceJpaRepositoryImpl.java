@@ -4,18 +4,14 @@ import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInsta
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
-import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -32,8 +28,6 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
-import org.apache.fineract.infrastructure.core.exception.ResourceNotFoundException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -44,7 +38,6 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.transaction
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
-import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
@@ -113,11 +106,9 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDat
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.RepaymentWithPostDatedChecksAssembler;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
-import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -130,14 +121,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
     private final JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private CustomLoanInterestCalculationService customLoanInterestCalculationService;
-
-    @Autowired
-    private SavingsAccountWritePlatformService savingsAccountWritePlatformService;
-    private LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
-    private LineOfCreditTransactionRepository lineOfCreditTransactionRepository;
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
+    private final LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -173,7 +158,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
             JdbcTemplate jdbcTemplate, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditTransactionRepository lineOfCreditTransactionRepository) {
+            LineOfCreditTransactionRepository lineOfCreditTransactionRepository,
+            LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
+            LoanLineOfCreditBalanceUpdateService getLineOfCreditBalanceUpdateService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -191,135 +178,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 fineractProperties);
         this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
-        this.lineOfCreditTransactionRepository = lineOfCreditTransactionRepository;
-    }
-
-    /**
-     * Override the loan summary calculation for RECEIVABLE LOC loans to use the approved amount (discounted amount) for
-     * the outstanding balance calculation while preserving original values.
-     */
-    private void updateLoanSummaryDerivedFieldsForReceivableLoc(Loan loan) {
-
-        Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-
-        boolean isReceivableLineCredit = false;
-
-        if (lineOfCreditParams.isPresent()) {
-            isReceivableLineCredit = LocProductType.RECEIVABLE == lineOfCreditParams.get().getLineOfCredit().getProductType();
-        }
-
-        if (isReceivableLineCredit) {
-            BigDecimal approvedAmount = loan.getApprovedPrincipal();
-            if (approvedAmount == null) {
-                approvedAmount = loan.getPrincipal().getAmount();
-            }
-
-            // Store original values before updating summary
-            BigDecimal originalPrincipalDisbursed = loan.getSummary().getTotalPrincipalDisbursed();
-            BigDecimal originalInterestCharged = loan.getSummary().getTotalInterestCharged();
-
-            // Get the net disbursement amount
-            BigDecimal netDisbursementAmount = loan.getNetDisbursalAmount();
-            if (netDisbursementAmount == null) {
-                // Calculate net disbursement amount: Approved Amount - Expected Interest
-                BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loan, lineOfCreditParams.get());
-                if (expectedInterest != null) {
-                    netDisbursementAmount = approvedAmount.subtract(expectedInterest);
-                } else {
-                    netDisbursementAmount = approvedAmount;
-                }
-            }
-
-            // Create Money object for net disbursement amount
-            Money netDisbursementAmountMoney = Money.of(loan.getCurrency(), netDisbursementAmount);
-
-            // Update the summary using the net disbursement amount for principal calculations
-            loan.getSummary().updateSummary(loan.getCurrency(), netDisbursementAmountMoney, loan.getRepaymentScheduleInstallments(),
-                    new HashSet<>(loan.getCharges()));
-
-            // Restore original values to preserve them in the summary using reflection
-            try {
-                if (originalPrincipalDisbursed != null) {
-                    java.lang.reflect.Field totalPrincipalDisbursedField = loan.getSummary().getClass()
-                            .getDeclaredField("totalPrincipalDisbursed");
-                    totalPrincipalDisbursedField.setAccessible(true);
-                    totalPrincipalDisbursedField.set(loan.getSummary(), originalPrincipalDisbursed);
-                }
-                if (originalInterestCharged != null) {
-                    java.lang.reflect.Field totalInterestChargedField = loan.getSummary().getClass()
-                            .getDeclaredField("totalInterestCharged");
-                    totalInterestChargedField.setAccessible(true);
-                    totalInterestChargedField.set(loan.getSummary(), originalInterestCharged);
-                }
-            } catch (Exception e) {
-                log.warn("Failed to restore original values for RECEIVABLE LOC loan {}: {}", loan.getId(), e.getMessage());
-            }
-
-            try {
-                java.lang.reflect.Field totalExpectedRepaymentField = loan.getSummary().getClass()
-                        .getDeclaredField("totalExpectedRepayment");
-                totalExpectedRepaymentField.setAccessible(true);
-                totalExpectedRepaymentField.set(loan.getSummary(), approvedAmount);
-
-                java.lang.reflect.Field totalOutstandingField = loan.getSummary().getClass().getDeclaredField("totalOutstanding");
-                totalOutstandingField.setAccessible(true);
-                totalOutstandingField.set(loan.getSummary(), approvedAmount);
-
-            } catch (Exception e) {
-                log.warn("Failed to set total fields for RECEIVABLE LOC loan {}: {}", loan.getId(), e.getMessage());
-            }
-
-            loan.updateLoanOutstandingBalances();
-
-        } else {
-            loan.updateLoanSummaryDerivedFields();
-        }
+        this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
     }
 
     @Transactional
     @Override
     public CommandProcessingResult disburseLoan(final Long loanId, final JsonCommand command, Boolean isAccountTransfer,
             Boolean isWithoutAutoPayment) {
-
-        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
-        boolean isReceivableLoc = locProductTypeOpt.isPresent()
-                && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-        if (isReceivableLoc) {
-            log.info("Using custom disbursement logic for RECEIVABLE LOC loan {} - skipping validation", loanId);
-
-            // Get the loan
-            Loan loan = loanAssembler.assembleFrom(loanId);
-
-            // Apply our custom logic
-            BigDecimal approvedAmount = loan.getApprovedPrincipal();
-            if (approvedAmount == null) {
-                log.warn("Approved principal not set for RECEIVABLE loan {}, using current principal: {}", loanId,
-                        loan.getPrincipal().getAmount());
-                approvedAmount = loan.getPrincipal().getAmount();
-            }
-
-            BigDecimal netDisbursementAmount = loan.getNetDisbursalAmount();
-            if (netDisbursementAmount == null) {
-                BigDecimal expectedInterest = calculateExpectedInterest(locProductTypeOpt.get(), approvedAmount);
-                if (expectedInterest != null) {
-                    netDisbursementAmount = approvedAmount.subtract(expectedInterest);
-                } else {
-                    netDisbursementAmount = approvedAmount;
-                }
-            }
-
-            // Set the loan's principal to the net disbursement amount
-            loan.getLoanRepaymentScheduleDetail().setPrincipal(netDisbursementAmount);
-
-            log.info("Set principal to net disbursement amount {} for RECEIVABLE LOC loan {}", netDisbursementAmount, loanId);
-
-            // Continue with the rest of the disbursement logic
-            return processReceivableLocDisbursement(loanId, command, isAccountTransfer, locProductTypeOpt.get());
-
-        }
-
-        // For non-RECEIVABLE loans, use the standard validation and disbursement
         loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
         Loan loan = loanAssembler.assembleFrom(loanId);
@@ -380,36 +245,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 loan.setNetDisbursalAmount(netDisbursalAmount);
             }
 
-            // Check if this is a RECEIVABLE type LOC loan and adjust disbursement amount accordingly
-
             Money disburseAmount = loanDisbursementService.adjustDisburseAmount(loan, command, actualDisbursementDate);
 
-            if (locProductTypeOpt.isPresent()) {
-                BigDecimal discountedAmount = disburseAmount.getAmount();
+            Money amountToDisburse = disburseAmount; // Use the calculated amount directly
 
-                // Calculate expected interest based on the discounted amount
-                BigDecimal expectedInterest = calculateExpectedInterest(locProductTypeOpt.get(), discountedAmount);
-
-                // Calculate net disbursed amount: Discounted Amount - Expected Interest
-                BigDecimal netDisbursedAmount = discountedAmount.subtract(expectedInterest);
-
-                if (expectedInterest != null) {
-                    disburseAmount = Money.of(loan.getCurrency(), netDisbursedAmount);
-
-                    // Update the loan's netDisbursalAmount field with the calculated net disbursed amount
-                    loan.setNetDisbursalAmount(netDisbursedAmount);
-
-                }
-            }
-
-            // For RECEIVABLE LOC loans, use the calculated disburseAmount directly
-            // For other loans, use the copy as before
-            Money amountToDisburse;
-            if (locProductTypeOpt.isPresent()) {
-                amountToDisburse = disburseAmount; // Use the calculated amount directly
-            } else {
-                amountToDisburse = disburseAmount.copy(); // Use copy for non-RECEIVABLE loans
-            }
             boolean recalculateSchedule = amountBeforeAdjust.isNotEqualTo(loan.getPrincipal());
             final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
@@ -456,11 +295,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 recalculateSchedule = true;
             }
             // For all LOC loans, use the approved_principal from database for LOC balance adjustments
-            BigDecimal locBalanceAmount = loan.getApprovedPrincipal();
+            BigDecimal locBalanceAmount = loan.getApprovedPrincipal().add(loan.getTotalInterest());
 
-            // Compute and update Line of Credit balance upon disbursement
-            locProductTypeOpt.ifPresent(lineOfCreditParams -> computeLocBalance(loanId, locBalanceAmount, lineOfCreditParams,
-                    actualDisbursementDate, LoanTransactionType.DISBURSEMENT));
+            updateLocBalance(loanId, locBalanceAmount, actualDisbursementDate, LoanTransactionType.DISBURSEMENT);
 
             regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
                     rescheduledRepaymentDate);
@@ -650,31 +487,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (canDisburse) {
                 Money amountBeforeAdjust = loan.getPrincipal();
                 Money disburseAmount = loanDisbursementService.adjustDisburseAmount(loan, command, actualDisbursementDate);
-
-                Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-                boolean isReceivable = locProductTypeOpt.isPresent()
-                        && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-                if (isReceivable) {
-                    // For RECEIVABLE type, calculate net disbursed amount correctly
-                    // The disburseAmount here is the discounted amount (approved_principal)
-                    BigDecimal discountedAmount = disburseAmount.getAmount();
-
-                    // Calculate expected interest based on the discounted amount
-                    BigDecimal expectedInterest = calculateExpectedInterest(locProductTypeOpt.get(), discountedAmount);
-
-                    // Calculate net disbursed amount: Discounted Amount - Expected Interest
-                    BigDecimal netDisbursedAmount = discountedAmount.subtract(expectedInterest);
-
-                    if (expectedInterest != null) {
-                        disburseAmount = Money.of(loan.getCurrency(), netDisbursedAmount);
-
-                        // Update the loan's netDisbursalAmount field with the calculated net disbursed amount
-                        loan.setNetDisbursalAmount(netDisbursedAmount);
-
-                    }
-                }
-
                 boolean recalculateSchedule = amountBeforeAdjust.isNotEqualTo(loan.getPrincipal());
                 final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
@@ -692,7 +504,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                    // Ensure we use the correct amount for LOC loans in bulk account transfer
                     disburseLoanToSavings(loan, command, disburseAmount, paymentDetail);
                     existingTransactionIds.addAll(loan.findExistingTransactionIds());
                     existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
@@ -700,8 +511,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 } else {
                     existingTransactionIds.addAll(loan.findExistingTransactionIds());
                     existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
-                    // Ensure we use the correct amount for LOC loans in bulk disbursement transaction
-
                     LoanTransaction disbursementTransaction = LoanTransaction.disbursement(loan, disburseAmount, paymentDetail,
                             actualDisbursementDate, txnExternalId, loan.getTotalOverpaidAsMoney());
                     disbursementTransaction.updateLoan(loan);
@@ -713,24 +522,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, recalculateFrom);
                 regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
                         rescheduledRepaymentDate);
-
                 boolean downPaymentEnabled = loan.repaymentScheduleDetail().isEnableDownPayment();
                 if (loan.isInterestBearingAndInterestRecalculationEnabled() || downPaymentEnabled) {
                     createAndSaveLoanScheduleArchive(loan, scheduleGeneratorDTO);
                 }
                 disburseLoan(command, configurationDomainService.isPaymentTypeApplicableForDisbursementCharge(), paymentDetail, loan,
                         currentUser, changes, scheduleGeneratorDTO);
-
-                // Compute and update Line of Credit balance upon disbursement
-                // For all LOC loans, use the approved_principal from database for LOC balance adjustments
-                BigDecimal bulkLocBalanceAmount = loan.getApprovedPrincipal();
-                log.info("Bulk LOC loan {} - Using approved_principal for LOC balance: {} (net disbursed: {})", loan.getId(),
-                        bulkLocBalanceAmount, disburseAmount.getAmount());
-                log.info("Calling computeLocBalance for bulk disbursal loan {} with amount {} on date {}", loan.getId(),
-                        bulkLocBalanceAmount, actualDisbursementDate);
-                boolean bulkLocBalanceComputed = computeLocBalance(loan.getId(), bulkLocBalanceAmount, locProductTypeOpt.get(),
-                        actualDisbursementDate, LoanTransactionType.DISBURSEMENT);
-                log.info("Bulk LOC balance computation result for loan {}: {}", loan.getId(), bulkLocBalanceComputed);
 
                 loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
@@ -835,39 +632,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         JsonCommand cleanedCommand = JsonCommand.fromExistingCommand(command, parsedJson, null);
 
-        // Get the loan BEFORE foreclosure to apply custom interest calculations
-        Loan loan = loanAssembler.assembleFrom(loanId);
-
-        // Apply custom interest calculations for LOC loans BEFORE foreclosure
-        Optional<LocProductType> productType = loanLineOfCreditParamsRepository.findLocProductTypeByLoanId(loanId);
-
-        // Get original values BEFORE foreclosure to preserve them
-        BigDecimal originalInterestChargeDerived = null;
-        BigDecimal originalPrincipalDisbursed = null;
-        if (productType.isPresent()) {
-            originalInterestChargeDerived = getInterestChargeDerived(loanId);
-            originalPrincipalDisbursed = getApprovedPrincipalForLoan(loanId);
-        }
-
-        // First call the parent foreclosure method
         CommandProcessingResult result = super.forecloseLoan(loanId, cleanedCommand);
 
-        // After standard foreclosure, process LOC-specific interest calculations
-        if (productType.isPresent() && originalInterestChargeDerived != null) {
-            BigDecimal annualInterestRate = getAnnualInterestRate(loanId);
-            if (annualInterestRate != null) {
-                // Calculate interest earned and refund for LOC loans using original values
-                processLocLoanForeclosureInterest(loan, annualInterestRate, originalInterestChargeDerived, originalPrincipalDisbursed);
-            }
+        if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
+
+            // TODO Look at loc foreclosure
+            jdbcTemplate.update("UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
+                    Boolean.TRUE.equals(isForcedClosure), Boolean.TRUE.equals(isRestructured), loanId);
         }
-
-        jdbcTemplate.update("UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
-                Boolean.TRUE.equals(isForcedClosure), Boolean.TRUE.equals(isRestructured), loanId);
-
-        // Ensure loan status is properly set to closed and foreclosed after custom processing
-        jdbcTemplate.update("UPDATE m_loan SET loan_status_id = ?, loan_sub_status_id = ? WHERE id = ?", 600, // CLOSED_OBLIGATIONS_MET
-                100, // FORECLOSED
-                loanId);
 
         return result;
     }
@@ -876,40 +648,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Transactional
     public CommandProcessingResult makeLoanRepayment(final LoanTransactionType repaymentTransactionType, final Long loanId,
             final JsonCommand command, final boolean isRecoveryRepayment) {
-        // Check if this is a RECEIVABLE LOC loan and handle it specially
-
-        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
-        boolean isReceivable = locProductTypeOpt.isPresent()
-                && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-        if (isReceivable) {
-            return processReceivableLocRepayment(loanId, locProductTypeOpt.get(), command);
-        }
-
-        // For non-RECEIVABLE loans, use the standard parent implementation
+        // Call the parent implementation to handle the core repayment logic
         CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
-
-        // Adjust LOC balance on repayment (general logic for all LOC loans)
-        if (result != null && result.hasChanges() && locProductTypeOpt.isPresent()) {
-            // Get transaction amount from the command - try multiple parameter names
-            BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
-            if (transactionAmount == null) {
-                transactionAmount = command.bigDecimalValueOfParameterNamed("amount");
-            }
-            if (transactionAmount == null) {
-                transactionAmount = command.bigDecimalValueOfParameterNamed("principal");
-            }
-
-            if (transactionAmount != null && transactionAmount.compareTo(BigDecimal.ZERO) > 0) {
-                adjustLocBalanceOnRepayment(loanId, transactionAmount);
-            }
-        }
 
         // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
         if (result != null && result.hasChanges() && result.getResourceId() != null) {
             try {
                 // Fetch the updated loan to get the loan transaction
                 Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+                BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+                updateLocBalance(loanId, transactionAmount, command.localDateValueOfParameterNamed("transactionDate"),
+                        LoanTransactionType.REPAYMENT);
 
                 // Find the specific transaction that was just created using the resourceId (transaction ID)
                 LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
@@ -919,8 +669,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
                             transaction);
 
-                    // Get transaction amount from the command for webhook payload
-                    BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
                     LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
                     // Add the affected installments to the result for webhook payload
@@ -954,753 +702,28 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Processes repayment for RECEIVABLE LOC loans with custom logic For RECEIVABLE LOC loans, the entire repayment
-     * should be treated as principal since the interest was already "paid" upfront during disbursement
-     */
-    private CommandProcessingResult processReceivableLocRepayment(final Long loanId, LoanLineOfCreditParams lineOfCreditParams,
-            final JsonCommand command) {
-        try {
-            // Get the loan
-            Loan loan = loanAssembler.assembleFrom(loanId);
-
-            // Get the repayment amount from the command
-            BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
-            if (transactionAmount == null) {
-                transactionAmount = command.bigDecimalValueOfParameterNamed("amount");
-            }
-            if (transactionAmount == null) {
-                transactionAmount = command.bigDecimalValueOfParameterNamed("principal");
-            }
-
-            if (transactionAmount == null || transactionAmount.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new RuntimeException("Invalid repayment amount");
-            }
-
-            // Create a custom repayment transaction with the correct breakdown
-            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-            if (transactionDate == null) {
-                transactionDate = LocalDate.now();
-            }
-
-            // Create the repayment transaction
-            Money repaymentAmount = Money.of(loan.getCurrency(), transactionAmount);
-            PaymentDetail paymentDetail = this.paymentDetailWritePlatformService.createAndPersistPaymentDetail(command,
-                    new LinkedHashMap<>());
-            ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
-
-            // For RECEIVABLE LOC loans, create a repayment transaction with correct breakdown
-            LoanTransaction repaymentTransaction = LoanTransaction.repayment(loan.getOffice(), repaymentAmount, paymentDetail,
-                    transactionDate, txnExternalId);
-
-            // Get the expected interest and net disbursement amount for RECEIVABLE LOC loans
-            BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loan, lineOfCreditParams);
-            BigDecimal netDisbursementAmount = loan.getNetDisbursalAmount();
-
-            if (expectedInterest == null || netDisbursementAmount == null) {
-                // Fallback: treat entire amount as principal
-                Money principalMoney = Money.of(loan.getCurrency(), transactionAmount);
-                Money interestMoney = Money.zero(loan.getCurrency());
-                Money feeChargesMoney = Money.zero(loan.getCurrency());
-                Money penaltyChargesMoney = Money.zero(loan.getCurrency());
-                repaymentTransaction.updateComponentsAndTotal(principalMoney, interestMoney, feeChargesMoney, penaltyChargesMoney);
-            } else {
-                // Set the breakdown: net disbursement amount as principal, expected interest as interest
-                Money principalMoney = Money.of(loan.getCurrency(), netDisbursementAmount);
-                Money interestMoney = Money.of(loan.getCurrency(), expectedInterest);
-                Money feeChargesMoney = Money.zero(loan.getCurrency());
-                Money penaltyChargesMoney = Money.zero(loan.getCurrency());
-
-                // Update the transaction components
-                repaymentTransaction.updateComponentsAndTotal(principalMoney, interestMoney, feeChargesMoney, penaltyChargesMoney);
-            }
-
-            // Add the transaction to the loan
-            repaymentTransaction.updateLoan(loan);
-            loan.addLoanTransaction(repaymentTransaction);
-
-            // Save the transaction
-            loanTransactionRepository.saveAndFlush(repaymentTransaction);
-
-            BigDecimal newOutstanding = BigDecimal.ZERO;
-
-            // Update the loan summary's total outstanding balance to zero
-            loan.getSummary().updateTotalOutstanding(newOutstanding);
-
-            // Also update the individual transaction's outstanding balance
-            repaymentTransaction.updateOutstandingLoanBalance(newOutstanding);
-
-            // Update all other transactions' outstanding balances to maintain consistency
-            for (LoanTransaction transaction : loan.getLoanTransactions()) {
-                if (transaction.isDisbursement()) {
-                    // Disbursement should show the full amount as outstanding
-                    transaction.updateOutstandingLoanBalance(transaction.getAmount(loan.getCurrency()).getAmount());
-                } else if (transaction.isRepayment()) {
-                    // Repayment should show zero outstanding
-                    transaction.updateOutstandingLoanBalance(BigDecimal.ZERO);
-                }
-            }
-
-            // Save the loan
-            loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-
-            // Adjust LOC balance
-            adjustLocBalanceOnRepayment(loanId, transactionAmount);
-
-            return new CommandProcessingResultBuilder() //
-                    .withCommandId(command.commandId()) //
-                    .withLoanId(loanId) //
-                    .withEntityId(repaymentTransaction.getId()) //
-                    .withEntityExternalId(repaymentTransaction.getExternalId()) //
-                    .withOfficeId(loan.getOfficeId()) //
-                    .withClientId(loan.getClientId()) //
-                    .withGroupId(loan.getGroupId()) //
-                    .build();
-
-        } catch (RuntimeException e) {
-            throw new RuntimeException("Failed to process RECEIVABLE LOC repayment", e);
-        }
-    }
-
-    @Override
-    @Transactional
-    public CommandProcessingResult closeAsRescheduled(final Long loanId, final JsonCommand command) {
-        // Apply custom interest calculations for RECEIVABLE LOC loans before rescheduling
-        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
-        boolean isReceivable = locProductTypeOpt.isPresent()
-                && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-        if (isReceivable) {
-            Loan loan = loanAssembler.assembleFrom(loanId);
-            BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loan, locProductTypeOpt.get());
-            if (expectedInterest != null) {
-                // Apply the expected interest calculations to the loan before rescheduling
-                customLoanInterestCalculationService.adjustInterestCalculationsForReceivableLoan(loan, expectedInterest);
-            }
-        }
-
-        // Call the parent implementation to handle the core rescheduling logic
-        return super.closeAsRescheduled(loanId, command);
-    }
-
-    /**
-     * Calculates the expected interest based on the annual interest rate, discounted amount, and tenure days from the
-     * associated Line of Credit. This method: 1. Retrieves the loan's associated Line of Credit 2. Gets the annual
-     * interest rate and tenure days from the LOC 3. Calculates the expected interest using the formula: Annual Interest
-     * Rate * Discounted Amount * (Tenure Days / 360)
-     *
-     * @param discountedAmount
-     *            the discounted amount (principal * advance_percentage)
-     * @return the expected interest amount, or null if no LOC association exists or required fields are missing
-     */
-    public BigDecimal calculateExpectedInterest(LoanLineOfCreditParams lineOfCreditParams, BigDecimal discountedAmount) {
-
-        if (lineOfCreditParams == null) {
-            return null;
-        }
-
-        BigDecimal annualInterestRate = lineOfCreditParams.getLineOfCredit().getAnnualInterestRate();
-        Integer tenorDays = lineOfCreditParams.getLineOfCredit().getTenorDays();
-
-        if (annualInterestRate == null) {
-            return null;
-        }
-
-        if (tenorDays == null) {
-            return null;
-        }
-
-        if (discountedAmount == null || discountedAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            return null;
-        }
-
-        // Calculate expected interest: Annual Interest Rate * Discounted Amount * (Tenure Days / 360)
-        // annual_interest_rate is stored as a percentage (e.g., 12.00 for 12%), so divide by 100
-        BigDecimal annualRateDecimal = annualInterestRate.divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP);
-        BigDecimal daysInYear = new BigDecimal("360");
-        BigDecimal timeFactor = new BigDecimal(tenorDays).divide(daysInYear, 10, java.math.RoundingMode.HALF_UP);
-        BigDecimal expectedInterest = annualRateDecimal.multiply(discountedAmount).multiply(timeFactor);
-
-        // Round to 2 decimal places for currency precision
-        expectedInterest = expectedInterest.setScale(2, java.math.RoundingMode.HALF_UP);
-
-        return expectedInterest;
-    }
-
-    /**
-     * Computes and updates Line of Credit balance upon loan disbursement. This method: 1. Automatically reduces the
-     * available LOC balance upon disbursement 2. Increases the LOC consumed amount 3. Creates and persists a LOC
-     * transaction history record with disbursement metadata
-     *
-     * @param loanId
-     *            the loan ID
-     * @param disbursementAmount
-     *            the disbursement amount (should be the approved_principal from the loan)
-     * @param transactionDate
-     *            the disbursement date
-     * @return true if LOC balance was successfully updated, false if no LOC association exists
-     */
-    @Transactional
-    public boolean computeLocBalance(Long loanId, BigDecimal disbursementAmount, LoanLineOfCreditParams lineOfCreditParams,
-            LocalDate transactionDate, LoanTransactionType loanTransactionType) {
-
-        if (lineOfCreditParams == null) {
-            return false;
-        }
-
-        BigDecimal currentAvailableBalance = lineOfCreditParams.getLineOfCredit().getSummary().getAvailableBalance();
-        BigDecimal currentConsumedAmount = lineOfCreditParams.getLineOfCredit().getSummary().getConsumedAmount();
-
-        // Validate that there's sufficient available balance
-        if (currentAvailableBalance.compareTo(disbursementAmount) < 0) {
-            throw new PlatformApiDataValidationException("error.msg.loc.insufficient.balance",
-                    "Insufficient line of credit balance for disbursement", "disbursementAmount", disbursementAmount);
-        }
-
-        // Calculate new balances
-        BigDecimal newAvailableBalance = currentAvailableBalance.subtract(disbursementAmount);
-        BigDecimal newConsumedAmount = currentConsumedAmount.add(disbursementAmount);
-
-        // Update LOC balances
-        lineOfCreditParams.getLineOfCredit().getSummary().setConsumedAmount(newConsumedAmount);
-        lineOfCreditParams.getLineOfCredit().getSummary().setAvailableBalance(newAvailableBalance);
-
-        if (loanTransactionType.isDisbursement()) {
-            lineOfCreditParams.getLineOfCredit().getSummary().setTotalDrawDownCountDerived(
-                    lineOfCreditParams.getLineOfCredit().getSummary().getTotalDrawDownCountDerived().add(BigDecimal.ONE));
-        }
-
-        if (loanTransactionType.isDisbursement()) {
-            String referenceNumber = "LOAN_" + loanId + "_REPAYMENT";
-
-            LineOfCreditTransaction transaction = LineOfCreditTransaction.disbursement(lineOfCreditParams.getLineOfCredit(),
-                    disbursementAmount, currentAvailableBalance, newAvailableBalance,
-                    transactionDate.atStartOfDay().atZone(java.time.ZoneOffset.UTC).toOffsetDateTime(), referenceNumber);
-
-            lineOfCreditTransactionRepository.saveAndFlush(transaction);
-        }
-
-        return true;
-    }
-
-    /**
-     * Adjusts LOC balance when a loan repayment is made This is a general logic that applies to all LOC loans
-     * regardless of product type
-     *
-     * @param loanId
-     *            The ID of the loan
-     * @param repaymentAmount
-     *            The amount being repaid
-     * @return true if adjustment was successful, false otherwise
-     */
-    @Transactional
-    public boolean adjustLocBalanceOnRepayment(Long loanId, BigDecimal repaymentAmount) {
-        try {
-            // Validate repayment amount
-            if (repaymentAmount == null || repaymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
-                return false;
-            }
-
-            // Get LOC ID for the loan
-            Long lineOfCreditId = jdbcTemplate.queryForObject("SELECT line_of_credit_id FROM m_loan WHERE id = ?", Long.class, loanId);
-
-            if (lineOfCreditId == null) {
-                return true; // No LOC to adjust
-            }
-
-            // Get current LOC balances
-            Map<String, Object> locData = jdbcTemplate
-                    .queryForMap("SELECT consumed_amount, available_balance FROM m_line_of_credit WHERE id = ?", lineOfCreditId);
-
-            BigDecimal currentConsumedAmount = (BigDecimal) locData.get("consumed_amount");
-            BigDecimal currentAvailableBalance = (BigDecimal) locData.get("available_balance");
-
-            // Handle null values
-            if (currentConsumedAmount == null) {
-                currentConsumedAmount = BigDecimal.ZERO;
-            }
-            if (currentAvailableBalance == null) {
-                currentAvailableBalance = BigDecimal.ZERO;
-            }
-
-            // Calculate new balances
-            BigDecimal newConsumedAmount = currentConsumedAmount.subtract(repaymentAmount);
-            BigDecimal newAvailableBalance = currentAvailableBalance.add(repaymentAmount);
-
-            // Ensure consumed amount doesn't go below zero
-            if (newConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
-                newConsumedAmount = BigDecimal.ZERO;
-                // Adjust available balance accordingly
-                newAvailableBalance = currentAvailableBalance.add(currentConsumedAmount);
-            }
-
-            // Update LOC balances
-            int updateCount = jdbcTemplate.update(
-                    "UPDATE m_line_of_credit SET consumed_amount = ?, available_balance = ?, last_modified_on_utc = NOW() WHERE id = ?",
-                    newConsumedAmount, newAvailableBalance, lineOfCreditId);
-
-            if (updateCount == 0) {
-                return false;
-            }
-
-            // Create transaction record
-            jdbcTemplate.update(
-                    "INSERT INTO m_line_of_credit_transactions "
-                            + "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, "
-                            + "transaction_date, description, created_on_utc) " + "VALUES (?, 'REPAYMENT', ?, ?, ?, NOW(), ?, NOW())",
-                    lineOfCreditId, repaymentAmount, currentAvailableBalance, // balance_before
-                    newAvailableBalance, // balance_after
-                    String.format("Loan repayment adjustment - Loan ID: %d, Amount: %s", loanId, repaymentAmount));
-            return true;
-
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /**
-     * Gets the expected interest amount for RECEIVABLE LOC loans This is used to override Fineract's interest
-     * calculations for RECEIVABLE loans
-     *
-     * @return The expected interest amount, or null if not applicable
-     */
-    public BigDecimal getExpectedInterestForReceivableLoan(Loan loan, LoanLineOfCreditParams lineOfCreditParams) {
-
-        // Get the approved amount from the loan (this is the discounted amount for RECEIVABLE loans)
-        BigDecimal approvedAmount = loan.getApprovedPrincipal();
-
-        if (approvedAmount == null) {
-            return null;
-        }
-
-        // Calculate the expected interest using the approved amount (discounted amount)
-        return calculateExpectedInterest(lineOfCreditParams, approvedAmount);
-    }
-
-    /**
-     * Override the parent's recalculateInterest method to include custom interest calculations for RECEIVABLE LOC loans
-     */
-    @Override
-    @Transactional
-    public Loan recalculateInterest(Loan loan) {
-        // Call the parent implementation first
-        Loan updatedLoan = super.recalculateInterest(loan);
-
-        // Apply custom interest calculations for RECEIVABLE LOC loans after standard recalculation
-        try {
-            Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-            boolean isReceivableLoc = locProductTypeOpt.isPresent()
-                    && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-            if (isReceivableLoc) {
-                BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loan, locProductTypeOpt.get());
-                customLoanInterestCalculationService.adjustInterestCalculationsForReceivableLoan(updatedLoan, expectedInterest);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to adjust interest calculations for RECEIVABLE LOC loan {} during recalculation: {}", updatedLoan.getId(),
-                    e.getMessage());
-        }
-
-        return updatedLoan;
-    }
-
-    /**
-     * Override the parent's disburseLoan method to apply custom logic after disbursement for RECEIVABLE LOC loans
-     */
-    @Override
-    protected void disburseLoan(JsonCommand command, boolean isPaymentTypeApplicableForDisbursementCharge, PaymentDetail paymentDetail,
-            Loan loan, AppUser currentUser, Map<String, Object> changes, ScheduleGeneratorDTO scheduleGeneratorDTO) {
-
-        // Call the parent method first to handle all the standard disbursement logic
-        super.disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
-                scheduleGeneratorDTO);
-
-        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-        boolean isReceivable = locProductTypeOpt.isPresent()
-                && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-        if (isReceivable) {
-            // Apply expected interest calculations
-            BigDecimal expectedInterest = getExpectedInterestForReceivableLoan(loan, locProductTypeOpt.get());
-            if (expectedInterest != null) {
-                customLoanInterestCalculationService.adjustInterestCalculationsForReceivableLoan(loan, expectedInterest);
-
-                // Adjust principal due in installments: Approved Amount - Interest
-                BigDecimal approvedAmount = loan.getApprovedPrincipal();
-                if (approvedAmount != null) {
-                    BigDecimal correctPrincipalDue = approvedAmount.subtract(expectedInterest);
-                    customLoanInterestCalculationService.adjustPrincipalDueForReceivableLoan(loan, correctPrincipalDue);
-
-                    log.info("Applied final custom logic for RECEIVABLE LOC loan {}: interest={}, principal due={}", loan.getId(),
-                            expectedInterest, correctPrincipalDue);
-                }
-            }
-
-            // Update the summary with the correct amounts
-            updateLoanSummaryDerivedFieldsForReceivableLoc(loan);
-        } else {
-            BigDecimal locBalanceAmount = loan.getApprovedPrincipal();
-            LocalDate actualDisbursementDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
-            if (actualDisbursementDate == null) {
-                actualDisbursementDate = DateUtils.getBusinessLocalDate();
-            }
-
-            if (locProductTypeOpt.isPresent()) {
-                computeLocBalance(loan.getId(), locBalanceAmount, locProductTypeOpt.get(), actualDisbursementDate,
-                        LoanTransactionType.DISBURSEMENT);
-            }
-        }
-    }
-
-    /**
-     * Process disbursement for RECEIVABLE LOC loans with custom logic
-     */
-    @Transactional
-    protected CommandProcessingResult processReceivableLocDisbursement(final Long loanId, final JsonCommand command,
-            Boolean isAccountTransfer, LoanLineOfCreditParams lineOfCreditParams) {
-        try {
-            Loan loan = loanAssembler.assembleFrom(loanId);
-
-            // Handle expected disbursements
-            if (loan.loanProduct().isDisallowExpectedDisbursements()) {
-                List<LoanDisbursementDetails> filteredList = loan.getDisbursementDetails().stream()
-                        .filter(disbursementDetails -> disbursementDetails.actualDisbursementDate() == null).toList();
-                if (filteredList.isEmpty()) {
-                    final LocalDate artificialExpectedDate = loan.getExpectedDisbursedOnLocalDate();
-                    LoanDisbursementDetails disbursementDetail = new LoanDisbursementDetails(artificialExpectedDate, null,
-                            loan.getDisbursedAmount(), null, false);
-                    disbursementDetail.updateLoan(loan);
-                    loan.getAllDisbursementDetails().add(disbursementDetail);
-                }
-            }
-
-            final LocalDate nextPossibleRepaymentDate = loan.getNextPossibleRepaymentDateForRescheduling();
-            final LocalDate rescheduledRepaymentDate = command.localDateValueOfParameterNamed("adjustRepaymentDate");
-            final LocalDate actualDisbursementDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
-            if (!loan.isMultiDisburmentLoan()) {
-                loan.setActualDisbursementDate(actualDisbursementDate);
-            }
-
-            ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
-            businessEventNotifierService.notifyPreBusinessEvent(new LoanDisbursalBusinessEvent(loan));
-
-            List<Long> existingTransactionIds = new ArrayList<>();
-            List<Long> existingReversedTransactionIds = new ArrayList<>();
-            final AppUser currentUser = getAppUserIfPresent();
-            final Map<String, Object> changes = new LinkedHashMap<>();
-
-            final PaymentDetail paymentDetail = this.paymentDetailWritePlatformService.createAndPersistPaymentDetail(command, changes);
-            if (paymentDetail != null && paymentDetail.getPaymentType() != null && paymentDetail.getPaymentType().getIsCashPayment()) {
-                BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
-                this.cashierTransactionDataValidator.validateOnLoanDisbursal(currentUser, loan.getCurrencyCode(), transactionAmount);
-            }
-            final boolean isPaymentTypeApplicableForDisbursementCharge = configurationDomainService
-                    .isPaymentTypeApplicableForDisbursementCharge();
-
-            updateLoanCounters(loan, actualDisbursementDate);
-            Money amountBeforeAdjust = loan.getPrincipal();
-
-            if (loan.canDisburse()) {
-                // For RECEIVABLE LOC loans, calculate the correct net disbursement amount
-                BigDecimal approvedAmount = loan.getApprovedPrincipal();
-                if (approvedAmount == null) {
-                    approvedAmount = loan.getPrincipal().getAmount();
-                }
-
-                BigDecimal expectedInterest = calculateExpectedInterest(lineOfCreditParams, approvedAmount);
-                BigDecimal correctNetDisbursementAmount = approvedAmount.subtract(expectedInterest);
-
-                // Set the correct net disbursement amount for RECEIVABLE LOC loans
-                loan.setNetDisbursalAmount(correctNetDisbursementAmount);
-
-                Money disburseAmount = loanDisbursementService.adjustDisburseAmount(loan, command, actualDisbursementDate);
-                Money amountToDisburse = disburseAmount.copy();
-                boolean recalculateSchedule = amountBeforeAdjust.isNotEqualTo(loan.getPrincipal());
-                final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
-
-                if (loan.isTopup() && loan.getClientId() != null) {
-                    final BigDecimal loanOutstanding = loanApplicationValidator.validateTopupLoan(loan, actualDisbursementDate);
-                    amountToDisburse = disburseAmount.minus(loanOutstanding);
-                    disburseLoanToLoan(loan, command, loanOutstanding);
-                }
-
-                LoanTransaction disbursementTransaction = null;
-                if (isAccountTransfer) {
-                    disburseLoanToSavings(loan, command, amountToDisburse, paymentDetail);
-                    existingTransactionIds.addAll(loan.findExistingTransactionIds());
-                    existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
-                } else {
-                    existingTransactionIds.addAll(loan.findExistingTransactionIds());
-                    existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
-
-                    // For RECEIVABLE LOC loans, create a disbursement transaction with proper principal and interest
-                    // breakdown
-                    disbursementTransaction = LoanTransaction.disbursement(loan, amountToDisburse, paymentDetail, actualDisbursementDate,
-                            txnExternalId, loan.getTotalOverpaidAsMoney());
-
-                    // Set the principal and interest portions for RECEIVABLE LOC loans
-                    // Use the expected interest that was calculated earlier
-                    if (expectedInterest != null) {
-                        BigDecimal principalPortion = correctNetDisbursementAmount; // 87,300
-                        BigDecimal interestPortion = expectedInterest; // 2,700
-
-                        // Create Money objects for the components
-                        Money principalMoney = Money.of(loan.getCurrency(), principalPortion);
-                        Money interestMoney = Money.of(loan.getCurrency(), interestPortion);
-                        Money feeChargesMoney = Money.zero(loan.getCurrency());
-                        Money penaltyChargesMoney = Money.zero(loan.getCurrency());
-
-                        // Update the transaction components
-                        disbursementTransaction.updateComponentsAndTotal(principalMoney, interestMoney, feeChargesMoney,
-                                penaltyChargesMoney);
-                    }
-
-                    disbursementTransaction.updateLoan(loan);
-                    loan.addLoanTransaction(disbursementTransaction);
-                    loanTransactionRepository.saveAndFlush(disbursementTransaction);
-                }
-
-                if (loan.getRepaymentScheduleInstallments().isEmpty()) {
-                    recalculateSchedule = true;
-                }
-
-                // Compute and update Line of Credit balance upon disbursement
-                computeLocBalance(loanId, amountToDisburse.getAmount(), lineOfCreditParams, actualDisbursementDate,
-                        LoanTransactionType.DISBURSEMENT);
-
-                // Use our custom schedule generation
-                regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
-                        rescheduledRepaymentDate);
-
-                boolean downPaymentEnabled = loan.repaymentScheduleDetail().isEnableDownPayment();
-                if (loan.isInterestBearingAndInterestRecalculationEnabled() || downPaymentEnabled) {
-                    createAndSaveLoanScheduleArchive(loan, scheduleGeneratorDTO);
-                }
-
-                // Use our custom disbursement logic
-                disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
-                        scheduleGeneratorDTO);
-
-                loanAccrualsProcessingService.reprocessExistingAccruals(loan);
-                LocalDate firstInstallmentDueDate = loan.fetchRepaymentScheduleInstallment(1).getDueDate();
-                if (loan.isInterestBearingAndInterestRecalculationEnabled()
-                        && (DateUtils.isBeforeBusinessDate(firstInstallmentDueDate) || loan.isDisbursementMissed())) {
-                    loanAccrualsProcessingService.processIncomePostingAndAccruals(loan);
-                }
-            }
-
-            if (!changes.isEmpty()) {
-                createNote(loan, command, changes);
-                loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-                journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
-                loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
-            }
-
-            businessEventNotifierService.notifyPostBusinessEvent(new LoanDisbursalBusinessEvent(loan));
-
-            return new CommandProcessingResultBuilder() //
-                    .withCommandId(command.commandId()) //
-                    .withEntityId(loanId) //
-                    .withOfficeId(loan.getOfficeId()) //
-                    .withClientId(loan.getClientId()) //
-                    .withGroupId(loan.getGroupId()) //
-                    .withLoanId(loanId) //
-                    .with(changes) //
-                    .build();
-
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to process RECEIVABLE LOC disbursement", e);
-        }
-    }
-
-    /**
-     * Override the parent's regenerateScheduleOnDisbursement method to use correct amounts for LOC receivable loans.
-     * For RECEIVABLE LOC loans, this method ensures that: 1. Interest is calculated based on the approved amount
-     * (discounted amount) 2. Principal portion is calculated as Approved Amount - Interest 3. The schedule uses the net
-     * disbursement amount as the principal for repayment
-     */
-    @Override
-    protected void regenerateScheduleOnDisbursement(final JsonCommand command, final Loan loan, final boolean recalculateSchedule,
-            final ScheduleGeneratorDTO scheduleGeneratorDTO, final LocalDate nextPossibleRepaymentDate,
-            final LocalDate rescheduledRepaymentDate) {
-
-        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-        boolean isReceivableLoc = locProductTypeOpt.isPresent()
-                && LocProductType.RECEIVABLE == locProductTypeOpt.get().getLineOfCredit().getProductType();
-
-        if (isReceivableLoc) {
-            // Get the approved amount (this is the discounted amount for RECEIVABLE loans)
-            BigDecimal approvedAmount = loan.getApprovedPrincipal();
-            if (approvedAmount == null) {
-                approvedAmount = loan.getPrincipal().getAmount();
-            }
-
-            BigDecimal netDisbursementAmount = loan.getNetDisbursalAmount();
-            if (netDisbursementAmount == null) {
-                // Calculate net disbursement amount: Approved Amount - Expected Interest
-                BigDecimal expectedInterest = calculateExpectedInterest(locProductTypeOpt.get(), approvedAmount);
-                if (expectedInterest != null) {
-                    netDisbursementAmount = approvedAmount.subtract(expectedInterest);
-                    log.debug("Calculated net disbursement amount for RECEIVABLE loan {}: {} (approved: {}, expected interest: {})",
-                            loan.getId(), netDisbursementAmount, approvedAmount, expectedInterest);
-                } else {
-                    netDisbursementAmount = approvedAmount;
-                    log.debug("Could not calculate expected interest for RECEIVABLE loan {}, using approved amount as net disbursement: {}",
-                            loan.getId(), netDisbursementAmount);
-                }
-            }
-
-            // Call the parent method to generate the standard schedule
-            super.regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
-                    rescheduledRepaymentDate);
-
-        } else {
-            // For non-RECEIVABLE loans, use the standard parent method
-            super.regenerateScheduleOnDisbursement(command, loan, recalculateSchedule, scheduleGeneratorDTO, nextPossibleRepaymentDate,
-                    rescheduledRepaymentDate);
-        }
-    }
-
-    /**
-     * Reverses LOC balance adjustments when a disbursal is undone. This method: 1. Increases the available LOC balance
-     * by the reversed disbursal amount 2. Decreases the consumed amount by the reversed disbursal amount 3. Creates and
-     * persists a LOC transaction history record with reversal metadata
-     *
-     * @param loanId
-     *            the loan ID
-     * @param reversedAmount
-     *            the amount being reversed (should be the approved_principal from the loan)
-     * @param transactionDate
-     *            the reversal date
-     * @return true if LOC balance was successfully updated, false if no LOC association exists
-     */
-    @Transactional
-    public boolean reverseLocBalanceOnDisbursalUndo(Long loanId, BigDecimal reversedAmount, LocalDate transactionDate) {
-        try {
-            // Check if loan is associated with a line of credit
-            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
-            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
-
-            if (lineOfCreditId == null) {
-                return true; // No LOC to adjust
-            }
-
-            // Get the line of credit details
-            String locSql = "SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?";
-            Map<String, Object> locData = jdbcTemplate.queryForMap(locSql, lineOfCreditId);
-
-            BigDecimal currentAvailableBalance = (BigDecimal) locData.get("available_balance");
-            BigDecimal currentConsumedAmount = (BigDecimal) locData.get("consumed_amount");
-
-            // Handle null values
-            if (currentAvailableBalance == null) {
-                currentAvailableBalance = BigDecimal.ZERO;
-            }
-            if (currentConsumedAmount == null) {
-                currentConsumedAmount = BigDecimal.ZERO;
-            }
-
-            // Calculate new balances (reverse the disbursal effect)
-            BigDecimal newAvailableBalance = currentAvailableBalance.add(reversedAmount);
-            BigDecimal newConsumedAmount = currentConsumedAmount.subtract(reversedAmount);
-
-            // Ensure consumed amount doesn't go below zero
-            if (newConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
-                newConsumedAmount = BigDecimal.ZERO;
-                // Adjust available balance accordingly
-                newAvailableBalance = currentAvailableBalance.add(currentConsumedAmount);
-            }
-
-            // Update LOC balances
-            String updateSql = "UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ?, last_modified_on_utc = NOW() WHERE id = ?";
-            int rowsUpdated = jdbcTemplate.update(updateSql, newAvailableBalance, newConsumedAmount, lineOfCreditId);
-
-            if (rowsUpdated == 0) {
-                log.error("Failed to update LOC balances for line of credit {}", lineOfCreditId);
-                throw new PlatformApiDataValidationException("error.msg.loc.update.failed", "Failed to update line of credit balances",
-                        "lineOfCreditId", lineOfCreditId);
-            }
-
-            // Create LOC transaction history record
-            String insertSql = "INSERT INTO m_line_of_credit_transactions "
-                    + "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, "
-                    + "transaction_date, reference_number, description, created_on_utc, created_by) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-            String referenceNumber = "LOAN_" + loanId + "_DISBURSAL_REVERSAL";
-            String description = String.format("Loan disbursal reversal - LOC balance increased by %s for loan %s", reversedAmount, loanId);
-
-            jdbcTemplate.update(insertSql, lineOfCreditId, "DISBURSAL_REVERSAL", reversedAmount, currentAvailableBalance,
-                    newAvailableBalance, transactionDate.atStartOfDay().atZone(java.time.ZoneOffset.UTC).toOffsetDateTime(),
-                    referenceNumber, description, java.time.OffsetDateTime.now(), null);
-
-            return true;
-
-        } catch (PlatformApiDataValidationException e) {
-            log.error("Failed to reverse LOC balance for loan {}: {}", loanId, e.getMessage());
-            throw new PlatformApiDataValidationException("error.msg.loc.reversal.failed", "Failed to reverse line of credit balance",
-                    "loanId", loanId, e);
-        }
-    }
-
-    /**
      * Override the parent's undoLoanDisbursal method to include LOC balance adjustments
      */
     @Override
     @Transactional
     public CommandProcessingResult undoLoanDisbursal(final Long loanId, final JsonCommand command) {
-        // Get the disbursal amount before calling parent method
-        BigDecimal disbursalAmount = null;
-        // Get the loan's approved principal (this is the amount that was disbursed)
-        disbursalAmount = jdbcTemplate.queryForObject("SELECT approved_principal FROM m_loan WHERE id = ?", BigDecimal.class, loanId);
-
         // Call the parent method to perform the standard undo disbursal
         CommandProcessingResult result = super.undoLoanDisbursal(loanId, command);
 
-        // If the undo was successful and we have a disbursal amount, adjust LOC balances
-        if (disbursalAmount != null && disbursalAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (result != null && result.hasChanges() && result.getResourceId() != null) {
+            // Fetch the loan to get disbursal amount
+            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+            BigDecimal disbursalAmount = loan.getNetDisbursalAmount();
+
             // Get the transaction date from the command or use current date
             LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
             if (transactionDate == null) {
                 transactionDate = DateUtils.getBusinessLocalDate();
             }
 
-            // Reverse the LOC balance adjustments
-            reverseLocBalanceOnDisbursalUndo(loanId, disbursalAmount, transactionDate);
+            updateLocBalance(loanId, disbursalAmount, transactionDate, LoanTransactionType.REFUND);
 
         }
-
-        return result;
-    }
-
-    /**
-     * Override the parent's undoLastLoanDisbursal method to include LOC balance adjustments
-     */
-    @Override
-    @Transactional
-    public CommandProcessingResult undoLastLoanDisbursal(Long loanId, JsonCommand command) {
-        // Get the last disbursal amount before calling parent method
-        BigDecimal lastDisbursalAmount = null;
-        // For undo last disbursal, we need to get the amount from the last disbursal transaction
-        // But for LOC balance reversal, we should use the approved_principal
-        String sql = "SELECT approved_principal FROM m_loan WHERE id = ?";
-        lastDisbursalAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, loanId);
-
-        // Call the parent method to perform the standard undo last disbursal
-        CommandProcessingResult result = super.undoLastLoanDisbursal(loanId, command);
-
-        // If the undo was successful and we have a disbursal amount, adjust LOC balances
-        if (lastDisbursalAmount != null && lastDisbursalAmount.compareTo(BigDecimal.ZERO) > 0) {
-            // Get the transaction date from the command or use current date
-            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-            if (transactionDate == null) {
-                transactionDate = DateUtils.getBusinessLocalDate();
-            }
-
-            // Reverse the LOC balance adjustments
-            reverseLocBalanceOnDisbursalUndo(loanId, lastDisbursalAmount, transactionDate);
-
-        }
-
         return result;
     }
 
@@ -1719,8 +742,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         boolean isRepaymentReversal = transactionToAdjust.isRepayment()
                 && command.bigDecimalValueOfParameterNamed("transactionAmount").compareTo(BigDecimal.ZERO) == 0;
 
-        boolean isReceivable = checkIfIsReceivable(loanId);
-
         BigDecimal repaymentAmount = null;
         if (isRepaymentReversal) {
             repaymentAmount = transactionToAdjust.getAmount();
@@ -1728,20 +749,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Call the parent method to perform the standard transaction adjustment
         CommandProcessingResult result = super.adjustLoanTransaction(loanId, transactionId, command);
-
-        // After the parent method completes, apply custom logic for RECEIVABLE LOC loans
-
-        if (isReceivable) {
-            // Reload the loan to get the updated state after the parent method
-            Loan loan = loanAssembler.assembleFrom(loanId);
-
-            // Update the loan summary with correct amounts for RECEIVABLE LOC loans
-            updateLoanSummaryDerivedFieldsForReceivableLoc(loan);
-
-            // Save the loan with updated summary
-            saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-
-        }
 
         // If this was a repayment reversal and we have a repayment amount, adjust LOC balances
         if (isRepaymentReversal && repaymentAmount != null && repaymentAmount.compareTo(BigDecimal.ZERO) > 0) {
@@ -1752,358 +759,20 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             // Reverse the LOC balance adjustments (opposite of what happens during repayment)
-            reverseLocBalanceOnRepaymentUndo(loanId, repaymentAmount, transactionDate);
+            updateLocBalance(loanId, repaymentAmount, transactionDate, transactionToAdjust.getTypeOf());
 
         }
 
         return result;
     }
 
-    /**
-     * Reverses LOC balance adjustments when a repayment is undone. This method: 1. Decreases the available LOC balance
-     * by the reversed repayment amount 2. Increases the consumed amount by the reversed repayment amount 3. Creates and
-     * persists a LOC transaction history record with reversal metadata
-     *
-     * @param loanId
-     *            the loan ID
-     * @param reversedAmount
-     *            the amount being reversed (repayment amount)
-     * @param transactionDate
-     *            the reversal date
-     * @return true if LOC balance was successfully updated, false if no LOC association exists
-     */
-    @Transactional
-    public boolean reverseLocBalanceOnRepaymentUndo(Long loanId, BigDecimal reversedAmount, LocalDate transactionDate) {
-        try {
-            // Check if loan is associated with a line of credit
-            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
-            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
+    private void updateLocBalance(Long loanId, BigDecimal amount, LocalDate transactionDate, LoanTransactionType transactionType) {
+        Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
 
-            if (lineOfCreditId == null) {
-                log.debug("No LOC associated with loan {}, skipping balance reversal", loanId);
-                return true; // No LOC to adjust
-            }
-
-            // Get the line of credit details
-            String locSql = "SELECT id, available_balance, consumed_amount, maximum_amount FROM m_line_of_credit WHERE id = ?";
-            Map<String, Object> locData = jdbcTemplate.queryForMap(locSql, lineOfCreditId);
-
-            BigDecimal currentAvailableBalance = (BigDecimal) locData.get("available_balance");
-            BigDecimal currentConsumedAmount = (BigDecimal) locData.get("consumed_amount");
-
-            // Handle null values
-            if (currentAvailableBalance == null) {
-                currentAvailableBalance = BigDecimal.ZERO;
-            }
-            if (currentConsumedAmount == null) {
-                currentConsumedAmount = BigDecimal.ZERO;
-            }
-
-            // Calculate new balances (reverse the repayment effect)
-            BigDecimal newAvailableBalance = currentAvailableBalance.subtract(reversedAmount);
-            BigDecimal newConsumedAmount = currentConsumedAmount.add(reversedAmount);
-
-            // Ensure available balance doesn't go below zero
-            if (newAvailableBalance.compareTo(BigDecimal.ZERO) < 0) {
-                newAvailableBalance = BigDecimal.ZERO;
-                // Adjust consumed amount accordingly
-                newConsumedAmount = currentConsumedAmount.add(currentAvailableBalance);
-            }
-
-            // Update the LOC balances
-            String updateSql = "UPDATE m_line_of_credit SET available_balance = ?, consumed_amount = ?, last_modified_on_utc = NOW() WHERE id = ?";
-            int rowsUpdated = jdbcTemplate.update(updateSql, newAvailableBalance, newConsumedAmount, lineOfCreditId);
-
-            if (rowsUpdated == 0) {
-                throw new PlatformApiDataValidationException("error.msg.loc.update.failed", "Failed to update line of credit balances",
-                        "lineOfCreditId", lineOfCreditId);
-            }
-
-            // Create a transaction history record
-            String insertSql = "INSERT INTO m_line_of_credit_transactions "
-                    + "(line_of_credit_id, transaction_type, amount, balance_before, balance_after, "
-                    + "transaction_date, reference_number, description, created_on_utc, created_by) "
-                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-            String referenceNumber = "LOAN_" + loanId + "_REPAYMENT_REVERSAL";
-            String description = String.format("Loan repayment reversal - LOC balance decreased by %s for loan %s", reversedAmount, loanId);
-
-            jdbcTemplate.update(insertSql, lineOfCreditId, "REPAYMENT_REVERSAL", reversedAmount, currentAvailableBalance,
-                    newAvailableBalance, transactionDate.atStartOfDay().atZone(java.time.ZoneOffset.UTC).toOffsetDateTime(),
-                    referenceNumber, description, java.time.OffsetDateTime.now(), null);
-
-            return true;
-
-        } catch (PlatformApiDataValidationException e) {
-            log.error("Validation error reversing LOC balance for repayment undo - loan {}: {}", loanId, e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to reverse LOC balance for repayment undo - loan {}: {}", loanId, e.getMessage());
-            throw new PlatformApiDataValidationException("error.msg.loc.reversal.failed", "Failed to reverse line of credit balance",
-                    "loanId", loanId, e);
+        if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0 && locProductTypeOpt.isPresent()) {
+            // For repayments, we reduce the LOC balance (i.e. free up credit)
+            lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, locProductTypeOpt, transactionDate, transactionType);
         }
-    }
 
-    /**
-     * Processes LOC loan foreclosure interest calculations including earned interest and refund
-     *
-     * @param loan
-     *            The loan being foreclosed
-     * @param annualInterestRate
-     *            The annual interest rate on the line of credit
-     * @param originalInterestChargeDerived
-     *            The original interest charge derived from disbursement
-     * @param originalPrincipalDisbursed
-     *            The original principal disbursed amount
-     */
-    private void processLocLoanForeclosureInterest(Loan loan, BigDecimal annualInterestRate, BigDecimal originalInterestChargeDerived,
-            BigDecimal originalPrincipalDisbursed) {
-        try {
-            Long loanId = loan.getId();
-
-            // Use the original values passed from the calling method
-            BigDecimal approvedPrincipal = originalPrincipalDisbursed;
-            LocalDate disbursementDate = loan.getDisbursementDate();
-            LocalDate foreclosureDate = DateUtils.getBusinessLocalDate();
-
-            if (approvedPrincipal == null || disbursementDate == null) {
-                return;
-            }
-
-            // Calculate interest earned using the formula: approved_principal * annualInterestRate *
-            // (days_from_disbursement) / 365
-            BigDecimal interestEarned = calculateInterestEarned(approvedPrincipal, originalInterestChargeDerived, disbursementDate,
-                    foreclosureDate, annualInterestRate);
-
-            // Calculate refund amount: original_interest_charge_derived - interest_earned
-            BigDecimal refundAmount = originalInterestChargeDerived.subtract(interestEarned);
-
-            // Get the net disbursal amount from the loan object
-            BigDecimal netDisbursalAmount = loan.getNetDisbursalAmount();
-            if (netDisbursalAmount == null) {
-                netDisbursalAmount = approvedPrincipal;
-            }
-
-            // Update m_loan table with the calculated values
-            // Note: We need to restore the original values that were set during disbursement
-            // and only update the "Paid" and "Outstanding" fields for foreclosure.
-            String updateLoanSql = "UPDATE m_loan SET " + "principal_disbursed_derived = ?, " // Restore original
-                                                                                              // principal disbursed
-                    + "interest_charged_derived = ?, " // Restore original interest charged
-                    + "total_expected_repayment_derived = ?, " // Restore original total expected repayment
-                    + "principal_outstanding_derived = 0, " + "interest_repaid_derived = ?, " + "interest_outstanding_derived = 0, "
-                    + "total_outstanding_derived = 0 " + "WHERE id = ?";
-
-            // Calculate the original total expected repayment (principal + interest)
-            BigDecimal originalTotalExpectedRepayment = netDisbursalAmount.add(originalInterestChargeDerived);
-
-            jdbcTemplate.update(updateLoanSql, netDisbursalAmount, // principal_disbursed_derived (restore original)
-                    originalInterestChargeDerived, // interest_charged_derived (restore original)
-                    originalTotalExpectedRepayment, // total_expected_repayment_derived (restore original)
-                    interestEarned, // interest_repaid_derived
-                    loanId // WHERE id = ?
-            );
-
-            // Process refund to linked savings account if refund amount is positive
-            if (refundAmount.compareTo(BigDecimal.ZERO) > 0) {
-                processRefundToLinkedSavingsAccount(loan, refundAmount);
-            }
-
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.loc.foreclosure.interest.calculation.failed",
-                    "Failed to process LOC loan foreclosure interest calculation", "loanId", loan.getId(), e);
-        }
-    }
-
-    /**
-     * Calculates interest earned using the formula: approved_principal * interest_charge_derived *
-     * (days_from_disbursement) / 365
-     *
-     * @param approvedPrincipal
-     *            The approved principal amount
-     * @param interestChargeDerived
-     *            The interest charge derived from the database
-     * @param disbursementDate
-     *            The loan disbursement date
-     * @param foreclosureDate
-     *            The foreclosure date
-     * @return The calculated interest earned
-     */
-    private BigDecimal calculateInterestEarned(BigDecimal approvedPrincipal, BigDecimal interestChargeDerived, LocalDate disbursementDate,
-            LocalDate foreclosureDate, BigDecimal annualInterest) {
-        try {
-            // Validate required parameters
-            if (annualInterest == null) {
-                throw new IllegalArgumentException("Annual interest rate cannot be null");
-            }
-
-            // Calculate number of days from disbursement to foreclosure
-            int daysFromDisbursement = DateUtils.getExactDifferenceInDays(disbursementDate, foreclosureDate);
-
-            // Apply the formula: approved_principal * interest_charge_derived * (days_from_disbursement) / 365
-            BigDecimal daysInYear = new BigDecimal("365");
-            BigDecimal timeFactor = new BigDecimal(daysFromDisbursement).divide(daysInYear, 10, java.math.RoundingMode.HALF_UP);
-            BigDecimal interestEarned = approvedPrincipal.multiply(annualInterest.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP))
-                    .multiply(timeFactor);
-
-            // Round to 2 decimal places for currency precision
-            interestEarned = interestEarned.setScale(2, java.math.RoundingMode.HALF_UP);
-
-            log.debug("Interest earned calculation: {} * {} * {} / 365 = {}", approvedPrincipal, interestChargeDerived,
-                    daysFromDisbursement, interestEarned);
-
-            return interestEarned;
-
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.interest.earned.calculation.failed",
-                    "Failed to calculate interest earned", "interestEarned", null, e);
-        }
-    }
-
-    /**
-     * Processes refund to the linked savings account
-     *
-     * @param loan
-     *            The loan
-     * @param refundAmount
-     *            The refund amount
-     */
-    private void processRefundToLinkedSavingsAccount(Loan loan, BigDecimal refundAmount) {
-        try {
-            Long loanId = loan.getId();
-
-            // Get the linked savings account
-            Long linkedSavingsAccountId = getLinkedSavingsAccountId(loanId);
-
-            if (linkedSavingsAccountId == null) {
-                return;
-            }
-
-            // Create a deposit transaction to the linked savings account
-            createRefundDepositTransaction(linkedSavingsAccountId, refundAmount, loan.getCurrency(), loanId);
-
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.refund.processing.failed",
-                    "Failed to process refund to linked savings account", "loanId", loan.getId(), e);
-        }
-    }
-
-    /**
-     * Gets the linked savings account ID for a loan
-     *
-     * @param loanId
-     *            The loan ID
-     * @return The linked savings account ID or null if not found
-     */
-    private Long getLinkedSavingsAccountId(Long loanId) {
-        try {
-            PortfolioAccountData linkedAccountData = this.accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(loanId);
-            return linkedAccountData != null ? linkedAccountData.getId() : null;
-        } catch (Exception e) {
-            log.error("Error retrieving linked savings account for loan {}: {}", loanId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Creates a deposit transaction to the linked savings account for the refund
-     *
-     * @param savingsAccountId
-     *            The savings account ID
-     * @param amount
-     *            The refund amount
-     * @param currency
-     *            The currency
-     * @param loanId
-     *            The loan ID for reference
-     */
-    private void createRefundDepositTransaction(Long savingsAccountId, BigDecimal amount, MonetaryCurrency currency, Long loanId) {
-        try {
-            // Create a simple JSON string for the deposit transaction
-            String jsonString = String.format(
-                    "{\"transactionDate\":\"%s\",\"transactionAmount\":\"%s\",\"note\":\"Refund from LOC loan foreclosure - Loan ID: %d\",\"paymentTypeId\":1,\"locale\":\"en\",\"dateFormat\":\"yyyy-MM-dd\"}",
-                    DateUtils.getBusinessLocalDate().toString(), amount.toString(), loanId);
-
-            // Parse the JSON string using fromApiJsonHelper
-            JsonElement parsedJson = fromApiJsonHelper.parse(jsonString);
-
-            // Create JsonCommand with proper parsing
-            JsonCommand command = JsonCommand.from(jsonString, parsedJson, fromApiJsonHelper, "savingsaccount", savingsAccountId, null,
-                    null, null, null, null, null, null, null, null, null, null, null);
-
-            // Create the deposit transaction using the savings account service
-            savingsAccountWritePlatformService.deposit(savingsAccountId, command);
-
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.refund.transaction.creation.failed",
-                    "Failed to create refund deposit transaction", "refundTransaction", null, e);
-        }
-    }
-
-    /**
-     * Gets the approved principal for a loan
-     *
-     * @param loanId
-     *            The loan ID
-     * @return The approved principal or null if not found
-     */
-    private BigDecimal getApprovedPrincipalForLoan(Long loanId) {
-        try {
-            String sql = "SELECT approved_principal FROM m_loan WHERE id = ?";
-            List<BigDecimal> results = jdbcTemplate.queryForList(sql, BigDecimal.class, loanId);
-            return results.isEmpty() ? null : results.get(0);
-        } catch (Exception e) {
-            log.error("Error retrieving approved principal for loan {}: {}", loanId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Gets the interest_charge_derived for a loan
-     *
-     * @param loanId
-     *            The loan ID
-     * @return The interest_charge_derived or null if not found
-     */
-    private BigDecimal getInterestChargeDerived(Long loanId) {
-        try {
-            String sql = "SELECT interest_charged_derived FROM m_loan WHERE id = ?";
-            List<BigDecimal> results = jdbcTemplate.queryForList(sql, BigDecimal.class, loanId);
-            return results.isEmpty() ? null : results.get(0);
-        } catch (ResourceNotFoundException e) {
-            log.error("Error retrieving interest_charge_derived for loan {}: {}", loanId, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Gets the annual interest rate for a loan from its associated line of credit
-     *
-     * @param loanId
-     *            The ID of the loan
-     * @return The annual interest rate or null if not found
-     */
-    private BigDecimal getAnnualInterestRate(Long loanId) {
-        try {
-            // First get the line of credit ID associated with the loan
-            String sql = "SELECT line_of_credit_id FROM m_loan WHERE id = ?";
-            Long lineOfCreditId = jdbcTemplate.queryForObject(sql, Long.class, loanId);
-
-            if (lineOfCreditId == null) {
-                return null;
-            }
-
-            // Then get the annual interest rate from the line of credit
-            String locSql = "SELECT annual_interest_rate FROM m_line_of_credit WHERE id = ?";
-            List<BigDecimal> results = jdbcTemplate.queryForList(locSql, BigDecimal.class, lineOfCreditId);
-            return results.isEmpty() ? null : results.get(0);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private boolean checkIfIsReceivable(Long loanId) {
-        Optional<LocProductType> locProductTypeOpt = loanLineOfCreditParamsRepository.findLocProductTypeByLoanId(loanId);
-        return locProductTypeOpt.isPresent() && LocProductType.RECEIVABLE == locProductTypeOpt.get();
     }
 }
