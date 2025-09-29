@@ -109,7 +109,6 @@ import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -779,16 +778,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     private boolean standingInstructionExists(Long loanId) {
-        String sql = "SELECT matsi.name " + "FROM m_account_transfer_details matd "
-                + "LEFT JOIN m_account_transfer_standing_instructions matsi " + "ON matsi.account_transfer_details_id = matd.id "
+
+        String sql = "SELECT COUNT(*) " + "FROM m_account_transfer_details matd "
+                + "INNER JOIN m_account_transfer_standing_instructions matsi " + "ON matsi.account_transfer_details_id = matd.id "
                 + "WHERE matd.to_loan_account_id = ? " + "AND matsi.status = 1";
 
-        try {
-            String result = jdbcTemplate.queryForObject(sql, new Object[] { loanId }, String.class);
-            return result != null && !result.isEmpty();
-        } catch (EmptyResultDataAccessException e) {
-            return false; // No row found
-        }
+        Integer count = jdbcTemplate.queryForObject(sql, new Object[] { loanId }, Integer.class);
+        return count != null && count > 0;
     }
 
 }
