@@ -32,7 +32,7 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransact
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
@@ -141,7 +141,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final LineOfCreditRepository lineOfCreditRepository;
+    private final LineOfCreditReadPlatformService lineOfCreditReadPlatformService;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
@@ -163,7 +163,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper,
             org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
-            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository,
+            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
@@ -177,7 +177,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
-        this.lineOfCreditRepository = lineOfCreditRepository;
+        this.lineOfCreditReadPlatformService = lineOfCreditReadPlatformService;
         this.loanRepositoryWrapper = loanRepositoryWrapper;
         this.applicationCurrencyRepository = applicationCurrencyRepository;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
@@ -1087,8 +1087,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled")
                 && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
             isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
-            lineOfCreditSummaries = this.lineOfCreditRepository
-                    .findActiveSummariesByCurrencyAndClientId(loanProduct.getCurrency().getCode(), clientId);
+            lineOfCreditSummaries = this.lineOfCreditReadPlatformService.retrieveSummary(loanProduct.getCurrency().getCode(), clientId);
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();
