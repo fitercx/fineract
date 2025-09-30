@@ -480,6 +480,6 @@ The complete Odoo integration now includes:
 
 ---
 
-**Last Updated**: September 2025  
-**Version**: 1.0  
+**Last Updated**: September 2025
+**Version**: 1.0
 **Author**: Crediblex Development Team

@@ -42,8 +42,8 @@
         </createTable>
     </changeSet>
     <changeSet author="crediblex" id="43">
-        <addForeignKeyConstraint 
-            baseTableName="journal_entry_odoo_sync" 
+        <addForeignKeyConstraint
+            baseTableName="journal_entry_odoo_sync"
             baseColumnNames="journal_entry_id"
             constraintName="fk_journal_entry_odoo_sync_journal_entry"
             referencedTableName="acc_gl_journal_entry"
