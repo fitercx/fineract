@@ -490,6 +490,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails, "
                     + " llocp.exchange_rate as exchangeRate, llocp.markup as markup, "
                     + " llocp.amount_in_facility_currency as amountInFacilityCurrency, "
+                    + " l.is_factor_rate_enabled AS factorRateEnabled, l.factor_rate AS factorRate, "
                     + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
@@ -865,10 +866,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     .getStringEnumOptionData(LoanCapitalizedIncomeCalculationType.class, rs.getString("capitalizedIncomeCalculationType"));
             final StringEnumOptionData capitalizedIncomeStrategy = ApiFacingEnum
                     .getStringEnumOptionData(LoanCapitalizedIncomeStrategy.class, rs.getString("capitalizedIncomeStrategy"));
-
             // Adding new fields as per CredibleX requirements
             final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
             final Boolean isRestructured = rs.getBoolean("isRestructured");
+
+            final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
+            final BigDecimal factorRate = rs.getBigDecimal("factorRate");
 
             ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(id, accountNo, status, externalId,
                     clientId, clientAccountNo, clientName, clientOfficeId, clientExternalId, groupData, loanType, loanProductId,
@@ -896,6 +899,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 
             extractLocDetails(extendedLoanAccountData, rs);
+
+            extendedLoanAccountData.setFactorRate(factorRate);
+            extendedLoanAccountData.setFactorRateEnabled(factorRateEnabled);
 
             return extendedLoanAccountData;
 
