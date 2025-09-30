@@ -4,9 +4,11 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
@@ -41,9 +43,7 @@ public class LineOfCreditTransactionReadPlatformServiceImpl implements LineOfCre
             final BigDecimal amount = rs.getBigDecimal("amount");
             final BigDecimal balanceBefore = rs.getBigDecimal("balanceBefore");
             final BigDecimal balanceAfter = rs.getBigDecimal("balanceAfter");
-            final OffsetDateTime transactionDate = rs.getTimestamp("transactionDate") != null
-                    ? rs.getTimestamp("transactionDate").toInstant().atOffset(java.time.ZoneOffset.UTC)
-                    : null;
+            final LocalDate transactionDate = JdbcSupport.getLocalDate(rs, "transactionDate");
             final String referenceNumber = rs.getString("referenceNumber");
             final String description = rs.getString("description");
             final OffsetDateTime createdOn = rs.getTimestamp("createdOn") != null

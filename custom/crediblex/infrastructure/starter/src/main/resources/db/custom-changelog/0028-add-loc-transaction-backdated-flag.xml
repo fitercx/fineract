@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Adds is_backdated_entry column to m_line_of_credit_transactions with default false
+-->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet id="0015-add-loc-transaction-backdated-flag" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_line_of_credit_transactions" columnName="is_backdated_entry"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_line_of_credit_transactions">
+            <column name="is_backdated_entry" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

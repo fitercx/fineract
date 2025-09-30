@@ -9,7 +9,6 @@ import com.crediblex.fineract.portfolio.loanaccount.exception.LineOfCreditIsNotA
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
-import com.google.gson.JsonObject;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -17,10 +16,11 @@ import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -48,6 +48,7 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanApplicationWritePla
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.service.GSIMReadPlatformService;
@@ -67,6 +68,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     private final LoanLineOfCreditParamsRepository loanLocParamsRepository;
     private final FromJsonHelper fromApiJsonHelper;
     private final LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
+    private final ConfigurationDomainService configurationDomainService;
 
     public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator,
@@ -81,7 +83,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService,
             BusinessEventNotifierService businessEventNotifierService1, LoanLineOfCreditParamsRepository loanLocParamsRepository,
-            FromJsonHelper fromApiJsonHelper, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
+            FromJsonHelper fromApiJsonHelper, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper,
+            ConfigurationDomainService configurationDomainService) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler,
                 loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository,
                 accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService,
@@ -92,6 +95,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         this.fromApiJsonHelper = fromApiJsonHelper;
         this.loanLocParamsRepository = loanLocParamsRepository;
         this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
+        this.configurationDomainService = configurationDomainService;
     }
 
     @Transactional
@@ -104,6 +108,16 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             // Assembling loan
             final Loan loan = this.loanAssembler.assembleFrom(command);
+
+            // Handle Factor Rate product
+            final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
+            final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+            if (factorRateProductEnabled) {
+                this.validateFactorRate(factorRate);
+                loan.setFactorRate(factorRate);
+                loan.setFactorRateEnabled(true);
+            }
+
             // Validations (further validations which requires the assembling first)
             this.loanApplicationValidator.validateForCreate(loan);
             // Need to flush to gather loan id
@@ -151,17 +165,84 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         }
     }
 
+    public void validateFactorRate(final BigDecimal factorRate) {
+        final Long maximumProductFactorRate = this.configurationDomainService.retrieveMaximumProductFactorRate();
+        if (factorRate == null || factorRate.compareTo(BigDecimal.ONE) <= 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.product.factor.rate.amount.must.be.greater.than.one",
+                    "Factor rate product amount must be greater than one");
+        }
+        if (factorRate.compareTo(BigDecimal.valueOf(maximumProductFactorRate)) > 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.product.factor.rate.exceeds.maximum.limit",
+                    "Factor rate of " + factorRate + " exceeds the maximum limit of " + maximumProductFactorRate);
+        }
+    }
+
     @Transactional
     @Override
     public CommandProcessingResult modifyApplication(final Long loanId, final JsonCommand command) {
-        CommandProcessingResult result = super.modifyApplication(loanId, command);
-        if (result.getResourceId() > 0 && result.getChanges() != null) {
-            updateWithLineOfCreditParams(command, loanId, result);
+        try {
+            Loan loan = retrieveLoanBy(loanId);
+            // Validations (prior assembling)
+            this.loanApplicationValidator.validateForModify(command, loan);
+            // Assembling loan
+            Map<String, Object> changes = this.loanAssembler.updateFrom(command, loan);
+            // Validations (further validations which requires the assembling first)
+            this.loanApplicationValidator.validateForModify(loan);
+            // TODO: check whether this is needed!
+            loan = loanRepository.saveAndFlush(loan);
+
+            // Handle Factor Rate update
+            final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
+            final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+            if (factorRateProductEnabled) {
+                this.validateFactorRate(factorRate);
+                loan.setFactorRate(factorRate);
+                loan.setFactorRateEnabled(true);
+            }
+
+            // Save note
+            final String submittedOnNote = command.stringValueOfParameterNamed("submittedOnNote");
+            createNote(submittedOnNote, loan);
+            // Modify calendar instance
+            final Long calendarId = command.longValueOfParameterNamed("calendarId");
+            modifyCalendar(loanId, calendarId, loan, changes);
+            // Save linked account information
+            modifyLinkedAccount(command, changes, loan);
+
+            // updating loan interest recalculation details throwing null
+            // pointer exception after saveAndFlush
+            // http://stackoverflow.com/questions/17151757/hibernate-cascade-update-gives-null-pointer/17334374#17334374
+            // TODO: check whether this is needed!
+            this.loanRepositoryWrapper.saveAndFlush(loan);
+            // Save interest recalculation calendar
+            if (loan.isInterestBearingAndInterestRecalculationEnabled()
+                    && changes.containsKey(LoanProductConstants.IS_INTEREST_RECALCULATION_ENABLED_PARAMETER_NAME)) {
+                createAndPersistCalendarInstanceForInterestRecalculation(loan);
+            }
+
+            if (changes != null && !changes.isEmpty()) {
+                updateWithLineOfCreditParams(command, loanId, changes);
+            }
+
+            return new CommandProcessingResultBuilder() //
+                    .withEntityId(loanId) //
+                    .withEntityExternalId(loan.getExternalId()) //
+                    .withOfficeId(loan.getOfficeId()) //
+                    .withClientId(loan.getClientId()) //
+                    .withGroupId(loan.getGroupId()) //
+                    .withLoanId(loan.getId()) //
+                    .with(changes).build();
+        } catch (final JpaSystemException | DataIntegrityViolationException dve) {
+            handleDataIntegrityIssues(command, dve.getMostSpecificCause(), dve);
+            return CommandProcessingResult.empty();
+        } catch (final PersistenceException dve) {
+            Throwable throwable = ExceptionUtils.getRootCause(dve.getCause());
+            handleDataIntegrityIssues(command, throwable, dve);
+            return CommandProcessingResult.empty();
         }
-        return result;
     }
 
-    private void updateWithLineOfCreditParams(JsonCommand command, Long loanId, CommandProcessingResult changes) {
+    private void updateWithLineOfCreditParams(JsonCommand command, Long loanId, Map<String, Object> changes) {
         if (command.parsedJson() == null) {
             return;
         }
@@ -188,7 +269,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
                 // Add changes to the command processing result
                 if (changes != null) {
-                    changes.getChanges().putAll(actualChanges);
+                    changes.putAll(actualChanges);
                 }
             }
         } else {
@@ -206,57 +287,54 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                     // Add all new values as changes
                     if (changes != null) {
                         if (entity.getLineOfCredit() != null) {
-                            changes.getChanges().put(LINE_OF_CREDIT_ID, entity.getLineOfCredit().getId());
+                            changes.put(LINE_OF_CREDIT_ID, entity.getLineOfCredit().getId());
                         }
                         if (entity.getInvoiceNo() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_NO, entity.getInvoiceNo());
+                            changes.put(LoanAccountAdditionalProperties.INVOICE_NO, entity.getInvoiceNo());
                         }
                         if (entity.getInvoiceDate() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_DATE, entity.getInvoiceDate());
+                            changes.put(LoanAccountAdditionalProperties.INVOICE_DATE, entity.getInvoiceDate());
                         }
                         if (entity.getInvoiceDueDate() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, entity.getInvoiceDueDate());
+                            changes.put(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, entity.getInvoiceDueDate());
                         }
                         if (entity.getInvoiceCurrency() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_CURRENCY, entity.getInvoiceCurrency());
+                            changes.put(LoanAccountAdditionalProperties.INVOICE_CURRENCY, entity.getInvoiceCurrency());
                         }
                         if (entity.getInvoiceAmount() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.INVOICE_AMOUNT, entity.getInvoiceAmount());
+                            changes.put(LoanAccountAdditionalProperties.INVOICE_AMOUNT, entity.getInvoiceAmount());
                         }
                         // Track new LOC-related fields
                         if (entity.getDisapprovedAmount() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, entity.getDisapprovedAmount());
+                            changes.put(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, entity.getDisapprovedAmount());
                         }
                         if (entity.getApprovedReceivableAmount() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT,
-                                    entity.getApprovedReceivableAmount());
+                            changes.put(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT, entity.getApprovedReceivableAmount());
                         }
                         if (entity.getAdvancePercentage() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, entity.getAdvancePercentage());
+                            changes.put(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, entity.getAdvancePercentage());
                         }
                         if (entity.getAmountAfterAdvance() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, entity.getAmountAfterAdvance());
+                            changes.put(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, entity.getAmountAfterAdvance());
                         }
                         if (entity.getBuyerDetails() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.BUYER_DETAILS, entity.getBuyerDetails());
+                            changes.put(LoanAccountAdditionalProperties.BUYER_DETAILS, entity.getBuyerDetails());
                         }
                         // Track additional LOC-related fields
                         if (entity.getExchangeRate() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.EXCHANGE_RATE, entity.getExchangeRate());
+                            changes.put(LoanAccountAdditionalProperties.EXCHANGE_RATE, entity.getExchangeRate());
                         }
                         if (entity.getMarkup() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.MARKUP, entity.getMarkup());
+                            changes.put(LoanAccountAdditionalProperties.MARKUP, entity.getMarkup());
                         }
                         if (entity.getAmountInFacilityCurrency() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY,
-                                    entity.getAmountInFacilityCurrency());
+                            changes.put(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY, entity.getAmountInFacilityCurrency());
                         }
                         if (entity.getApprovedPayableAmount() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
-                                    entity.getApprovedPayableAmount());
+                            changes.put(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT, entity.getApprovedPayableAmount());
                         }
                         if (entity.getSupplierDetails() != null) {
-                            changes.getChanges().put(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, entity.getSupplierDetails());
+                            changes.put(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, entity.getSupplierDetails());
                         }
                     }
                 }
@@ -289,49 +367,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         return Optional.empty();
     }
 
-    // TODO: Refactor method.
-    @Override
-    @Transactional
-    public CommandProcessingResult approveApplication(final Long loanId, final JsonCommand command) {
-        try {
-            // Check if this is a RECEIVABLE LOC loan and adjust the approved amount
-            Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLocParamsRepository.findByLoanId(loanId);
-            boolean isReceivable = lineOfCreditParams.isPresent()
-                    && LocProductType.RECEIVABLE == lineOfCreditParams.get().getLineOfCredit().getProductType();
-
-            if (isReceivable) {
-                // Get the original approved amount from the command
-                BigDecimal originalApprovedAmount = command
-                        .bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
-
-                if (originalApprovedAmount != null) {
-                    // Calculate the discounted amount (this will be the new approved amount)
-                    BigDecimal discountedAmount = calculateDiscountedAmount(loanId, lineOfCreditParams.get(), originalApprovedAmount);
-
-                    // Create a modified JSON object with the discounted amount
-                    JsonObject modifiedJson = command.parsedJson().getAsJsonObject().deepCopy();
-                    modifiedJson.addProperty(LoanApiConstants.approvedLoanAmountParameterName, discountedAmount);
-
-                    // Create a new command with the modified JSON
-                    JsonCommand modifiedCommand = JsonCommand.fromExistingCommand(command, modifiedJson);
-
-                    log.info("Adjusted approved amount for RECEIVABLE LOC loan {}: original={}, discounted={}", loanId,
-                            originalApprovedAmount, discountedAmount);
-
-                    // Call the parent implementation with the modified command
-                    return super.approveApplication(loanId, modifiedCommand);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to adjust approved amount for RECEIVABLE LOC loan {}: {}. Proceeding with standard approval.", loanId,
-                    e.getMessage());
-            // Don't fail the approval if LOC adjustment fails, proceed with standard approval
-        }
-
-        // For non-RECEIVABLE loans or if adjustment fails, proceed with standard approval
-        return super.approveApplication(loanId, command);
-    }
-
     public void processLoanApplicationWithLineOfCredit(final JsonCommand command, final Loan loan) {
 
         Long lineOfCreditId = fromApiJsonHelper.extractLongNamed(LINE_OF_CREDIT_ID, command.parsedJson());
@@ -348,33 +383,39 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanLineOfCreditParams loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             loanLocParamsRepository.save(loanLocParams);
 
+            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+
+                BigDecimal advanceAmount = getApprovedReceivableAmount(loan, loanLocParams);
+
+                loan.setApprovedPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
+                loan.setNetDisbursalAmount(advanceAmount.subtract(loan.getTotalInterest()));
+                loan.getLoanRepaymentScheduleDetail().setPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
+
+                loan.updateLoanSummaryDerivedFields();
+                loan.updateLoanSummaryAndStatus();
+
+                this.loanRepositoryWrapper.saveAndFlush(loan);
+
+                loanLocParamsRepository.saveAndFlush(loanLocParams);
+            }
+
         }
 
     }
 
-    /**
-     * Calculates the discounted amount based on the principal and advance percentage from the associated Line of
-     * Credit. This method: 1. Retrieves the loan's associated Line of Credit 2. Gets the advance percentage from the
-     * LOC 3. Calculates the discounted amount as principal * advance_percentage
-     *
-     * @param loanId
-     *            the loan ID
-     * @param principal
-     *            the principal amount to be discounted
-     * @return the discounted amount (principal * advance_percentage), or null if no LOC association exists
-     */
-    public BigDecimal calculateDiscountedAmount(Long loanId, LoanLineOfCreditParams lineOfCreditParams, BigDecimal principal) {
+    private static BigDecimal getApprovedReceivableAmount(Loan loan, LoanLineOfCreditParams loanLocParams) {
+        BigDecimal disapprovedAmount = loanLocParams.getDisapprovedAmount() != null ? loanLocParams.getDisapprovedAmount()
+                : BigDecimal.ZERO;
+        BigDecimal advancePercentage = loanLocParams.getAdvancePercentage() != null ? loanLocParams.getAdvancePercentage()
+                : BigDecimal.ZERO;
 
-        BigDecimal advancePercentage = lineOfCreditParams.getLineOfCredit().getAdvancePercentage();
-
-        if (advancePercentage == null) {
-            throw new PlatformApiDataValidationException("error.msg.loc.discounted.amount.calculation.failed",
-                    "Failed to calculate discounted amount from Line of Credit", "loanId", loanId);
+        // Calculate the amount after advance
+        BigDecimal amountAfterAdvance = loan.getPrincipal().getAmount().subtract(disapprovedAmount);
+        if (amountAfterAdvance.compareTo(BigDecimal.ZERO) < 0) {
+            amountAfterAdvance = BigDecimal.ZERO;
         }
 
-        BigDecimal advancePercentageDecimal = advancePercentage.divide(new BigDecimal("100"), 4, RoundingMode.HALF_UP);
-        return principal.multiply(advancePercentageDecimal);
-
+        return amountAfterAdvance.multiply(advancePercentage).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
 }

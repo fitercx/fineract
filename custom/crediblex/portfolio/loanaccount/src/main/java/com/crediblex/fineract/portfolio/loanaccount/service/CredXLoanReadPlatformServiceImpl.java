@@ -25,10 +25,13 @@ import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -40,6 +43,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
@@ -58,6 +62,7 @@ import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecific
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.organisation.monetary.domain.ApplicationCurrency;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
@@ -84,6 +89,7 @@ import org.apache.fineract.portfolio.group.service.GroupReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanApprovalData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInterestRecalculationData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanSummaryData;
@@ -91,6 +97,7 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLoanData;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
@@ -135,6 +142,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final LineOfCreditRepository lineOfCreditRepository;
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
+    private final LoanRepositoryWrapper loanRepositoryWrapper;
+    private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -153,7 +163,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper,
             org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
-            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository) {
+            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -167,6 +178,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
         this.lineOfCreditRepository = lineOfCreditRepository;
+        this.loanRepositoryWrapper = loanRepositoryWrapper;
+        this.applicationCurrencyRepository = applicationCurrencyRepository;
+        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
     }
 
     @Override
@@ -476,6 +490,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails, "
                     + " llocp.exchange_rate as exchangeRate, llocp.markup as markup, "
                     + " llocp.amount_in_facility_currency as amountInFacilityCurrency, "
+                    + " l.is_factor_rate_enabled AS factorRateEnabled, l.factor_rate AS factorRate, "
                     + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
@@ -851,10 +866,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     .getStringEnumOptionData(LoanCapitalizedIncomeCalculationType.class, rs.getString("capitalizedIncomeCalculationType"));
             final StringEnumOptionData capitalizedIncomeStrategy = ApiFacingEnum
                     .getStringEnumOptionData(LoanCapitalizedIncomeStrategy.class, rs.getString("capitalizedIncomeStrategy"));
-
             // Adding new fields as per CredibleX requirements
             final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
             final Boolean isRestructured = rs.getBoolean("isRestructured");
+
+            final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
+            final BigDecimal factorRate = rs.getBigDecimal("factorRate");
 
             ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(id, accountNo, status, externalId,
                     clientId, clientAccountNo, clientName, clientOfficeId, clientExternalId, groupData, loanType, loanProductId,
@@ -882,6 +899,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 
             extractLocDetails(extendedLoanAccountData, rs);
+
+            extendedLoanAccountData.setFactorRate(factorRate);
+            extendedLoanAccountData.setFactorRateEnabled(factorRateEnabled);
 
             return extendedLoanAccountData;
 
@@ -1197,6 +1217,23 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Object[] objectArray = extraCriterias.toArray();
         final Object[] finalObjectArray = Arrays.copyOf(objectArray, arrayPos);
         return this.paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray, loanMapper);
+    }
+
+    @Override
+    public LoanApprovalData retrieveApprovalTemplate(final Long loanId) {
+        final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+        final ApplicationCurrency appCurrency = applicationCurrencyRepository.findOneWithNotFoundDetection(loan.getCurrency());
+
+        Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loanId);
+
+        if (lineOfCreditParams.isPresent() && lineOfCreditParams.get().getLineOfCredit().getProductType() == LocProductType.RECEIVABLE) {
+            // If LOC is linked, then fetch the LOC details and override the net disbursal amount
+            return new LoanApprovalData(loan.getApprovedPrincipal(), DateUtils.getBusinessLocalDate(), loan.getNetDisbursalAmount(),
+                    appCurrency.toData());
+        }
+
+        return new LoanApprovalData(loan.getProposedPrincipal(), DateUtils.getBusinessLocalDate(), loan.getNetDisbursalAmount(),
+                appCurrency.toData());
     }
 
 }
