@@ -90,18 +90,25 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}", 
                             loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
                     } else {
-                        String errorMsg = "Failed to create any moves in Odoo for loan " + loanId;
+                        // This should rarely happen as the service method should throw exceptions for specific failures
+                        String errorMsg = "Failed to create any moves in Odoo for loan " + loanId + " - No specific error details available (possible authentication or configuration issue)";
+                        log.error("No moves created for loan {}: This suggests a service-level issue without specific error details", loanId);
+                        
                         for (JournalEntryOdooSync sync : loanEntries) {
                             journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                             failureCount++;
                         }
-                        log.error("Failed to post journal entries for loan {} to Odoo", loanId);
                     }
 
                 } catch (Exception e) {
-                    log.error("Failed to post journal entries for loan {} to Odoo", loanId, e);
+                    // Capture the specific error details for better debugging
+                    String specificError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    String detailedErrorMsg = String.format("Failed to post journal entries for loan %d to Odoo: %s", loanId, specificError);
+                    
+                    log.error("Failed to post journal entries for loan {} to Odoo - Error: {}", loanId, specificError, e);
+                    
                     for (JournalEntryOdooSync sync : loanEntries) {
-                        journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), e.getMessage());
+                        journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), detailedErrorMsg);
                         failureCount++;
                     }
                 }
@@ -112,8 +119,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 try {
                     // Validate the journal entry before posting
                     if (!odooJournalEntryService.canPostToOdoo(sync.getJournalEntry())) {
-                        String errorMsg = "Journal entry validation failed";
-                        log.warn("Skipping journal entry {} - {}", sync.getJournalEntry().getId(), errorMsg);
+                        String errorMsg = "Journal entry validation failed for entry " + sync.getJournalEntry().getId() + 
+                                         " - Check GL account, amount, or transaction date";
+                        log.warn("Skipping journal entry {} - validation failed", sync.getJournalEntry().getId());
                         journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                         failureCount++;
                         continue;
@@ -129,15 +137,22 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         successCount++;
                         movesCreated++;
                     } else {
-                        String errorMsg = "Failed to create move in Odoo";
-                        log.error("Failed to post journal entry {} to Odoo", sync.getJournalEntry().getId());
+                        // This should rarely happen as the service should throw exceptions for specific failures
+                        String errorMsg = "Failed to create move in Odoo for journal entry " + sync.getJournalEntry().getId() + 
+                                         " - No specific error details available (possible authentication or configuration issue)";
+                        log.error("Failed to post journal entry {} to Odoo - No move ID returned", sync.getJournalEntry().getId());
                         journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                         failureCount++;
                     }
 
                 } catch (Exception e) {
-                    log.error("Failed to post journal entry {} to Odoo", sync.getJournalEntry().getId(), e);
-                    journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), e.getMessage());
+                    // Capture the specific error details for better debugging
+                    String specificError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    String detailedErrorMsg = String.format("Failed to post journal entry %d to Odoo: %s", 
+                                                           sync.getJournalEntry().getId(), specificError);
+                    
+                    log.error("Failed to post journal entry {} to Odoo - Error: {}", sync.getJournalEntry().getId(), specificError, e);
+                    journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), detailedErrorMsg);
                     failureCount++;
                 }
             }

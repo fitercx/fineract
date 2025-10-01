@@ -1,9 +1,4 @@
-# Fineract-5. [Implementation Details](#implementation-details)
-
-6. [Dynamic Journal Mapping](#dynamic-journal-mapping)
-7. [Database Schema](#database-schema)
-8. [Configuration](#configuration)
-9. [Usage](#usage) Journal Entries Integration
+# Fineract-Odoo Journal Entries Integration
 
 ## Overview
 
@@ -15,11 +10,16 @@ This module provides seamless integration between Apache Fineract and Odoo ERP s
 2. [Solution Architecture](#solution-architecture)
 3. [Event-Driven Flow](#event-driven-flow)
 4. [Implementation Details](#implementation-details)
-5. [Database Schema](#database-schema)
-6. [Configuration](#configuration)
-7. [Usage](#usage)
-8. [Monitoring & Troubleshooting](#monitoring--troubleshooting)
-9. [File Structure](#file-structure)
+5. [Dynamic Journal Mapping](#dynamic-journal-mapping)
+6. [Database Schema](#database-schema)
+7. [Configuration](#configuration)
+8. [Usage](#usage)
+9. [Monitoring & Troubleshooting](#monitoring--troubleshooting)
+   - [Enhanced Error Handling](#enhanced-error-handling)
+   - [Log Messages](#log-messages)
+   - [Key Metrics](#key-metrics)
+   - [Common Issues](#common-issues)
+10. [File Structure](#file-structure)
 
 ## Background & Problem Statement
 
@@ -495,6 +495,120 @@ WHERE is_posted_to_odoo = false AND error_message IS NOT NULL;
 ```
 
 ## Monitoring & Troubleshooting
+
+### Enhanced Error Handling
+
+#### Overview
+
+Enhanced error handling provides specific, actionable error messages instead of generic fallback messages. This makes debugging much easier in production environments.
+
+#### Before vs After
+
+**Before (Generic Errors)**
+
+```
+❌ "Failed to create any moves in Odoo for loan 123"
+❌ "Failed to create move in Odoo"
+❌ "Journal entry validation failed"
+```
+
+**After (Specific Errors)**
+
+```
+✅ "Odoo authentication failed - check credentials and connection settings"
+✅ "No suitable journal found in Odoo for GL code '100031' - check journal mapping configuration"
+✅ "Could not map Fineract GL account '200065' to Odoo account - account may not exist in Odoo chart of accounts"
+✅ "Failed to create account move in Odoo for journal entry 12345 - check move data and Odoo permissions"
+✅ "Journal entry validation failed for entry 12345 - Check GL account, amount, or transaction date"
+```
+
+#### Error Categories
+
+**1. Authentication Errors**
+
+- **Error**: `"Odoo authentication failed - check credentials and connection settings"`
+- **Cause**: Invalid credentials, network issues, Odoo server down
+- **Action**: Check Odoo URL, username, password, API key
+
+**2. Configuration Errors**
+
+- **Error**: `"No suitable journal found in Odoo for GL code 'XXXXX' - check journal mapping configuration"`
+- **Cause**: GL code not mapped to any journal or journal doesn't exist in Odoo
+- **Action**: Update journal mapping configuration or create journal in Odoo
+
+**3. Account Mapping Errors**
+
+- **Error**: `"Could not map Fineract GL account 'XXXXX' to Odoo account - account may not exist in Odoo chart of accounts"`
+- **Cause**: GL account code doesn't exist in Odoo chart of accounts
+- **Action**: Create account in Odoo or update account mapping
+
+**4. Data Validation Errors**
+
+- **Error**: `"Journal entry validation failed for entry XXXXX - Check GL account, amount, or transaction date"`
+- **Cause**: Invalid or missing data in journal entry
+- **Action**: Check journal entry data quality
+
+**5. Permission Errors**
+
+- **Error**: `"Failed to create account move in Odoo for journal entry XXXXX - check move data and Odoo permissions"`
+- **Cause**: User lacks permissions or invalid move data
+- **Action**: Check Odoo user permissions and move data format
+
+**6. Unexpected Errors**
+
+- **Error**: `"Unexpected error posting journal entry XXXXX to Odoo: [specific error]"`
+- **Cause**: Network issues, server errors, unexpected exceptions
+- **Action**: Check logs for specific error details and network connectivity
+
+#### Error Flow
+
+```
+Journal Entry Sync Job
+    │
+    ├─ Authentication Error → Specific auth error message
+    │
+    ├─ Configuration Error → Specific config error message
+    │
+    ├─ Data Validation Error → Specific validation error message
+    │
+    ├─ Unexpected Error → Specific error with full exception details
+    │
+    └─ Fallback (rare) → Generic message with additional context
+```
+
+#### Example Error Messages in Production
+
+**Authentication Failure**
+
+```
+ERROR: Failed to post journal entries for loan 123 to Odoo - Error: Odoo authentication failed - check credentials and connection settings
+```
+
+**Configuration Issue**
+
+```
+ERROR: Failed to post journal entry 456 to Odoo - Error: No suitable journal found in Odoo for GL code '100031' - check journal mapping configuration
+```
+
+**Data Issue**
+
+```
+ERROR: Failed to post journal entry 789 to Odoo - Error: Journal entry validation failed for entry 789 - Check GL account, amount, or transaction date
+```
+
+#### Fallback Scenarios
+
+The generic error messages are now only used in rare cases where:
+
+1. The service returns empty results without throwing exceptions
+2. No specific error details are available
+3. As a safety net for unexpected null returns
+
+These cases include additional context to help identify the issue:
+
+```
+"Failed to create any moves in Odoo for loan 123 - No specific error details available (possible authentication or configuration issue)"
+```
 
 ### Log Messages
 
