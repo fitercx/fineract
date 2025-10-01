@@ -59,6 +59,15 @@ public interface OdooIntegrationReadPlatformService {
     Integer getJournalIdForTransaction(String transactionType);
 
     /**
+     * Get journal ID based on GL account code
+     *
+     * @param glCode
+     *            GL account code
+     * @return Journal ID or null if not found
+     */
+    Integer getJournalIdForGlCode(String glCode);
+
+    /**
      * Clear account mapping cache
      */
     void clearAccountMappingCache();

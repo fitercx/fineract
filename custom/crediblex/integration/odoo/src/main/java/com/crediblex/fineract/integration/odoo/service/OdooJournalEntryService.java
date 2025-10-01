@@ -58,15 +58,15 @@ public class OdooJournalEntryService {
                 return null;
             }
 
-            // Get journal ID
-            Integer journalId = odooIntegrationService.getDefaultJournalId();
+            // Get journal ID based on GL account code
+            String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode);
             if (journalId == null) {
-                log.error("Could not find suitable journal in Odoo");
+                log.error("Could not find suitable journal in Odoo for GL code '{}'", fineractAccountCode);
                 return null;
             }
 
             // Get account mapping
-            String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
             Integer odooAccountId = odooIntegrationService.getOdooAccountId(fineractAccountCode);
             if (odooAccountId == null) {
                 log.error("Could not map Fineract account '{}' to Odoo account", fineractAccountCode);
@@ -244,59 +244,87 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Post multiple journal entries for a loan as a single account move in Odoo
+     * Post multiple journal entries for a loan as grouped account moves in Odoo
+     * Groups entries by their target journal based on GL codes
      */
-    public Long postJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+    public Map<Integer, Long> postJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+        Map<Integer, Long> journalToMoveMap = new HashMap<>();
+        
         try {
             // Authenticate with Odoo
             Integer uid = odooApiClient.authenticate();
             if (uid == null) {
                 log.error("Failed to authenticate with Odoo");
-                return null;
+                return journalToMoveMap;
             }
 
-            // Get journal ID
-            Integer journalId = odooIntegrationService.getDefaultJournalId();
-            if (journalId == null) {
-                log.error("Could not find suitable journal in Odoo");
-                return null;
-            }
-
-            // Group journal entries by debit/credit and account
+            // Group journal entries by target journal
             List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
 
             // Validate all entries
             for (JournalEntry entry : journalEntries) {
                 if (!canPostToOdoo(entry)) {
                     log.error("Journal entry {} failed validation", entry.getId());
-                    return null;
+                    return journalToMoveMap;
                 }
             }
 
-            // Create the account move with multiple lines
-            Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, journalEntries, journalId);
+            // Group entries by journal
+            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntries);
+            
+            // Create separate account moves for each journal
+            for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey();
+                List<JournalEntry> entries = journalGroup.getValue();
+                
+                // Create the account move with multiple lines for this journal
+                Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
 
-            Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
-            if (odooMoveId == null) {
-                log.error("Failed to create account move in Odoo for loan {}", loanId);
-                return null;
+                Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
+                if (odooMoveId == null) {
+                    log.error("Failed to create account move in Odoo for loan {} and journal {}", loanId, journalId);
+                    continue;
+                }
+
+                // Post the move (from draft to posted state)
+                Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
+                if (!posted) {
+                    log.warn("Created move {} in Odoo but failed to post it", odooMoveId);
+                    // Continue anyway as the move was created
+                }
+
+                journalToMoveMap.put(journalId, odooMoveId);
+                log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", 
+                    entries.size(), loanId, journalId, odooMoveId);
             }
 
-            // Post the move (from draft to posted state)
-            Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
-            if (!posted) {
-                log.warn("Created move {} in Odoo but failed to post it", odooMoveId);
-                // Return the ID anyway as the move was created
-            }
-
-            log.info("Successfully posted {} journal entries for loan {} to Odoo as move {}", journalEntries.size(), loanId, odooMoveId);
-
-            return odooMoveId;
+            return journalToMoveMap;
 
         } catch (Exception e) {
             log.error("Exception while posting journal entries for loan {} to Odoo", loanId, e);
-            return null;
+            return journalToMoveMap;
         }
+    }
+    
+    /**
+     * Group journal entries by their target journal based on GL codes
+     */
+    private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntry> journalEntries) {
+        Map<Integer, List<JournalEntry>> groupedEntries = new HashMap<>();
+        
+        for (JournalEntry entry : journalEntries) {
+            String glCode = entry.getGlAccount().getGlCode();
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode);
+            
+            if (journalId != null) {
+                groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
+                log.debug("Assigned journal entry {} (GL: {}) to journal {}", entry.getId(), glCode, journalId);
+            } else {
+                log.warn("Could not determine journal for GL code {}, skipping entry {}", glCode, entry.getId());
+            }
+        }
+        
+        return groupedEntries;
     }
 
     /**

@@ -23,6 +23,11 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
     <changeSet author="crediblex" id="42">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="journal_entry_odoo_sync"/>
+            </not>
+        </preConditions>
         <createTable tableName="journal_entry_odoo_sync">
             <column name="id" type="bigint" autoIncrement="true">
                 <constraints primaryKey="true" nullable="false"/>
@@ -30,6 +35,7 @@
             <column name="journal_entry_id" type="bigint">
                 <constraints nullable="false" unique="true"/>
             </column>
+            <column name="loan_id" type="bigint"/>
             <column name="is_posted_to_odoo" type="boolean" defaultValueBoolean="false">
                 <constraints nullable="false"/>
             </column>
@@ -42,6 +48,12 @@
         </createTable>
     </changeSet>
     <changeSet author="crediblex" id="43">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <not>
+                <foreignKeyConstraintExists foreignKeyName="fk_journal_entry_odoo_sync_journal_entry"/>
+            </not>
+        </preConditions>
         <addForeignKeyConstraint
             baseTableName="journal_entry_odoo_sync"
             baseColumnNames="journal_entry_id"
@@ -50,13 +62,52 @@
             referencedColumnNames="id"/>
     </changeSet>
     <changeSet author="crediblex" id="44">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <not>
+                <indexExists tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_posted"/>
+            </not>
+        </preConditions>
         <createIndex tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_posted">
             <column name="is_posted_to_odoo"/>
         </createIndex>
     </changeSet>
     <changeSet author="crediblex" id="45">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <not>
+                <indexExists tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_created_at"/>
+            </not>
+        </preConditions>
         <createIndex tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_created_at">
             <column name="created_at"/>
         </createIndex>
+    </changeSet>
+    <changeSet author="crediblex" id="46">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <not>
+                <indexExists tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_loan_id"/>
+            </not>
+        </preConditions>
+        <createIndex tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_loan_id">
+            <column name="loan_id"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="crediblex" id="47">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <tableExists tableName="m_loan"/>
+            <columnExists tableName="journal_entry_odoo_sync" columnName="loan_id"/>
+            <not>
+                <foreignKeyConstraintExists foreignKeyName="fk_journal_entry_odoo_sync_loan_id"/>
+            </not>
+        </preConditions>
+        <addForeignKeyConstraint baseTableName="journal_entry_odoo_sync"
+                                 baseColumnNames="loan_id"
+                                 constraintName="fk_journal_entry_odoo_sync_loan_id"
+                                 referencedTableName="m_loan"
+                                 referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
     </changeSet>
 </databaseChangeLog>

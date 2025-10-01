@@ -1,4 +1,9 @@
-# Fineract-Odoo Journal Entries Integration
+# Fineract-5. [Implementation Details](#implementation-details)
+
+6. [Dynamic Journal Mapping](#dynamic-journal-mapping)
+7. [Database Schema](#database-schema)
+8. [Configuration](#configuration)
+9. [Usage](#usage) Journal Entries Integration
 
 ## Overview
 
@@ -210,6 +215,162 @@ public class OdooJournalEntriesSyncJobConfiguration {
     <column name="short_name" value="ODOJSYNC"/>
 </insert>
 ```
+
+## Dynamic Journal Mapping
+
+### Overview
+
+The Odoo integration supports dynamic journal mapping based on GL account codes. This allows you to route different types of journal entries to specific journals in Odoo based on their GL account codes, providing better organization and categorization of accounting entries.
+
+### How It Works
+
+1. **GL Code Grouping**: Journal entries are grouped by their GL account codes
+2. **Journal Mapping**: Each group of GL codes is mapped to a specific Odoo journal
+3. **Dynamic Routing**: When posting to Odoo, entries are automatically routed to the correct journal based on their GL codes
+
+### Current Configuration
+
+The system is currently configured with the following mapping:
+
+```java
+// BNK5 journal for bank-related GL codes
+BNK5 -> ["100031", "300004", "200065", "200040"]
+```
+
+### Adding New Mappings
+
+#### Option 1: Code Configuration (Current)
+
+Edit the `initializeJournalGlCodeMapping()` method in `OdooIntegrationReadPlatformServiceImpl`:
+
+```java
+private Map<String, Set<String>> initializeJournalGlCodeMapping() {
+    Map<String, Set<String>> mapping = new HashMap<>();
+
+    // BNK5 journal for bank-related transactions
+    mapping.put("BNK5", Set.of("100031", "300004", "200065", "200040"));
+
+    // MISC journal for miscellaneous transactions
+    mapping.put("MISC", Set.of("400001", "400002", "400003"));
+
+    // CASH journal for cash transactions
+    mapping.put("CASH", Set.of("100001", "100002"));
+
+    return mapping;
+}
+```
+
+#### Option 2: Runtime Configuration
+
+Use the service methods to dynamically add/remove mappings:
+
+```java
+// Add GL codes to a journal
+odooIntegrationService.addGlCodesToJournal("MISC", Set.of("400004", "400005"));
+
+// Remove GL codes from a journal
+odooIntegrationService.removeGlCodesFromJournal("BNK5", Set.of("200040"));
+
+// View current mappings
+Map<String, Set<String>> currentMappings = odooIntegrationService.getJournalGlCodeMappings();
+```
+
+### Behavior
+
+#### Single Journal Entry
+
+- When posting a single journal entry, the system determines the target journal based on the entry's GL code
+- If no mapping is found, it falls back to the default journal (BNK5)
+
+#### Multiple Journal Entries (Loan)
+
+- When posting multiple journal entries for a loan, the system groups them by target journal
+- Creates separate account moves in Odoo for each journal
+- Returns a map of journal ID to Odoo move ID
+
+#### Fallback Behavior
+
+- If a GL code is not mapped to any journal, the system uses the default journal (BNK5)
+- If the mapped journal is not found in Odoo, the operation fails with an error
+
+### Example Usage
+
+#### GL Code: "100031" → Journal: BNK5
+
+```
+Journal Entry with GL Code "100031" → Posts to BNK5 journal in Odoo
+```
+
+#### GL Code: "400001" → Journal: MISC
+
+```
+Journal Entry with GL Code "400001" → Posts to MISC journal in Odoo
+```
+
+#### GL Code: "999999" → Journal: BNK5 (fallback)
+
+```
+Journal Entry with unmapped GL Code "999999" → Posts to BNK5 journal (default)
+```
+
+### Configuration Examples
+
+#### Bank Journals
+
+```java
+mapping.put("BNK1", Set.of("100001", "100002", "100003")); // Current Account
+mapping.put("BNK2", Set.of("100011", "100012", "100013")); // Savings Account
+mapping.put("BNK5", Set.of("100031", "300004", "200065", "200040")); // Investment Account
+```
+
+#### Expense Journals
+
+```java
+mapping.put("EXP", Set.of("500001", "500002", "500003")); // Operating Expenses
+mapping.put("CAPEX", Set.of("600001", "600002")); // Capital Expenses
+```
+
+#### Revenue Journals
+
+```java
+mapping.put("REV", Set.of("300001", "300002", "300003")); // Interest Revenue
+mapping.put("FEE", Set.of("310001", "310002")); // Fee Revenue
+```
+
+### Implementation Details
+
+#### Service Method
+
+```java
+// File: OdooIntegrationReadPlatformServiceImpl.java
+public Integer getJournalIdForGlCode(String glCode) {
+    // Find which journal this GL code belongs to
+    String journalCode = findJournalCodeForGlCode(glCode);
+    if (journalCode != null) {
+        return getJournalIdByCode(journalCode);
+    } else {
+        return getDefaultJournalId(); // Fallback to BNK5
+    }
+}
+```
+
+#### Usage in Journal Entry Service
+
+```java
+// File: OdooJournalEntryService.java
+// Get journal ID based on GL account code
+String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
+Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode);
+```
+
+### Future Enhancements
+
+1. **Database Configuration**: Move mapping configuration to database tables for easier management
+2. **API Endpoints**: Create REST endpoints to manage journal mappings through the UI
+3. **Configuration Properties**: Use application properties for journal mappings
+4. **Audit Trail**: Add logging and audit trail for journal mapping changes
+
+This flexible approach allows for easy expansion and customization based on your specific accounting requirements.
 
 ## Database Schema
 

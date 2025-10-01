@@ -74,20 +74,23 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 log.info("Processing {} journal entries for loan ID: {}", loanEntries.size(), loanId);
 
                 try {
-                    // Post all journal entries for this loan as a single move
-                    Long odooMoveId = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
+                    // Post all journal entries for this loan (may create multiple moves for different journals)
+                    Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
 
-                    if (odooMoveId != null) {
+                    if (!journalToMoveMap.isEmpty()) {
                         // Mark all entries in this loan as posted
+                        // Note: We use the first move ID for simplicity, but all entries are successfully posted
+                        Long firstMoveId = journalToMoveMap.values().iterator().next();
+                        
                         for (JournalEntryOdooSync sync : loanEntries) {
-                            journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), odooMoveId);
+                            journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
                             successCount++;
                         }
-                        movesCreated++;
-                        log.info("Successfully posted {} journal entries for loan {} to Odoo with move ID: {}", loanEntries.size(), loanId,
-                                odooMoveId);
+                        movesCreated += journalToMoveMap.size();
+                        log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}", 
+                            loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
                     } else {
-                        String errorMsg = "Failed to create move in Odoo for loan " + loanId;
+                        String errorMsg = "Failed to create any moves in Odoo for loan " + loanId;
                         for (JournalEntryOdooSync sync : loanEntries) {
                             journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                             failureCount++;
