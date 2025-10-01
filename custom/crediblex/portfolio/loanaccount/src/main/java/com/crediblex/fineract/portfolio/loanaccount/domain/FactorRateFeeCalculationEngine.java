@@ -14,6 +14,25 @@ public class FactorRateFeeCalculationEngine {
         this.currencyScale = currencyScale;
     }
 
+    /**
+     * Calculates the fee, VAT, and related amounts for a loan based on the factor rate model. The calculation
+     * determines the total fee by multiplying the principal by the factor rate, subtracting the principal, and then
+     * computes VAT and net fee amounts. It also calculates the net disbursed amount and daily breakdowns for principal,
+     * fee, VAT, and net fee.
+     *
+     * @param principal
+     *            the principal loan amount (must be non-null, positive, and in currency units)
+     * @param factorRate
+     *            the factor rate to apply (must be &gt;= 1.0)
+     * @param vatPercent
+     *            the VAT percentage as a decimal (e.g., 0.16 for 16%); if null, treated as 0
+     * @param termDays
+     *            the loan term in days (must be &gt; 0)
+     * @return a {@link FactorRateCalculationResult} containing the calculated amounts: total fee, VAT, net fee, net
+     *         disbursed, and daily breakdowns
+     * @throws IllegalArgumentException
+     *             if {@code termDays} &lt;= 0 or {@code factorRate} &lt; 1.0
+     */
     public FactorRateCalculationResult calculate(BigDecimal principal, BigDecimal factorRate, BigDecimal vatPercent, int termDays) {
 
         if (termDays <= 0) {
