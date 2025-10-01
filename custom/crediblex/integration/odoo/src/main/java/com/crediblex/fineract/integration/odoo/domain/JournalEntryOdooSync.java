@@ -19,12 +19,11 @@
 package com.crediblex.fineract.integration.odoo.domain;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
-
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "journal_entry_odoo_sync")
@@ -64,8 +63,7 @@ public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
 
     public JournalEntryOdooSync(JournalEntry journalEntry) {
         this.journalEntry = journalEntry;
-        this.loanId = journalEntry.getLoanTransactionId() != null ? 
-            getLoanIdFromTransactionId(journalEntry.getLoanTransactionId()) : null;
+        this.loanId = journalEntry.getLoanTransactionId() != null ? getLoanIdFromTransactionId(journalEntry.getLoanTransactionId()) : null;
         this.isPostedToOdoo = false;
     }
 

@@ -21,9 +21,13 @@ package com.crediblex.fineract.integration.odoo.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.crediblex.fineract.integration.odoo.data.ExtendedSavingsAccountSummaryData;
+import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
+import com.crediblex.fineract.integration.odoo.event.LoanJournalEntryCreatedBusinessEvent;
+import com.crediblex.fineract.integration.odoo.event.SavingsJournalEntryCreatedBusinessEvent;
+import com.crediblex.fineract.portfolio.client.service.CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl;
 import java.util.List;
 import java.util.Optional;
-
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
@@ -33,13 +37,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import com.crediblex.fineract.integration.odoo.data.ExtendedSavingsAccountSummaryData;
-import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
-import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
-import com.crediblex.fineract.integration.odoo.event.LoanJournalEntryCreatedBusinessEvent;
-import com.crediblex.fineract.integration.odoo.event.SavingsJournalEntryCreatedBusinessEvent;
-import com.crediblex.fineract.portfolio.client.service.CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl;
 
 @ExtendWith(MockitoExtension.class)
 class JournalEntryOdooTrackingServiceTest {
@@ -62,7 +59,7 @@ class JournalEntryOdooTrackingServiceTest {
         mockJournalEntry = mock(JournalEntry.class);
         mockLoan = mock(Loan.class);
         mockSavingsAccount = mock(SavingsAccount.class);
-        
+
         when(mockJournalEntry.getId()).thenReturn(1L);
     }
 
@@ -76,7 +73,7 @@ class JournalEntryOdooTrackingServiceTest {
         trackingService.handleLoanJournalEntryEvent(event);
 
         // Then
-        verify(journalEntryOdooSyncRepository).save(argThat(sync -> 
+        verify(journalEntryOdooSyncRepository).save(argThat(sync ->
             sync.getJournalEntryId().equals(1L) &&
             sync.getLoanId().equals(100L) &&
             !sync.isSyncedToOdoo()
@@ -87,20 +84,20 @@ class JournalEntryOdooTrackingServiceTest {
     void testHandleSavingsJournalEntryEventWithLinkedLoan() {
         // Given
         when(mockSavingsAccount.getId()).thenReturn(200L);
-        
+
         ExtendedSavingsAccountSummaryData savingsData = new ExtendedSavingsAccountSummaryData();
         savingsData.getAdditionalProperties().put("linkedLoanAccountId", 150L);
-        
+
         when(credXAccountDetailsService.getSavingsAccountDetails(200L))
             .thenReturn(List.of(savingsData));
-        
+
         SavingsJournalEntryCreatedBusinessEvent event = new SavingsJournalEntryCreatedBusinessEvent(mockJournalEntry, mockSavingsAccount);
 
         // When
         trackingService.handleSavingsJournalEntryEvent(event);
 
         // Then
-        verify(journalEntryOdooSyncRepository).save(argThat(sync -> 
+        verify(journalEntryOdooSyncRepository).save(argThat(sync ->
             sync.getJournalEntryId().equals(1L) &&
             sync.getLoanId().equals(150L) &&
             !sync.isSyncedToOdoo()
@@ -111,20 +108,20 @@ class JournalEntryOdooTrackingServiceTest {
     void testHandleSavingsJournalEntryEventWithoutLinkedLoan() {
         // Given
         when(mockSavingsAccount.getId()).thenReturn(300L);
-        
+
         ExtendedSavingsAccountSummaryData savingsData = new ExtendedSavingsAccountSummaryData();
         // No linked loan
-        
+
         when(credXAccountDetailsService.getSavingsAccountDetails(300L))
             .thenReturn(List.of(savingsData));
-        
+
         SavingsJournalEntryCreatedBusinessEvent event = new SavingsJournalEntryCreatedBusinessEvent(mockJournalEntry, mockSavingsAccount);
 
         // When
         trackingService.handleSavingsJournalEntryEvent(event);
 
         // Then
-        verify(journalEntryOdooSyncRepository).save(argThat(sync -> 
+        verify(journalEntryOdooSyncRepository).save(argThat(sync ->
             sync.getJournalEntryId().equals(1L) &&
             sync.getLoanId() == null &&
             !sync.isSyncedToOdoo()
@@ -135,17 +132,16 @@ class JournalEntryOdooTrackingServiceTest {
     void testGetLoanIdFromSavingsTransactionIdMultipleResults() {
         // Given
         Long savingsAccountId = 400L;
-        
+
         ExtendedSavingsAccountSummaryData data1 = new ExtendedSavingsAccountSummaryData();
         data1.setAccountId(400L);
         data1.getAdditionalProperties().put("linkedLoanAccountId", 100L);
-        
+
         ExtendedSavingsAccountSummaryData data2 = new ExtendedSavingsAccountSummaryData();
         data2.setAccountId(500L); // Different ID
         data2.getAdditionalProperties().put("linkedLoanAccountId", 200L);
-        
-        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId))
-            .thenReturn(List.of(data1, data2));
+
+        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId)).thenReturn(List.of(data1, data2));
 
         // When
         Optional<Long> result = trackingService.getLoanIdFromSavingsTransactionId(savingsAccountId);
@@ -159,13 +155,12 @@ class JournalEntryOdooTrackingServiceTest {
     void testGetLoanIdFromSavingsTransactionIdNoMatchingAccount() {
         // Given
         Long savingsAccountId = 500L;
-        
+
         ExtendedSavingsAccountSummaryData data = new ExtendedSavingsAccountSummaryData();
         data.setAccountId(600L); // Different ID, no match
         data.getAdditionalProperties().put("linkedLoanAccountId", 100L);
-        
-        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId))
-            .thenReturn(List.of(data));
+
+        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId)).thenReturn(List.of(data));
 
         // When
         Optional<Long> result = trackingService.getLoanIdFromSavingsTransactionId(savingsAccountId);
@@ -178,9 +173,8 @@ class JournalEntryOdooTrackingServiceTest {
     void testGetLoanIdFromSavingsTransactionIdEmptyResults() {
         // Given
         Long savingsAccountId = 600L;
-        
-        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId))
-            .thenReturn(List.of());
+
+        when(credXAccountDetailsService.getSavingsAccountDetails(savingsAccountId)).thenReturn(List.of());
 
         // When
         Optional<Long> result = trackingService.getLoanIdFromSavingsTransactionId(savingsAccountId);

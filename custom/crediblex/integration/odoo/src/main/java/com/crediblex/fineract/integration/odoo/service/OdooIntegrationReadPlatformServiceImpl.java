@@ -19,13 +19,12 @@
 package com.crediblex.fineract.integration.odoo.service;
 
 import com.crediblex.fineract.integration.odoo.client.OdooApiClient;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Implementation of Odoo integration read platform service
@@ -42,7 +41,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private static final String ERROR_KEY = "error";
 
     private final OdooApiClient odooApiClient;
-    
+
     // Cache for account mappings to avoid repeated Odoo calls
     private final Map<String, Integer> accountMappingCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> journalMappingCache = new ConcurrentHashMap<>();
@@ -52,30 +51,20 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         try {
             log.info("Testing Odoo connection...");
             boolean isConnected = odooApiClient.testConnection();
-            
+
             if (isConnected) {
                 log.info("Odoo connection test successful");
-                return Map.of(
-                    SUCCESS_KEY, true,
-                    MESSAGE_KEY, "Successfully connected to Odoo server",
-                    TIMESTAMP_KEY, System.currentTimeMillis()
-                );
+                return Map.of(SUCCESS_KEY, true, MESSAGE_KEY, "Successfully connected to Odoo server", TIMESTAMP_KEY,
+                        System.currentTimeMillis());
             } else {
                 log.warn("Odoo connection test failed");
-                return Map.of(
-                    SUCCESS_KEY, false,
-                    MESSAGE_KEY, "Failed to connect to Odoo server",
-                    TIMESTAMP_KEY, System.currentTimeMillis()
-                );
+                return Map.of(SUCCESS_KEY, false, MESSAGE_KEY, "Failed to connect to Odoo server", TIMESTAMP_KEY,
+                        System.currentTimeMillis());
             }
         } catch (Exception e) {
             log.error("Odoo connection test failed with exception", e);
-            return Map.of(
-                SUCCESS_KEY, false,
-                MESSAGE_KEY, "Connection test failed: " + e.getMessage(),
-                ERROR_KEY, e.getClass().getSimpleName(),
-                TIMESTAMP_KEY, System.currentTimeMillis()
-            );
+            return Map.of(SUCCESS_KEY, false, MESSAGE_KEY, "Connection test failed: " + e.getMessage(), ERROR_KEY,
+                    e.getClass().getSimpleName(), TIMESTAMP_KEY, System.currentTimeMillis());
         }
     }
 
@@ -98,27 +87,20 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             }
 
             // Search for account by code in Odoo
-            List<Object> domain = Arrays.asList(
-                Arrays.asList("code", "=", fineractAccountCode)
-            );
+            List<Object> domain = Arrays.asList(Arrays.asList("code", "=", fineractAccountCode));
 
-            List<Map<String, Object>> accounts = odooApiClient.searchRead(
-                uid, 
-                "account.account", 
-                domain, 
-                Arrays.asList("id", "code", "name")
-            );
+            List<Map<String, Object>> accounts = odooApiClient.searchRead(uid, "account.account", domain,
+                    Arrays.asList("id", "code", "name"));
 
             if (!accounts.isEmpty()) {
                 Map<String, Object> account = accounts.get(0);
                 Integer accountId = ((Number) account.get("id")).intValue();
-                
+
                 // Cache the mapping
                 accountMappingCache.put(fineractAccountCode, accountId);
-                
-                log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", 
-                    fineractAccountCode, accountId, account.get("name"));
-                
+
+                log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", fineractAccountCode, accountId, account.get("name"));
+
                 return accountId;
             } else {
                 log.warn("No Odoo account found for Fineract account code: {}", fineractAccountCode);
@@ -134,7 +116,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     @Override
     public Integer getDefaultJournalId() {
         String journalKey = "default";
-        
+
         // Check cache first
         if (journalMappingCache.containsKey(journalKey)) {
             return journalMappingCache.get(journalKey);
@@ -148,27 +130,20 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             }
 
             // Search for journal with code 'BNK5'
-            List<Object> domain = Arrays.asList(
-                Arrays.asList("code", "=", "BNK5")
-            );
+            List<Object> domain = Arrays.asList(Arrays.asList("code", "=", "BNK5"));
 
-            List<Map<String, Object>> journals = odooApiClient.searchRead(
-                uid, 
-                "account.journal", 
-                domain, 
-                Arrays.asList("id", "name", "code", "type")
-            );
+            List<Map<String, Object>> journals = odooApiClient.searchRead(uid, "account.journal", domain,
+                    Arrays.asList("id", "name", "code", "type"));
 
             if (!journals.isEmpty()) {
                 Map<String, Object> journal = journals.get(0);
                 Integer journalId = ((Number) journal.get("id")).intValue();
-                
+
                 // Cache the mapping
                 journalMappingCache.put(journalKey, journalId);
-                
-                log.debug("Using journal ID: {} ({}) with code 'BNK5' for journal entries", 
-                    journalId, journal.get("name"));
-                
+
+                log.debug("Using journal ID: {} ({}) with code 'BNK5' for journal entries", journalId, journal.get("name"));
+
                 return journalId;
             } else {
                 log.error("No journal found in Odoo with code 'BNK5'");
@@ -185,7 +160,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     public Integer getJournalIdForTransaction(String transactionType) {
         // You can implement specific logic here to map different transaction types
         // to different journals in Odoo
-        
+
         // For now, return the default journal
         return getDefaultJournalId();
     }
@@ -200,11 +175,11 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     @Override
     public void preloadAccountMappings(List<String> fineractAccountCodes) {
         log.info("Preloading account mappings for {} accounts", fineractAccountCodes.size());
-        
+
         for (String accountCode : fineractAccountCodes) {
             getOdooAccountId(accountCode);
         }
-        
+
         log.info("Completed preloading account mappings");
     }
 }

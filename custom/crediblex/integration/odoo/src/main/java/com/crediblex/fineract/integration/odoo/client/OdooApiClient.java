@@ -21,6 +21,9 @@ package com.crediblex.fineract.integration.odoo.client;
 
 import com.crediblex.fineract.integration.odoo.config.OdooProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.util.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -34,10 +37,6 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-
-import jakarta.annotation.PreDestroy;
-import java.io.IOException;
-import java.util.*;
 
 /**
  * Odoo API client for connecting to Odoo ERP system
@@ -55,16 +54,12 @@ public class OdooApiClient {
     public OdooApiClient(OdooProperties odooProperties) {
         this.odooProperties = odooProperties;
         this.objectMapper = new ObjectMapper();
-        
+
         // Configure HTTP client with timeouts
-        RequestConfig config = RequestConfig.custom()
-                .setConnectTimeout(Timeout.ofMilliseconds(odooProperties.getConnectionTimeout()))
-                .setResponseTimeout(Timeout.ofMilliseconds(odooProperties.getReadTimeout()))
-                .build();
-                
-        this.httpClient = HttpClients.custom()
-                .setDefaultRequestConfig(config)
-                .build();
+        RequestConfig config = RequestConfig.custom().setConnectTimeout(Timeout.ofMilliseconds(odooProperties.getConnectionTimeout()))
+                .setResponseTimeout(Timeout.ofMilliseconds(odooProperties.getReadTimeout())).build();
+
+        this.httpClient = HttpClients.custom().setDefaultRequestConfig(config).build();
     }
 
     /**
@@ -91,27 +86,23 @@ public class OdooApiClient {
 
         try {
             log.info("Authenticating with Odoo server: {}", odooProperties.getUrl());
-            
+
             Map<String, Object> request = new HashMap<>();
             request.put("jsonrpc", "2.0");
             request.put("method", "call");
-            
+
             Map<String, Object> params = new HashMap<>();
             params.put("service", "common");
             params.put("method", "authenticate");
-            params.put("args", Arrays.asList(
-                odooProperties.getDatabase(),
-                odooProperties.getUsername(),
-                odooProperties.getPassword(),
-                new HashMap<>()
-            ));
-            
+            params.put("args", Arrays.asList(odooProperties.getDatabase(), odooProperties.getUsername(), odooProperties.getPassword(),
+                    new HashMap<>()));
+
             request.put("params", params);
             request.put("id", generateRequestId());
 
             @SuppressWarnings("unchecked")
             Map<String, Object> response = makeRequest("/jsonrpc", request);
-            
+
             if (response.containsKey("error")) {
                 log.error("Authentication failed: {}", response.get("error"));
                 return null;
@@ -127,7 +118,7 @@ public class OdooApiClient {
             this.authenticated = true;
             log.info("Successfully authenticated with Odoo as UID: {}", uid);
             return uid;
-            
+
         } catch (Exception e) {
             log.error("Failed to authenticate with Odoo", e);
             this.authenticated = false;
@@ -187,10 +178,8 @@ public class OdooApiClient {
         Object result = executeKw(uid, model, "search", Arrays.asList(domain), null);
         if (result instanceof List) {
             List<Object> resultList = (List<Object>) result;
-            return resultList.stream()
-                .map(obj -> obj instanceof Number ? ((Number) obj).intValue() : null)
-                .filter(Objects::nonNull)
-                .toList();
+            return resultList.stream().map(obj -> obj instanceof Number ? ((Number) obj).intValue() : null).filter(Objects::nonNull)
+                    .toList();
         }
         return Collections.emptyList();
     }
@@ -200,8 +189,7 @@ public class OdooApiClient {
      */
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> read(Integer uid, String model, List<Integer> ids, List<String> fields) {
-        Object result = executeKw(uid, model, "read", Arrays.asList(ids), 
-            fields != null ? Map.of("fields", fields) : null);
+        Object result = executeKw(uid, model, "read", Arrays.asList(ids), fields != null ? Map.of("fields", fields) : null);
         if (result instanceof List) {
             return (List<Map<String, Object>>) result;
         }
@@ -255,17 +243,17 @@ public class OdooApiClient {
     private Map<String, Object> makeRequest(String endpoint, Map<String, Object> requestData) throws IOException {
         String url = odooProperties.getUrl() + endpoint;
         HttpPost httpPost = new HttpPost(url);
-        
+
         // Set headers
         httpPost.setHeader("Content-Type", "application/json");
         httpPost.setHeader("Accept", "application/json");
-        
+
         // Set request body
         String jsonRequest = objectMapper.writeValueAsString(requestData);
         httpPost.setEntity(new StringEntity(jsonRequest, ContentType.APPLICATION_JSON));
-        
+
         log.debug("Making request to Odoo: {}", url);
-        
+
         try (CloseableHttpResponse response = httpClient.execute(httpPost)) {
             HttpEntity entity = response.getEntity();
             if (entity != null) {

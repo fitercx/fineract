@@ -55,14 +55,12 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             log.info("Found {} pending journal entries to sync to Odoo", pendingEntries.size());
 
             // Group entries by loan ID (entries without loan ID will be processed individually)
-            Map<Long, List<JournalEntryOdooSync>> entriesByLoanId = pendingEntries.stream()
-                .filter(entry -> entry.getLoanId() != null)
-                .collect(Collectors.groupingBy(JournalEntryOdooSync::getLoanId));
+            Map<Long, List<JournalEntryOdooSync>> entriesByLoanId = pendingEntries.stream().filter(entry -> entry.getLoanId() != null)
+                    .collect(Collectors.groupingBy(JournalEntryOdooSync::getLoanId));
 
             // Get entries without loan ID (savings transactions, manual entries, etc.)
-            List<JournalEntryOdooSync> entriesWithoutLoanId = pendingEntries.stream()
-                .filter(entry -> entry.getLoanId() == null)
-                .collect(Collectors.toList());
+            List<JournalEntryOdooSync> entriesWithoutLoanId = pendingEntries.stream().filter(entry -> entry.getLoanId() == null)
+                    .collect(Collectors.toList());
 
             int successCount = 0;
             int failureCount = 0;
@@ -72,9 +70,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             for (Map.Entry<Long, List<JournalEntryOdooSync>> loanGroup : entriesByLoanId.entrySet()) {
                 Long loanId = loanGroup.getKey();
                 List<JournalEntryOdooSync> loanEntries = loanGroup.getValue();
-                
+
                 log.info("Processing {} journal entries for loan ID: {}", loanEntries.size(), loanId);
-                
+
                 try {
                     // Post all journal entries for this loan as a single move
                     Long odooMoveId = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
@@ -86,8 +84,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                             successCount++;
                         }
                         movesCreated++;
-                        log.info("Successfully posted {} journal entries for loan {} to Odoo with move ID: {}", 
-                                loanEntries.size(), loanId, odooMoveId);
+                        log.info("Successfully posted {} journal entries for loan {} to Odoo with move ID: {}", loanEntries.size(), loanId,
+                                odooMoveId);
                     } else {
                         String errorMsg = "Failed to create move in Odoo for loan " + loanId;
                         for (JournalEntryOdooSync sync : loanEntries) {
@@ -123,8 +121,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                     if (odooMoveId != null) {
                         journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), odooMoveId);
-                        log.info("Successfully posted journal entry {} to Odoo with move ID: {}", 
-                                sync.getJournalEntry().getId(), odooMoveId);
+                        log.info("Successfully posted journal entry {} to Odoo with move ID: {}", sync.getJournalEntry().getId(),
+                                odooMoveId);
                         successCount++;
                         movesCreated++;
                     } else {
@@ -141,8 +139,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 }
             }
 
-            log.info("Odoo Journal Entries Sync Job completed - Success: {}, Failures: {}, Moves Created: {}", 
-                    successCount, failureCount, movesCreated);
+            log.info("Odoo Journal Entries Sync Job completed - Success: {}, Failures: {}, Moves Created: {}", successCount, failureCount,
+                    movesCreated);
 
         } catch (Exception e) {
             log.error("Error during Odoo Journal Entries Sync Job execution", e);
