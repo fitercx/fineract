@@ -130,8 +130,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
     }
 
     /**
-     * Public method to get savings account details with linked loan information
-     * Used by external services like JournalEntryOdooTrackingService
+     * Public method to get savings account details with linked loan information Used by external services like
+     * JournalEntryOdooTrackingService
      */
     public List<SavingsAccountSummaryData> getSavingsAccountDetails(final String whereClause, final Object[] inputs) {
         return retrieveAccountDetails(whereClause, inputs);
