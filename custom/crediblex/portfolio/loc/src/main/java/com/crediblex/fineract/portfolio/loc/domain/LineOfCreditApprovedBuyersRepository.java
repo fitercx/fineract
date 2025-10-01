@@ -16,20 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package com.crediblex.fineract.portfolio.loc.domain;
 
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-/**
- * Repository interface for Line of Credit entity.
- */
 @Repository
-public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long> {
+public interface LineOfCreditApprovedBuyersRepository extends JpaRepository<LineOfCreditApprovedBuyers, Long> {
 
-    Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
-
-    Optional<LineOfCredit> findByExternalId(String externalId);
 }

@@ -22,6 +22,7 @@ package com.crediblex.fineract.portfolio.loc.service;
 import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeReadService;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
 import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
@@ -37,6 +38,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -647,4 +649,60 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         }
     }
 
+    @Override
+    public List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId) {
+        final String sql = """
+                SELECT
+                    l.id,
+                    l.external_id as externalId,
+                    l.product_type as productType,
+                    l.annual_interest_rate as annualInterestRate,
+                    l.available_balance as availableBalance,
+                    l.advance_percentage as advancePercentage,
+                    l.tenor_days as tenorInDays,
+                    l.loan_officer_id as loanOfficerId,
+                    ab.name AS approvedBuyerName,
+                    ab.id as approvedBuyerId
+                FROM m_line_of_credit l
+                LEFT JOIN m_line_of_credit_approved_buyers ab ON ab.line_of_credit_id = l.id
+                WHERE l.activation_status = 'ACTIVE'
+                  AND l.currency  = ?
+                  AND l.client_id = ?
+                ORDER BY l.id
+                """;
+
+        return this.jdbcTemplate.query(sql, ps -> {
+            ps.setString(1, currencyCode);
+            ps.setLong(2, clientId);
+        }, rs -> {
+            Map<Long, LineOfCreditSummary> map = new LinkedHashMap<>();
+
+            while (rs.next()) {
+                Long id = rs.getLong("id");
+                LineOfCreditSummary builder = map.computeIfAbsent(id, k -> {
+
+                    try {
+                        String externalId = rs.getString("externalId");
+                        String productTypeStr = rs.getString("productType");
+                        LocProductType productType = productTypeStr != null ? LocProductType.valueOf(productTypeStr) : null;
+
+                        return LineOfCreditSummary.builder().id(id).externalId(externalId).productType(productType)
+                                .interestRate(rs.getBigDecimal("annualInterestRate")).availableBalance(rs.getBigDecimal("availableBalance"))
+                                .advancePercentage(rs.getBigDecimal("advancePercentage")).tenorDays((Integer) rs.getObject("tenorInDays"))
+                                .loanOfficerId((Long) rs.getObject("loanOfficerId")).approvedBuyersOrSellers(new ArrayList<>()).build();
+                    } catch (SQLException e) {
+                        throw new DataAccessException("Error building LineOfCreditSummary", e) {};
+                    }
+                });
+
+                String buyerName = rs.getString("approvedBuyerName");
+                if (buyerName != null && !buyerName.isBlank()) {
+                    Long approvedBuyerId = rs.getLong("approvedBuyerId");
+                    builder.getApprovedBuyersOrSellers().add(new LineOfCreditSummary.ApprovedBuyerOrSeller(approvedBuyerId, buyerName));
+                }
+            }
+
+            return map.values().stream().toList();
+        });
+    }
 }

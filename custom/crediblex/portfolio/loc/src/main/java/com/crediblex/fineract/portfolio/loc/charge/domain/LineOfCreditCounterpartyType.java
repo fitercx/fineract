@@ -16,20 +16,28 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.portfolio.loc.charge.domain;
 
-package com.crediblex.fineract.portfolio.loc.domain;
+public enum LineOfCreditCounterpartyType {
 
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+    BUYER("BUYER"), SUPPLIER("SUPPLIER");
 
-/**
- * Repository interface for Line of Credit entity.
- */
-@Repository
-public interface LineOfCreditRepository extends JpaRepository<LineOfCredit, Long> {
+    private final String value;
 
-    Optional<LineOfCredit> findBySettlementSavingsAccount_Id(Long savingsAccountId);
+    LineOfCreditCounterpartyType(String value) {
+        this.value = value;
+    }
 
-    Optional<LineOfCredit> findByExternalId(String externalId);
+    public String getValue() {
+        return value;
+    }
+
+    public static LineOfCreditCounterpartyType fromString(String value) {
+        for (LineOfCreditCounterpartyType type : LineOfCreditCounterpartyType.values()) {
+            if (type.value.equalsIgnoreCase(value)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Invalid counterparty type: " + value);
+    }
 }
