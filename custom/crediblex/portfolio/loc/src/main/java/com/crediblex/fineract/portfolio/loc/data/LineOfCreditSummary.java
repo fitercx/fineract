@@ -19,6 +19,8 @@ public class LineOfCreditSummary {
     private final BigDecimal advancePercentage;
     private final Integer tenorDays;
     private final Long loanOfficerId;
-    private final List<String> approvedBuyersOrSellers;
+    private final List<ApprovedBuyerOrSeller> approvedBuyersOrSellers;
 
+    public record ApprovedBuyerOrSeller(Long id, String name) {
+    }
 }

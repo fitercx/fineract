@@ -661,7 +661,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.advance_percentage as advancePercentage,
                     l.tenor_days as tenorInDays,
                     l.loan_officer_id as loanOfficerId,
-                    ab.name AS approvedBuyerName
+                    ab.name AS approvedBuyerName,
+                    ab.id as approvedBuyerId
                 FROM m_line_of_credit l
                 LEFT JOIN m_line_of_credit_approved_buyers ab ON ab.line_of_credit_id = l.id
                 WHERE l.activation_status = 'ACTIVE'
@@ -696,7 +697,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
                 String buyerName = rs.getString("approvedBuyerName");
                 if (buyerName != null && !buyerName.isBlank()) {
-                    builder.getApprovedBuyersOrSellers().add(buyerName);
+                    Long approvedBuyerId = rs.getLong("approvedBuyerId");
+                    builder.getApprovedBuyersOrSellers().add(new LineOfCreditSummary.ApprovedBuyerOrSeller(approvedBuyerId, buyerName));
                 }
             }
 
