@@ -19,7 +19,9 @@
 package com.crediblex.fineract.integration.odoo.service;
 
 import com.crediblex.fineract.integration.odoo.client.OdooApiClient;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
