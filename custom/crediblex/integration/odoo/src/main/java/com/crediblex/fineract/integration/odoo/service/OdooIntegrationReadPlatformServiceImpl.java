@@ -149,8 +149,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
      */
     public Integer getJournalIdForGlCode(String glCode) {
         if (glCode == null) {
-            log.warn("GL code is null, using default journal");
-            return getDefaultJournalId();
+            log.warn("GL code is null, no journal available");
+            return null;
         }
         
         // Find which journal this GL code belongs to
@@ -159,8 +159,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             log.debug("GL code {} mapped to journal {}", glCode, journalCode);
             return getJournalIdByCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {}, using default", glCode);
-            return getDefaultJournalId();
+            log.debug("No specific journal mapping found for GL code {}, skipping journal entry", glCode);
+            return null;
         }
     }
     

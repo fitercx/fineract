@@ -32,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -45,6 +46,7 @@ public class OdooJournalEntryService {
 
     private final OdooApiClient odooApiClient;
     private final OdooIntegrationReadPlatformService odooIntegrationService;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * Post a Fineract journal entry to Odoo
@@ -61,7 +63,9 @@ public class OdooJournalEntryService {
             String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode);
             if (journalId == null) {
-                throw new RuntimeException(String.format("No suitable journal found in Odoo for GL code '%s' - check journal mapping configuration", fineractAccountCode));
+                log.info("Skipping journal entry {} with GL code {} - no journal mapping found", 
+                         fineractEntry.getId(), fineractAccountCode);
+                return null; // Skip instead of throwing error
             }
 
             // Get account mapping
@@ -109,6 +113,19 @@ public class OdooJournalEntryService {
         moveValues.put("date", fineractEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
         moveValues.put("ref", "Haider JE " + fineractEntry.getId());
         moveValues.put("narration", buildNarration(fineractEntry));
+
+        // Add loan_id and company name if available
+        if (fineractEntry.getLoanTransactionId() != null) {
+            Long loanId = getLoanIdFromTransactionId(fineractEntry.getLoanTransactionId());
+            if (loanId != null) {
+                moveValues.put("x_studio_loan_id_new", loanId);
+                
+                String clientName = getClientNameFromLoanId(loanId);
+                if (clientName != null) {
+                    moveValues.put("x_sme_id", clientName);
+                }
+            }
+        }
 
         // Build line items
         List<Object> lines = buildMoveLines(fineractEntry, accountId);
@@ -267,11 +284,12 @@ public class OdooJournalEntryService {
                 }
             }
 
-            // Group entries by journal
+            // Group entries by journal (this will skip entries with no journal mapping)
             Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntries);
             
             if (entriesByJournal.isEmpty()) {
-                throw new RuntimeException(String.format("No valid journal mappings found for loan %d entries - check GL code to journal mapping configuration", loanId));
+                log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
+                return journalToMoveMap; // Return empty map
             }
             
             // Create separate account moves for each journal
@@ -300,6 +318,16 @@ public class OdooJournalEntryService {
                     entries.size(), loanId, journalId, odooMoveId);
             }
 
+            // Log summary of skipped entries
+            int totalEntries = journalEntries.size();
+            int processedEntries = entriesByJournal.values().stream().mapToInt(List::size).sum();
+            int skippedEntries = totalEntries - processedEntries;
+            
+            if (skippedEntries > 0) {
+                log.info("Processed {} entries, skipped {} entries without journal mappings for loan {}", 
+                        processedEntries, skippedEntries, loanId);
+            }
+
             return journalToMoveMap;
 
         } catch (RuntimeException e) {
@@ -325,7 +353,7 @@ public class OdooJournalEntryService {
                 groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
                 log.debug("Assigned journal entry {} (GL: {}) to journal {}", entry.getId(), glCode, journalId);
             } else {
-                log.warn("Could not determine journal for GL code {}, skipping entry {}", glCode, entry.getId());
+                log.info("Skipping journal entry {} with GL code {} - no journal mapping found", entry.getId(), glCode);
             }
         }
         
@@ -345,6 +373,13 @@ public class OdooJournalEntryService {
         moveValues.put("ref", "Haider Loan " + loanId + " - JEs: "
                 + journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
         moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
+
+        // Add loan_id and company name
+        moveValues.put("x_studio_loan_id_new", loanId);
+        String clientName = getClientNameFromLoanId(loanId);
+        if (clientName != null) {
+            moveValues.put("x_sme_id", clientName);
+        }
 
         // Build consolidated line items
         List<Object> lines = buildConsolidatedMoveLines(journalEntries);
@@ -433,5 +468,43 @@ public class OdooJournalEntryService {
         });
 
         return narration.toString();
+    }
+
+    /**
+     * Get loan ID from loan transaction ID
+     */
+    private Long getLoanIdFromTransactionId(Long loanTransactionId) {
+        if (loanTransactionId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT loan_id FROM m_loan_transaction WHERE id = ?";
+            List<Long> loanIds = jdbcTemplate.queryForList(sql, Long.class, loanTransactionId);
+            return loanIds.isEmpty() ? null : loanIds.get(0);
+        } catch (Exception e) {
+            log.warn("Failed to get loan ID for transaction ID: {}", loanTransactionId, e);
+            return null;
+        }
+    }
+
+    /**
+     * Get client name from loan ID
+     */
+    private String getClientNameFromLoanId(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT c.display_name FROM m_client c " +
+                        "JOIN m_loan l ON l.client_id = c.id " +
+                        "WHERE l.id = ?";
+            List<String> clientNames = jdbcTemplate.queryForList(sql, String.class, loanId);
+            return clientNames.isEmpty() ? null : clientNames.get(0);
+        } catch (Exception e) {
+            log.warn("Failed to get client name for loan ID: {}", loanId, e);
+            return null;
+        }
     }
 }

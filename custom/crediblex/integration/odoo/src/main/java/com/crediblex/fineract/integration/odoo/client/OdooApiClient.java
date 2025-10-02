@@ -165,15 +165,44 @@ public class OdooApiClient {
             Map<String, Object> response = makeRequest("/jsonrpc", request);
 
             if (response.containsKey("error")) {
-                log.error("Failed to execute method {}::{}: {}", model, method, response.get("error"));
-                return null;
+                Map<String, Object> error = (Map<String, Object>) response.get("error");
+                String errorMessage = extractErrorMessage(error);
+                log.error("Failed to execute method {}::{}: {}", model, method, errorMessage);
+                throw new RuntimeException("Odoo API error for " + model + "::" + method + ": " + errorMessage);
             }
 
             return response.get("result");
 
+        } catch (RuntimeException e) {
+            // Re-throw our custom exceptions
+            throw e;
         } catch (Exception e) {
             log.error("Exception while executing method {}::{}", model, method, e);
-            return null;
+            throw new RuntimeException("Failed to execute " + model + "::" + method + " in Odoo: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Extract readable error message from Odoo error response
+     */
+    @SuppressWarnings("unchecked")
+    private String extractErrorMessage(Map<String, Object> error) {
+        try {
+            if (error.containsKey("data")) {
+                Map<String, Object> data = (Map<String, Object>) error.get("data");
+                if (data.containsKey("message")) {
+                    return data.get("message").toString();
+                }
+                if (data.containsKey("name")) {
+                    return data.get("name").toString();
+                }
+            }
+            if (error.containsKey("message")) {
+                return error.get("message").toString();
+            }
+            return error.toString();
+        } catch (Exception e) {
+            return "Unable to parse error details: " + error.toString();
         }
     }
 
@@ -224,11 +253,17 @@ public class OdooApiClient {
      * Create a record in Odoo
      */
     public Long create(Integer uid, String model, Map<String, Object> values) {
-        Object result = executeKw(uid, model, "create", Arrays.asList(values), null);
-        if (result instanceof Number) {
-            return ((Number) result).longValue();
+        try {
+            Object result = executeKw(uid, model, "create", Arrays.asList(values), null);
+            if (result instanceof Number) {
+                return ((Number) result).longValue();
+            }
+            log.error("Failed to create {} record in Odoo - unexpected result type: {}", model, result);
+            return null;
+        } catch (Exception e) {
+            log.error("Exception while creating {} record in Odoo: {}", model, e.getMessage(), e);
+            throw new RuntimeException("Failed to create " + model + " in Odoo: " + e.getMessage(), e);
         }
-        return null;
     }
 
     /**
