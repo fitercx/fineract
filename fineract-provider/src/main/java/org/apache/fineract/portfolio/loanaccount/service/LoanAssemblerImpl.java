@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.accountnumberformat.domain.AccountNumberFormat;
@@ -43,8 +45,10 @@ import org.apache.fineract.infrastructure.configuration.service.TemporaryConfigu
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.api.JsonQuery;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.holiday.domain.Holiday;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepository;
 import org.apache.fineract.organisation.holiday.domain.HolidayStatusType;
@@ -226,7 +230,6 @@ public class LoanAssemblerImpl implements LoanAssembler {
         }
 
         final Set<LoanCharge> loanCharges = this.loanChargeAssembler.fromParsedJson(element, disbursementDetails);
-
         BigDecimal fixedPrincipalPercentagePerInstallment = fromApiJsonHelper
                 .extractBigDecimalWithLocaleNamed(LoanApiConstants.fixedPrincipalPercentagePerInstallmentParamName, element);
 
@@ -300,10 +303,29 @@ public class LoanAssemblerImpl implements LoanAssembler {
         copyAdvancedPaymentRulesIfApplicable(transactionProcessingStrategyCode, loanProduct, loanApplication);
         loanApplication.setHelpers(defaultLoanLifecycleStateMachine);
         // TODO: review
+        handleFactorRateProduct(loanApplication, command);
         loanChargeService.recalculateAllCharges(loanApplication);
         topUpLoanConfiguration(element, loanApplication);
         loanAccrualsProcessingService.reprocessExistingAccruals(loanApplication);
         return loanApplication;
+    }
+
+    private void handleFactorRateProduct(final Loan loan, final JsonCommand command) {
+        // Handle Factor Rate product
+        final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
+        final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+        if (factorRateProductEnabled) {
+//            this.validateFactorRate(factorRate);
+            final BigDecimal factorRateLoanAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.principalParameterName);
+            final BigDecimal totalFactorRateFeeAmount = factorRateLoanAmount.multiply(factorRate).subtract(factorRateLoanAmount);
+            final BigDecimal totalPrincipalAmount = factorRateLoanAmount.subtract(totalFactorRateFeeAmount);
+            loan.setFactorRate(factorRate);
+            loan.setFactorRateEnabled(true);
+//            loan.setProposedPrincipal(totalPrincipalAmount);
+//            loan.setApprovedPrincipal(totalPrincipalAmount);
+//            loan.setNetDisbursalAmount(totalPrincipalAmount);
+//            loan.getLoanRepaymentScheduleDetail().setPrincipal(totalPrincipalAmount);
+        }
     }
 
     // TODO: Review... it might be better somewhere else and rethink due to the account number generation logic is

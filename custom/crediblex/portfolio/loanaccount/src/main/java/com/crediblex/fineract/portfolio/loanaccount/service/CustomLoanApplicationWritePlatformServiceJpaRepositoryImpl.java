@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID;
+import static org.apache.fineract.infrastructure.core.service.MathUtil.isGreaterThanZero;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
@@ -31,6 +33,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuild
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
@@ -116,6 +119,25 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
     }
 
+    private void handleFactorRateProduct(final Loan loan, final JsonCommand command) {
+        // Handle Factor Rate product
+        final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
+        final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+        if (factorRateProductEnabled) {
+            this.validateFactorRate(factorRate);
+            final BigDecimal factorRateLoanAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.principalParameterName);
+            final BigDecimal totalFactorRateFeeAmount = factorRateLoanAmount.multiply(factorRate).subtract(factorRateLoanAmount);
+            final BigDecimal totalPrincipalAmount = factorRateLoanAmount.subtract(totalFactorRateFeeAmount);
+            loan.setFactorRate(factorRate);
+            loan.setFactorRateEnabled(true);
+            loan.setProposedPrincipal(totalPrincipalAmount);
+            loan.setApprovedPrincipal(totalPrincipalAmount);
+            loan.setNetDisbursalAmount(totalPrincipalAmount);
+            loan.setFactorRateLoanAmount(factorRateLoanAmount);
+            loan.getLoanRepaymentScheduleDetail().setPrincipal(totalPrincipalAmount);
+        }
+    }
+
     @Transactional
     @Override
     public CommandProcessingResult submitApplication(final JsonCommand command) {
@@ -130,10 +152,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             // Handle Factor Rate product
             final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
             final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
-            if (factorRateProductEnabled) {
-                this.validateFactorRate(factorRate);
-                loan.setFactorRate(factorRate);
-                loan.setFactorRateEnabled(true);
+            if (factorRateProductEnabled && !MathUtil.isLessThanZero(factorRate)) {
+                this.handleFactorRateProduct(loan, command);
             }
 
             // Validations (further validations which requires the assembling first)
@@ -214,10 +234,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             // Handle Factor Rate update
             final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
             final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
-            if (factorRateProductEnabled) {
-                this.validateFactorRate(factorRate);
-                loan.setFactorRate(factorRate);
-                loan.setFactorRateEnabled(true);
+            if (factorRateProductEnabled && !MathUtil.isLessThanZero(factorRate)) {
+                this.handleFactorRateProduct(loan, command);
             }
 
             // Save note

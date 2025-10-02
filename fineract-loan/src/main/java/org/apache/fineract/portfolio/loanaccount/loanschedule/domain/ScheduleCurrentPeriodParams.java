@@ -40,7 +40,7 @@ public class ScheduleCurrentPeriodParams {
         this(currency, BigDecimal.ZERO);
     }
 
-    ScheduleCurrentPeriodParams(final CurrencyData currency, BigDecimal interestCalculationGraceOnRepaymentPeriodFraction) {
+    public ScheduleCurrentPeriodParams(final CurrencyData currency, BigDecimal interestCalculationGraceOnRepaymentPeriodFraction) {
         this.earlyPaidAmount = Money.zero(currency);
         this.lastInstallment = null;
         this.skipCurrentLoop = false;

@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.tax.data.TaxComponentData;
 import org.apache.fineract.portfolio.tax.data.TaxGroupMappingsData;
@@ -149,5 +150,42 @@ public final class TaxUtils {
         }
 
         return totalAmount;
+    }
+
+    public static BigDecimal calculateFactorRateTaxAmount(final BigDecimal loanAmount,
+                                                    final LocalDate chargeDate,
+                                                    final BigDecimal factorRate,
+                                                    final Set<TaxGroupMappings> taxGroupMappings,
+                                                    final int scale) {
+        BigDecimal totalFactorRateTaxAmount = BigDecimal.ZERO;
+        if (loanAmount != null && loanAmount.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal percentageVal = BigDecimal.ZERO;
+            for (final TaxGroupMappings groupMappings : taxGroupMappings) {
+                if (groupMappings.occursOnDayFromAndUpToAndIncluding(chargeDate)) {
+                    TaxComponent component = groupMappings.getTaxComponent();
+                    BigDecimal percentage = component.getApplicablePercentage(chargeDate);
+                    if (percentage != null) {
+                        percentageVal = percentageVal.add(percentage);
+                    }
+                }
+            }
+            final BigDecimal totalFactorRateFeeAmount = loanAmount.multiply(factorRate).subtract(loanAmount);
+            totalFactorRateTaxAmount = totalFactorRateFeeAmount
+                    .multiply(percentageVal.divide(BigDecimal.valueOf(100), scale + 2, MoneyHelper.getRoundingMode()));
+        }
+        return totalFactorRateTaxAmount;
+    }
+
+    public static BigDecimal calculateFactorRateNetFeeAmount(final BigDecimal loanAmount,
+                                                    final LocalDate chargeDate,
+                                                    final BigDecimal factorRate,
+                                                    final Set<TaxGroupMappings> taxGroupMappings,
+                                                    final int scale) {
+        BigDecimal totalFactorRateTaxAmount = calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate, taxGroupMappings, scale);
+        BigDecimal totalFactorRateFeeAmount = BigDecimal.ZERO;
+        if (loanAmount != null && loanAmount.compareTo(BigDecimal.ZERO) > 0) {
+            totalFactorRateFeeAmount = loanAmount.multiply(factorRate).subtract(loanAmount);
+        }
+        return totalFactorRateFeeAmount.subtract(totalFactorRateTaxAmount).setScale(scale, MoneyHelper.getRoundingMode());
     }
 }

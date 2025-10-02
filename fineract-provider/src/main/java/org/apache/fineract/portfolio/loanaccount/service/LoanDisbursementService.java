@@ -243,8 +243,10 @@ public class LoanDisbursementService {
                 if (TemporaryConfigurationServiceContainer.isExternalIdAutoGenerationEnabled()) {
                     externalId = ExternalId.generate();
                 }
+                final boolean factorRateEnabled = loan.isFactorRateEnabled();
+                final BigDecimal factorRate = factorRateEnabled ? loan.getFactorRate() : BigDecimal.ONE;
                 final LoanCharge loanCharge = new LoanCharge(loan, chargeDefinition, principal, null, null, null, expectedDisbursementDate,
-                        null, null, BigDecimal.ZERO, externalId);
+                        null, null, BigDecimal.ZERO, externalId, factorRateEnabled, factorRate);
                 LoanTrancheDisbursementCharge loanTrancheDisbursementCharge = new LoanTrancheDisbursementCharge(loanCharge,
                         disbursementDetails);
                 loanCharge.updateLoanTrancheDisbursementCharge(loanTrancheDisbursementCharge);
