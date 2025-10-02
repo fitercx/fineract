@@ -63,15 +63,17 @@ public class OdooJournalEntryService {
             String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode);
             if (journalId == null) {
-                log.info("Skipping journal entry {} with GL code {} - no journal mapping found", 
-                         fineractEntry.getId(), fineractAccountCode);
+                log.info("Skipping journal entry {} with GL code {} - no journal mapping found", fineractEntry.getId(),
+                        fineractAccountCode);
                 return null; // Skip instead of throwing error
             }
 
             // Get account mapping
             Integer odooAccountId = odooIntegrationService.getOdooAccountId(fineractAccountCode);
             if (odooAccountId == null) {
-                throw new RuntimeException(String.format("Could not map Fineract GL account '%s' to Odoo account - account may not exist in Odoo chart of accounts", fineractAccountCode));
+                throw new RuntimeException(String.format(
+                        "Could not map Fineract GL account '%s' to Odoo account - account may not exist in Odoo chart of accounts",
+                        fineractAccountCode));
             }
 
             // Create the account move
@@ -79,7 +81,9 @@ public class OdooJournalEntryService {
 
             Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
             if (odooMoveId == null) {
-                throw new RuntimeException(String.format("Failed to create account move in Odoo for journal entry %d - check move data and Odoo permissions", fineractEntry.getId()));
+                throw new RuntimeException(
+                        String.format("Failed to create account move in Odoo for journal entry %d - check move data and Odoo permissions",
+                                fineractEntry.getId()));
             }
 
             // Post the move (from draft to posted state)
@@ -98,7 +102,8 @@ public class OdooJournalEntryService {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error while posting journal entry {} to Odoo", fineractEntry.getId(), e);
-            throw new RuntimeException(String.format("Unexpected error posting journal entry %d to Odoo: %s", fineractEntry.getId(), e.getMessage()), e);
+            throw new RuntimeException(
+                    String.format("Unexpected error posting journal entry %d to Odoo: %s", fineractEntry.getId(), e.getMessage()), e);
         }
     }
 
@@ -119,7 +124,7 @@ public class OdooJournalEntryService {
             Long loanId = getLoanIdFromTransactionId(fineractEntry.getLoanTransactionId());
             if (loanId != null) {
                 moveValues.put("x_studio_loan_id_new", loanId);
-                
+
                 String clientName = getClientNameFromLoanId(loanId);
                 if (clientName != null) {
                     moveValues.put("x_sme_id", clientName);
@@ -260,17 +265,18 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Post multiple journal entries for a loan as grouped account moves in Odoo
-     * Groups entries by their target journal based on GL codes
+     * Post multiple journal entries for a loan as grouped account moves in Odoo Groups entries by their target journal
+     * based on GL codes
      */
     public Map<Integer, Long> postJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
         Map<Integer, Long> journalToMoveMap = new HashMap<>();
-        
+
         try {
             // Authenticate with Odoo
             Integer uid = odooApiClient.authenticate();
             if (uid == null) {
-                throw new RuntimeException("Odoo authentication failed for loan " + loanId + " - check credentials and connection settings");
+                throw new RuntimeException(
+                        "Odoo authentication failed for loan " + loanId + " - check credentials and connection settings");
             }
 
             // Group journal entries by target journal
@@ -279,31 +285,33 @@ public class OdooJournalEntryService {
             // Validate all entries
             for (JournalEntry entry : journalEntries) {
                 if (!canPostToOdoo(entry)) {
-                    throw new RuntimeException(String.format("Journal entry %d for loan %d failed validation - check GL account, amount, or transaction date", 
-                                             entry.getId(), loanId));
+                    throw new RuntimeException(
+                            String.format("Journal entry %d for loan %d failed validation - check GL account, amount, or transaction date",
+                                    entry.getId(), loanId));
                 }
             }
 
             // Group entries by journal (this will skip entries with no journal mapping)
             Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntries);
-            
+
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
                 return journalToMoveMap; // Return empty map
             }
-            
+
             // Create separate account moves for each journal
             for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
                 Integer journalId = journalGroup.getKey();
                 List<JournalEntry> entries = journalGroup.getValue();
-                
+
                 // Create the account move with multiple lines for this journal
                 Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
 
                 Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
                 if (odooMoveId == null) {
-                    throw new RuntimeException(String.format("Failed to create account move in Odoo for loan %d and journal %d - check move data and Odoo permissions", 
-                                             loanId, journalId));
+                    throw new RuntimeException(String.format(
+                            "Failed to create account move in Odoo for loan %d and journal %d - check move data and Odoo permissions",
+                            loanId, journalId));
                 }
 
                 // Post the move (from draft to posted state)
@@ -314,18 +322,18 @@ public class OdooJournalEntryService {
                 }
 
                 journalToMoveMap.put(journalId, odooMoveId);
-                log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", 
-                    entries.size(), loanId, journalId, odooMoveId);
+                log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", entries.size(), loanId,
+                        journalId, odooMoveId);
             }
 
             // Log summary of skipped entries
             int totalEntries = journalEntries.size();
             int processedEntries = entriesByJournal.values().stream().mapToInt(List::size).sum();
             int skippedEntries = totalEntries - processedEntries;
-            
+
             if (skippedEntries > 0) {
-                log.info("Processed {} entries, skipped {} entries without journal mappings for loan {}", 
-                        processedEntries, skippedEntries, loanId);
+                log.info("Processed {} entries, skipped {} entries without journal mappings for loan {}", processedEntries, skippedEntries,
+                        loanId);
             }
 
             return journalToMoveMap;
@@ -335,20 +343,21 @@ public class OdooJournalEntryService {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error while posting journal entries for loan {} to Odoo", loanId, e);
-            throw new RuntimeException(String.format("Unexpected error posting journal entries for loan %d to Odoo: %s", loanId, e.getMessage()), e);
+            throw new RuntimeException(
+                    String.format("Unexpected error posting journal entries for loan %d to Odoo: %s", loanId, e.getMessage()), e);
         }
     }
-    
+
     /**
      * Group journal entries by their target journal based on GL codes
      */
     private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntry> journalEntries) {
         Map<Integer, List<JournalEntry>> groupedEntries = new HashMap<>();
-        
+
         for (JournalEntry entry : journalEntries) {
             String glCode = entry.getGlAccount().getGlCode();
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode);
-            
+
             if (journalId != null) {
                 groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
                 log.debug("Assigned journal entry {} (GL: {}) to journal {}", entry.getId(), glCode, journalId);
@@ -356,7 +365,7 @@ public class OdooJournalEntryService {
                 log.info("Skipping journal entry {} with GL code {} - no journal mapping found", entry.getId(), glCode);
             }
         }
-        
+
         return groupedEntries;
     }
 
@@ -497,9 +506,7 @@ public class OdooJournalEntryService {
         }
 
         try {
-            String sql = "SELECT c.display_name FROM m_client c " +
-                        "JOIN m_loan l ON l.client_id = c.id " +
-                        "WHERE l.id = ?";
+            String sql = "SELECT c.display_name FROM m_client c " + "JOIN m_loan l ON l.client_id = c.id " + "WHERE l.id = ?";
             List<String> clientNames = jdbcTemplate.queryForList(sql, String.class, loanId);
             return clientNames.isEmpty() ? null : clientNames.get(0);
         } catch (Exception e) {

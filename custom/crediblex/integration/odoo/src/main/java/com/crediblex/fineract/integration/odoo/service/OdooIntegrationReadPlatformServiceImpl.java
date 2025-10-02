@@ -21,7 +21,6 @@ package com.crediblex.fineract.integration.odoo.service;
 import com.crediblex.fineract.integration.odoo.client.OdooApiClient;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,24 +49,24 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     // Cache for account mappings to avoid repeated Odoo calls
     private final Map<String, Integer> accountMappingCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> journalMappingCache = new ConcurrentHashMap<>();
-    
+
     // GL Code to Journal Code mapping - this can be externalized to configuration
     private final Map<String, Set<String>> journalGlCodeMapping = initializeJournalGlCodeMapping();
-    
+
     /**
-     * Initialize the mapping of journal codes to GL codes
-     * This can be moved to configuration properties or database table for better maintainability
+     * Initialize the mapping of journal codes to GL codes This can be moved to configuration properties or database
+     * table for better maintainability
      */
     private Map<String, Set<String>> initializeJournalGlCodeMapping() {
         Map<String, Set<String>> mapping = new HashMap<>();
-        
+
         // BNK5 journal for specific GL codes
         mapping.put("BNK5", Set.of("100031", "300004", "200065", "200040"));
-        
+
         // Add more journal mappings as needed
         // mapping.put("MISC", Set.of("400001", "400002", "400003"));
         // mapping.put("CASH", Set.of("100001", "100002"));
-        
+
         return mapping;
     }
 
@@ -143,7 +142,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // Default fallback - use BNK5 if no specific mapping found
         return getJournalIdByCode("BNK5");
     }
-    
+
     /**
      * Get journal ID based on GL account code
      */
@@ -152,7 +151,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             log.warn("GL code is null, no journal available");
             return null;
         }
-        
+
         // Find which journal this GL code belongs to
         String journalCode = findJournalCodeForGlCode(glCode);
         if (journalCode != null) {
@@ -163,7 +162,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return null;
         }
     }
-    
+
     /**
      * Find journal code for a given GL code
      */
@@ -175,7 +174,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
         return null; // No mapping found
     }
-    
+
     /**
      * Get journal ID by journal code from Odoo
      */
@@ -207,8 +206,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 // Cache the mapping
                 journalMappingCache.put(journalKey, journalId);
 
-                log.debug("Using journal ID: {} ({}) with code '{}' for journal entries", 
-                    journalId, journal.get("name"), journalCode);
+                log.debug("Using journal ID: {} ({}) with code '{}' for journal entries", journalId, journal.get("name"), journalCode);
 
                 return journalId;
             } else {
@@ -248,16 +246,15 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
         log.info("Completed preloading account mappings");
     }
-    
+
     /**
-     * Add GL codes to a journal mapping
-     * This allows for dynamic configuration of journal mappings
+     * Add GL codes to a journal mapping This allows for dynamic configuration of journal mappings
      */
     public void addGlCodesToJournal(String journalCode, Set<String> glCodes) {
         journalGlCodeMapping.computeIfAbsent(journalCode, k -> new java.util.HashSet<>()).addAll(glCodes);
         log.info("Added {} GL codes to journal {}: {}", glCodes.size(), journalCode, glCodes);
     }
-    
+
     /**
      * Remove GL codes from journal mapping
      */
@@ -268,7 +265,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             log.info("Removed {} GL codes from journal {}: {}", glCodes.size(), journalCode, glCodes);
         }
     }
-    
+
     /**
      * Get current journal GL code mappings
      */
