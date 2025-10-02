@@ -48,6 +48,7 @@ import org.apache.fineract.portfolio.savings.data.SavingsAccountApplicationTimel
 import org.apache.fineract.portfolio.savings.data.SavingsAccountStatusEnumData;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountSubStatusEnumData;
 import org.apache.fineract.portfolio.savings.service.SavingsEnumerations;
+import org.apache.logging.log4j.util.Strings;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -361,7 +362,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             accountsSummary.append("curr.name as currencyName, curr.internationalized_name_code as currencyNameCode, ");
             accountsSummary.append("curr.display_symbol as currencyDisplaySymbol, ");
             accountsSummary.append("sa.product_id as productId, p.name as productName, p.short_name as shortProductName, ");
-            accountsSummary.append("sa.deposit_type_enum as depositType, ");
+            accountsSummary.append("sa.deposit_type_enum as depositType, loc.external_id as locExternalId, ");
             accountsSummary.append("ml.id as fromLoanAccountId, ");
             accountsSummary.append("ml.account_no as fromLoanAccountNumber ");
             accountsSummary.append("from m_savings_account sa ");
@@ -386,6 +387,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                                             on sa.id = transfer_info.to_savings_account_id
                             """);
             accountsSummary.append(" left join m_loan ml on ml.id = transfer_info.from_loan_account_id ");
+            accountsSummary.append(" left join m_line_of_credit loc on sa.id = loc.settlement_savings_account_id ");
 
             this.schemaSql = accountsSummary.toString();
         }
@@ -455,7 +457,11 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final LocalDate lastActiveTransactionDate = JdbcSupport.getLocalDate(rs, "lastActiveTransactionDate");
 
             final Long fromLoanAccountId = JdbcSupport.getLong(rs, "fromLoanAccountId");
-            final String fromLoanAccountNumber = rs.getString("fromLoanAccountNumber");
+            String fromLoanAccountNumber = rs.getString("fromLoanAccountNumber");
+
+            if (Strings.isBlank(fromLoanAccountNumber)) {
+                fromLoanAccountNumber = rs.getString("locExternalId");
+            }
 
             final SavingsAccountApplicationTimelineData timeline = new SavingsAccountApplicationTimelineData(submittedOnDate,
                     submittedByUsername, submittedByFirstname, submittedByLastname, rejectedOnDate, rejectedByUsername, rejectedByFirstname,
