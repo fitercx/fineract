@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeReadService;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTimeLineData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
 import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
@@ -57,7 +58,6 @@ import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
-import org.apache.fineract.useradministration.data.AppUserData;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -117,29 +117,24 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                      loc.settlement_savings_account_id as settlementSavingsAccountId,
                      ssa.account_no as settlementSavingsAccountNo,
                      ssa.account_balance_derived as settlementSavingsAccountBalance,
-                     loc.created_on_utc as createdDate,
-                     loc.created_by as createdBy,
-                     loc.last_modified_on_utc as lastModifiedDate,
-                     loc.last_modified_by as lastModifiedBy,
                      mlocab.name as approvedBuyerName,
-                     loc.activated_on_date as activatedOnDate,
-                     loc.approved_on_date as approvedOnDate,
                      loc.closed_on_date as closedOnDate,
-                     ap.firstname as approverFirstName,
-                     ap.lastname as approverLastName,
-                     ac.firstname as activatorFirstName,
-                     ac.lastname as activatorLastName,
-                     cl.firstname as closerFirstName,
-                     cl.lastname as closerLastName,
-                     lo.display_name as loanOfficerName
+                     lo.display_name as loanOfficerName,
+                     creator.firstname as locCreatorFirstName, creator.lastname as locCreatorLastname,  loc.created_on_utc as locCreatedOn,
+                     lastmodifier.firstname as locLastModifierFirstName, lastmodifier.lastname as locLastModifierLastName,loc.last_modified_on_utc as locModifiedOn,
+                     activator.firstname as locActivatorFirstName, activator.lastname as locActivatorLastName, loc.activated_on_date as locActivatedOnDate,
+                     approver.firstname as locApproverFirstName, approver.lastname as locApproverLastName, loc.approved_on_date as locApprovedOnDate,
+                     closer.firstname as locCloserFirstName, closer.lastname as locCloserLastName,loc.closed_on_date as locClosedOnDate
                      from
                      m_line_of_credit loc
                      left join m_savings_account ssa on ssa.id = loc.settlement_savings_account_id
                      left join m_line_of_credit_approved_buyers mlocab on mlocab.line_of_credit_id = loc.id
-                     left join m_appuser ac on ac.id = loc.activated_by_user_id
-                     left join m_appuser ap on ap.id = loc.approved_by_user_id
-                     left join m_appuser cl on cl.id = loc.closed_by_user_id
                      left join m_staff lo on lo.id = loc.loan_officer_id
+                     LEFT JOIN m_appuser creator ON creator.id = loc.created_by
+                     LEFT JOIN m_appuser lastmodifier ON lastmodifier.id = loc.last_modified_by
+                     LEFT JOIN m_appuser activator ON activator.id = loc.activated_by_user_id
+                     LEFT JOIN m_appuser approver ON approver.id = loc.approved_by_user_id
+                     LEFT JOIN m_appuser closer ON closer.id = loc.closed_by_user_id
                     """;
         }
 
@@ -208,17 +203,31 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final Long settlementSavingsAccountId = JdbcSupport.getLong(rs, "settlementSavingsAccountId");
             final String settlementSavingsAccountNo = rs.getString("settlementSavingsAccountNo");
             final BigDecimal settlementSavingsAccountBalance = rs.getBigDecimal("settlementSavingsAccountBalance");
-            final LocalDate createdDate = JdbcSupport.getLocalDate(rs, "createdDate");
-            final String createdBy = rs.getString("createdBy");
-            final LocalDate lastModifiedDate = JdbcSupport.getLocalDate(rs, "lastModifiedDate");
-            final String lastModifiedBy = rs.getString("lastModifiedBy");
-            final LocalDate activatedOnDate = JdbcSupport.getLocalDate(rs, "activatedOnDate");
-            final LocalDate approvedOnDate = JdbcSupport.getLocalDate(rs, "approvedOnDate");
-            final LocalDate closedOnDate = JdbcSupport.getLocalDate(rs, "closedOnDate");
 
-            final AppUserData approver = createAppUserData(rs.getString("approverFirstName"), rs.getString("approverLastName"));
-            final AppUserData activator = createAppUserData(rs.getString("activatorFirstName"), rs.getString("activatorLastName"));
-            final AppUserData closer = createAppUserData(rs.getString("closerFirstName"), rs.getString("closerLastName"));
+            final LocalDate createdDate = JdbcSupport.getLocalDate(rs, "locCreatedOn");
+            final String createdByFirstName = rs.getString("locCreatorFirstName");
+            final String createdByLastName = rs.getString("locCreatorLastname");
+
+            final LocalDate lastModifiedDate = JdbcSupport.getLocalDate(rs, "locModifiedOn");
+            final String lastModifiedByFirstName = rs.getString("locLastModifierFirstName");
+            final String lastModifiedByLastName = rs.getString("locLastModifierLastName");
+
+            final String activatorFirstName = rs.getString("locActivatorFirstName");
+            final String activatorLastName = rs.getString("locActivatorLastName");
+            final LocalDate activatedOnDate = JdbcSupport.getLocalDate(rs, "locActivatedOnDate");
+            final String approverFirstName = rs.getString("locApproverFirstName");
+            final String approverLastName = rs.getString("locApproverLastName");
+            final LocalDate approvedOnDate = JdbcSupport.getLocalDate(rs, "locApprovedOnDate");
+            final String closerFirstName = rs.getString("locCloserFirstName");
+            final String closerLastName = rs.getString("locCloserLastName");
+            final LocalDate closedOnDate = JdbcSupport.getLocalDate(rs, "locClosedOnDate");
+
+            LineOfCreditTimeLineData timeLineData = LineOfCreditTimeLineData.builder().submittedOnDate(createdDate)
+                    .submittedByFirstname(createdByFirstName).submittedByLastname(createdByLastName).activatedByLastname(activatorLastName)
+                    .activatedByFirstname(activatorFirstName).activatedOnDate(activatedOnDate).approvedByFirstname(approverFirstName)
+                    .approvedByLastname(approverLastName).approvedOnDate(approvedOnDate).closedByFirstname(closerFirstName)
+                    .closedByLastname(closerLastName).closedOnDate(closedOnDate).updatedByFirstname(lastModifiedByFirstName)
+                    .updatedByLastname(lastModifiedByLastName).updatedOnDate(lastModifiedDate).build();
 
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
                     .availableBalance(availableBalance).consumedAmount(consumedAmount)
@@ -233,17 +242,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .va(virtualAccount).specialConditions(specialConditions).reviewPeriod(reviewPeriod).loanOfficerId(loanOfficerId)
                     .loanOfficerName(loanOfficerName).distributionPartner(distributionPartner)
                     .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
-                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
-                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).activatedOnDate(activatedOnDate)
-                    .approvedOnDate(approvedOnDate).closedOnDate(closedOnDate).approver(approver).activator(activator).closer(closer);
-        }
-
-        private AppUserData createAppUserData(String firstName, String lastName) {
-            if (firstName != null || lastName != null) {
-                String fullName = ((firstName != null ? firstName : "") + (lastName != null ? " " + lastName : "")).trim();
-                return AppUserData.dropdown(null, fullName);
-            }
-            return null;
+                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).timeLineData(timeLineData);
         }
 
         private EnumOptionData getActivationStatusEnumOptionData(String status) {
@@ -327,8 +326,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .append("loc.special_conditions as locSpecialConditions, loc.late_payment_fee as locLatePaymentFee, ")
                     .append("loc.max_per_drawdown as locMaxPerDrawdown, loc.review_period as locReviewPeriod, ")
                     .append("loc.loan_officer as locLoanOfficer, loc.repayment_strategy as locRepaymentStrategy, ")
-                    .append("loc.created_on_utc as locCreatedDate, loc.created_by as locCreatedBy, ")
-                    .append("loc.last_modified_on_utc as locLastModifiedDate, loc.last_modified_by as locLastModifiedBy, loc.va as accountNumber, ")
+                    .append("loc.va as accountNumber, ")
 
                     // Loan fields
                     .append("l.id as loanId, l.account_no as loanAccountNo, l.external_id as loanExternalId, ")
@@ -398,7 +396,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         }
 
         /**
-         * Extract complete LOC data for detailed view
+         * Extract for client view page.
          */
         private LineOfCreditData extractExhaustiveLineOfCreditData(ResultSet rs) throws SQLException {
             final Long id = rs.getLong("locId");
@@ -438,15 +436,6 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     : null;
             final String settlementSavingsAccountNo = rs.getString("settlementSavingsAccountNo");
             final BigDecimal settlementSavingsAccountBalance = rs.getBigDecimal("settlementSavingsAccountBalance");
-
-            final LocalDate createdDate = rs.getTimestamp("locCreatedDate") != null
-                    ? rs.getTimestamp("locCreatedDate").toLocalDateTime().toLocalDate()
-                    : null;
-            final String createdBy = rs.getString("locCreatedBy");
-            final LocalDate lastModifiedDate = rs.getTimestamp("lastModifiedDate") != null
-                    ? rs.getTimestamp("lastModifiedDate").toLocalDateTime().toLocalDate()
-                    : null;
-            final String lastModifiedBy = rs.getString("locLastModifiedBy");
             final String accountNumber = rs.getString("accountNumber");
 
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
@@ -461,8 +450,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .authorizedSignatoryEmail(authorizedSignatoryEmail).va(accountNumber).distributionPartner(distributionPartner)
                     .specialConditions(specialConditions).reviewPeriod(null).annualInterestRate(interestRateOverride)
                     .settlementSavingsAccountId(settlementSavingsAccountId).settlementSavingsAccountNo(settlementSavingsAccountNo)
-                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).createdDate(createdDate).createdByUsername(createdBy)
-                    .lastModifiedDate(lastModifiedDate).lastModifiedByUsername(lastModifiedBy).build();
+                    .settlementSavingsAccountBalance(settlementSavingsAccountBalance).build();
         }
 
         /**
