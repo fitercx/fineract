@@ -181,11 +181,9 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append("  WHERE lc.loan_id = l.id AND lc.is_penalty = true AND lc.is_active = true and due_for_collection_as_of_date < CAST(:currentDate AS DATE)) as totalLateFees,")
                     .append(" dlad.remitter_name as remitterName,").append(" dlad.dp_name as dpName,")
                     .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
-                    .append(" (SELECT MIN(rps.duedate) FROM m_loan_repayment_schedule rps ")
-                    .append(" WHERE rps.loan_id = l.id ")
+                    .append(" (SELECT MIN(rps.duedate) FROM m_loan_repayment_schedule rps ").append(" WHERE rps.loan_id = l.id ")
                     .append(" AND (rps.completed_derived = false OR rps.completed_derived IS NULL)) ")
                     .append(" ELSE NULL END as nextInstalmentDate")
-
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
