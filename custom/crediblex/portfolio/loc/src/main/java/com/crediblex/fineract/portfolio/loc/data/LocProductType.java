@@ -19,8 +19,10 @@
 package com.crediblex.fineract.portfolio.loc.data;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
+@Getter
 @Schema(description = "Enum for line of credit product types")
 public enum LocProductType {
 
@@ -36,5 +38,18 @@ public enum LocProductType {
 
     public EnumOptionData getEnumOptionsData() {
         return new EnumOptionData(this.value.longValue(), this.name(), this.description);
+    }
+
+    public static LocProductType fromInt(final Integer productType) {
+        LocProductType locProductType = null;
+        if (productType != null) {
+            for (final LocProductType type : LocProductType.values()) {
+                if (type.value.equals(productType)) {
+                    locProductType = type;
+                    break;
+                }
+            }
+        }
+        return locProductType;
     }
 }

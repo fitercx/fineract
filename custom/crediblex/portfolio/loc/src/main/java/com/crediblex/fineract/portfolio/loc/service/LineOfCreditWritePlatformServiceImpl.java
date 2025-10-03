@@ -24,17 +24,18 @@ import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaid
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeDomainService;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +48,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuild
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
@@ -64,7 +66,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePlatformService {
 
-    private final LineOfCreditRepository lineOfCreditRepository;
+    private final LineOfCreditRepositoryWrapper lineOfCreditRepository;
+    private final LineOfCreditReadPlatformService lineOfCreditReadPlatformService;
     private final LineOfCreditDataValidator dataValidator;
     private final SavingsAccountRepository savingsAccountRepository;
     private final LineOfCreditChargeRepository locChargeRepository;
@@ -75,18 +78,16 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final FromJsonHelper fromJsonHelper;
     private final LineOfCreditAssembler lineOfCreditAssembler;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
+    private final PlatformSecurityContext context;
 
     @Override
     @Transactional
-    public CommandProcessingResult createLineOfCredit(JsonCommand command) {
+    public CommandProcessingResult createLineOfCredit(JsonCommand command, Long clientId) {
 
-        this.dataValidator.validateForCreate(command.json());
-        LineOfCredit lineOfCredit = this.lineOfCreditAssembler.assembleFrom(command);
+        LineOfCreditRequest lcr = this.dataValidator.validateForCreate(command.json());
+        LineOfCredit lineOfCredit = this.lineOfCreditAssembler.assembleFrom(lcr, clientId);
 
-        lineOfCreditRepository.findByExternalId(lineOfCredit.getExternalId()).ifPresent(existingLoc -> {
-            throw new PlatformApiDataValidationException("error.msg.loc.duplicate.externalId",
-                    "Line of Credit with given externalId already exists: " + lineOfCredit.getExternalId(), "externalId");
-        });
+        lineOfCreditRepository.findByExternalIdWithFoundException(lineOfCredit.getExternalId());
 
         if (command.hasParameter("charges")) {
             JsonElement root = fromJsonHelper.parse(command.json());
@@ -115,6 +116,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
+
                         throw new PlatformApiDataValidationException("error.msg.loc.charge.invalid.appliesTo",
                                 "Charge not configured for Line Of Credit", "chargeId");
                     }
@@ -137,8 +139,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         overrideAmount = fromJsonHelper.extractBigDecimalNamed("amount", charge, Locale.ENGLISH);
                     }
 
-                    Boolean isActive = fromJsonHelper.extractBooleanNamed("active", charge);
-                    LineOfCreditCharge instance = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount, isActive);
+                    LineOfCreditCharge instance = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
+                    instance.setLineOfCredit(lineOfCredit);
                     newCharges.add(instance);
 
                     log.debug("Created LOC charge: chargeId={}, amount={}, overrideAmount={}", chargeId, instance.getAmount(),
@@ -146,16 +148,14 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     idx++;
                 }
                 lineOfCredit.replaceCharges(newCharges);
-                log.info("Added {} charges to LOC before save", newCharges.size());
             }
         }
 
         final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-        // Remove redundant explicit charge saves - cascade will handle this
-        // Charges are already saved through cascade when the parent LineOfCredit is saved
-        log.info("Persisted LOC {} with {} charges", savedLineOfCredit.getId(),
-                savedLineOfCredit.getCharges() != null ? savedLineOfCredit.getCharges().size() : 0);
+        if (savedLineOfCredit.getApprovedBuyers() != null) {
+            savedLineOfCredit.getApprovedBuyers().forEach(buyer -> buyer.setLineOfCredit(savedLineOfCredit));
+        }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(savedLineOfCredit.getId()).build();
 
@@ -172,9 +172,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         this.dataValidator.validateForUpdate(command.json());
 
-        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
-                        "lineOfCreditId"));
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
         final Map<String, Object> changes = lineOfCredit.update(command);
 
@@ -205,11 +203,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         idx++;
                         continue;
                     }
-                    Long chargeId = fromJsonHelper.extractLongNamed("chargeId", chargeElem);
-                    if (chargeId == null) {
-                        throw new PlatformApiDataValidationException("error.msg.loc.charge.chargeId.required", "Charge chargeId required",
-                                "charges[" + idx + "]");
-                    }
+                    Long chargeId = chargeElem.getAsJsonObject().get("id").getAsLong();
+
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
                         throw new PlatformApiDataValidationException("error.msg.loc.charge.invalid.appliesTo",
@@ -227,8 +222,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed("overrideAmount", chargeElem));
                     }
 
-                    Boolean isActive = fromJsonHelper.extractBooleanNamed("active", chargeElem);
-                    LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount, isActive);
+                    LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
+                    newCharge.setLineOfCredit(lineOfCredit);
                     newCharges.add(newCharge);
                     idx++;
                 }
@@ -258,7 +253,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (!changes.isEmpty()) {
-            this.lineOfCreditRepository.save(lineOfCredit);
+            this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
         }
 
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
@@ -269,46 +264,32 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Transactional
     public CommandProcessingResult activateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         try {
-            final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found",
-                            "Line of credit not found", "lineOfCreditId"));
+            final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
             if (!lineOfCredit.canActivate()) {
-                throw new PlatformApiDataValidationException("error.msg.loc.cannot.activate.state.invalid",
-                        "LOC cannot be activated unless in APPROVED state", "state");
+                throw new LineOfCreditInvalidStateException(lineOfCredit.getExternalId(), lineOfCredit.getStatus().name());
             }
 
             // Extract date and note from command
             LocalDate activationDate = command.localDateValueOfParameterNamed("actionDate");
 
-            // Use current date if no date provided
-            if (activationDate == null) {
-                activationDate = LocalDate.now();
-            }
-
-            if (lineOfCredit.getStatus() != LocStatus.APPROVED) {
-                throw new PlatformApiDataValidationException("loc.not.in.approved.status", "LOC must be APPROVED to activate", null);
-            }
-
             // Validate activation date is not before approval date
             if (lineOfCredit.getLineOfCreditStateChange().getApprovedOnDate() != null
                     && activationDate.isBefore(lineOfCredit.getLineOfCreditStateChange().getApprovedOnDate())) {
-                throw new PlatformApiDataValidationException("loc.not.in.approved.status", "Activation date cannot be before approval date",
-                        null);
+                throw new LineOfCreditInvalidStateException("Activation date cannot be before approval date");
 
             }
 
             lineOfCredit.setStatus(LocStatus.ACTIVE);
             lineOfCredit.getLineOfCreditStateChange().setActivateOnDate(activationDate);
+            lineOfCredit.getLineOfCreditStateChange().setActivatedBy(context.authenticatedUser());
 
-            this.lineOfCreditRepository.save(lineOfCredit);
             applyInitialCharges(lineOfCredit);
 
-            final Map<String, Object> responseData = new HashMap<>();
-            responseData.put("action", "ACTIVATED");
-            responseData.put("activationDate", activationDate);
+            this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(responseData).build();
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
+
         } catch (IllegalStateException | IllegalArgumentException e) {
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.activation.failed", e.getMessage(), "activation", e);
         } catch (final PlatformApiDataValidationException e) {
@@ -320,13 +301,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Override
     @Transactional
     public CommandProcessingResult approveLineOfCredit(Long lineOfCreditId, JsonCommand command) {
-        final LineOfCredit loc = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
-                        "lineOfCreditId"));
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
-        if (loc.getStatus() != com.crediblex.fineract.portfolio.loc.data.LocStatus.SUBMITTED) {
-            throw new PlatformApiDataValidationException("error.msg.loc.cannot.approve.invalid.state", "LOC must be SUBMITTED to approve",
-                    "state");
+        if (loc.getStatus() != LocStatus.SUBMITTED) {
+            throw new LineOfCreditInvalidStateException(loc.getExternalId(), loc.getStatus().name());
         }
 
         // Extract date and note from command
@@ -337,37 +315,20 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             approvalDate = LocalDate.now();
         }
 
-        try {
-            if (loc.getStatus() != LocStatus.SUBMITTED) {
-                throw new IllegalStateException("LOC must be SUBMITTED to approve");
-            }
+        loc.setStatus(LocStatus.APPROVED);
+        loc.getLineOfCreditStateChange().setApprovedOnDate(approvalDate);
+        loc.getLineOfCreditStateChange().setApprovedBy(context.getAuthenticatedUserIfPresent());
 
-            // Validate approval date is not before submit date (creation date)
-            if (loc.getStartDate() != null && approvalDate.isBefore(loc.getStartDate())) {
-                throw new IllegalArgumentException("Approval date cannot be before start date");
-            }
+        lineOfCreditRepository.saveAndFlush(loc);
 
-            loc.setStatus(LocStatus.APPROVED);
-            loc.getLineOfCreditStateChange().setApprovedOnDate(approvalDate);
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
 
-            lineOfCreditRepository.save(loc);
-
-            Map<String, Object> data = new HashMap<>();
-            data.put("action", "APPROVED");
-            data.put("approvalDate", approvalDate);
-
-            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(data).build();
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            throw new PlatformApiDataValidationException("error.msg.loc.approval.failed", e.getMessage(), "approval", e);
-        }
     }
 
     @Override
     @Transactional
     public CommandProcessingResult closeLineOfCredit(Long lineOfCreditId, JsonCommand command) {
-        final LineOfCredit loc = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
-                        "lineOfCreditId"));
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
         if (!loc.canClose()) {
             throw new PlatformApiDataValidationException("error.msg.loc.cannot.close.active.draw.down",
@@ -385,79 +346,71 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // Extract date and note from command
         LocalDate closureDate = command.localDateValueOfParameterNamed("actionDate");
-        String note = command.stringValueOfParameterNamed("note");
 
         // Use current date if no date provided
         if (closureDate == null) {
             closureDate = LocalDate.now();
         }
 
-        try {
-            if (!loc.canClose()) {
-                throw new IllegalStateException("Cannot close LOC with active draw down or invalid state");
-            }
-
-            // Validate closure date is not before activation date
-            if (loc.getLineOfCreditStateChange().getActivateOnDate() != null
-                    && closureDate.isBefore(loc.getLineOfCreditStateChange().getActivateOnDate())) {
-                throw new IllegalArgumentException("Closure date cannot be before activation date");
-            }
-
-            loc.setStatus(LocStatus.CLOSED);
-            loc.getLineOfCreditStateChange().setClosedOnDate(closureDate);
-            lineOfCreditRepository.save(loc);
-
-            Map<String, Object> data = new HashMap<>();
-            data.put("action", "CLOSED");
-            data.put("closureDate", closureDate);
-            if (note != null) {
-                data.put("note", note);
-            }
-            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(data).build();
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            throw new PlatformApiDataValidationException("error.msg.loc.closure.failed", e.getMessage(), "closure", e);
+        if (closureDate.isAfter(DateUtils.getLocalDateOfTenant())) {
+            throw new PlatformApiDataValidationException("error.msg.loc.cannot.close.in.the.future", "LOC cannot be closed in the future",
+                    "charges");
         }
+
+        // Validate closure date is not before activation date
+        if (loc.getLineOfCreditStateChange().getActivateOnDate() != null
+                && closureDate.isBefore(loc.getLineOfCreditStateChange().getActivateOnDate())) {
+            throw new PlatformApiDataValidationException("error.msg.loc.cannot.close.date.before.activation",
+                    "LOC cannot be closed in the future", "charges");
+        }
+
+        loc.setStatus(LocStatus.CLOSED);
+        loc.getLineOfCreditStateChange().setClosedOnDate(closureDate);
+        loc.getLineOfCreditStateChange().setClosedBy(context.getAuthenticatedUserIfPresent());
+        lineOfCreditRepository.saveAndFlush(loc);
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
+
     }
 
     @Override
     @Transactional
     public CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
-        final LineOfCredit loc = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
-                        "lineOfCreditId"));
-        if (loc.getStatus() != com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE) {
-            throw new PlatformApiDataValidationException("error.msg.loc.cannot.deactivate.invalid.state",
-                    "Only ACTIVE LOC can be deactivated", "state");
+
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (!loc.isActive()) {
+            throw new LineOfCreditInvalidStateException("Only ACTIVE LOC can be deactivated");
+        }
+
+        Integer totalActiveLoans = lineOfCreditReadPlatformService.getTotalOfActiveLoans(lineOfCreditId);
+
+        if (totalActiveLoans > 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.deactivate.not.allowed", "Cannot deactivate LOC with active loans",
+                    "state");
         }
         loc.deactivate();
-        this.lineOfCreditRepository.save(loc);
-        Map<String, Object> data = new HashMap<>();
-        data.put("action", "DEACTIVATED");
-        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(data).build();
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
     }
 
     @Override
     @Transactional
     public CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId) {
-        final LineOfCredit loc = this.lineOfCreditRepository.findById(lineOfCreditId)
-                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.line.of.credit.not.found", "Line of credit not found",
-                        "lineOfCreditId"));
-        if (loc.getStatus() == com.crediblex.fineract.portfolio.loc.data.LocStatus.ACTIVE
-                || loc.getStatus() == com.crediblex.fineract.portfolio.loc.data.LocStatus.APPROVED) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (loc.getStatus() != LocStatus.SUBMITTED && loc.getStatus() != LocStatus.APPROVED) {
             throw new PlatformApiDataValidationException("error.msg.loc.delete.not.allowed", "Cannot delete an ACTIVE or APPROVED LOC",
                     "state");
         }
+
         this.lineOfCreditRepository.delete(loc);
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
     }
 
     private void applyInitialCharges(LineOfCredit loc) {
-        log.info("Applying initial charges for LOC {}", loc.getId());
-
-        if (loc.getSettlementSavingsAccount() == null) {
-            log.warn("No settlement savings account configured for LOC {}, skipping charge application", loc.getId());
-            return;
-        }
 
         List<LineOfCreditCharge> charges = locChargeRepository.findUnpaidOrdered(loc.getId());
         if (charges.isEmpty()) {
@@ -465,7 +418,11 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             return;
         }
 
-        log.info("Found {} unpaid charges for LOC {}", charges.size(), loc.getId());
+        if (loc.getSettlementSavingsAccount() == null) {
+            throw new PlatformApiDataValidationException("error.msg.loc.settlement.savings.required",
+                    "Settlement savings account required to deduct initial charges", "settlementSavingsAccountId");
+        }
+
         MonetaryCurrency currency = loc.getSettlementSavingsAccount().getCurrency();
 
         if (!currency.getCode().equals(loc.getCurrency())) {
@@ -479,7 +436,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         for (LineOfCreditCharge charge : charges) {
             if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
-                log.debug("Skipping charge {} - not active or already paid/waived", charge.getId());
                 continue;
             }
 
@@ -508,62 +464,46 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
-            log.info("No outstanding amount to charge for LOC {}", loc.getId());
             return;
         }
 
-        log.info("Total charge amount {} for LOC {}", total, loc.getId());
+        // Generate JSON command for savings account withdrawal
+        JsonObject object = new JsonObject();
+        object.addProperty("transactionAmount", total);
+        object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
+        object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
+        object.addProperty("locale", "en");
+        object.addProperty("paymentTypeId", 1); // Assuming 1 is a valid payment type ID
+        object.addProperty("note", "LOC charges deduction for LOC ID: " + loc.getId());
 
-        try {
-            // Generate JSON command for savings account withdrawal
-            JsonObject object = new JsonObject();
-            object.addProperty("transactionAmount", total);
-            object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
-            object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
-            object.addProperty("locale", "en");
-            object.addProperty("paymentTypeId", 1); // Assuming 1 is a valid payment type ID
-            object.addProperty("note", "LOC charges deduction for LOC ID: " + loc.getId());
+        JsonCommand withdrawalCommand = JsonCommand.from(object.toString(), object, fromJsonHelper, null, null, null, null, null, null,
+                loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
 
-            JsonCommand withdrawalCommand = JsonCommand.from(object.toString(), object, fromJsonHelper, null, null, null, null, null, null,
-                    loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
+        // Execute savings withdrawal
+        CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(),
+                withdrawalCommand);
 
-            // Execute savings withdrawal
-            CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService
-                    .withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
+        // Get the created transaction for linking to charges
+        SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
+                .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.savings.transaction.not.found",
+                        "Savings transaction not found", "transactionId"));
 
-            // Get the created transaction for linking to charges
-            SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
-                    .orElseThrow(() -> new PlatformApiDataValidationException("error.msg.savings.transaction.not.found",
-                            "Savings transaction not found", "transactionId"));
-
-            log.info("Created savings withdrawal transaction {} for amount {} on LOC {}", aggregateTxn.getId(), total, loc.getId());
-
-            // Allocate to each charge
-            int chargesProcessed = 0;
-            for (LineOfCreditCharge charge : charges) {
-                if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
-                    continue;
-                }
-                BigDecimal outstanding = charge.getAmountOutstanding();
-                if (outstanding == null || outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-                    continue;
-                }
-
-                locChargeDomainService.pay(charge, outstanding, false);
-                locChargeRepository.save(charge);
-
-                LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
-                locChargePaidByRepository.save(paidBy);
-
-                log.debug("Processed payment for charge {} with amount {}", charge.getId(), outstanding);
-                chargesProcessed++;
+        for (LineOfCreditCharge charge : charges) {
+            if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
+                continue;
+            }
+            BigDecimal outstanding = charge.getAmountOutstanding();
+            if (outstanding == null || outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
             }
 
-            log.info("Successfully processed {} charges for LOC {}", chargesProcessed, loc.getId());
+            locChargeDomainService.pay(charge, outstanding, false);
+            locChargeRepository.save(charge);
 
-        } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.loc.charge.application.failed", "Failed to apply initial charges",
-                    "charges", e);
+            LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
+            locChargePaidByRepository.save(paidBy);
+
         }
+
     }
 }

@@ -79,26 +79,26 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanProductWritePlatformService {
 
-    private final PlatformSecurityContext context;
-    private final LoanProductDataValidator fromApiJsonDeserializer;
-    private final LoanProductRepository loanProductRepository;
-    private final AprCalculator aprCalculator;
+    protected final PlatformSecurityContext context;
+    protected final LoanProductDataValidator fromApiJsonDeserializer;
+    protected final LoanProductRepository loanProductRepository;
+    protected final AprCalculator aprCalculator;
     private final FundRepository fundRepository;
     private final ChargeRepositoryWrapper chargeRepository;
     private final RateRepositoryWrapper rateRepository;
-    private final ProductToGLAccountMappingWritePlatformService accountMappingWritePlatformService;
-    private final FineractEntityAccessUtil fineractEntityAccessUtil;
-    private final FloatingRateRepositoryWrapper floatingRateRepository;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final BusinessEventNotifierService businessEventNotifierService;
+    protected final ProductToGLAccountMappingWritePlatformService accountMappingWritePlatformService;
+    protected final FineractEntityAccessUtil fineractEntityAccessUtil;
+    protected final FloatingRateRepositoryWrapper floatingRateRepository;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final BusinessEventNotifierService businessEventNotifierService;
     private final DelinquencyBucketRepository delinquencyBucketRepository;
-    private final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
-    private final AdvancedPaymentAllocationsJsonParser advancedPaymentJsonParser;
-    private final CreditAllocationsJsonParser creditAllocationsJsonParser;
-    private final LoanProductAssembler loanProductAssembler;
-    private final LoanProductUpdateUtil loanProductUpdateUtil;
-    private final LoanProductPaymentAllocationRuleMerger loanProductPaymentAllocationRuleMerger = new LoanProductPaymentAllocationRuleMerger();
-    private final LoanProductCreditAllocationRuleMerger loanProductCreditAllocationRuleMerger = new LoanProductCreditAllocationRuleMerger();
+    protected final LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory;
+    protected final AdvancedPaymentAllocationsJsonParser advancedPaymentJsonParser;
+    protected final CreditAllocationsJsonParser creditAllocationsJsonParser;
+    protected final LoanProductAssembler loanProductAssembler;
+    protected final LoanProductUpdateUtil loanProductUpdateUtil;
+    protected final LoanProductPaymentAllocationRuleMerger loanProductPaymentAllocationRuleMerger = new LoanProductPaymentAllocationRuleMerger();
+    protected final LoanProductCreditAllocationRuleMerger loanProductCreditAllocationRuleMerger = new LoanProductCreditAllocationRuleMerger();
 
     @Transactional
     @Override
@@ -167,7 +167,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
 
     }
 
-    private Fund findFundByIdIfProvided(final Long fundId) {
+    protected Fund findFundByIdIfProvided(final Long fundId) {
         Fund fund = null;
         if (fundId != null) {
             fund = this.fundRepository.findById(fundId).orElseThrow(() -> new FundNotFoundException(fundId));
@@ -175,7 +175,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
         return fund;
     }
 
-    private DelinquencyBucket findDelinquencyBucketIdIfProvided(final Long delinquencyBucketId) {
+    protected DelinquencyBucket findDelinquencyBucketIdIfProvided(final Long delinquencyBucketId) {
         DelinquencyBucket delinquencyBucket = null;
         if (delinquencyBucketId != null) {
             delinquencyBucket = delinquencyBucketRepository.findById(delinquencyBucketId)
@@ -309,7 +309,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
 
     }
 
-    private boolean anyChangeInCriticalFloatingRateLinkedParams(JsonCommand command, LoanProduct product) {
+    protected boolean anyChangeInCriticalFloatingRateLinkedParams(JsonCommand command, LoanProduct product) {
         final boolean isChangeFromFloatingToFlatOrViceVersa = command.isChangeInBooleanParameterNamed("isLinkedToFloatingInterestRates",
                 product.isLinkedToFloatingInterestRate());
         final boolean isChangeInCriticalFloatingRateParams = product.getFloatingRates() != null
@@ -319,7 +319,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
         return isChangeFromFloatingToFlatOrViceVersa || isChangeInCriticalFloatingRateParams;
     }
 
-    private List<Charge> assembleListOfProductCharges(final JsonCommand command, final String currencyCode) {
+    protected List<Charge> assembleListOfProductCharges(final JsonCommand command, final String currencyCode) {
 
         final List<Charge> charges = new ArrayList<>();
 
@@ -352,7 +352,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
         return charges;
     }
 
-    private List<Rate> assembleListOfProductRates(final JsonCommand command) {
+    protected List<Rate> assembleListOfProductRates(final JsonCommand command) {
 
         final List<Rate> rates = new ArrayList<>();
 
@@ -377,7 +377,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
     /*
      * Guaranteed to throw an exception no matter what the data integrity issue is.
      */
-    private void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
+    protected void handleDataIntegrityIssues(final JsonCommand command, final Throwable realCause, final Exception dve) {
         if (realCause.getMessage().contains("'external_id'")) {
 
             final String externalId = command.stringValueOfParameterNamed("externalId");
@@ -412,7 +412,7 @@ public class LoanProductWritePlatformServiceJpaRepositoryImpl implements LoanPro
         return (realCause.getMessage().contains("short_name") && realCause.getMessage().toLowerCase().contains("duplicate"));
     }
 
-    private void validateInputDates(final JsonCommand command) {
+    protected void validateInputDates(final JsonCommand command) {
         final LocalDate startDate = command.localDateValueOfParameterNamed("startDate");
         final LocalDate closeDate = command.localDateValueOfParameterNamed("closeDate");
 

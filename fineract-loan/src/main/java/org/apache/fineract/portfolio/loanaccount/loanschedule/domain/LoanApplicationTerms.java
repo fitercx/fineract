@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
@@ -62,7 +64,7 @@ import org.apache.fineract.portfolio.loanproduct.domain.LoanSupportedInterestRef
 import org.apache.fineract.portfolio.loanproduct.domain.RecalculationFrequencyType;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
 
-public final class LoanApplicationTerms {
+public class LoanApplicationTerms {
 
     private CurrencyData currency;
 
@@ -238,7 +240,25 @@ public final class LoanApplicationTerms {
     private LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType;
     private LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy;
 
-    private LoanApplicationTerms(Builder builder) {
+    // Just easier adding crediblex fields invoiceamount, disapproveamount, advancepercentage, approvedreceibable amount
+    // and amount after
+    @Setter
+    @Getter
+    private BigDecimal invoiceAmount;
+    @Setter
+    @Getter
+    private BigDecimal disapprovedAmount;
+    @Setter
+    @Getter
+    private BigDecimal advancePercentage;
+    @Setter
+    @Getter
+    private BigDecimal approvedReceivableAmount;
+    @Setter
+    @Getter
+    private BigDecimal amountAfterAdvance;
+
+    public LoanApplicationTerms(Builder builder) {
         this.currency = builder.currency;
         this.loanTermFrequency = builder.loanTermFrequency;
         this.loanTermPeriodFrequencyType = builder.loanTermPeriodFrequencyType;

@@ -145,4 +145,6 @@ public interface ConfigurationDomainService {
 
     boolean isImmediateChargeAccrualPostMaturityEnabled();
 
+    Long retrieveMaximumProductFactorRate();
+
 }

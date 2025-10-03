@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -20,6 +20,8 @@
 package com.crediblex.fineract.portfolio.loc.domain;
 
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
+import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
+import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import jakarta.persistence.CascadeType;
@@ -38,7 +40,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
@@ -91,7 +92,8 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     private Integer tenorDays;
 
     @Column(name = "cash_margin_type", length = 50)
-    private String cashMarginType;
+    @Enumerated(EnumType.STRING)
+    private LocCashMarginType cashMarginType;
 
     @Column(name = "cash_margin_value", precision = 19, scale = 6)
     private BigDecimal cashMarginValue;
@@ -100,19 +102,30 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     private LocalDate interimReviewDate;
 
     @Column(name = "rate_type", length = 50)
-    private String rateType;
+    @Enumerated(EnumType.STRING)
+    private LocInterestChargeTime rateType;
 
     @Column(name = "annual_interest_rate", precision = 5, scale = 2)
     private BigDecimal annualInterestRate;
-
-    @Column(name = "is_interest_upfront_or_post_disbursal", length = 20)
-    private Boolean isInterestUpfrontOrPostDisbursal;
 
     @Column(name = "va")
     private String virtualAccount;
 
     @Column(name = "special_conditions", columnDefinition = "TEXT")
     private String specialConditions;
+
+    @Column(name = "review_period")
+    private Integer reviewPeriod;
+
+    @Column(name = "loan_officer_id")
+    private Long loanOfficerId;
+
+    @Column(name = "distribution_partner", length = 255)
+    private String distributionPartner;
+
+    @Column(name = "interest_charge_time")
+    @Enumerated(EnumType.STRING)
+    private LocInterestChargeTime interestChargeTime;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "settlement_savings_account_id")
@@ -174,14 +187,15 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     /**
      * Constructor for creating a new Line of Credit with all fields.
      */
-    public LineOfCredit(Client client, String productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
+    public LineOfCredit(Client client, LocProductType productType, BigDecimal maximumAmount, LocalDate startDate, LocalDate endDate,
             BigDecimal approvedCreditFacilityAmount, String externalId, String currency, BigDecimal advancePercentage, Integer tenorDays,
-            String cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, String rateType, BigDecimal annualInterestRate,
-            Boolean isInterestUpfrontOrPostDisbursal, String virtualAccount, String specialConditions,
-            LineOfCreditClientOptionalInfo locOptionalClientInfo, List<LineOfCreditApprovedBuyers> approvedBuyers) {
+            LocCashMarginType cashMarginType, BigDecimal cashMarginValue, LocalDate interimReviewDate, LocInterestChargeTime rateType,
+            BigDecimal annualInterestRate, String virtualAccount, String specialConditions, Integer reviewPeriod, Long loanOfficerId,
+            String distributionPartner, LocInterestChargeTime interestChargeTime, LineOfCreditClientOptionalInfo locOptionalClientInfo,
+            List<LineOfCreditApprovedBuyers> approvedBuyers) {
 
         this.client = client;
-        this.productType = LocProductType.valueOf(productType.toUpperCase(Locale.ENGLISH));
+        this.productType = productType;
         this.maximumAmount = maximumAmount;
         this.status = LocStatus.SUBMITTED;
         this.startDate = startDate;
@@ -196,11 +210,13 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.interimReviewDate = interimReviewDate;
         this.rateType = rateType;
         this.annualInterestRate = annualInterestRate;
-        this.isInterestUpfrontOrPostDisbursal = isInterestUpfrontOrPostDisbursal;
         this.virtualAccount = virtualAccount;
         this.specialConditions = specialConditions;
+        this.reviewPeriod = reviewPeriod;
+        this.loanOfficerId = loanOfficerId;
+        this.distributionPartner = distributionPartner;
+        this.interestChargeTime = interestChargeTime;
         this.lineOfCreditClientOptionalInfo = locOptionalClientInfo;
-        // Use the helper method to properly establish bidirectional relationship
         this.replaceApprovedBuyers(approvedBuyers);
 
         this.summary = LineOfCreditSummary.getInitialState();
@@ -215,24 +231,22 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     }
 
     /**
-     * Mark the line of credit as submitted.
-     */
-    public void markSubmitted() {
-        this.status = LocStatus.SUBMITTED;
-    }
-
-    /**
      * Check if the line of credit can be activated.
      */
     public boolean canActivate() {
         return this.status == LocStatus.APPROVED;
     }
 
+    public boolean isActive() {
+        return this.status == LocStatus.ACTIVE;
+    }
+
     /**
      * Check if the line of credit can be closed.
      */
     public boolean canClose() {
-        return (this.status == LocStatus.ACTIVE || this.status == LocStatus.SUSPENDED) && hasNoConsumedAmount();
+        return (this.status == LocStatus.ACTIVE || this.status == LocStatus.SUSPENDED || this.status == LocStatus.SUBMITTED)
+                && hasNoConsumedAmount();
     }
 
     public boolean hasNoConsumedAmount() {
@@ -246,10 +260,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public Map<String, Object> update(JsonCommand command) {
         final Map<String, Object> actualChanges = new LinkedHashMap<>();
 
-        if (command.isChangeInStringParameterNamed("productType", this.productType.name())) {
-            final String newValue = command.stringValueOfParameterNamed("productType");
+        if (command.isChangeInIntegerParameterNamed("productType", this.productType.getValue())) {
+            final Integer newValue = command.integerValueOfParameterNamed("productType");
             actualChanges.put("productType", newValue);
-            this.productType = LocProductType.valueOf(newValue);
+            this.productType = LocProductType.fromInt(newValue);
         }
 
         if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {
@@ -271,10 +285,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
 
         // New fields update logic
-        if (command.isChangeInBigDecimalParameterNamed("approvedCreditFacilityAmount", this.approvedCreditFacilityAmount)) {
-            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount");
-            actualChanges.put("approvedCreditFacilityAmount", newValue);
-            this.approvedCreditFacilityAmount = newValue;
+        if (command.isChangeInBigDecimalParameterNamed("maximumAmount", this.maximumAmount)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("maximumAmount");
+            actualChanges.put("maximumAmount", newValue);
+            this.maximumAmount = newValue;
         }
 
         if (command.isChangeInStringParameterNamed("externalId", this.externalId)) {
@@ -301,10 +315,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.tenorDays = newValue;
         }
 
-        if (command.isChangeInStringParameterNamed("cashMarginType", this.cashMarginType)) {
-            final String newValue = command.stringValueOfParameterNamed("cashMarginType");
+        if (command.isChangeInIntegerParameterNamed("cashMarginType", this.cashMarginType.getValue())) {
+            final Integer newValue = command.integerValueOfParameterNamed("cashMarginType");
             actualChanges.put("cashMarginType", newValue);
-            this.cashMarginType = newValue;
+            this.cashMarginType = LocCashMarginType.fromInt(newValue);
         }
 
         if (command.isChangeInBigDecimalParameterNamed("cashMarginValue", this.cashMarginValue)) {
@@ -317,12 +331,6 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             final LocalDate newValue = command.localDateValueOfParameterNamed("interimReviewDate");
             actualChanges.put("interimReviewDate", newValue);
             this.interimReviewDate = newValue;
-        }
-
-        if (command.isChangeInStringParameterNamed("rateType", this.rateType)) {
-            final String newValue = command.stringValueOfParameterNamed("rateType");
-            actualChanges.put("rateType", newValue);
-            this.rateType = newValue;
         }
 
         if (command.isChangeInBigDecimalParameterNamed("annualInterestRate", this.annualInterestRate)) {
@@ -343,7 +351,18 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.specialConditions = newValue;
         }
 
+        if (command.isChangeInIntegerParameterNamed("reviewPeriod", this.reviewPeriod)) {
+            final Integer newValue = command.integerValueOfParameterNamed("reviewPeriod");
+            actualChanges.put("reviewPeriod", newValue);
+            this.reviewPeriod = newValue;
+        }
+
         return actualChanges;
     }
 
+    public boolean canDrawDown(LocalDate expectedDisbursementDate) {
+        return this.status == LocStatus.ACTIVE && this.lineOfCreditStateChange != null
+                && this.lineOfCreditStateChange.getActivateOnDate() != null
+                && (!expectedDisbursementDate.isBefore(this.lineOfCreditStateChange.getActivateOnDate()));
+    }
 }

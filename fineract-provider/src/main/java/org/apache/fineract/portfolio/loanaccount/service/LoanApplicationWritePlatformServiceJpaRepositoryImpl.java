@@ -119,7 +119,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
     private final CalendarReadPlatformService calendarReadPlatformService;
     protected final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
     private final GLIMAccountInfoRepository glimRepository;
-    private final LoanRepository loanRepository;
+    protected final LoanRepository loanRepository;
     private final GSIMReadPlatformService gsimReadPlatformService;
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     private final LoanAccrualsProcessingService loanAccrualsProcessingService;
@@ -303,7 +303,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         }
     }
 
-    private void modifyLinkedAccount(JsonCommand command, Map<String, Object> changes, Loan loan) {
+    protected void modifyLinkedAccount(JsonCommand command, Map<String, Object> changes, Loan loan) {
         final Long savingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.linkAccountIdParameterName);
         final boolean linkedAccountWasProvided = command.parameterExists(LoanApiConstants.linkAccountIdParameterName);
         // Only process if something was provided
@@ -347,7 +347,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
         changes.put(LoanApiConstants.linkAccountIdParameterName, savingsAccount.getId());
     }
 
-    private void modifyCalendar(Long loanId, Long calendarId, Loan loan, Map<String, Object> changes) {
+    protected void modifyCalendar(Long loanId, Long calendarId, Loan loan, Map<String, Object> changes) {
         Calendar calendar = null;
         if (calendarId != null && calendarId != 0) {
             calendar = this.calendarRepository.findById(calendarId).orElseThrow(() -> new CalendarNotFoundException(calendarId));
@@ -763,7 +763,7 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
                 .build();
     }
 
-    private Loan retrieveLoanBy(final Long loanId) {
+    protected Loan retrieveLoanBy(final Long loanId) {
         final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         loan.setHelpers(defaultLoanLifecycleStateMachine);
         return loan;

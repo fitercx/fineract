@@ -42,7 +42,7 @@ public class LineOfCreditCreateCommandHandler implements NewCommandSourceHandler
     @Override
     @Transactional
     public CommandProcessingResult processCommand(JsonCommand command) {
-        return this.writePlatformService.createLineOfCredit(command);
+        return this.writePlatformService.createLineOfCredit(command, command.getClientId());
 
     }
 }

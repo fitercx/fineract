@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import lombok.Getter;
+import lombok.Setter;
 import org.apache.fineract.accounting.common.AccountingEnumerations;
 import org.apache.fineract.accounting.common.AccountingRuleType;
 import org.apache.fineract.accounting.glaccount.data.GLAccountData;
@@ -246,6 +247,11 @@ public class LoanProductData implements Serializable {
     private StringEnumOptionData capitalizedIncomeStrategy;
     private List<StringEnumOptionData> capitalizedIncomeCalculationTypeOptions;
     private List<StringEnumOptionData> capitalizedIncomeStrategyOptions;
+
+    @Setter
+    private boolean factorRateProductEnabled;
+    @Setter
+    private BigDecimal factorRate;
 
     /**
      * Used when returning lookup information about loan product for dropdowns.
@@ -1176,6 +1182,8 @@ public class LoanProductData implements Serializable {
         this.capitalizedIncomeStrategy = productData.capitalizedIncomeStrategy;
         this.capitalizedIncomeCalculationTypeOptions = capitalizedIncomeCalculationTypeOptions;
         this.capitalizedIncomeStrategyOptions = capitalizedIncomeStrategyOptions;
+        this.factorRateProductEnabled = productData.factorRateProductEnabled;
+        this.factorRate = productData.factorRate;
     }
 
     private Collection<ChargeData> nullIfEmpty(final Collection<ChargeData> charges) {

@@ -90,7 +90,7 @@ public final class DisbursementData implements Comparable<DisbursementData> {
     public boolean isDueForDisbursement(LoanScheduleType loanScheduleType, final LocalDate fromDate, final LocalDate toDate) {
         final LocalDate dueDate = disbursementDate();
         return switch (loanScheduleType) {
-            case CUMULATIVE -> occursOnDayFromAndUpToAndIncluding(fromDate, toDate, dueDate);
+            case CUMULATIVE, LINE_OF_CREDIT -> occursOnDayFromAndUpToAndIncluding(fromDate, toDate, dueDate);
             case PROGRESSIVE -> occursOnDayFromAndIncludingAndUpTo(fromDate, toDate, dueDate);
         };
     }
