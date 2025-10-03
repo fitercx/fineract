@@ -46,6 +46,7 @@ import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferType;
+import org.apache.fineract.portfolio.account.domain.StandingInstructionRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
@@ -122,6 +123,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final JdbcTemplate jdbcTemplate;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
+    private final StandingInstructionRepository standingInstructionRepository;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -157,7 +159,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
             JdbcTemplate jdbcTemplate, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService) {
+            LoanLineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
+            StandingInstructionRepository standingInstructionRepository) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -176,6 +179,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
+        this.standingInstructionRepository = standingInstructionRepository;
     }
 
     @Transactional
@@ -778,13 +782,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     private boolean standingInstructionExists(Long loanId) {
-
-        String sql = "SELECT COUNT(*) " + "FROM m_account_transfer_details matd "
-                + "INNER JOIN m_account_transfer_standing_instructions matsi " + "ON matsi.account_transfer_details_id = matd.id "
-                + "WHERE matd.to_loan_account_id = ? " + "AND matsi.status = 1";
-
-        Integer count = jdbcTemplate.queryForObject(sql, new Object[] { loanId }, Integer.class);
-        return count != null && count > 0;
+        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId, 1);
     }
 
 }
