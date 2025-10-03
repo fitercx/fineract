@@ -36,17 +36,4 @@ public final class LineOfCreditWithLoansData implements Serializable {
     private final LineOfCreditData lineOfCredit;
     private final List<LoanAccountSummaryData> loans;
 
-    /**
-     * Returns the count of loans associated with this Line of Credit
-     */
-    public int getLoanCount() {
-        return loans != null ? loans.size() : 0;
-    }
-
-    /**
-     * Checks if this Line of Credit has any associated loans
-     */
-    public boolean hasLoans() {
-        return loans != null && !loans.isEmpty();
-    }
 }

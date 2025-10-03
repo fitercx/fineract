@@ -26,10 +26,11 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 
 /**
  * Entity to track Line of Credit transaction history for audit and traceability. This class records all LOC-affecting
@@ -58,7 +59,7 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     private BigDecimal balanceAfter;
 
     @Column(name = "transaction_date", nullable = false)
-    private OffsetDateTime transactionDate;
+    private LocalDate transactionDate;
 
     @Column(name = "reference_number", length = 100)
     private String referenceNumber;
@@ -66,33 +67,16 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     @Column(name = "description", length = 500)
     private String description;
 
+    @Column(name = "is_backdated_entry", nullable = false)
+    private Boolean isBackdatedEntry = false;
+
     /**
      * Default constructor.
      */
     protected LineOfCreditTransaction() {}
 
-    /**
-     * Constructor for creating a new LOC transaction record.
-     *
-     * @param lineOfCredit
-     *            the line of credit
-     * @param transactionType
-     *            the type of transaction
-     * @param amount
-     *            the transaction amount
-     * @param balanceBefore
-     *            the balance before the transaction
-     * @param balanceAfter
-     *            the balance after the transaction
-     * @param transactionDate
-     *            the transaction date
-     * @param referenceNumber
-     *            the reference number
-     * @param description
-     *            the transaction description
-     */
     public LineOfCreditTransaction(LineOfCredit lineOfCredit, String transactionType, BigDecimal amount, BigDecimal balanceBefore,
-            BigDecimal balanceAfter, OffsetDateTime transactionDate, String referenceNumber, String description) {
+            BigDecimal balanceAfter, LocalDate transactionDate, String referenceNumber, String description) {
         this.lineOfCredit = lineOfCredit;
         this.transactionType = transactionType;
         this.amount = amount;
@@ -121,8 +105,27 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
      * @return a new LOC transaction record
      */
     public static LineOfCreditTransaction disbursement(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
-            BigDecimal balanceAfter, OffsetDateTime transactionDate, String loanReference) {
-        return new LineOfCreditTransaction(lineOfCredit, "DISBURSEMENT", disbursementAmount, balanceBefore, balanceAfter, transactionDate,
-                loanReference, "Loan disbursement - LOC balance reduced");
+            BigDecimal balanceAfter, LocalDate transactionDate, String loanReference) {
+        return new LineOfCreditTransaction(lineOfCredit, LoanTransactionType.DISBURSEMENT.name(), disbursementAmount, balanceBefore,
+                balanceAfter, transactionDate, loanReference, "Loan disbursement - LOC balance reduced");
     }
+
+    public static LineOfCreditTransaction repayment(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
+            BigDecimal balanceAfter, LocalDate transactionDate, String loanReference) {
+        return new LineOfCreditTransaction(lineOfCredit, LoanTransactionType.REPAYMENT.name(), disbursementAmount, balanceBefore,
+                balanceAfter, transactionDate, loanReference, "Loan repayment - LOC balance increased");
+    }
+
+    public static LineOfCreditTransaction foreclosure(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
+            BigDecimal balanceAfter, LocalDate transactionDate, String loanReference) {
+        return new LineOfCreditTransaction(lineOfCredit, LoanTransactionType.REFUND.name(), disbursementAmount, balanceBefore, balanceAfter,
+                transactionDate, loanReference, "Refund for early repayment");
+    }
+
+    public static LineOfCreditTransaction refund(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
+            BigDecimal balanceAfter, LocalDate transactionDate, String loanReference) {
+        return new LineOfCreditTransaction(lineOfCredit, LoanTransactionType.REFUND.name(), disbursementAmount, balanceBefore, balanceAfter,
+                transactionDate, loanReference, "Loan payment refund - LOC balance increased");
+    }
+
 }

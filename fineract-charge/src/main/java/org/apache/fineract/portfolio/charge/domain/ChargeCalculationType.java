@@ -70,7 +70,7 @@ public enum ChargeCalculationType {
     }
 
     public static Object[] validValuesForLineOfCredit() {
-        return new Integer[] { ChargeCalculationType.FLAT.getValue() };
+        return new Integer[] { ChargeCalculationType.FLAT.getValue(), ChargeCalculationType.PERCENT_OF_AMOUNT.getValue() };
     }
 
     public static ChargeCalculationType fromInt(final Integer chargeCalculation) {
@@ -120,7 +120,7 @@ public enum ChargeCalculationType {
     }
 
     public boolean isAllowedLineOfCreditChargeCalculationType() {
-        return isFlat();
+        return isFlat() || isPercentageOfAmount();
     }
 
     public boolean isPercentageBased() {

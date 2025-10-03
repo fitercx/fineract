@@ -127,7 +127,8 @@ public class ChargeDropdownReadPlatformServiceImpl implements ChargeDropdownRead
 
     @Override
     public List<EnumOptionData> retrieveLineOfCreditCalculationTypes() {
-        return Arrays.asList(chargeCalculationType(ChargeCalculationType.FLAT));
+        return Arrays.asList(chargeCalculationType(ChargeCalculationType.FLAT),
+                chargeCalculationType(ChargeCalculationType.PERCENT_OF_AMOUNT));
     }
 
     @Override

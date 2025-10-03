@@ -19,18 +19,15 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
-import com.google.gson.JsonElement;
-import com.google.gson.reflect.TypeToken;
-import java.lang.reflect.Type;
+import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
+import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
+import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
@@ -38,6 +35,7 @@ import org.apache.fineract.infrastructure.core.data.DataValidatorBuilder;
 import org.apache.fineract.infrastructure.core.exception.InvalidJsonException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.eclipse.persistence.exceptions.ValidationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -49,57 +47,28 @@ public class LineOfCreditDataValidator {
 
     private final FromJsonHelper fromApiJsonHelper;
     private final JdbcTemplate jdbcTemplate;
-    private static final List<String> SUPPORTED_PARAMTERS = Arrays.asList("locale", "dateFormat", "clientId", "name", "productType",
-            "maximumAmount", "startDate", "endDate", "approvedCreditFacilityAmount", "externalId", "activationDate", "currencyCode",
-            "advancePercentage", "tenorDays", "approvedBuyers", "cashMarginType", "cashMarginValue", "interimReviewDate", "rateType",
-            "annualInterestRate", "isInterestUpfrontOrPostDisbursal", "clientCompanyName", "clientContactPersonName",
-            "clientContactPersonPhone", "clientContactPersonEmail", "authorizedSignatoryName", "authorizedSignatoryPhone",
-            "authorizedSignatoryEmail", "va", "distributionPartner", "bankTransferFee", "specialConditions", "maxPerDrawdown",
-            "reviewPeriod", "loanOfficer", "repaymentStrategy", "latePaymentFee", "interestRateOverride", "settlementSavingsAccountId",
-            "charges");
 
-    public void validateForCreate(String json) {
+    public LineOfCreditRequest validateForCreate(String json) {
         if (json == null) {
             throw new InvalidJsonException();
         }
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
 
-        final JsonElement element = this.fromApiJsonHelper.parse(json);
+        LineOfCreditRequest request = fromApiJsonHelper.fromJson(json, LineOfCreditRequest.class);
 
-        // Check for unsupported parameters - lineOfCreditId should not be in request body
-        final Type typeOfMap = new TypeToken<Map<String, Object>>() {}.getType();
-        final Set<String> supportedParameters = new HashSet<>(SUPPORTED_PARAMTERS);
-        this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, supportedParameters);
-
-        final Long clientId = this.fromApiJsonHelper.extractLongNamed("clientId", element);
-        baseDataValidator.reset().parameter("clientId").value(clientId).notNull().integerGreaterThanZero();
-
-        final String productType = this.fromApiJsonHelper.extractStringNamed("productType", element);
-        baseDataValidator.reset().parameter("productType").value(productType).notBlank().notExceedingLengthOf(50);
-
-        final BigDecimal maximumAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("maximumAmount", element);
-        baseDataValidator.reset().parameter("maximumAmount").value(maximumAmount).notNull().positiveAmount();
-
-        final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-        final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-        final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
-        baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
-
-        LocalDate endDate = null;
-        if (fromApiJsonHelper.parameterExists("endDate", element)) {
-            endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
-            baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
-        }
+        LocalDate startDate = DateUtils.parseLocalDate(request.getStartDate(), request.getDateFormat(), Locale.of(request.getLocale()));
+        LocalDate endDate = DateUtils.parseLocalDate(request.getEndDate(), request.getDateFormat(), Locale.of(request.getLocale()));
 
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             baseDataValidator.reset().parameter("endDate").value(endDate).failWithCode("end.date.cannot.be.before.start.date");
         }
 
         // Validate new fields
-        validateNewFields(element, baseDataValidator, dateFormat, locale);
+        validateNewFields(request, baseDataValidator);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
+        return request;
     }
 
     public void validateForUpdate(String json) {
@@ -110,199 +79,67 @@ public class LineOfCreditDataValidator {
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
 
-        final JsonElement element = this.fromApiJsonHelper.parse(json);
+        LineOfCreditRequest request = fromApiJsonHelper.fromJson(json, LineOfCreditRequest.class);
 
-        final Type typeOfMap = new TypeToken<Map<String, Object>>() {}.getType();
-        final Set<String> supportedParameters = new HashSet<>(SUPPORTED_PARAMTERS);
-
-        // Create a filtered JSON without clientId for the unsupported parameters check
-        String filteredJson = json;
-        if (json.contains("\"clientId\":null")) {
-            filteredJson = json.replace("\"clientId\":null,", "").replace(",\"clientId\":null", "");
-        }
-
-        this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, filteredJson, supportedParameters);
-
-        if (this.fromApiJsonHelper.parameterExists("name", element)) {
-            final String name = this.fromApiJsonHelper.extractStringNamed("name", element);
-            baseDataValidator.reset().parameter("name").value(name).notBlank().notExceedingLengthOf(100);
-        }
-
-        if (this.fromApiJsonHelper.parameterExists("productType", element)) {
-            final String productType = this.fromApiJsonHelper.extractStringNamed("productType", element);
-            baseDataValidator.reset().parameter("productType").value(productType).notBlank().notExceedingLengthOf(50);
-        }
-
-        if (this.fromApiJsonHelper.parameterExists("maximumAmount", element)) {
-            final BigDecimal maximumAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("maximumAmount", element);
-            baseDataValidator.reset().parameter("maximumAmount").value(maximumAmount).notNull().positiveAmount();
-        }
-
-        if (this.fromApiJsonHelper.parameterExists("startDate", element)) {
-            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-            final LocalDate startDate = this.fromApiJsonHelper.extractLocalDateNamed("startDate", element, dateFormat, locale);
-            baseDataValidator.reset().parameter("startDate").value(startDate).notNull();
-        }
-
-        if (this.fromApiJsonHelper.parameterExists("endDate", element)) {
-            final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-            final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-            final LocalDate endDate = this.fromApiJsonHelper.extractLocalDateNamed("endDate", element, dateFormat, locale);
-            baseDataValidator.reset().parameter("endDate").value(endDate).notNull();
-        }
-
-        final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(element.getAsJsonObject());
-        final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(element.getAsJsonObject());
-        validateNewFields(element, baseDataValidator, dateFormat, locale);
+        validateNewFields(request, baseDataValidator);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
 
-    private void validateNewFields(JsonElement element, DataValidatorBuilder baseDataValidator, String dateFormat, Locale locale) {
-        // Validate approved credit facility amount
-        if (this.fromApiJsonHelper.parameterExists("approvedCreditFacilityAmount", element)) {
-            final BigDecimal approvedCreditFacilityAmount = this.fromApiJsonHelper
-                    .extractBigDecimalWithLocaleNamed("approvedCreditFacilityAmount", element);
-            baseDataValidator.reset().parameter("approvedCreditFacilityAmount").value(approvedCreditFacilityAmount).positiveAmount();
-        }
+    private void validateNewFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
 
-        // Validate external ID
-        final String externalId = this.fromApiJsonHelper.extractStringNamed("externalId", element);
-        baseDataValidator.reset().parameter("externalId").value(externalId).notBlank().notExceedingLengthOf(100);
+        // Always validate required fields for both create and edit operations
+        validateRequiredFields(request, baseDataValidator);
 
-        // Validate activation date
-        if (this.fromApiJsonHelper.parameterExists("activationDate", element)) {
-            final LocalDate activationDate = this.fromApiJsonHelper.extractLocalDateNamed("activationDate", element, dateFormat, locale);
-            baseDataValidator.reset().parameter("activationDate").value(activationDate).notNull();
-        }
-
-        // Validate currency
-        if (this.fromApiJsonHelper.parameterExists("currency", element)) {
-            final String currency = this.fromApiJsonHelper.extractStringNamed("currency", element);
-            baseDataValidator.reset().parameter("currency").value(currency).notExceedingLengthOf(10);
-        }
-
-        // Validate tenor days
-        if (this.fromApiJsonHelper.parameterExists("tenorDays", element)) {
-            final Integer tenorDays = this.fromApiJsonHelper.extractIntegerNamed("tenorDays", element, locale);
-            baseDataValidator.reset().parameter("tenorDays").value(tenorDays).positiveAmount();
-        }
-
-        // Validate cash margin type
-        if (this.fromApiJsonHelper.parameterExists("cashMarginType", element)) {
-            final String cashMarginType = this.fromApiJsonHelper.extractStringNamed("cashMarginType", element);
-            baseDataValidator.reset().parameter("cashMarginType").value(cashMarginType).notExceedingLengthOf(50);
+        if (request.getCashMarginType() != null) {
+            baseDataValidator.reset().parameter("cashMarginType").value(request.getCashMarginType())
+                    .anyOfNotNull(LocCashMarginType.FLAT.getValue(), LocCashMarginType.PERCENTAGE.getValue());
         }
 
         // Validate interim review date
-        if (this.fromApiJsonHelper.parameterExists("interimReviewDate", element)) {
-            final LocalDate interimReviewDate = this.fromApiJsonHelper.extractLocalDateNamed("interimReviewDate", element, dateFormat,
-                    locale);
-            baseDataValidator.reset().parameter("interimReviewDate").value(interimReviewDate).notNull();
+        if (request.getInterimReviewDate() != null) {
+            LocalDate tenantDate = DateUtils.getLocalDateOfTenant();
+            LocalDate interimReviewDate = DateUtils.parseLocalDate(request.getInterimReviewDate(), request.getDateFormat(),
+                    Locale.of(request.getLocale()));
+
+            if (interimReviewDate.isBefore(tenantDate)) {
+                baseDataValidator.reset().parameter("interimReviewDate").value(interimReviewDate)
+                        .failWithCode("interim.review.date.cannot.be.in.the.past");
+            }
         }
 
-        // Validate rate type
-        if (this.fromApiJsonHelper.parameterExists("rateType", element)) {
-            final String rateType = this.fromApiJsonHelper.extractStringNamed("rateType", element);
-            baseDataValidator.reset().parameter("rateType").value(rateType).notExceedingLengthOf(50);
+        if (request.getInterestPaymentType() != null) {
+            baseDataValidator.reset().parameter("interestPaymentType").value(request.getInterestPaymentType())
+                    .anyOfNotNull(LocInterestChargeTime.UPFRONT.getValue(), LocInterestChargeTime.UPFRONT.getValue());
         }
-
-        // Validate annual interest rate
-        if (this.fromApiJsonHelper.parameterExists("annualInterestRate", element)) {
-            final BigDecimal annualInterestRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("annualInterestRate", element);
-            baseDataValidator.reset().parameter("annualInterestRate").value(annualInterestRate).positiveAmount();
-        }
-
-        // Validate client company name
-        if (this.fromApiJsonHelper.parameterExists("clientCompanyName", element)) {
-            final String clientCompanyName = this.fromApiJsonHelper.extractStringNamed("clientCompanyName", element);
-            baseDataValidator.reset().parameter("clientCompanyName").value(clientCompanyName).notExceedingLengthOf(255);
-        }
-
-        // Validate client contact person name
-        if (this.fromApiJsonHelper.parameterExists("clientContactPersonName", element)) {
-            final String clientContactPersonName = this.fromApiJsonHelper.extractStringNamed("clientContactPersonName", element);
-            baseDataValidator.reset().parameter("clientContactPersonName").value(clientContactPersonName).notExceedingLengthOf(255);
-        }
-
-        // Validate client contact person phone
-        if (this.fromApiJsonHelper.parameterExists("clientContactPersonPhone", element)) {
-            final String clientContactPersonPhone = this.fromApiJsonHelper.extractStringNamed("clientContactPersonPhone", element);
-            baseDataValidator.reset().parameter("clientContactPersonPhone").value(clientContactPersonPhone).notExceedingLengthOf(50);
-        }
-
-        // Validate client contact person email
-        if (this.fromApiJsonHelper.parameterExists("clientContactPersonEmail", element)) {
-            final String clientContactPersonEmail = this.fromApiJsonHelper.extractStringNamed("clientContactPersonEmail", element);
-            baseDataValidator.reset().parameter("clientContactPersonEmail").value(clientContactPersonEmail).notExceedingLengthOf(255);
-        }
-
-        // Validate authorized signatory name
-        if (this.fromApiJsonHelper.parameterExists("authorizedSignatoryName", element)) {
-            final String authorizedSignatoryName = this.fromApiJsonHelper.extractStringNamed("authorizedSignatoryName", element);
-            baseDataValidator.reset().parameter("authorizedSignatoryName").value(authorizedSignatoryName).notExceedingLengthOf(255);
-        }
-
-        // Validate authorized signatory phone
-        if (this.fromApiJsonHelper.parameterExists("authorizedSignatoryPhone", element)) {
-            final String authorizedSignatoryPhone = this.fromApiJsonHelper.extractStringNamed("authorizedSignatoryPhone", element);
-            baseDataValidator.reset().parameter("authorizedSignatoryPhone").value(authorizedSignatoryPhone).notExceedingLengthOf(50);
-        }
-
-        // Validate authorized signatory email
-        if (this.fromApiJsonHelper.parameterExists("authorizedSignatoryEmail", element)) {
-            final String authorizedSignatoryEmail = this.fromApiJsonHelper.extractStringNamed("authorizedSignatoryEmail", element);
-            baseDataValidator.reset().parameter("authorizedSignatoryEmail").value(authorizedSignatoryEmail).notExceedingLengthOf(255);
-        }
-
-        // Validate va
-        if (this.fromApiJsonHelper.parameterExists("va", element)) {
-            final String va = this.fromApiJsonHelper.extractStringNamed("va", element);
-            baseDataValidator.reset().parameter("va").value(va).notExceedingLengthOf(255);
-        }
-
-        // Validate distribution partner
-        if (this.fromApiJsonHelper.parameterExists("distributionPartner", element)) {
-            final String distributionPartner = this.fromApiJsonHelper.extractStringNamed("distributionPartner", element);
-            baseDataValidator.reset().parameter("distributionPartner").value(distributionPartner).notExceedingLengthOf(255);
-        }
-
     }
 
     /**
-     * Validates that a line of credit can be deactivated. Disallows deactivation of LOC accounts with active loan
-     * accounts linked to them.
-     *
-     * @param lineOfCreditId
-     *            the ID of the line of credit to validate for deactivation
+     * Validates required fields that must always be present for both create and edit operations
      */
-    public void validateForDeactivation(Long lineOfCreditId) {
-        if (lineOfCreditId == null) {
-            throw new IllegalArgumentException("Line of credit ID cannot be null");
-        }
+    private void validateRequiredFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
+        // Validate annual interest rate is always provided
+        baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().integerGreaterThanZero();
 
-        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
-        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
+        // Validate advance percentage is always provided
+        baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage()).notNull().notBlank();
 
-        // Check if there are any active loan accounts linked to this line of credit
-        String sql = "SELECT COUNT(*) FROM m_loan l WHERE l.line_of_credit_id = ? AND l.loan_status_id = 300";
-
-        try {
-            Integer activeLoanCount = jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
-
-            if (activeLoanCount != null && activeLoanCount > 0) {
-                baseDataValidator.reset().parameter("lineOfCreditId").value(lineOfCreditId)
-                        .failWithCode("line.of.credit.cannot.deactivate.with.active.loans", "Cannot deactivate line of credit with ID "
-                                + lineOfCreditId + " because it has " + activeLoanCount + " active loan account(s) linked to it.");
+        // Additional validation for advance percentage - ensure it's a valid percentage
+        if (request.getAdvancePercentage() != null && !request.getAdvancePercentage().trim().isEmpty()) {
+            try {
+                BigDecimal percentage = new BigDecimal(request.getAdvancePercentage().trim());
+                if (percentage.compareTo(BigDecimal.ZERO) <= 0 || percentage.compareTo(new BigDecimal("100")) > 0) {
+                    baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage())
+                            .failWithCode("advance.percentage.invalid.range", "Advance percentage must be between 0 and 100");
+                }
+            } catch (NumberFormatException e) {
+                baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage())
+                        .failWithCode("advance.percentage.invalid.format", "Advance percentage must be a valid number");
             }
-        } catch (Exception e) {
-            baseDataValidator.reset().parameter("lineOfCreditId").value(lineOfCreditId).failWithCode(
-                    "line.of.credit.deactivation.validation.error",
-                    "Error occurred while validating line of credit for deactivation: " + e.getMessage());
         }
 
-        throwExceptionIfValidationWarningsExist(dataValidationErrors);
+        // Validate tenor days is always provided
+        baseDataValidator.reset().parameter("tenorDays").value(request.getTenorDays()).notNull().integerGreaterThanZero();
     }
 
     /**

@@ -31,8 +31,9 @@ public class LineOfCreditCommandWrapperBuilder {
     private String json = "{}";
     private Long clientId;
 
-    public LineOfCreditCommandWrapperBuilder createLineOfCredit() {
+    public LineOfCreditCommandWrapperBuilder createLineOfCredit(Long clientId) {
         this.actionName = "CREATE";
+        this.clientId = clientId;
         this.entityName = LocApiConstants.LINE_OF_CREDIT;
         this.entityId = null;
         this.href = "/v1/lineofcredit";

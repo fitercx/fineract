@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loc.charge.service;
 
-import com.crediblex.fineract.portfolio.loc.charge.LocChargeConstants;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import java.math.BigDecimal;
@@ -17,16 +16,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class LineOfCreditChargeDomainService {
 
-    public LineOfCreditCharge create(LineOfCredit loc, Charge definition, BigDecimal overrideAmount, Boolean isActive) {
+    public LineOfCreditCharge create(LineOfCredit loc, Charge definition, BigDecimal overrideAmount) {
         ChargeTimeType timeType = ChargeTimeType.fromInt(definition.getChargeTimeType());
-        if (!LocChargeConstants.isSupportedChargeTime(timeType)) {
-            throw new IllegalArgumentException("Unsupported charge time type for LOC: " + timeType);
-        }
         ChargeCalculationType calcType = ChargeCalculationType.fromInt(definition.getChargeCalculation());
-        if (!(calcType == ChargeCalculationType.FLAT || calcType == ChargeCalculationType.PERCENT_OF_AMOUNT)) {
-            throw new IllegalArgumentException("Unsupported calculation type for LOC: " + calcType);
-        }
         BigDecimal baseAmount = overrideAmount != null ? overrideAmount : definition.getAmount();
+        BigDecimal chargeAmount = baseAmount;
+
+        if (calcType.isPercentageOfAmount()) {
+            chargeAmount = loc.getMaximumAmount().multiply(baseAmount).divide(BigDecimal.valueOf(100), 6, BigDecimal.ROUND_HALF_UP);
+        }
 
         LineOfCreditCharge c = new LineOfCreditCharge();
         c.setLineOfCredit(loc);
@@ -34,21 +32,22 @@ public class LineOfCreditChargeDomainService {
         c.setPenaltyCharge(definition.isPenalty());
         c.setChargeTime(timeType.getValue());
         c.setChargeCalculation(calcType.getValue());
-        c.setActive(isActive);
+        c.setActive(true);
         c.setAmountPaid(BigDecimal.ZERO);
         c.setAmountWaived(BigDecimal.ZERO);
         c.setAmountWrittenOff(BigDecimal.ZERO);
         c.setWaived(false);
 
         if (calcType == ChargeCalculationType.FLAT) {
-            c.setAmount(baseAmount);
+            c.setAmount(chargeAmount);
             c.setPercentage(null);
             c.setAmountPercentageAppliedTo(null);
         } else { // PERCENT_OF_AMOUNT
             c.setPercentage(baseAmount);
-            c.setAmountPercentageAppliedTo(BigDecimal.ZERO); // set later via applyPercentBase
-            c.setAmount(BigDecimal.ZERO);
+            c.setAmountPercentageAppliedTo(loc.getMaximumAmount());
+            c.setAmount(chargeAmount);
         }
+
         c.setAmountOutstanding(c.getAmount());
         c.setPaid(c.getAmountOutstanding().compareTo(BigDecimal.ZERO) == 0);
         return c;
