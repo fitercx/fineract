@@ -783,7 +783,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     private boolean standingInstructionExists(Long loanId) {
-        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId, StandingInstructionStatus.ACTIVE.getValue());
+        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.ACTIVE.getValue());
     }
 
 }
