@@ -58,6 +58,7 @@ public enum JobName {
     PURGE_EXTERNAL_EVENTS("Purge External Events"), //
     PURGE_PROCESSED_COMMANDS("Purge Processed Commands"), //
     ACCRUAL_ACTIVITY_POSTING("Accrual Activity Posting"), //
+    GENERATE_LOAN_MONTHLY_ACCRUAL_SUMMATIONS("Generate Loan Monthly Accrual Summations"), //
     ;
 
     private final String name;
