@@ -430,15 +430,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
-                BigDecimal advanceAmount = getApprovedReceivableAmount(loan, loanLocParams);
-
-                loan.setApprovedPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
-                loan.setNetDisbursalAmount(advanceAmount.subtract(loan.getTotalInterest()));
-                loan.getLoanRepaymentScheduleDetail().setPrincipal(advanceAmount.subtract(loan.getTotalInterest()));
-
-                loan.updateLoanSummaryDerivedFields();
-                loan.updateLoanSummaryAndStatus();
-
                 this.loanRepositoryWrapper.saveAndFlush(loan);
 
                 loanLocParamsRepository.saveAndFlush(loanLocParams);

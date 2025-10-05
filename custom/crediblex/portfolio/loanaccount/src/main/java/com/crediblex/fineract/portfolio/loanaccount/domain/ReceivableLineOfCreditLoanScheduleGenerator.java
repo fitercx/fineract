@@ -29,9 +29,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.imp
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleDTO;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePlan;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanRepaymentScheduleModelData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
@@ -59,21 +57,11 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
     @Autowired(required = false)
     private final LoanTransactionProcessingService loanTransactionProcessingService;
 
-    public LoanSchedulePlan generate(final MathContext mc, final LoanRepaymentScheduleModelData modelData) {
-        LoanApplicationTerms loanApplicationTerms = LoanApplicationTerms.assembleFrom(modelData, mc);
-        return LoanSchedulePlan.from(generate(mc, loanApplicationTerms, null, null));
-    }
-
     @Override
     public LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
 
-        // Extract line of credit parameters from loan application terms
-        final LineOfCreditParams locParams = extractLineOfCreditParams(loanApplicationTerms);
-
-        // Calculate the actual principal for interest calculation based on LOC formula:
-        // (invoice_amount - disapproved_amount) * advance_percentage / 100
-        final Money actualPrincipalForInterest = calculateActualPrincipalForInterest(loanApplicationTerms, locParams, mc);
+        final Money actualPrincipalForInterest = loanApplicationTerms.getPrincipal();
 
         // determine the total charges due at time of disbursement
         final BigDecimal chargesDueAtTimeOfDisbursement = deriveTotalChargesDueAtTimeOfDisbursement(loanCharges);
@@ -100,7 +88,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
 
         final List<LoanScheduleModelPeriod> periods = new ArrayList<>(expectedRepaymentPeriods.size());
 
-        prepareDisbursementsOnLoanApplicationTerms(loanApplicationTerms, actualPrincipalForInterest, mc);
+        prepareDisbursementsOnLoanApplicationTerms(loanApplicationTerms, actualPrincipalForInterest);
         final List<DisbursementData> disbursementDataList = getSortedDisbursementList(loanApplicationTerms);
 
         for (LoanScheduleModelRepaymentPeriod repaymentPeriod : expectedRepaymentPeriods) {
@@ -109,7 +97,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
             // in same repayment period the logic firstly applies interest rate changes and just after the disbursements
             applyInterestRateChangesOnPeriod(loanApplicationTerms, repaymentPeriod, interestScheduleModel);
             processDisbursements(loanApplicationTerms, disbursementDataList, scheduleParams, interestScheduleModel, periods,
-                    chargesDueAtTimeOfDisbursement, false, actualPrincipalForInterest, locParams, mc);
+                    chargesDueAtTimeOfDisbursement, false, mc);
             repaymentPeriod.setPeriodNumber(scheduleParams.getInstalmentNumber());
 
             // Calculate interest directly for receivable line of credit
@@ -148,7 +136,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
 
         if (loanApplicationTerms.isMultiDisburseLoan()) {
             processDisbursements(loanApplicationTerms, disbursementDataList, scheduleParams, interestScheduleModel, periods,
-                    chargesDueAtTimeOfDisbursement, true, actualPrincipalForInterest, locParams, mc);
+                    chargesDueAtTimeOfDisbursement, true, mc);
         }
 
         // determine fees and penalties for charges which depends on total
@@ -299,6 +287,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
 
         final Money zero = Money.zero(loanProductRelatedDetail.getCurrencyData(), mc);
         final AtomicReference<RepaymentPeriod> prev = new AtomicReference<>();
+
         List<RepaymentPeriod> repaymentPeriods = periods.stream().map(e -> {
             RepaymentPeriod rp = RepaymentPeriod.create(prev.get(), e.getFromDate(), e.getDueDate(), zero, mc);
             prev.set(rp);
@@ -331,7 +320,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
     }
 
     private void prepareDisbursementsOnLoanApplicationTerms(final LoanApplicationTerms loanApplicationTerms,
-            final Money actualPrincipalForInterest, final MathContext mc) {
+            final Money actualPrincipalForInterest) {
         if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
             // Use actual principal for interest calculation as the disbursement amount
             loanApplicationTerms.getDisbursementDatas().add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
@@ -339,19 +328,6 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
         }
         // Note: We don't modify existing disbursements since DisbursementData might be immutable
         // The calculation logic will handle the LOC-specific amounts in the schedule generation
-    }
-
-    /**
-     * Calculate the actual principal for interest calculation using LOC formula: (invoice_amount - disapproved_amount)
-     * * advance_percentage / 100
-     */
-    private Money calculateActualPrincipalForInterest(final LoanApplicationTerms loanApplicationTerms, final LineOfCreditParams locParams,
-            final MathContext mc) {
-        // Calculate: (invoice_amount - disapproved_amount) * advance_percentage / 100
-        BigDecimal approvedAmount = locParams.invoiceAmount().subtract(locParams.disapprovedAmount());
-        BigDecimal actualPrincipal = approvedAmount.multiply(locParams.advancePercentage()).divide(BigDecimal.valueOf(100), mc);
-
-        return Money.of(loanApplicationTerms.getCurrency(), actualPrincipal, mc);
     }
 
     /**
@@ -379,8 +355,7 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
     private void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final List<DisbursementData> disbursementDataList,
             final LoanScheduleParams scheduleParams, final ProgressiveLoanInterestScheduleModel interestScheduleModel,
             final List<LoanScheduleModelPeriod> periods, final BigDecimal chargesDueAtTimeOfDisbursement,
-            final boolean includeDisbursementsAfterMaturityDate, final Money actualPrincipalForInterest, final LineOfCreditParams locParams,
-            final MathContext mc) {
+            final boolean includeDisbursementsAfterMaturityDate, final MathContext mc) {
 
         for (DisbursementData disbursementData : disbursementDataList) {
             final LocalDate disbursementDate = disbursementData.disbursementDate();
@@ -571,30 +546,6 @@ public class ReceivableLineOfCreditLoanScheduleGenerator implements LoanSchedule
                 loanScheduleModelPeriod.addLoanCharges(feeChargesForInstallment.getAmount(), penaltyChargesForInstallment.getAmount());
             }
         }
-    }
-
-    // Line of Credit specific methods
-
-    private record LineOfCreditParams(BigDecimal invoiceAmount, BigDecimal disapprovedAmount, BigDecimal advancePercentage) {
-
-        private LineOfCreditParams(BigDecimal invoiceAmount, BigDecimal disapprovedAmount, BigDecimal advancePercentage) {
-            this.invoiceAmount = invoiceAmount != null ? invoiceAmount : BigDecimal.ZERO;
-            this.disapprovedAmount = disapprovedAmount != null ? disapprovedAmount : BigDecimal.ZERO;
-            this.advancePercentage = advancePercentage != null ? advancePercentage : BigDecimal.ZERO;
-        }
-
-    }
-
-    /**
-     * Extract line of credit parameters from loan application terms using casting This method casts
-     * loanApplicationTerms to ReceivableLineOfCreditLoanApplicationTerms to access LOC-specific parameters without
-     * repository dependencies
-     */
-    private LineOfCreditParams extractLineOfCreditParams(final LoanApplicationTerms loanApplicationTerms) {
-        // Try to cast to ReceivableLineOfCreditLoanApplicationTerms to get LOC parameters
-        return new LineOfCreditParams(loanApplicationTerms.getInvoiceAmount(), loanApplicationTerms.getDisapprovedAmount(),
-                loanApplicationTerms.getAdvancePercentage());
-
     }
 
 }

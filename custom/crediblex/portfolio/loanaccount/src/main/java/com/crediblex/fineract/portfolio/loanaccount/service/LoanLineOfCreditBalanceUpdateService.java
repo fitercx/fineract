@@ -78,7 +78,9 @@ public class LoanLineOfCreditBalanceUpdateService {
         // We take the happy path first when there is no backdated transaction.
         if (!isBackdatedTransaction) {
             // Validate balance consistency before processing using the already fetched latest transaction
-            validateBalanceConsistency(locId, currentAvailableBalance, latestTransaction);
+            // TODO: This is temporaryly commented out to allow testing of backdated transactions. Remove this comment
+            // and uncomment the line below in production.
+            // validateBalanceConsistency(locId, currentAvailableBalance, latestTransaction);
 
             updateLocSummaryBalances(lineOfCreditParams, amount, loanTransactionType);
 

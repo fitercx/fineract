@@ -309,7 +309,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
      */
     private List<LineOfCreditApprovedBuyerSupplierData> retrieveCounterpartyDetails(Long loanId) {
         final String sql = """
-                    SELECT lcd.id as id,
+                    SELECT lab.id as id,
                            lab.name as name
                     FROM m_loan_approver_buyers_suppliers lcd
                     JOIN m_loan l ON l.id = lcd.loan_id
