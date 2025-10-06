@@ -30,9 +30,10 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParam
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
+import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
@@ -141,7 +142,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final LineOfCreditRepository lineOfCreditRepository;
+    private final LineOfCreditReadPlatformService lineOfCreditReadPlatformService;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
@@ -163,7 +164,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             LoanForeclosureValidator loanForeclosureValidator, LoanTransactionMapper loanTransactionMapper,
             org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
-            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditRepository lineOfCreditRepository,
+            CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
@@ -177,7 +178,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
-        this.lineOfCreditRepository = lineOfCreditRepository;
+        this.lineOfCreditReadPlatformService = lineOfCreditReadPlatformService;
         this.loanRepositoryWrapper = loanRepositoryWrapper;
         this.applicationCurrencyRepository = applicationCurrencyRepository;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
@@ -289,11 +290,36 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             if (loanAccountData instanceof ExtendedLoanAccountData extended) {
                 extended.addCustomParameter(LoanAccountAdditionalProperties.LOAN_INTEREST_VARIATIONS, loanInterestVariationsData);
+
+                if (extended.getAdditionalProperties().containsKey("locProductType")
+                        && extended.getAdditionalProperties().get("locProductType").equals("PAYABLE")) {
+                    extended.addCustomParameter("supplierDetails", retrieveCounterpartyDetails(loanId));
+                } else {
+                    extended.addCustomParameter("buyerDetails", retrieveCounterpartyDetails(loanId));
+                }
             }
             return loanAccountData;
         } catch (final EmptyResultDataAccessException e) {
             throw new LoanNotFoundException(loanId, e);
         }
+    }
+
+    /**
+     * Retrieve counterparty details (buyers and suppliers) for a loan
+     */
+    private List<LineOfCreditApprovedBuyerSupplierData> retrieveCounterpartyDetails(Long loanId) {
+        final String sql = """
+                    SELECT lcd.id as id,
+                           lab.name as name
+                    FROM m_loan_approver_buyers_suppliers lcd
+                    JOIN m_loan l ON l.id = lcd.loan_id
+                    JOIN m_line_of_credit_approved_buyers lab ON lab.id = lcd.buyer_supplier_id
+                    WHERE lcd.loan_id = ?
+                """;
+
+        return this.jdbcTemplate.query(sql,
+                (rs, rowNum) -> LineOfCreditApprovedBuyerSupplierData.builder().id(rs.getLong("id")).name(rs.getString("name")).build(),
+                loanId);
     }
 
     private static final class LoanTermVariationsMapper implements RowMapper<LoanTermVariationsData> {
@@ -490,6 +516,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails, "
                     + " llocp.exchange_rate as exchangeRate, llocp.markup as markup, "
                     + " llocp.amount_in_facility_currency as amountInFacilityCurrency, "
+                    + " llocp.approved_payable_amount as approvedPayableAmount, "
+                    + " loc.external_id as locExternalId, loc.activation_status as locActivationStatus,loc.product_type as locProductType, "////
                     + " l.is_factor_rate_enabled AS factorRateEnabled, l.factor_rate AS factorRate, "
                     + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails " ////
                     + " from m_loan l" //
@@ -512,7 +540,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " left join m_product_loan_variable_installment_config lpvi on lpvi.loan_product_id = l.product_id"
                     + " left join m_loan_topup as topup on l.id = topup.loan_id"
                     + " left join m_loan as topuploan on topuploan.id = topup.closure_loan_id "
-                    + " left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ";
+                    + " left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id "
+                    + " left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ";
 
         }
 
@@ -925,7 +954,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final BigDecimal locMarkup = rs.getBigDecimal(LoanAccountAdditionalProperties.MARKUP);
             final BigDecimal locAmountInFacilityCurrency = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY);
             final BigDecimal locApprovedPayableAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT);
-            final String locSupplierDetails = rs.getString(LoanAccountAdditionalProperties.SUPPLIER_DETAILS);
+            final String locExternalId = rs.getString("locExternalId");
+            final String locProductType = rs.getString("locProductType");
+            final String locActivationStatus = rs.getString("locActivationStatus");
+
+            // Add them to custom parameters if they are not null
+            if (locProductType != null) {
+                extendedLoanAccountData.addCustomParameter("locProductType", locProductType);
+            }
+            if (locActivationStatus != null) {
+                extendedLoanAccountData.addCustomParameter("locActivationStatus", locActivationStatus);
+            }
+            if (locExternalId != null) {
+                extendedLoanAccountData.addCustomParameter("locExternalId", locExternalId);
+            }
 
             if (locLineOfCreditId != null) {
                 extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID, locLineOfCreditId);
@@ -974,9 +1016,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             if (locApprovedPayableAmount != null) {
                 extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
                         locApprovedPayableAmount);
-            }
-            if (locSupplierDetails != null) {
-                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, locSupplierDetails);
             }
 
         }
@@ -1093,8 +1132,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled")
                 && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
             isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
-            lineOfCreditSummaries = this.lineOfCreditRepository
-                    .findActiveSummariesByCurrencyAndClientId(loanProduct.getCurrency().getCode(), clientId);
+            lineOfCreditSummaries = this.lineOfCreditReadPlatformService.retrieveSummary(loanProduct.getCurrency().getCode(), clientId);
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();

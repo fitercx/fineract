@@ -31,7 +31,6 @@ import lombok.Setter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.organisation.staff.data.StaffData;
 import org.apache.fineract.portfolio.client.data.ClientData;
-import org.apache.fineract.useradministration.data.AppUserData;
 
 /**
  * Immutable data object representing Line of Credit data.
@@ -92,18 +91,6 @@ public final class LineOfCreditData implements Serializable {
     private String settlementSavingsAccountNo;
     private BigDecimal settlementSavingsAccountBalance;
 
-    private LocalDate createdDate;
-    private String createdByUsername;
-    private LocalDate lastModifiedDate;
-    private String lastModifiedByUsername;
-
-    private LocalDate activatedOnDate;
-    private LocalDate approvedOnDate;
-    private LocalDate closedOnDate;
-    private AppUserData approver;
-    private AppUserData activator;
-    private AppUserData closer;
-
     private Collection<EnumOptionData> statusOptions;
     private Collection<EnumOptionData> productTypeOptions;
     private Collection<EnumOptionData> reviewPeriodsOptions;
@@ -117,5 +104,7 @@ public final class LineOfCreditData implements Serializable {
     private String locale;
 
     Collection<StaffData> loanOfficers;
+
+    private LineOfCreditTimeLineData timeLineData;
 
 }

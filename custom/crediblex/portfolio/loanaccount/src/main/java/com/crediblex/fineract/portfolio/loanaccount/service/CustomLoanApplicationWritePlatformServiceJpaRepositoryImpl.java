@@ -6,12 +6,18 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalPr
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.exception.LineOfCreditIsNotAvailableException;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCounterpartyType;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetail;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetailRepository;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyersRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +27,7 @@ import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -68,6 +75,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     private final LoanLineOfCreditParamsRepository loanLocParamsRepository;
     private final FromJsonHelper fromApiJsonHelper;
     private final LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
+    private final LineOfCreditApprovedBuyersRepository lineOfCreditApprovedBuyersRepository;
+    private final LineOfCreditLoanBuyerSupplierDetailRepository lineOfCreditLoanBuyerSupplierDetailRepository;
     private final ConfigurationDomainService configurationDomainService;
 
     public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
@@ -84,6 +93,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator, LoanScheduleService loanScheduleService,
             BusinessEventNotifierService businessEventNotifierService1, LoanLineOfCreditParamsRepository loanLocParamsRepository,
             FromJsonHelper fromApiJsonHelper, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper,
+            LineOfCreditApprovedBuyersRepository lineOfCreditApprovedBuyersRepository,
+            LineOfCreditLoanBuyerSupplierDetailRepository lineOfCreditLoanBuyerSupplierDetailRepository,
             ConfigurationDomainService configurationDomainService) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler,
                 loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository,
@@ -95,6 +106,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         this.fromApiJsonHelper = fromApiJsonHelper;
         this.loanLocParamsRepository = loanLocParamsRepository;
         this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
+        this.lineOfCreditApprovedBuyersRepository = lineOfCreditApprovedBuyersRepository;
+        this.lineOfCreditLoanBuyerSupplierDetailRepository = lineOfCreditLoanBuyerSupplierDetailRepository;
         this.configurationDomainService = configurationDomainService;
     }
 
@@ -264,6 +277,15 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 }
             }
 
+            LineOfCredit lineOfCredit = entity.getLineOfCredit();
+            final Loan loan = entity.getLoan();
+
+            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+                processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
+            } else {
+                processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
+            }
+
             if (!actualChanges.isEmpty()) {
                 loanLocParamsRepository.saveAndFlush(entity);
 
@@ -283,6 +305,12 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 if (lineOfCredit != null) {
                     entity = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
                     loanLocParamsRepository.saveAndFlush(entity);
+
+                    if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+                        processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
+                    } else {
+                        processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
+                    }
 
                     // Add all new values as changes
                     if (changes != null) {
@@ -380,10 +408,27 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 throw new LineOfCreditIsNotAvailableException(lineOfCredit.getExternalId());
             }
 
-            LoanLineOfCreditParams loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
+            // Check if LoanLineOfCreditParams already exists for this loan
+            Optional<LoanLineOfCreditParams> existingLoanLocParams = loanLocParamsRepository.findByLoanId(loan.getId());
+            LoanLineOfCreditParams loanLocParams;
+
+            if (existingLoanLocParams.isPresent()) {
+                // Update existing params
+                loanLocParams = existingLoanLocParams.get();
+                loanLocParams.updateFromJson(command);
+                loanLocParams.updateLineOfCredit(lineOfCredit);
+            } else {
+                // Create new params
+                loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
+            }
+
             loanLocParamsRepository.save(loanLocParams);
 
+            // Process buyer and supplier details for line of credit applications
+
             if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+
+                processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
                 BigDecimal advanceAmount = getApprovedReceivableAmount(loan, loanLocParams);
 
@@ -397,8 +442,63 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 this.loanRepositoryWrapper.saveAndFlush(loan);
 
                 loanLocParamsRepository.saveAndFlush(loanLocParams);
+            } else {
+
+                processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
+
             }
 
+        }
+
+    }
+
+    /**
+     * Process buyer and supplier details for line of credit applications
+     */
+    private void processCounterpartyDetails(final JsonCommand command, final Loan loan, LineOfCreditCounterpartyType counterpartyType) {
+        // Get existing buyer/supplier details
+        List<LineOfCreditLoanBuyerSupplierDetail> existingDetails = lineOfCreditLoanBuyerSupplierDetailRepository.findByLoan(loan);
+        String commandValue = counterpartyType == LineOfCreditCounterpartyType.BUYER ? "buyerDetails" : "supplierDetails";
+
+        if (command.hasParameter(commandValue)) {
+            final String[] counterpartyIds = command.arrayValueOfParameterNamed(commandValue);
+            if (counterpartyIds != null) {
+                List<LineOfCreditLoanBuyerSupplierDetail> newDetails = new ArrayList<>();
+
+                for (String counterpartyId : counterpartyIds) {
+                    Long longCounterpartyId = null;
+                    try {
+                        longCounterpartyId = Long.parseLong(counterpartyId);
+                    } catch (NumberFormatException e) {
+                        throw new PlatformApiDataValidationException("error.msg.invalid." + counterpartyType.name().toLowerCase() + ".id",
+                                counterpartyType.name().toLowerCase() + " id is not valid", counterpartyId, e);
+                    }
+
+                    final Long finalLongCounterpartyId = longCounterpartyId;
+
+                    // Check if this counterparty detail already exists to avoid duplicates
+                    boolean alreadyExists = existingDetails.stream()
+                            .anyMatch(detail -> detail.getApprovedBuyers().getId().equals(finalLongCounterpartyId));
+
+                    if (!alreadyExists) {
+                        LineOfCreditLoanBuyerSupplierDetail counterpartyDetail = new LineOfCreditLoanBuyerSupplierDetail(loan,
+                                counterpartyType,
+                                lineOfCreditApprovedBuyersRepository.findById(longCounterpartyId)
+                                        .orElseThrow(() -> new PlatformApiDataValidationException(
+                                                "error.msg.invalid." + counterpartyType.name().toLowerCase() + ".id",
+                                                counterpartyType.name().toLowerCase() + " with id " + finalLongCounterpartyId
+                                                        + " does not exist",
+                                                String.valueOf(finalLongCounterpartyId))));
+
+                        newDetails.add(counterpartyDetail);
+                    }
+                }
+
+                // Save only the new details (avoiding duplicates)
+                if (!newDetails.isEmpty()) {
+                    lineOfCreditLoanBuyerSupplierDetailRepository.saveAll(newDetails);
+                }
+            }
         }
 
     }
