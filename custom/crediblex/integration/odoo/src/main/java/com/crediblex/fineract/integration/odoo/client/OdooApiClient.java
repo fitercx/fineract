@@ -261,7 +261,7 @@ public class OdooApiClient {
             log.error("Failed to create {} record in Odoo - unexpected result type: {}", model, result);
             return null;
         } catch (Exception e) {
-            log.error("Exception while creating {} record in Odoo: {}", model, e.getMessage(), e);
+            log.error("Exception while creating {} record in Odoo", model, e);
             throw new RuntimeException("Failed to create " + model + " in Odoo: " + e.getMessage(), e);
         }
     }
