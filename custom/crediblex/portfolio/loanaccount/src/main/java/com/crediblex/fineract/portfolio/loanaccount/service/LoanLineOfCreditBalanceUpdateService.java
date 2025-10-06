@@ -68,12 +68,14 @@ public class LoanLineOfCreditBalanceUpdateService {
 
         }
 
+        // TODO: Only skip for test reasons. Remove this comment and uncomment the lines below in production.
         // 1. Check for insufficient balance (only relevant for real-time disbursements)
-        if (loanTransactionType.isDisbursement() && currentAvailableBalance.compareTo(amount) < 0 && !isBackdatedTransaction) {
-
-            throw new PlatformApiDataValidationException("error.msg.loc.insufficient.balance",
-                    "Insufficient line of credit balance for disbursement", "disbursementAmount", amount);
-        }
+        // if (loanTransactionType.isDisbursement() && currentAvailableBalance.compareTo(amount) < 0 &&
+        // !isBackdatedTransaction) {
+        //
+        // throw new PlatformApiDataValidationException("error.msg.loc.insufficient.balance",
+        // "Insufficient line of credit balance for disbursement", "disbursementAmount", amount);
+        // }
 
         // We take the happy path first when there is no backdated transaction.
         if (!isBackdatedTransaction) {

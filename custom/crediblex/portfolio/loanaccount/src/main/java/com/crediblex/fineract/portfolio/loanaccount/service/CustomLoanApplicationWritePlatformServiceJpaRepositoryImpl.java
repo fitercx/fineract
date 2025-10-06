@@ -15,7 +15,6 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyersRep
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -492,21 +491,6 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             }
         }
 
-    }
-
-    private static BigDecimal getApprovedReceivableAmount(Loan loan, LoanLineOfCreditParams loanLocParams) {
-        BigDecimal disapprovedAmount = loanLocParams.getDisapprovedAmount() != null ? loanLocParams.getDisapprovedAmount()
-                : BigDecimal.ZERO;
-        BigDecimal advancePercentage = loanLocParams.getAdvancePercentage() != null ? loanLocParams.getAdvancePercentage()
-                : BigDecimal.ZERO;
-
-        // Calculate the amount after advance
-        BigDecimal amountAfterAdvance = loan.getPrincipal().getAmount().subtract(disapprovedAmount);
-        if (amountAfterAdvance.compareTo(BigDecimal.ZERO) < 0) {
-            amountAfterAdvance = BigDecimal.ZERO;
-        }
-
-        return amountAfterAdvance.multiply(advancePercentage).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
 }

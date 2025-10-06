@@ -240,23 +240,12 @@ public class LoanApplicationTerms {
     private LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType;
     private LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy;
 
-    // Just easier adding crediblex fields invoiceamount, disapproveamount, advancepercentage, approvedreceibable amount
-    // and amount after
-    @Setter
     @Getter
-    private BigDecimal invoiceAmount;
     @Setter
+    private Boolean isLineOfCredit;
     @Getter
-    private BigDecimal disapprovedAmount;
     @Setter
-    @Getter
-    private BigDecimal advancePercentage;
-    @Setter
-    @Getter
-    private BigDecimal approvedReceivableAmount;
-    @Setter
-    @Getter
-    private BigDecimal amountAfterAdvance;
+    private Boolean isReceivableLineOfCredit;
 
     public LoanApplicationTerms(Builder builder) {
         this.currency = builder.currency;

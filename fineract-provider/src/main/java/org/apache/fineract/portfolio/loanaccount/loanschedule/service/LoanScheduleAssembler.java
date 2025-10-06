@@ -157,14 +157,14 @@ public class LoanScheduleAssembler {
     private final FloatingRatesReadPlatformService floatingRatesReadPlatformService;
     private final VariableLoanScheduleFromApiJsonValidator variableLoanScheduleFromApiJsonValidator;
     private final CalendarInstanceRepository calendarInstanceRepository;
-    private final LoanUtilService loanUtilService;
+    protected final LoanUtilService loanUtilService;
     private final LoanDisbursementDetailsAssembler loanDisbursementDetailsAssembler;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
-    private final LoanAccrualsProcessingService loanAccrualsProcessingService;
-    private final LoanDisbursementService loanDisbursementService;
-    private final LoanChargeService loanChargeService;
-    private final LoanScheduleService loanScheduleService;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
+    protected final LoanAccrualsProcessingService loanAccrualsProcessingService;
+    protected final LoanDisbursementService loanDisbursementService;
+    protected final LoanChargeService loanChargeService;
+    protected final LoanScheduleService loanScheduleService;
     private final LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil;
 
     public LoanApplicationTerms assembleLoanTerms(final JsonElement element) {

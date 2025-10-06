@@ -52,4 +52,8 @@ public enum LocProductType {
         }
         return locProductType;
     }
+
+    public boolean isReceivable() {
+        return this == RECEIVABLE;
+    }
 }
