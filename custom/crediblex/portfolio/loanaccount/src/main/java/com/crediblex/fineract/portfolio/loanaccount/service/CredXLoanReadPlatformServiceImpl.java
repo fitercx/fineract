@@ -286,7 +286,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     hierarchySearchString, hierarchySearchString);
 
             List<LoanInterestVariationsData> loanInterestVariationsData = LoanInterestVariationsData
-                    .buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData);
+                    .buildInterestPeriods(loanTermVariationsData, loanSchedulePeriodData, loanAccountData.getAnnualInterestRate());
 
             if (loanAccountData instanceof ExtendedLoanAccountData extended) {
                 extended.addCustomParameter(LoanAccountAdditionalProperties.LOAN_INTEREST_VARIATIONS, loanInterestVariationsData);
@@ -365,6 +365,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         FROM m_loan_term_variations
                         WHERE loan_id = ?
                               AND term_type = 10
+                              AND is_active = true
                     )
                     SELECT id, term_type, applicable_date, decimal_value, date_value, is_specific_to_installment
                     FROM ranked_variations
