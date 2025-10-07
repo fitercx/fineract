@@ -16,42 +16,26 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.fineract.portfolio.loanproduct.domain;
 
-public enum InterestMethod {
+package com.crediblex.fineract.portfolio.loc.domain;
 
-    DECLINING_BALANCE(0, "interestType.declining.balance"), FLAT(1, "interestType.flat"), INVALID(2, "interestType.invalid");
+public enum LineOfCreditNoteType {
 
-    private final Integer value;
+    UPDATE("UPDATE"), APPROVE("APPROVE"), ACTIVATE("ACTIVATE"), CLOSE("CLOSE"), DEACTIVATE("DEACTIVATE"), INCREASE_CREDIT_LIMIT(
+            "INCREASE_CREDIT_LIMIT"), REDUCE_CREDIT_LIMIT("REDUCE_CREDIT_LIMIT"), UNDO_CLOSE("UNDO_CLOSE");
+
     private final String code;
 
-    InterestMethod(final Integer value, final String code) {
-        this.value = value;
+    LineOfCreditNoteType(String code) {
         this.code = code;
-    }
-
-    public Integer getValue() {
-        return this.value;
     }
 
     public String getCode() {
         return this.code;
     }
 
-    public static InterestMethod fromInt(final Integer selectedMethod) {
-
-        return switch (selectedMethod) {
-            case 0 -> InterestMethod.DECLINING_BALANCE;
-            case 1 -> InterestMethod.FLAT;
-            default -> InterestMethod.INVALID;
-        };
-    }
-
-    public boolean isDecliningBalance() {
-        return this.value.equals(InterestMethod.DECLINING_BALANCE.getValue());
-    }
-
-    public boolean isFlat() {
-        return this.value.equals(InterestMethod.FLAT.getValue());
+    @Override
+    public String toString() {
+        return this.code;
     }
 }

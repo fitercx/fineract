@@ -392,6 +392,15 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
                 .plus(getPenaltyChargesOutstanding(currency));
     }
 
+    /**
+     * Returns the total outstanding amount for obligation checking purposes. This method excludes interest from the
+     * calculation, meaning obligations are met when principal, fees, and penalties are fully paid, regardless of
+     * interest outstanding. Any remaining interest is treated as an overpaid portion.
+     */
+    public Money getTotalOutstandingForObligationCheck(final MonetaryCurrency currency) {
+        return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
+    }
+
     void updateLoan(final Loan loan) {
         this.loan = loan;
     }
@@ -559,6 +568,10 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount) {
+        return payPrincipalComponent(transactionDate, transactionAmount, false);
+    }
+
+    public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount, boolean proRataInterest) {
 
         final MonetaryCurrency currency = transactionAmount.getCurrency();
         Money principalPortionOfTransaction = Money.zero(currency);
@@ -576,7 +589,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
         this.principalCompleted = defaultToNullIfZero(this.principalCompleted);
 
-        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, proRataInterest);
 
         trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
 
@@ -753,7 +766,13 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public void checkIfRepaymentPeriodObligationsAreMet(final LocalDate transactionDate, final MonetaryCurrency currency) {
-        this.obligationsMet = getTotalOutstanding(currency).isZero();
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, false);
+    }
+
+    public void checkIfRepaymentPeriodObligationsAreMet(final LocalDate transactionDate, final MonetaryCurrency currency,
+            boolean isProRataInterest) {
+        this.obligationsMet = isProRataInterest ? getTotalOutstandingForObligationCheck(currency).isZero()
+                : getTotalOutstanding(currency).isZero();
         if (this.obligationsMet) {
             this.obligationsMetOnDate = transactionDate;
         } else {

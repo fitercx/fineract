@@ -19,6 +19,8 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
+import static com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants.ADJUSTED_CREDIT_LIMIT;
+
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
 import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
@@ -27,17 +29,15 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.DataValidatorBuilder;
 import org.apache.fineract.infrastructure.core.exception.InvalidJsonException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
-import org.eclipse.persistence.exceptions.ValidationException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -46,7 +46,6 @@ import org.springframework.stereotype.Component;
 public class LineOfCreditDataValidator {
 
     private final FromJsonHelper fromApiJsonHelper;
-    private final JdbcTemplate jdbcTemplate;
 
     public LineOfCreditRequest validateForCreate(String json) {
         if (json == null) {
@@ -118,6 +117,8 @@ public class LineOfCreditDataValidator {
      * Validates required fields that must always be present for both create and edit operations
      */
     private void validateRequiredFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
+
+        baseDataValidator.reset().parameter("maximumCreditLimit").value(request.getMaxCreditLimit()).notNull().integerGreaterThanZero();
         // Validate annual interest rate is always provided
         baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().integerGreaterThanZero();
 
@@ -142,53 +143,27 @@ public class LineOfCreditDataValidator {
         baseDataValidator.reset().parameter("tenorDays").value(request.getTenorDays()).notNull().integerGreaterThanZero();
     }
 
-    /**
-     * Validates that a line of credit limit can be reduced. Blocks reduction of LOC credit limit if the new limit is
-     * less than the currently utilized balance.
-     *
-     * @param lineOfCreditId
-     *            the ID of the line of credit to validate
-     * @param newMaximumAmount
-     *            the new maximum amount to validate
-     */
-    public void validateForLimitReduction(Long lineOfCreditId, BigDecimal newMaximumAmount) {
-        if (lineOfCreditId == null) {
-            throw new IllegalArgumentException("Line of credit ID cannot be null");
-        }
-        if (newMaximumAmount == null) {
-            throw new IllegalArgumentException("New maximum amount cannot be null");
-        }
-
-        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
-        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
-
-        // Get the current line of credit details to check utilized balance
-        String sql = "SELECT maximum_amount, consumed_amount FROM m_line_of_credit WHERE id = ?";
-
-        try {
-            Map<String, Object> result = jdbcTemplate.queryForMap(sql, lineOfCreditId);
-            BigDecimal consumedAmount = (BigDecimal) result.get("consumed_amount");
-
-            // Check if the new limit is less than the currently utilized balance
-            if (newMaximumAmount.compareTo(consumedAmount) < 0) {
-                baseDataValidator.reset().parameter("maximumAmount").value(newMaximumAmount)
-                        .failWithCode("line.of.credit.cannot.reduce.limit.below.utilized.balance", "Cannot reduce line of credit limit to "
-                                + newMaximumAmount + " because it is less than the currently utilized balance of " + consumedAmount);
-            }
-
-        } catch (ValidationException e) {
-            baseDataValidator.reset().parameter("maximumAmount").value(newMaximumAmount).failWithCode(
-                    "line.of.credit.limit.reduction.validation.error",
-                    "Error occurred while validating line of credit limit reduction: " + e.getMessage());
-        }
-
-        throwExceptionIfValidationWarningsExist(dataValidationErrors);
-    }
-
     private void throwExceptionIfValidationWarningsExist(final List<ApiParameterError> dataValidationErrors) {
         if (!dataValidationErrors.isEmpty()) {
             throw new PlatformApiDataValidationException("validation.msg.validation.errors.exist", "Validation errors exist.",
                     dataValidationErrors);
         }
     }
+
+    public void validateForIncreaseOrDecreaseOfCreditLimit(JsonCommand command) {
+
+        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
+        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
+
+        BigDecimal creditLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        baseDataValidator.reset().parameter(ADJUSTED_CREDIT_LIMIT).value(creditLimit).notNull().longGreaterThanNumber(0L);
+
+        if (command.hasParameter("note")) {
+            String note = command.stringValueOfParameterNamed("note");
+            baseDataValidator.reset().parameter("note").value(note).notExceedingLengthOf(500);
+        }
+
+        throwExceptionIfValidationWarningsExist(dataValidationErrors);
+    }
+
 }
