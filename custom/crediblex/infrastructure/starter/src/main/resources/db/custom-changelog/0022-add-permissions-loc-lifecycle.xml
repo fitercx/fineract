@@ -22,4 +22,31 @@
             <column name="can_maker_checker" valueBoolean="false"/>
         </insert>
     </changeSet>
+
+    <changeSet id="2" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="DECREASE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="DECREASE"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="UNDO_CLOSE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="UNDO_CLOSE"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="INCREASE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="INCREASE"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
 </databaseChangeLog>

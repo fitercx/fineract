@@ -90,7 +90,7 @@ public class LineOfCreditApiResource {
     public String retrieveTemplate(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
 
@@ -106,7 +106,7 @@ public class LineOfCreditApiResource {
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditsResponse.class))) })
     public String retrieveAllForClient(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @Context final UriInfo uriInfo) {
-        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final Collection<LineOfCreditWithLoansData> lineOfCredits = this.readPlatformService
                 .retrieveLineOfCreditWithLoansForClient(clientId);
@@ -125,7 +125,7 @@ public class LineOfCreditApiResource {
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
         final LineOfCreditData lineOfCredit = this.readPlatformService.retrieveOneWithCharges(lineOfCreditId, clientId);
         // Verify that the line of credit belongs to the specified client
@@ -197,23 +197,17 @@ public class LineOfCreditApiResource {
         CommandWrapper commandRequest;
         LineOfCreditCommandWrapperBuilder builder = new LineOfCreditCommandWrapperBuilder();
 
-        switch (action.toLowerCase()) {
-            case "approve":
-                commandRequest = builder.approveLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            break;
-            case "activate":
-                commandRequest = builder.activateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            break;
-            case "close":
-                commandRequest = builder.closeLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            break;
-            case "deactivate":
-                commandRequest = builder.deactivateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            break;
-            default:
-                throw new IllegalArgumentException(
-                        "Unsupported action: " + action + ". Supported actions are: approve, activate, close, deactivate");
-        }
+        commandRequest = switch (action.toLowerCase()) {
+            case "approve" -> builder.approveLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "activate" -> builder.activateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "close" -> builder.closeLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "deactivate" -> builder.deactivateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "increasecreditlimit" -> builder.increaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "decreasecreditlimit" -> builder.decreaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "undoclose" -> builder.undoCloseLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            default -> throw new IllegalArgumentException(
+                    "Unsupported action: " + action + ". Supported actions are: approve, activate, close, deactivate");
+        };
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -249,7 +243,7 @@ public class LineOfCreditApiResource {
             @QueryParam("limit") @Parameter(description = "limit") @DefaultValue("20") final Integer limit,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
 
         final Pageable pageable = PageRequest.of(offset / limit, limit, Sort.by("transactionDate").descending());
 
@@ -270,7 +264,7 @@ public class LineOfCreditApiResource {
             @PathParam("transactionId") @Parameter(description = "transactionId") final Long transactionId,
             @Context final UriInfo uriInfo) {
 
-        this.context.authenticatedUser().validateHasReadPermission(LocApiConstants.LINE_OF_CREDIT);
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
 
         final LineOfCreditTransactionData transaction = this.transactionReadPlatformService.retrieveTransaction(lineOfCreditId,
                 transactionId);

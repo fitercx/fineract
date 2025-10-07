@@ -117,9 +117,12 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         Money interestForThisInstallment = result.interest();
         Money cumulatingInterestDueToGrace = result.interestPaymentDueToGrace();
 
-        // Step 4: Calculate ACTUAL principal = Fixed Installment - Interest
-        // This represents the portion of the DISBURSED amount being repaid
-        Money principalForThisInstallment = fixedInstallmentAmount.minus(interestForThisInstallment);
+        Money principalForThisInstallment = fixedInstallmentAmount;
+
+        if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            // For receivable LOC, principal is adjusted by interest portion
+            principalForThisInstallment = fixedInstallmentAmount.minus(interestForThisInstallment);
+        }
 
         // Safety check: Principal cannot be negative
         if (principalForThisInstallment.isLessThanZero()) {

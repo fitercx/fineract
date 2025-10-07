@@ -13,8 +13,11 @@ import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyersRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +37,7 @@ import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChe
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanCreatedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarInstanceRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
@@ -77,6 +81,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     private final LineOfCreditApprovedBuyersRepository lineOfCreditApprovedBuyersRepository;
     private final LineOfCreditLoanBuyerSupplierDetailRepository lineOfCreditLoanBuyerSupplierDetailRepository;
     private final ConfigurationDomainService configurationDomainService;
+    private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
 
     public CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanApplicationTransitionValidator loanApplicationTransitionValidator, LoanApplicationValidator loanApplicationValidator,
@@ -94,7 +99,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             FromJsonHelper fromApiJsonHelper, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper,
             LineOfCreditApprovedBuyersRepository lineOfCreditApprovedBuyersRepository,
             LineOfCreditLoanBuyerSupplierDetailRepository lineOfCreditLoanBuyerSupplierDetailRepository,
-            ConfigurationDomainService configurationDomainService) {
+            ConfigurationDomainService configurationDomainService, LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService) {
         super(context, loanApplicationTransitionValidator, loanApplicationValidator, loanRepositoryWrapper, noteRepository, loanAssembler,
                 loanRepaymentScheduleTransactionProcessorFactory, calendarRepository, calendarInstanceRepository, savingsAccountRepository,
                 accountAssociationsRepository, businessEventNotifierService, loanScheduleAssembler, loanUtilService,
@@ -108,6 +113,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         this.lineOfCreditApprovedBuyersRepository = lineOfCreditApprovedBuyersRepository;
         this.lineOfCreditLoanBuyerSupplierDetailRepository = lineOfCreditLoanBuyerSupplierDetailRepository;
         this.configurationDomainService = configurationDomainService;
+        this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
     }
 
     @Transactional
@@ -194,6 +200,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
     public CommandProcessingResult modifyApplication(final Long loanId, final JsonCommand command) {
         try {
             Loan loan = retrieveLoanBy(loanId);
+            final BigDecimal originalPrincipal = loan.getPrincipal().getAmount();
+            final LocalDate originalTransactionDate = loan.getSubmittedOnDate();
             // Validations (prior assembling)
             this.loanApplicationValidator.validateForModify(command, loan);
             // Assembling loan
@@ -233,7 +241,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             }
 
             if (changes != null && !changes.isEmpty()) {
-                updateWithLineOfCreditParams(command, loanId, changes);
+                updateWithLineOfCreditParams(command, loanId, changes, originalPrincipal, originalTransactionDate,
+                        loan.getSubmittedOnDate());
             }
 
             return new CommandProcessingResultBuilder() //
@@ -254,7 +263,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         }
     }
 
-    private void updateWithLineOfCreditParams(JsonCommand command, Long loanId, Map<String, Object> changes) {
+    private void updateWithLineOfCreditParams(JsonCommand command, Long loanId, Map<String, Object> changes, BigDecimal originalPrincipal,
+            LocalDate originalTransactionDate, LocalDate newTransactionDate) {
         if (command.parsedJson() == null) {
             return;
         }
@@ -269,11 +279,24 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             if (actualChanges.containsKey(LINE_OF_CREDIT_ID)) {
                 final Long newLineOfCreditId = (Long) actualChanges.get(LINE_OF_CREDIT_ID);
                 if (newLineOfCreditId != null) {
+
+                    // first undo previous disbursement impact on LOC balance
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, originalPrincipal, entity.getLineOfCredit(),
+                            originalTransactionDate, LineOfCreditTransactionType.UNDO_DISBURSEMENT);
+
                     final LineOfCredit newLineOfCredit = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(newLineOfCreditId);
                     entity.updateLineOfCredit(newLineOfCredit);
+
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, originalPrincipal, entity.getLineOfCredit(),
+                            newTransactionDate, LineOfCreditTransactionType.DISBURSEMENT);
+
                 } else {
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, originalPrincipal, entity.getLineOfCredit(),
+                            originalTransactionDate, LineOfCreditTransactionType.UNDO_DISBURSEMENT);
                     loanLocParamsRepository.delete(entity);
                 }
+                // For repayments, we reduce the LOC balance (i.e. free up credit)
+
             }
 
             LineOfCredit lineOfCredit = entity.getLineOfCredit();
@@ -364,6 +387,9 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                             changes.put(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, entity.getSupplierDetails());
                         }
                     }
+
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, originalPrincipal, entity.getLineOfCredit(),
+                            newTransactionDate, LineOfCreditTransactionType.DISBURSEMENT);
                 }
             }
         }
@@ -436,6 +462,13 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
 
+            }
+
+            final Money amount = loan.getPrincipal();
+            if (amount.isGreaterThanZero()) {
+                // For repayments, we reduce the LOC balance (i.e. free up credit)
+                lineOfCreditBalanceUpdateService.computeLocBalance(loan.getId(), amount.getAmount(), lineOfCredit,
+                        loan.getSubmittedOnDate(), LineOfCreditTransactionType.DISBURSEMENT);
             }
 
         }

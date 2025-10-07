@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.client.domain.Client;
 import org.apache.fineract.portfolio.client.domain.ClientRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
@@ -39,8 +40,22 @@ public class LineOfCreditAssembler {
         // Parse dates using the provided format and locale
         final Locale locale = Locale.forLanguageTag(request.getLocale());
         final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(request.getDateFormat(), locale);
-        final LocalDate startDate = LocalDate.parse(request.getStartDate(), formatter);
-        final LocalDate endDate = request.getEndDate() != null ? LocalDate.parse(request.getEndDate(), formatter) : null;
+
+        LocalDate startDate = null;
+        if (request.getStartDate() != null && !request.getStartDate().isEmpty()) {
+            startDate = DateUtils.parseLocalDate(request.getStartDate(), request.getDateFormat(), locale);
+        }
+
+        if (request.getEndDate() != null && !request.getEndDate().isEmpty() && startDate != null
+                && startDate.isAfter(LocalDate.parse(request.getEndDate(), formatter))) {
+            throw new PlatformApiDataValidationException("error.msg.end.date.cannot.be.before.start.date",
+                    "End date cannot be before start date", "endDate");
+        }
+
+        LocalDate endDate = null;
+        if (request.getEndDate() != null && !request.getEndDate().isEmpty()) {
+            endDate = DateUtils.parseLocalDate(request.getEndDate(), request.getDateFormat(), locale);
+        }
 
         final String externalId = request.getExternalId();
         final String currency = request.getCurrencyCode();
@@ -64,9 +79,16 @@ public class LineOfCreditAssembler {
                 : null;
 
         // Parse interim review date if provided
-        final LocalDate interimReviewDate = request.getInterimReviewDate() != null
-                ? LocalDate.parse(request.getInterimReviewDate(), formatter)
-                : null;
+        LocalDate interimReviewDate = null;
+
+        if (request.getInterimReviewDate() != null && !request.getInterimReviewDate().isEmpty()) {
+            interimReviewDate = DateUtils.parseLocalDate(request.getInterimReviewDate(), request.getDateFormat(), locale);
+
+            if (DateUtils.getLocalDateOfTenant().isAfter(interimReviewDate)) {
+                throw new PlatformApiDataValidationException("error.msg.interim.review.date.cannot.be.in.the.past",
+                        "Interim review date cannot be in the past", "interimReviewDate");
+            }
+        }
 
         // Set rateType to null as it's not in the request payload
         final LocInterestChargeTime interestPaymentType = LocInterestChargeTime.fromInt(request.getInterestChargeTime());

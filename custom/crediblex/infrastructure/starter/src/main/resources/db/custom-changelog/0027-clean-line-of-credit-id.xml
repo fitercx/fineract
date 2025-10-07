@@ -66,4 +66,14 @@
         <dropColumn tableName="m_loan" columnName="line_of_credit_id"/>
     </changeSet>
 
+    <changeSet id="7" author="crediblex" context="postgresql">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_line_of_credit" />
+        </preConditions>
+
+        <dropNotNullConstraint tableName="m_line_of_credit" columnName="start_date" columnDataType="date"/>
+        <dropNotNullConstraint tableName="m_line_of_credit" columnName="end_date" columnDataType="date"/>
+    </changeSet>
+
+
 </databaseChangeLog>

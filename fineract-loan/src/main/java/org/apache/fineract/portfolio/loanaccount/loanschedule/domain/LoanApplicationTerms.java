@@ -242,10 +242,10 @@ public class LoanApplicationTerms {
 
     @Getter
     @Setter
-    private Boolean isLineOfCredit;
+    private Boolean isLineOfCredit = Boolean.FALSE;
     @Getter
     @Setter
-    private Boolean isReceivableLineOfCredit;
+    private Boolean isReceivableLineOfCredit = Boolean.FALSE;
 
     public LoanApplicationTerms(Builder builder) {
         this.currency = builder.currency;
