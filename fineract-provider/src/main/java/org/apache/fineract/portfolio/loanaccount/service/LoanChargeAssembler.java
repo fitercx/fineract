@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
-
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -99,8 +98,10 @@ public class LoanChargeAssembler {
         final boolean isMultiDisbursal = loanProduct.isMultiDisburseLoan();
         LocalDate expectedDisbursementDate = null;
 
-        final BigDecimal factorRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME, element);
-        final boolean factorRateEnabled = this.fromApiJsonHelper.extractBooleanNamed(LoanApiConstants.FACTOR_RATE_ENABLED_PARAM_NAME, element);
+        final BigDecimal factorRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME,
+                element);
+        final boolean factorRateEnabled = this.fromApiJsonHelper
+                .extractPrimitiveBooleanNamed(LoanApiConstants.FACTOR_RATE_ENABLED_PARAM_NAME, element);
         if (element.isJsonObject()) {
             final JsonObject topLevelJsonElement = element.getAsJsonObject();
             final String dateFormat = this.fromApiJsonHelper.extractDateFormatParameter(topLevelJsonElement);
@@ -139,7 +140,8 @@ public class LoanChargeAssembler {
                         }
                         if (!isMultiDisbursal) {
                             final LoanCharge loanCharge = createNewWithoutLoan(chargeDefinition, principal, amount, chargeTime,
-                                    chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId, factorRateEnabled, factorRate);
+                                    chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId, factorRateEnabled,
+                                    factorRate);
                             loanCharges.add(loanCharge);
                         } else {
                             if (topLevelJsonElement.has("disbursementData") && topLevelJsonElement.get("disbursementData").isJsonArray()) {
@@ -159,7 +161,8 @@ public class LoanChargeAssembler {
                                 if (CollectionUtils.isEmpty(disbursementDetails)) {
                                     // non-tranche
                                     final LoanCharge loanCharge = createNewWithoutLoan(chargeDefinition, principal, amount, chargeTime,
-                                            chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId, factorRateEnabled, factorRate);
+                                            chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId,
+                                            factorRateEnabled, factorRate);
                                     loanCharges.add(loanCharge);
                                 } else {
                                     // tranche
@@ -207,7 +210,8 @@ public class LoanChargeAssembler {
                                 }
                             } else {
                                 final LoanCharge loanCharge = createNewWithoutLoan(chargeDefinition, principal, amount, chargeTime,
-                                        chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId, factorRateEnabled, factorRate);
+                                        chargeCalculation, dueDate, chargePaymentModeEnum, numberOfRepayments, externalId,
+                                        factorRateEnabled, factorRate);
                                 loanCharges.add(loanCharge);
                             }
                         }
@@ -226,16 +230,17 @@ public class LoanChargeAssembler {
         }
 
         // Validation: For Factor Rate product, exactly one installment fee charge is required
-        if(factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE)) {
-            final Set<LoanCharge> installmentCharges = loanCharges.stream()
-                    .filter(LoanCharge::isInstalmentFee)
+        if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE)) {
+            final Set<LoanCharge> factorRateInstallmentCharges = loanCharges.stream().filter(LoanCharge::isInstalmentFee)
                     .collect(Collectors.toSet());
-            if(installmentCharges.size() != 1){
-                throw new GeneralPlatformDomainRuleException("error.msg.loan.one.factor.rate.product.installment.fee.charge.required.",
-                        "For Factor Rate product, exactly one installment fee charge is required");
+            if (factorRateInstallmentCharges.isEmpty()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.no.factor.rate.product.installment.fee.charge.found",
+                        "For Factor Rate product, no installment fee charge was found. Exactly one is required.");
+            } else if (factorRateInstallmentCharges.size() > 1) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.multiple.factor.rate.product.installment.fee.charges.found",
+                        "For Factor Rate product, multiple installment fee charges were found. Exactly one is required.");
             }
         }
-
         return loanCharges;
     }
 
@@ -342,7 +347,8 @@ public class LoanChargeAssembler {
      */
     public LoanCharge createNewWithoutLoan(final Charge chargeDefinition, final BigDecimal loanPrincipal, final BigDecimal amount,
             final ChargeTimeType chargeTime, final ChargeCalculationType chargeCalculation, final LocalDate dueDate,
-            final ChargePaymentMode chargePaymentMode, final Integer numberOfRepayments, final ExternalId externalId, final boolean factorRateEnabled, final BigDecimal factorRate) {
+            final ChargePaymentMode chargePaymentMode, final Integer numberOfRepayments, final ExternalId externalId,
+            final boolean factorRateEnabled, final BigDecimal factorRate) {
         return new LoanCharge(null, chargeDefinition, loanPrincipal, amount, chargeTime, chargeCalculation, dueDate, chargePaymentMode,
                 numberOfRepayments, BigDecimal.ZERO, externalId, factorRateEnabled, factorRate);
     }

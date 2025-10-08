@@ -2093,18 +2093,15 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     continue;
                 }
                 BigDecimal amount;
-                if(this.isFactorRateEnabled()){
+                if (this.isFactorRateEnabled()) {
                     final BigDecimal numberOfInstallments = BigDecimal.valueOf(installments.size());
-                    BigDecimal chargeAmount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
-//                    BigDecimal taxAmount = loanCharge.getTaxAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
-//                    amount = chargeAmount.add(taxAmount);
-                    amount= chargeAmount;
+                    amount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
                 } else {
                     if (loanCharge.getChargeCalculation().isFlat()) {
                         amount = loanCharge.amountOrPercentage();
                     } else {
-                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(), installment)
-                                .getAmount();
+                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
+                                installment).getAmount();
                     }
                 }
                 final LoanInstallmentCharge loanInstallmentCharge = new LoanInstallmentCharge(amount, loanCharge, installment);

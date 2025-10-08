@@ -428,7 +428,8 @@ public class LoanAccountDelinquencyRangeEventSerializerTest {
 
     private LoanCharge buildLoanCharge(Loan loan, BigDecimal amount, Charge charge) {
         LoanCharge loanCharge = new LoanCharge(loan, charge, amount, amount, ChargeTimeType.SPECIFIED_DUE_DATE, ChargeCalculationType.FLAT,
-                LocalDate.of(2022, 6, 27), ChargePaymentMode.REGULAR, 1, new BigDecimal(100), ExternalId.generate(), loan.isFactorRateEnabled(), loan.getFactorRate());
+                LocalDate.of(2022, 6, 27), ChargePaymentMode.REGULAR, 1, new BigDecimal(100), ExternalId.generate(),
+                loan.isFactorRateEnabled(), loan.getFactorRate());
         ReflectionTestUtils.setField(loanCharge, "id", 1L);
         return loanCharge;
     }

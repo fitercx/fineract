@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.loanschedule.domain;
 
-import com.crediblex.fineract.portfolio.loanaccount.domain.ReceivableLineOfCreditLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeDecliningBalanceInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeFlatInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultLoanScheduleGeneratorFactory;
@@ -15,17 +14,14 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CustomLoanScheduleGeneratorFactory extends DefaultLoanScheduleGeneratorFactory {
 
-    private final ReceivableLineOfCreditLoanScheduleGenerator receivableLineOfCreditLoanScheduleGenerator;
     private final FactorRateLoanScheduleGenerator factorRateLoanScheduleGenerator;
 
     public CustomLoanScheduleGeneratorFactory(ProgressiveLoanScheduleGenerator progressiveLoanScheduleGenerator,
             CumulativeFlatInterestLoanScheduleGenerator cumulativeFlatInterestLoanScheduleGenerator,
             CumulativeDecliningBalanceInterestLoanScheduleGenerator cumulativeDecliningBalanceInterestLoanScheduleGenerator,
-            ReceivableLineOfCreditLoanScheduleGenerator receivableLineOfCreditLoanScheduleGenerator,
             FactorRateLoanScheduleGenerator factorRateLoanScheduleGenerator) {
         super(progressiveLoanScheduleGenerator, cumulativeFlatInterestLoanScheduleGenerator,
                 cumulativeDecliningBalanceInterestLoanScheduleGenerator);
-        this.receivableLineOfCreditLoanScheduleGenerator = receivableLineOfCreditLoanScheduleGenerator;
         this.factorRateLoanScheduleGenerator = factorRateLoanScheduleGenerator;
     }
 
@@ -34,7 +30,6 @@ public class CustomLoanScheduleGeneratorFactory extends DefaultLoanScheduleGener
         return switch (loanScheduleType) {
             case CUMULATIVE -> cumulativeLoanScheduleGenerator(interestMethod);
             case PROGRESSIVE -> progressiveLoanScheduleGenerator(interestMethod);
-            case LINE_OF_CREDIT -> receivableLineOfCreditLoanScheduleGenerator;
             case FACTOR_RATE -> factorRateLoanScheduleGenerator;
         };
     }

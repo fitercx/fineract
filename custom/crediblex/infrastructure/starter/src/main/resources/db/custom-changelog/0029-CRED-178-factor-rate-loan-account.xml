@@ -53,7 +53,8 @@
     <changeSet author="CredibleX" id="3">
         <sql>
             UPDATE m_working_days
-            SET extend_term_daily_repayments = TRUE;
+            SET extend_term_daily_repayments = TRUE
+            WHERE extend_term_daily_repayments = FALSE;
         </sql>
     </changeSet>
 

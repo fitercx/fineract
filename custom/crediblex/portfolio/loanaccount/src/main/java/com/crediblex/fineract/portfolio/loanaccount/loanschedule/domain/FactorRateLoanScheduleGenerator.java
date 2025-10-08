@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
@@ -76,12 +77,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
         // Adjust principal based on factor rate
         final BigDecimal factorRate = loanApplicationTerms.getFactorRate();
-        final BigDecimal divisor = BigDecimal.ONE.divide(factorRate.subtract(BigDecimal.ONE), mc).subtract(BigDecimal.ONE);
-        final Money totalFactorRateFeeAmount = loanApplicationTerms.getPrincipal().multipliedBy(BigDecimal.ONE.divide(divisor, mc));
+        final Money totalFactorRateFeeAmount = determineFactorRateFee(factorRate, loanApplicationTerms.getPrincipal(), mc);
         final Money factorRateFeePerInstallment = totalFactorRateFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
-//        final Money totalPrincipalAmount = loanApplicationTerms.getPrincipal().minus(totalFactorRateFeeAmount);
-//        loanApplicationTerms.setPrincipal(totalPrincipalAmount);
-//        loanApplicationTerms.setDisbursedPrincipal(totalPrincipalAmount);
 
         // generate list of proposed schedule due dates
         LocalDate loanEndDate = getScheduledDateGenerator().getLastRepaymentDate(loanApplicationTerms, holidayDetailDTO);
@@ -444,6 +441,15 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
                 totalPrincipalPaid, scheduleParams.getTotalCumulativeInterest().getAmount(),
                 scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalPenaltyChargesCharged().getAmount(),
                 scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
+    }
+
+    private Money determineFactorRateFee(final BigDecimal factorRate, final Money principal, final MathContext mc) {
+        if (!MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.factor.rate.must.be.greater.than.or.equal.to.one",
+                    "Factor rate must be greater than or equal to 1");
+        }
+        final BigDecimal divisor = BigDecimal.ONE.divide(factorRate.subtract(BigDecimal.ONE), mc).subtract(BigDecimal.ONE);
+        return principal.multipliedBy(BigDecimal.ONE.divide(divisor, mc));
     }
 
     @Override

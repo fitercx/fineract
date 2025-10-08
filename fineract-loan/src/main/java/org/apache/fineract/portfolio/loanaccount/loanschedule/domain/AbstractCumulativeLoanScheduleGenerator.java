@@ -323,6 +323,18 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(principalInterestForThisPeriod.interestPaymentDueToGrace());
             currentPeriodParams.setPrincipalForThisPeriod(principalInterestForThisPeriod.principal());
 
+            if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
+                Money adjustedPrincipal = scheduleParams.getOutstandingBalance()
+                        .minus(principalInterestForThisPeriod.interestPaymentDueToGrace().add(principalInterestForThisPeriod.interest()));
+
+                if (adjustedPrincipal.isLessThanZero()) {
+                    adjustedPrincipal = Money.zero(adjustedPrincipal.getCurrency());
+                }
+
+                scheduleParams.setOutstandingBalance(adjustedPrincipal);
+
+            }
+
             // applies early payments on principal portion
             updatePrincipalPortionBasedOnPreviousEarlyPayments(currency, scheduleParams, currentPeriodParams);
 
@@ -436,6 +448,10 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
     }
 
+    /**
+     * Protected visibility is required to allow subclasses to override or invoke this method when customizing loan
+     * schedule generation.
+     */
     protected void updateCompoundingDetails(final Collection<LoanScheduleModelPeriod> periods, final LoanScheduleParams params,
             final LoanApplicationTerms loanApplicationTerms) {
         final Map<LocalDate, Map<LocalDate, Money>> compoundingDetails = params.getCompoundingDateVariations();
