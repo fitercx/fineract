@@ -48,6 +48,8 @@ import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferType;
+import org.apache.fineract.portfolio.account.domain.StandingInstructionRepository;
+import org.apache.fineract.portfolio.account.domain.StandingInstructionStatus;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
@@ -124,6 +126,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final JdbcTemplate jdbcTemplate;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
+    private final StandingInstructionRepository standingInstructionRepository;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -159,7 +162,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
             JdbcTemplate jdbcTemplate, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService) {
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
+            StandingInstructionRepository standingInstructionRepository) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -178,6 +182,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
+        this.standingInstructionRepository = standingInstructionRepository;
     }
 
     @Transactional
@@ -354,8 +359,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
             createNote(loan, command, changes);
-            // auto create standing instruction
-            createStandingInstruction(loan);
+            // auto create standing instruction only if one doesn't already exist
+            if (!standingInstructionExists(loanId)) {
+                createStandingInstruction(loan);
+            }
         }
 
         final Set<LoanCharge> loanCharges = loan.getActiveCharges();
@@ -785,6 +792,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, locProductTypeOpt.get().getLineOfCredit(), transactionDate,
                     transactionType);
         }
-
     }
+
+    private boolean standingInstructionExists(Long loanId) {
+        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.ACTIVE.getValue());
+    }
+
 }
