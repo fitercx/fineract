@@ -439,6 +439,18 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
+    @Setter()
+    @Column(name = "factor_rate")
+    private BigDecimal factorRate;
+
+    @Setter()
+    @Column(name = "is_factor_rate_enabled")
+    private boolean isFactorRateEnabled;
+
+    @Transient
+    @Setter
+    private boolean isReceivableLocLoan;
+
     public static Loan newIndividualLoanApplication(final String accountNo, final Client client, final AccountType loanType,
             final LoanProduct loanProduct, final Fund fund, final Staff officer, final CodeValue loanPurpose,
             final LoanRepaymentScheduleTransactionProcessor transactionProcessingStrategy,
@@ -986,7 +998,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             final Money recoveredAmount = calculateTotalRecoveredPayments();
             this.totalRecovered = recoveredAmount.getAmountDefaultedToNullIfZero();
 
-            final Money principal = this.loanRepaymentScheduleDetail.getPrincipal();
+            Money principal = this.loanRepaymentScheduleDetail.getPrincipal();
+            if (isReceivableLocLoan) {
+                principal = principal.minus(this.getTotalInterest());
+            }
             this.summary.updateSummary(getCurrency(), principal, getRepaymentScheduleInstallments(), this.charges);
             updateLoanOutstandingBalances();
         }

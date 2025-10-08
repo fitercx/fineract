@@ -51,7 +51,7 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
                     .retrieveAllDelinquencyBuckets();
             final CustomLoanProductMapper rm = new CustomLoanProductMapper(charges, borrowerCycleVariationDatas, rates,
                     delinquencyBucketOptions, advancedPaymentData, creditAllocationData);
-            final String sql = "SELECT lp.is_loc_enable as isLocEnabled, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, "
+            final String sql = "SELECT lp.is_loc_enable as isLocEnabled, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.enable_loc_receivable as enableLocReceivable, "
                     + rm.getSchema() + " where lp.id = ?";
 
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
@@ -87,6 +87,8 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
             extendedData.getAdditionalProperties().put("isLocEnabled", rs.getBoolean("isLocEnabled"));
             extendedData.setFactorRateProductEnabled(rs.getBoolean("factorRateProductEnabled"));
             extendedData.setFactorRate(rs.getBigDecimal("factorRate"));
+            extendedData.setEnableLineOfCreditReceivable(rs.getBoolean("enableLocReceivable"));
+            extendedData.setIsLocEnabled(rs.getBoolean("isLocEnabled"));
             return extendedData;
         }
     }

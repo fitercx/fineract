@@ -19,6 +19,8 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
+import static com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants.ADJUSTED_CREDIT_LIMIT;
+
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidBy;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
@@ -28,7 +30,11 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteRepository;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -36,6 +42,7 @@ import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,6 +53,7 @@ import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -79,6 +87,21 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final LineOfCreditAssembler lineOfCreditAssembler;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
     private final PlatformSecurityContext context;
+    private final LineOfCreditNoteRepository lineOfCreditNoteRepository;
+    private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
+
+    /**
+     * Helper method to save a note for LOC actions if provided in the command
+     */
+    private void saveNoteIfProvided(LineOfCredit loc, JsonCommand command, LineOfCreditNoteType noteType) {
+        if (command.hasParameter("note")) {
+            String note = command.stringValueOfParameterNamed("note");
+            if (note != null && !note.trim().isEmpty()) {
+                LineOfCreditNote locNote = new LineOfCreditNote(loc, note.trim(), noteType);
+                lineOfCreditNoteRepository.save(locNote);
+            }
+        }
+    }
 
     @Override
     @Transactional
@@ -164,15 +187,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     @Override
     @Transactional
     public CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
-        // Validate limit reduction if maximumAmount is being updated (do this first for business rule validation)
-        if (command.hasParameter("maximumAmount")) {
-            final BigDecimal newMaximumAmount = command.bigDecimalValueOfParameterNamed("maximumAmount");
-            this.dataValidator.validateForLimitReduction(lineOfCreditId, newMaximumAmount);
+
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (!lineOfCredit.isEditable()) {
+            throw new PlatformDataIntegrityException("error.msg.loc.update.not.allowed",
+                    "Line of Credit cannot be updated in its current state: " + lineOfCredit.getStatus().name());
         }
 
         this.dataValidator.validateForUpdate(command.json());
-
-        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
         final Map<String, Object> changes = lineOfCredit.update(command);
 
@@ -256,6 +279,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
         }
 
+        // Save note if provided
+        saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.UPDATE);
+
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
 
     }
@@ -288,8 +314,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
+            // Save note if provided
+            saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.ACTIVATE);
 
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
         } catch (IllegalStateException | IllegalArgumentException e) {
             throw new PlatformApiDataValidationException("error.msg.line.of.credit.activation.failed", e.getMessage(), "activation", e);
         } catch (final PlatformApiDataValidationException e) {
@@ -320,6 +348,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.getLineOfCreditStateChange().setApprovedBy(context.getAuthenticatedUserIfPresent());
 
         lineOfCreditRepository.saveAndFlush(loc);
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.APPROVE);
 
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
 
@@ -369,8 +400,175 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.getLineOfCreditStateChange().setClosedBy(context.getAuthenticatedUserIfPresent());
         lineOfCreditRepository.saveAndFlush(loc);
 
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.CLOSE);
+
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
 
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult increaseCreditLimit(Long lineOfCreditId, JsonCommand command) {
+        // Fetch LOC
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Validate state (allow only ACTIVE or APPROVED to be increased)
+        if (loc.getStatus() != LocStatus.ACTIVE && loc.getStatus() != LocStatus.APPROVED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.invalid.state",
+                    "Credit limit can only be increased when LOC is ACTIVE or APPROVED", "state");
+        }
+
+        dataValidator.validateForIncreaseOrDecreaseOfCreditLimit(command);
+        // Extract new limit - support multiple possible parameter names for flexibility
+        BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
+
+        BigDecimal currentLimit = loc.getMaximumAmount();
+        if (currentLimit == null) {
+            currentLimit = BigDecimal.ZERO; // safety fallback
+        }
+
+        if (newLimit.compareTo(currentLimit) <= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.must.be.greater",
+                    "New credit limit must be greater than existing limit", "newCreditLimit");
+        }
+
+        // Ensure consumed amount (if any) does not exceed new limit (shouldn't happen for increase but defensive)
+        BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
+                ? loc.getSummary().getConsumedAmount()
+                : BigDecimal.ZERO;
+
+        if (consumed.compareTo(newLimit) > 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.consumed.exceeds.new.limit",
+                    "Consumed amount exceeds the proposed new credit limit", "newCreditLimit");
+        }
+
+        BigDecimal delta = newLimit.subtract(currentLimit);
+        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
+                LineOfCreditTransactionType.INCREMENT);
+        loc.setMaximumAmount(loc.getMaximumAmount().add(delta));
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.INCREASE_CREDIT_LIMIT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousLimit", currentLimit);
+        changes.put("newLimit", newLimit);
+        changes.put("delta", delta);
+        if (loc.getSummary() != null) {
+            changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+        }
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult reduceCreditLimit(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (loc.getStatus() != LocStatus.ACTIVE && loc.getStatus() != LocStatus.APPROVED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.invalid.state",
+                    "Credit limit can only be reduced when LOC is ACTIVE or APPROVED", "state");
+        }
+
+        // Validate payload (expects adjustedCreditLimit parameter)
+        dataValidator.validateForIncreaseOrDecreaseOfCreditLimit(command);
+        BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        LocalDate transactionDate = command.dateValueOfParameterNamed("actionDate");
+
+        BigDecimal currentLimit = loc.getMaximumAmount();
+        if (currentLimit == null) {
+            currentLimit = BigDecimal.ZERO;
+        }
+
+        if (newLimit.compareTo(currentLimit) >= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.must.be.less",
+                    "New credit limit must be less than existing limit", ADJUSTED_CREDIT_LIMIT);
+        }
+
+        if (newLimit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.amount.must.be.positive",
+                    "New credit limit must be greater than zero", ADJUSTED_CREDIT_LIMIT);
+        }
+
+        BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
+                ? loc.getSummary().getConsumedAmount()
+                : BigDecimal.ZERO;
+        if (newLimit.compareTo(consumed) < 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.consumed.exceeds.new.limit",
+                    "Consumed amount exceeds the proposed new credit limit", ADJUSTED_CREDIT_LIMIT);
+        }
+
+        BigDecimal delta = currentLimit.subtract(newLimit); // negative
+
+        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
+                LineOfCreditTransactionType.DECREMENT);
+        loc.setMaximumAmount(loc.getMaximumAmount().subtract(delta));
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.REDUCE_CREDIT_LIMIT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousLimit", currentLimit);
+        changes.put("newLimit", newLimit);
+        changes.put("delta", delta);
+        if (loc.getSummary() != null) {
+            changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+            changes.put("consumedAmount", loc.getSummary().getConsumedAmount());
+        }
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult undoCloseLineOfCredit(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (loc.getStatus() != LocStatus.CLOSED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.undoclose.invalid.state",
+                    "Can only undo close for LOC in CLOSED state", "state");
+        }
+
+        // Ensure it was actually marked closed (has closedOnDate)
+        if (loc.getLineOfCreditStateChange() == null || loc.getLineOfCreditStateChange().getClosedOnDate() == null) {
+            throw new PlatformApiDataValidationException("error.msg.loc.undoclose.no.closed.date",
+                    "Cannot undo close when closed date not recorded", "closedOnDate");
+        }
+
+        LocStatus previousStatus = loc.getStatus();
+
+        // Restore to ACTIVE per requirement "returning it to activated"
+        loc.setStatus(LocStatus.ACTIVE);
+
+        // If there was no activation date previously (possible if closed from SUBMITTED), assign now
+        if (loc.getLineOfCreditStateChange().getActivateOnDate() == null) {
+            LocalDate activationDate = command.localDateValueOfParameterNamed("actionDate");
+            if (activationDate == null) {
+                activationDate = DateUtils.getLocalDateOfTenant();
+            }
+            loc.getLineOfCreditStateChange().setActivateOnDate(activationDate);
+            loc.getLineOfCreditStateChange().setActivatedBy(context.getAuthenticatedUserIfPresent());
+        }
+
+        // Clear closure metadata
+        loc.getLineOfCreditStateChange().setClosedOnDate(null);
+        loc.getLineOfCreditStateChange().setClosedBy(null);
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.UNDO_CLOSE);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousStatus", previousStatus.name());
+        changes.put("newStatus", loc.getStatus().name());
+        changes.put("activationDate", loc.getLineOfCreditStateChange().getActivateOnDate());
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
     }
 
     @Override
@@ -393,6 +591,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         this.lineOfCreditRepository.saveAndFlush(loc);
 
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.DEACTIVATE);
+
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
     }
 
@@ -405,6 +606,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             throw new PlatformApiDataValidationException("error.msg.loc.delete.not.allowed", "Cannot delete an ACTIVE or APPROVED LOC",
                     "state");
         }
+
+        // Note: For delete operation, we can't save a note since the entity will be deleted
+        // If needed, we could save the note before deletion, but it would be orphaned
 
         this.lineOfCreditRepository.delete(loc);
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();

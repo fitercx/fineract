@@ -108,7 +108,7 @@ import org.apache.fineract.useradministration.domain.AppUser;
 public class LoanAssemblerImpl implements LoanAssembler {
 
     private final FromJsonHelper fromApiJsonHelper;
-    private final LoanRepositoryWrapper loanRepository;
+    protected final LoanRepositoryWrapper loanRepository;
     private final LoanProductRepository loanProductRepository;
     private final ClientRepositoryWrapper clientRepository;
     private final GroupRepositoryWrapper groupRepository;

@@ -34,11 +34,13 @@ public final class LoanAccountAdditionalProperties {
     public static String SUPPLIER_DETAILS = "supplierDetails";
 
     public static String LINE_OF_CREDIT_ID = "lineOfCreditId";
+    public static String LOC_TYPE = "locType";
+    public static String FACTOR_RATE_ENABLED = "factorRateEnabled";
 
     public static Collection<String> getAllLoanAccountAdditionalPropertiesParameters() {
         return List.of(INVOICE_NO, INVOICE_DATE, INVOICE_AMOUNT, INVOICE_DUE_DATE, INVOICE_CURRENCY, DISAPPROVED_AMOUNT,
                 APPROVED_RECEIVABLE_AMOUNT, ADVANCE_PERCENTAGE, AMOUNT_AFTER_ADVANCE, BUYER_DETAILS, EXCHANGE_RATE, MARKUP,
-                AMOUNT_IN_FACILITY_CURRENCY, APPROVED_PAYABLE_AMOUNT, SUPPLIER_DETAILS, LINE_OF_CREDIT_ID);
+                AMOUNT_IN_FACILITY_CURRENCY, APPROVED_PAYABLE_AMOUNT, SUPPLIER_DETAILS, LINE_OF_CREDIT_ID, LOC_TYPE, FACTOR_RATE_ENABLED);
     }
 
 }

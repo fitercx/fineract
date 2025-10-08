@@ -252,6 +252,10 @@ public class LoanProductData implements Serializable {
     private boolean factorRateProductEnabled;
     @Setter
     private BigDecimal factorRate;
+    @Setter
+    private Boolean isLocEnabled;
+    @Setter
+    private Boolean enableLineOfCreditReceivable;
 
     /**
      * Used when returning lookup information about loan product for dropdowns.
@@ -1184,6 +1188,8 @@ public class LoanProductData implements Serializable {
         this.capitalizedIncomeStrategyOptions = capitalizedIncomeStrategyOptions;
         this.factorRateProductEnabled = productData.factorRateProductEnabled;
         this.factorRate = productData.factorRate;
+        this.isLocEnabled = productData.isLocEnabled;
+        this.enableLineOfCreditReceivable = productData.enableLineOfCreditReceivable;
     }
 
     private Collection<ChargeData> nullIfEmpty(final Collection<ChargeData> charges) {
