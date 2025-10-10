@@ -267,6 +267,6 @@ public class LoanTest {
     private LoanCharge buildLoanCharge() {
         return new LoanCharge(mock(Loan.class), mock(Charge.class), new BigDecimal(100), new BigDecimal(100),
                 ChargeTimeType.TRANCHE_DISBURSEMENT, ChargeCalculationType.FLAT, LocalDate.of(2022, 6, 27), ChargePaymentMode.REGULAR, 1,
-                new BigDecimal(100), ExternalId.generate());
+                new BigDecimal(100), ExternalId.generate(), false, BigDecimal.ZERO);
     }
 }

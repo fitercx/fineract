@@ -49,4 +49,25 @@
             </column>
         </addColumn>
     </changeSet>
+
+    <changeSet author="CredibleX" id="3">
+        <sql>
+            UPDATE m_working_days
+            SET extend_term_daily_repayments = TRUE
+            WHERE extend_term_daily_repayments = FALSE;
+        </sql>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="factor_rate_loan_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="factor_rate_loan_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

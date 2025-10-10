@@ -107,6 +107,9 @@ public class LoanTermVariationsMapper {
             interestChargedFromDate = loan.getDisbursementDate();
         }
 
+        final boolean factorRateEnabled = loan.isFactorRateEnabled();
+        final BigDecimal factorRate = loan.getFactorRate();
+
         return LoanApplicationTerms.assembleFrom(scheduleGeneratorDTO.getCurrency(), loanTermFrequency, loan.getTermPeriodFrequencyType(),
                 nthDayType, dayOfWeekType, loan.getDisbursementDate(), loan.getExpectedFirstRepaymentOnDate(),
                 scheduleGeneratorDTO.getCalculatedRepaymentsStartingFromDate(), loan.getInArrearsTolerance(),
@@ -119,7 +122,8 @@ public class LoanTermVariationsMapper {
                 scheduleGeneratorDTO.getNumberOfdays(), scheduleGeneratorDTO.isSkipRepaymentOnFirstDayofMonth(), holidayDetailDTO,
                 allowCompoundingOnEod, scheduleGeneratorDTO.isFirstRepaymentDateAllowedOnHoliday(),
                 scheduleGeneratorDTO.isInterestToBeRecoveredFirstWhenGreaterThanEMI(), loan.getFixedPrincipalPercentagePerInstallment(),
-                scheduleGeneratorDTO.isPrincipalCompoundingDisabledForOverdueLoans(), repaymentStartDateType, loan.getSubmittedOnDate());
+                scheduleGeneratorDTO.isPrincipalCompoundingDisabledForOverdueLoans(), repaymentStartDateType, loan.getSubmittedOnDate(),
+                factorRateEnabled, factorRate);
     }
 
     private BigDecimal constructFloatingInterestRates(final BigDecimal annualNominalInterestRate, final FloatingRateDTO floatingRateDTO,
