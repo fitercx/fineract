@@ -46,6 +46,7 @@ public final class LoanScheduleParams {
     private Money totalCumulativePrincipal;
     private Money totalCumulativeInterest;
     private Money totalFeeChargesCharged;
+    private Money totalTaxChargesCharged;
     private Money totalPenaltyChargesCharged;
     private Money totalRepaymentExpected;
     private Money totalOutstandingInterestPaymentDueToGrace;
@@ -319,6 +320,18 @@ public final class LoanScheduleParams {
             this.totalFeeChargesCharged = this.totalFeeChargesCharged.plus(totalFeeChargesCharged, mc);
         } else {
             this.totalFeeChargesCharged = totalFeeChargesCharged;
+        }
+    }
+
+    public Money getTotalTaxChargesCharged() {
+        return this.totalTaxChargesCharged;
+    }
+
+    public void addTotalTaxChargesCharged(final Money totalTaxChargesCharged) {
+        if (this.totalTaxChargesCharged != null) {
+            this.totalTaxChargesCharged = this.totalTaxChargesCharged.plus(totalTaxChargesCharged, mc);
+        } else {
+            this.totalTaxChargesCharged = totalTaxChargesCharged;
         }
     }
 

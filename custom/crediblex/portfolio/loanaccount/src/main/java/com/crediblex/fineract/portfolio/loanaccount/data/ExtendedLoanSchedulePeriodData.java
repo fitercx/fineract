@@ -37,7 +37,8 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
             BigDecimal principalLoanBalanceOutstanding, BigDecimal interestOriginalDue, BigDecimal interestDue, BigDecimal interestPaid,
             BigDecimal interestWaived, BigDecimal interestWrittenOff, BigDecimal interestOutstanding, BigDecimal feeChargesDue,
             BigDecimal feeChargesPaid, BigDecimal feeChargesWaived, BigDecimal feeChargesWrittenOff, BigDecimal feeChargesOutstanding,
-            BigDecimal penaltyChargesDue, BigDecimal penaltyChargesPaid, BigDecimal penaltyChargesWaived,
+            BigDecimal taxChargesDue, BigDecimal taxChargesPaid, BigDecimal taxChargesWaived, BigDecimal taxChargesWrittenOff,
+            BigDecimal taxChargesOutstanding, BigDecimal penaltyChargesDue, BigDecimal penaltyChargesPaid, BigDecimal penaltyChargesWaived,
             BigDecimal penaltyChargesWrittenOff, BigDecimal penaltyChargesOutstanding, BigDecimal totalOriginalDueForPeriod,
             BigDecimal totalDueForPeriod, BigDecimal totalPaidForPeriod, BigDecimal totalPaidInAdvanceForPeriod,
             BigDecimal totalPaidLateForPeriod, BigDecimal totalWaivedForPeriod, BigDecimal totalWrittenOffForPeriod,
@@ -47,9 +48,10 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
         super(period, fromDate, dueDate, obligationsMetOnDate, complete, daysInPeriod, principalDisbursed, principalOriginalDue,
                 principalDue, principalPaid, principalWrittenOff, principalOutstanding, principalLoanBalanceOutstanding,
                 interestOriginalDue, interestDue, interestPaid, interestWaived, interestWrittenOff, interestOutstanding, feeChargesDue,
-                feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, penaltyChargesDue, penaltyChargesPaid,
-                penaltyChargesWaived, penaltyChargesWrittenOff, penaltyChargesOutstanding, totalOriginalDueForPeriod, totalDueForPeriod,
-                totalPaidForPeriod, totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod,
+                feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, taxChargesDue, taxChargesPaid,
+                taxChargesWaived, taxChargesWrittenOff, taxChargesOutstanding, penaltyChargesDue, penaltyChargesPaid, penaltyChargesWaived,
+                penaltyChargesWrittenOff, penaltyChargesOutstanding, totalOriginalDueForPeriod, totalDueForPeriod, totalPaidForPeriod,
+                totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod,
                 totalOutstandingForPeriod, totalOverdue, totalActualCostOfLoanForPeriod, totalInstallmentAmountForPeriod, totalCredits,
                 totalAccruedInterest, downPaymentPeriod);
         this.status = status;
@@ -63,14 +65,15 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
                 periodData.getInterestOriginalDue(), periodData.getInterestDue(), periodData.getInterestPaid(),
                 periodData.getInterestWaived(), periodData.getInterestWrittenOff(), periodData.getInterestOutstanding(),
                 periodData.getFeeChargesDue(), periodData.getFeeChargesPaid(), periodData.getFeeChargesWaived(),
-                periodData.getFeeChargesWrittenOff(), periodData.getFeeChargesOutstanding(), periodData.getPenaltyChargesDue(),
-                periodData.getPenaltyChargesPaid(), periodData.getPenaltyChargesWaived(), periodData.getPenaltyChargesWrittenOff(),
-                periodData.getPenaltyChargesOutstanding(), periodData.getTotalOriginalDueForPeriod(), periodData.getTotalDueForPeriod(),
-                periodData.getTotalPaidForPeriod(), periodData.getTotalPaidInAdvanceForPeriod(), periodData.getTotalPaidLateForPeriod(),
-                periodData.getTotalWaivedForPeriod(), periodData.getTotalWrittenOffForPeriod(), periodData.getTotalOutstandingForPeriod(),
-                periodData.getTotalOverdue(), periodData.getTotalActualCostOfLoanForPeriod(),
-                periodData.getTotalInstallmentAmountForPeriod(), periodData.getTotalCredits(), periodData.getTotalAccruedInterest(),
-                periodData.isDownPaymentPeriod(), status);
+                periodData.getFeeChargesWrittenOff(), periodData.getFeeChargesOutstanding(), periodData.getTaxChargesDue(),
+                periodData.getTaxChargesPaid(), periodData.getTaxChargesWaived(), periodData.getTaxChargesWrittenOff(),
+                periodData.getTaxChargesOutstanding(), periodData.getPenaltyChargesDue(), periodData.getPenaltyChargesPaid(),
+                periodData.getPenaltyChargesWaived(), periodData.getPenaltyChargesWrittenOff(), periodData.getPenaltyChargesOutstanding(),
+                periodData.getTotalOriginalDueForPeriod(), periodData.getTotalDueForPeriod(), periodData.getTotalPaidForPeriod(),
+                periodData.getTotalPaidInAdvanceForPeriod(), periodData.getTotalPaidLateForPeriod(), periodData.getTotalWaivedForPeriod(),
+                periodData.getTotalWrittenOffForPeriod(), periodData.getTotalOutstandingForPeriod(), periodData.getTotalOverdue(),
+                periodData.getTotalActualCostOfLoanForPeriod(), periodData.getTotalInstallmentAmountForPeriod(),
+                periodData.getTotalCredits(), periodData.getTotalAccruedInterest(), periodData.isDownPaymentPeriod(), status);
     }
 
 }

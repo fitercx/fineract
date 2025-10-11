@@ -61,6 +61,11 @@ public class LoanSchedulePeriodData {
     private final BigDecimal feeChargesWaived;
     private final BigDecimal feeChargesWrittenOff;
     private final BigDecimal feeChargesOutstanding;
+    private final BigDecimal taxChargesDue;
+    private final BigDecimal taxChargesPaid;
+    private final BigDecimal taxChargesWaived;
+    private final BigDecimal taxChargesWrittenOff;
+    private final BigDecimal taxChargesOutstanding;
     private final BigDecimal penaltyChargesDue;
     private final BigDecimal penaltyChargesPaid;
     private final BigDecimal penaltyChargesWaived;
@@ -100,10 +105,10 @@ public class LoanSchedulePeriodData {
 
     public static LoanSchedulePeriodData repaymentOnlyPeriod(final Integer periodNumber, final LocalDate fromDate, final LocalDate dueDate,
             final BigDecimal principalDue, final BigDecimal outstandingLoanBalance, final BigDecimal interestDue, final BigDecimal feeDue,
-            final BigDecimal penaltyDue) {
+            final BigDecimal taxDue, final BigDecimal penaltyDue) {
 
-        BigDecimal totalDue = MathUtil.add(principalDue, interestDue, feeDue, penaltyDue);
-        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(interestDue, feeDue, penaltyDue);
+        BigDecimal totalDue = MathUtil.add(principalDue, interestDue, feeDue, taxDue, penaltyDue);
+        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(interestDue, feeDue, taxDue, penaltyDue);
         BigDecimal totalInstallmentAmount = MathUtil.add(principalDue, interestDue);
 
         return builder().period(periodNumber) //
@@ -119,6 +124,8 @@ public class LoanSchedulePeriodData {
                 .interestOutstanding(interestDue) //
                 .feeChargesDue(feeDue) //
                 .feeChargesOutstanding(feeDue) //
+                .taxChargesDue(taxDue) //
+                .taxChargesOutstanding(taxDue) //
                 .penaltyChargesDue(penaltyDue) //
                 .penaltyChargesOutstanding(penaltyDue) //
                 .totalOriginalDueForPeriod(totalDue) //
@@ -154,18 +161,20 @@ public class LoanSchedulePeriodData {
             final BigDecimal outstandingPrincipalBalanceOfLoan, final BigDecimal interestDue, final BigDecimal interestPaid,
             final BigDecimal interestWaived, final BigDecimal interestWrittenOff, final BigDecimal interestOutstanding,
             final BigDecimal feeChargesDue, final BigDecimal feeChargesPaid, final BigDecimal feeChargesWaived,
-            final BigDecimal feeChargesWrittenOff, final BigDecimal feeChargesOutstanding, final BigDecimal penaltyChargesDue,
-            final BigDecimal penaltyChargesPaid, final BigDecimal penaltyChargesWaived, final BigDecimal penaltyChargesWrittenOff,
-            final BigDecimal penaltyChargesOutstanding, final BigDecimal totalPaid, final BigDecimal totalPaidInAdvanceForPeriod,
-            final BigDecimal totalPaidLateForPeriod, final BigDecimal totalWaived, final BigDecimal totalWrittenOff,
-            final BigDecimal totalCredits, final boolean isDownPayment, final BigDecimal totalAccruedInterest) {
+            final BigDecimal feeChargesWrittenOff, final BigDecimal feeChargesOutstanding, final BigDecimal taxChargesDue,
+            final BigDecimal taxChargesPaid, final BigDecimal taxChargesWaived, final BigDecimal taxChargesWrittenOff,
+            final BigDecimal taxChargesOutstanding, final BigDecimal penaltyChargesDue, final BigDecimal penaltyChargesPaid,
+            final BigDecimal penaltyChargesWaived, final BigDecimal penaltyChargesWrittenOff, final BigDecimal penaltyChargesOutstanding,
+            final BigDecimal totalPaid, final BigDecimal totalPaidInAdvanceForPeriod, final BigDecimal totalPaidLateForPeriod,
+            final BigDecimal totalWaived, final BigDecimal totalWrittenOff, final BigDecimal totalCredits, final boolean isDownPayment,
+            final BigDecimal totalAccruedInterest) {
 
         final MathContext mc = MoneyHelper.getMathContext();
 
-        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, interestDue, feeChargesDue, penaltyChargesDue);
+        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, interestDue, feeChargesDue, taxChargesDue, penaltyChargesDue);
         BigDecimal totalOutstanding = MathUtil.add(mc, principalOutstanding, interestOutstanding, feeChargesOutstanding,
-                penaltyChargesOutstanding);
-        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, penaltyChargesDue);
+                taxChargesOutstanding, penaltyChargesOutstanding);
+        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, taxChargesDue, penaltyChargesDue);
         BigDecimal totalInstallmentAmount = MathUtil.add(mc, principalOriginalDue, interestDue);
 
         return builder().period(periodNumber) //
@@ -191,6 +200,11 @@ public class LoanSchedulePeriodData {
                 .feeChargesWaived(feeChargesWaived) //
                 .feeChargesWrittenOff(feeChargesWrittenOff) //
                 .feeChargesOutstanding(feeChargesOutstanding) //
+                .taxChargesDue(taxChargesDue) //
+                .taxChargesPaid(taxChargesPaid) //
+                .taxChargesWaived(taxChargesWaived) //
+                .taxChargesWrittenOff(taxChargesWrittenOff) //
+                .taxChargesOutstanding(taxChargesOutstanding) //
                 .penaltyChargesDue(penaltyChargesDue) //
                 .penaltyChargesPaid(penaltyChargesPaid) //
                 .penaltyChargesWaived(penaltyChargesWaived) //
@@ -322,6 +336,26 @@ public class LoanSchedulePeriodData {
 
     public BigDecimal getFeeChargesOutstanding() {
         return MathUtil.nullToDefault(this.feeChargesOutstanding, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTaxChargesDue() {
+        return MathUtil.nullToDefault(this.taxChargesDue, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTaxChargesPaid() {
+        return MathUtil.nullToDefault(this.taxChargesPaid, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTaxChargesWaived() {
+        return MathUtil.nullToDefault(this.taxChargesWaived, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTaxChargesWrittenOff() {
+        return MathUtil.nullToDefault(this.taxChargesWrittenOff, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getTaxChargesOutstanding() {
+        return MathUtil.nullToDefault(this.taxChargesOutstanding, BigDecimal.ZERO);
     }
 
     public BigDecimal getPenaltyChargesDue() {

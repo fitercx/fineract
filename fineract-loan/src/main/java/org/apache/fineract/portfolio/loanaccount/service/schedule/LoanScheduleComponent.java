@@ -42,7 +42,8 @@ public class LoanScheduleComponent {
                             scheduledLoanInstallment.periodNumber(), scheduledLoanInstallment.periodFromDate(),
                             scheduledLoanInstallment.periodDueDate(), scheduledLoanInstallment.principalDue(),
                             scheduledLoanInstallment.interestDue(), scheduledLoanInstallment.feeChargesDue(),
-                            scheduledLoanInstallment.penaltyChargesDue(), scheduledLoanInstallment.isRecalculatedInterestComponent(),
+                            scheduledLoanInstallment.taxChargesDue(), scheduledLoanInstallment.penaltyChargesDue(),
+                            scheduledLoanInstallment.isRecalculatedInterestComponent(),
                             scheduledLoanInstallment.getLoanCompoundingDetails(), scheduledLoanInstallment.rescheduleInterestPortion(),
                             scheduledLoanInstallment.isDownPaymentPeriod());
                     loan.addLoanRepaymentScheduleInstallment(installment);

@@ -158,8 +158,9 @@ public class ProgressiveLoanScheduleGenerator implements LoanScheduleGenerator {
                 scheduleParams.getPrincipalToBeScheduled().plus(loanApplicationTerms.getDownPaymentAmount(), mc),
                 scheduleParams.getTotalCumulativePrincipal().plus(loanApplicationTerms.getDownPaymentAmount(), mc).getAmount(),
                 totalPrincipalPaid, scheduleParams.getTotalCumulativeInterest().getAmount(),
-                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalPenaltyChargesCharged().getAmount(),
-                scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
+                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalTaxChargesCharged().getAmount(),
+                scheduleParams.getTotalPenaltyChargesCharged().getAmount(), scheduleParams.getTotalRepaymentExpected().getAmount(),
+                totalOutstanding);
     }
 
     @Override
@@ -350,11 +351,12 @@ public class ProgressiveLoanScheduleGenerator implements LoanScheduleGenerator {
         final Money fees = cumulativeFeeChargesDueWithin(repaymentPeriod.getFromDate(), repaymentPeriod.getDueDate(), loanCharges, currency,
                 principalInterest, scheduleParams.getPrincipalToBeScheduled(), scheduleParams.getTotalCumulativeInterest(), true,
                 scheduleParams.isFirstPeriod(), mc);
+        final Money taxes = Money.zero(currency, mc);
         final Money penalties = cumulativePenaltyChargesDueWithin(repaymentPeriod.getFromDate(), repaymentPeriod.getDueDate(), loanCharges,
                 currency, principalInterest, scheduleParams.getPrincipalToBeScheduled(), scheduleParams.getTotalCumulativeInterest(), true,
                 scheduleParams.isFirstPeriod(), mc);
 
-        repaymentPeriod.addLoanCharges(fees.getAmount(), penalties.getAmount());
+        repaymentPeriod.addLoanCharges(fees.getAmount(), taxes.getAmount(), penalties.getAmount());
         scheduleParams.addTotalFeeChargesCharged(fees);
         scheduleParams.addTotalPenaltyChargesCharged(penalties);
     }
@@ -453,6 +455,7 @@ public class ProgressiveLoanScheduleGenerator implements LoanScheduleGenerator {
                         loanScheduleModelPeriod.periodDueDate(), nonCompoundingCharges, currency, principalInterest,
                         scheduleParams.getPrincipalToBeScheduled(), scheduleParams.getTotalCumulativeInterest(),
                         !loanScheduleModelPeriod.isRecalculatedInterestComponent(), scheduleParams.isFirstPeriod(), mc);
+                Money taxesForInstallment = Money.zero(currency, mc);
                 Money penaltyChargesForInstallment = cumulativePenaltyChargesDueWithin(loanScheduleModelPeriod.periodFromDate(),
                         loanScheduleModelPeriod.periodDueDate(), nonCompoundingCharges, currency, principalInterest,
                         scheduleParams.getPrincipalToBeScheduled(), scheduleParams.getTotalCumulativeInterest(),
@@ -460,7 +463,8 @@ public class ProgressiveLoanScheduleGenerator implements LoanScheduleGenerator {
                 scheduleParams.addTotalFeeChargesCharged(feeChargesForInstallment);
                 scheduleParams.addTotalPenaltyChargesCharged(penaltyChargesForInstallment);
                 scheduleParams.addTotalRepaymentExpected(feeChargesForInstallment.plus(penaltyChargesForInstallment));
-                loanScheduleModelPeriod.addLoanCharges(feeChargesForInstallment.getAmount(), penaltyChargesForInstallment.getAmount());
+                loanScheduleModelPeriod.addLoanCharges(feeChargesForInstallment.getAmount(), taxesForInstallment.getAmount(),
+                        penaltyChargesForInstallment.getAmount());
             }
         }
     }

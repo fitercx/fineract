@@ -1077,9 +1077,8 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
                 this.taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
                         this.charge.getTaxGroup().getTaxGroupMappings());
-                final BigDecimal installmentFeeAmount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate,
+                this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate,
                         this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale());
-                this.amount = this.taxAmount.add(installmentFeeAmount);
             } else {
                 this.taxAmount = TaxUtils
                         .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())
