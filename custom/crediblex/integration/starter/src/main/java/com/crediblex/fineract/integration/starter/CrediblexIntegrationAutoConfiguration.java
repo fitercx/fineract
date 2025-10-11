@@ -26,7 +26,10 @@ import org.springframework.context.annotation.ComponentScans;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @AutoConfiguration
-@ComponentScans({ @ComponentScan({ "com.crediblex.fineract.integration.odoo" }) })
+@ComponentScans({ 
+    @ComponentScan({ "com.crediblex.fineract.integration.odoo" }),
+    @ComponentScan({ "com.crediblex.fineract.accounting.journalentry" })
+})
 @EnableJpaRepositories(basePackages = "com.crediblex.fineract.integration.odoo.domain")
 @EntityScan(basePackages = "com.crediblex.fineract.integration.odoo.domain")
 public class CrediblexIntegrationAutoConfiguration {}

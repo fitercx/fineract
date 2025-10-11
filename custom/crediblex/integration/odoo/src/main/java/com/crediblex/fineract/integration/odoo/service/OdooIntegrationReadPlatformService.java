@@ -65,7 +65,7 @@ public interface OdooIntegrationReadPlatformService {
      *            GL account code
      * @return Journal ID or null if not found
      */
-    Integer getJournalIdForGlCode(String glCode);
+    Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit);
 
     /**
      * Clear account mapping cache

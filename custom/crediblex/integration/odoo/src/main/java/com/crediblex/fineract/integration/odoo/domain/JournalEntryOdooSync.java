@@ -44,6 +44,9 @@ public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
     @Column(name = "loan_id")
     private Long loanId;
 
+    @Column(name = "business_event_type", length = 50)
+    private String businessEventType;
+
     @Column(name = "is_posted_to_odoo", nullable = false)
     private Boolean isPostedToOdoo = false;
 
@@ -76,6 +79,13 @@ public class JournalEntryOdooSync extends AbstractPersistableCustom<Long> {
     public JournalEntryOdooSync(JournalEntry journalEntry, Long loanId) {
         this.journalEntry = journalEntry;
         this.loanId = loanId;
+        this.isPostedToOdoo = false;
+    }
+
+    public JournalEntryOdooSync(JournalEntry journalEntry, Long loanId, String businessEventType) {
+        this.journalEntry = journalEntry;
+        this.loanId = loanId;
+        this.businessEventType = businessEventType;
         this.isPostedToOdoo = false;
     }
 

@@ -63,6 +63,15 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // BNK5 journal for specific GL codes
         mapping.put("BNK5", Set.of("100031", "300004", "200065", "200040"));
 
+        // BNK1 (Spend Money from bank) journal for specific GL codes
+        mapping.put("BNK1", Set.of("200040", "100003"));
+
+        // BNK7 (Cash margin) journal for specific GL codes
+        mapping.put("BNK7", Set.of("100006", "23101001"));
+
+        // BNK8 (Repayments) journal for specific GL codes
+        // mapping.put("BNK8", Set.of("100031", "100034", "100001"));
+
         // Add more journal mappings as needed
         // mapping.put("MISC", Set.of("400001", "400002", "400003"));
         // mapping.put("CASH", Set.of("100001", "100002"));
@@ -144,34 +153,48 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     }
 
     /**
-     * Get journal ID based on GL account code
+     * Get journal ID based on GL account code, business event type and debit flag
      */
-    public Integer getJournalIdForGlCode(String glCode) {
+    public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit) {
         if (glCode == null) {
             log.warn("GL code is null, no journal available");
             return null;
         }
 
-        // Find which journal this GL code belongs to
-        String journalCode = findJournalCodeForGlCode(glCode);
+        // Find which journal this GL code belongs to based on business event type and debit flag
+        String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit);
         if (journalCode != null) {
-            log.debug("GL code {} mapped to journal {}", glCode, journalCode);
+            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit, journalCode);
             return getJournalIdByCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {}, skipping journal entry", glCode);
+            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry", glCode, businessEventType, isDebit);
             return null;
         }
     }
 
     /**
-     * Find journal code for a given GL code
+     * Find journal code for a given GL code, business event type and debit flag
      */
-    private String findJournalCodeForGlCode(String glCode) {
-        for (Map.Entry<String, Set<String>> entry : journalGlCodeMapping.entrySet()) {
-            if (entry.getValue().contains(glCode)) {
-                return entry.getKey();
-            }
+    private String findJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+        if (glCode == null) {
+            return null;
         }
+
+        // BNK5 journal for DISBURSEMENT business events with specific GL codes
+        if ("DISBURSEMENT".equals(businessEventType) && 
+            Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
+            return "BNK5";
+        }
+
+        // For GL code 200040, only map to BNK1 if it's a debit transaction
+            if ("200040".equals(glCode) && isDebit) {
+                return "BNK1";
+            }
+            // For GL code 100003, map regardless of debit/credit
+            if ("100003".equals(glCode)) {
+                return "BNK1";
+            }
+
         return null; // No mapping found
     }
 

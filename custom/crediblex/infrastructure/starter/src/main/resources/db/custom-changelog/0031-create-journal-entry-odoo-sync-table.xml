@@ -36,6 +36,7 @@
                 <constraints nullable="false" unique="true"/>
             </column>
             <column name="loan_id" type="bigint"/>
+            <column name="business_event_type" type="varchar(50)"/>
             <column name="is_posted_to_odoo" type="boolean" defaultValueBoolean="false">
                 <constraints nullable="false"/>
             </column>
@@ -109,5 +110,28 @@
                                  referencedTableName="m_loan"
                                  referencedColumnNames="id"
                                  onDelete="CASCADE"/>
+    </changeSet>
+    <changeSet author="crediblex" id="48">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <not>
+                <columnExists tableName="journal_entry_odoo_sync" columnName="business_event_type"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="journal_entry_odoo_sync">
+            <column name="business_event_type" type="varchar(50)"/>
+        </addColumn>
+    </changeSet>
+    <changeSet author="crediblex" id="49">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="journal_entry_odoo_sync"/>
+            <columnExists tableName="journal_entry_odoo_sync" columnName="business_event_type"/>
+            <not>
+                <indexExists tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_business_event_type"/>
+            </not>
+        </preConditions>
+        <createIndex tableName="journal_entry_odoo_sync" indexName="idx_journal_entry_odoo_sync_business_event_type">
+            <column name="business_event_type"/>
+        </createIndex>
     </changeSet>
 </databaseChangeLog>
