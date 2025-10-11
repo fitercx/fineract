@@ -1,9 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.loanschedule.service;
 
-import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
-import com.crediblex.fineract.portfolio.loc.data.LocProductType;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
 import com.google.gson.JsonElement;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
@@ -39,9 +35,6 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
-    private FromJsonHelper fromApiJsonHelper;
-    private LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
-
     public CustomLoanScheduleAssembler(FromJsonHelper fromApiJsonHelper, LoanProductRepository loanProductRepository,
             ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository, LoanChargeAssembler loanChargeAssembler,
             LoanScheduleGeneratorFactory loanScheduleFactory, AprCalculator aprCalculator, CalendarRepository calendarRepository,
@@ -53,15 +46,13 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanDisbursementDetailsAssembler loanDisbursementDetailsAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDisbursementService loanDisbursementService, LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
-            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil, LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
+            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil) {
         super(fromApiJsonHelper, loanProductRepository, applicationCurrencyRepository, loanChargeAssembler, loanScheduleFactory,
                 aprCalculator, calendarRepository, holidayRepository, configurationDomainService, clientRepository, groupRepository,
                 workingDaysRepository, floatingRatesReadPlatformService, variableLoanScheduleFromApiJsonValidator,
                 calendarInstanceRepository, loanUtilService, loanDisbursementDetailsAssembler, loanRepositoryWrapper,
                 defaultLoanLifecycleStateMachine, loanAccrualsProcessingService, loanDisbursementService, loanChargeService,
                 loanScheduleService, relatedDetailUpdateUtil);
-        this.fromApiJsonHelper = fromApiJsonHelper;
-        this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
     }
 
     @Override
@@ -70,22 +61,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
         if (loanProduct.isLocEnabled() && element.getAsJsonObject().has("lineOfCreditId")) {
 
-            Long lineOfCreditId = this.fromApiJsonHelper.extractLongNamed(LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID, element);
-            LineOfCredit lineOfCredit = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId);
-
-            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
-
-                terms.setInvoiceAmount(
-                        this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT, element));
-                terms.setDisapprovedAmount(this.fromApiJsonHelper
-                        .extractBigDecimalWithLocaleNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, element));
-                terms.setAdvancePercentage(this.fromApiJsonHelper
-                        .extractBigDecimalWithLocaleNamed(LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, element));
-                terms.setApprovedReceivableAmount(this.fromApiJsonHelper
-                        .extractBigDecimalWithLocaleNamed(LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT, element));
-                terms.setAmountAfterAdvance(this.fromApiJsonHelper
-                        .extractBigDecimalWithLocaleNamed(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, element));
-            }
+            terms.setIsLineOfCredit(true);
+            terms.setIsReceivableLineOfCredit(true);
 
         }
 

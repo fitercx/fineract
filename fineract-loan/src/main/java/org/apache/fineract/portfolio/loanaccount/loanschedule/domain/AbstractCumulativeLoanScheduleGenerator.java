@@ -323,6 +323,18 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(principalInterestForThisPeriod.interestPaymentDueToGrace());
             currentPeriodParams.setPrincipalForThisPeriod(principalInterestForThisPeriod.principal());
 
+            if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
+                Money adjustedPrincipal = scheduleParams.getOutstandingBalance()
+                        .minus(principalInterestForThisPeriod.interestPaymentDueToGrace().add(principalInterestForThisPeriod.interest()));
+
+                if (adjustedPrincipal.isLessThanZero()) {
+                    adjustedPrincipal = Money.zero(adjustedPrincipal.getCurrency());
+                }
+
+                scheduleParams.setOutstandingBalance(adjustedPrincipal);
+
+            }
+
             // applies early payments on principal portion
             updatePrincipalPortionBasedOnPreviousEarlyPayments(currency, scheduleParams, currentPeriodParams);
 
@@ -436,7 +448,11 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
     }
 
-    private void updateCompoundingDetails(final Collection<LoanScheduleModelPeriod> periods, final LoanScheduleParams params,
+    /**
+     * Protected visibility is required to allow subclasses to override or invoke this method when customizing loan
+     * schedule generation.
+     */
+    protected void updateCompoundingDetails(final Collection<LoanScheduleModelPeriod> periods, final LoanScheduleParams params,
             final LoanApplicationTerms loanApplicationTerms) {
         final Map<LocalDate, Map<LocalDate, Money>> compoundingDetails = params.getCompoundingDateVariations();
         if (compoundingDetails.isEmpty()) {
@@ -463,7 +479,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
     }
 
-    private void applyChargesForCurrentPeriod(final Set<LoanCharge> loanCharges, final MonetaryCurrency currency,
+    protected void applyChargesForCurrentPeriod(final Set<LoanCharge> loanCharges, final MonetaryCurrency currency,
             LoanScheduleParams scheduleParams, LocalDate scheduledDueDate, ScheduleCurrentPeriodParams currentPeriodParams,
             final MathContext mc) {
         PrincipalInterest principalInterest = new PrincipalInterest(currentPeriodParams.getPrincipalForThisPeriod(),
@@ -478,7 +494,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
     }
 
-    private void updatePeriodsWithCharges(final MonetaryCurrency currency, LoanScheduleParams scheduleParams,
+    protected void updatePeriodsWithCharges(final MonetaryCurrency currency, LoanScheduleParams scheduleParams,
             final Collection<LoanScheduleModelPeriod> periods, final Set<LoanCharge> nonCompoundingCharges, final MathContext mc) {
         for (LoanScheduleModelPeriod loanScheduleModelPeriod : periods) {
             if (loanScheduleModelPeriod.isRepaymentPeriod()) {
@@ -500,7 +516,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
     }
 
-    private void updateAmountsWithEffectiveDate(final LoanApplicationTerms loanApplicationTerms, final HolidayDetailDTO holidayDetailDTO,
+    protected void updateAmountsWithEffectiveDate(final LoanApplicationTerms loanApplicationTerms, final HolidayDetailDTO holidayDetailDTO,
             LoanScheduleParams scheduleParams, LocalDate scheduledDueDate, ScheduleCurrentPeriodParams currentPeriodParams,
             LoanScheduleModelPeriod installment, LocalDate lastRestDate) {
         LocalDate amountApplicableDate = installment.periodDueDate();
@@ -516,7 +532,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         updateOutstandingBalanceAsPerRest(loanApplicationTerms, scheduleParams, scheduledDueDate);
     }
 
-    private LoanScheduleModelPeriod handleRecalculationForTransactions(final MathContext mc,
+    protected LoanScheduleModelPeriod handleRecalculationForTransactions(final MathContext mc,
             final LoanApplicationTerms loanApplicationTerms, final HolidayDetailDTO holidayDetailDTO, final MonetaryCurrency currency,
             final LoanScheduleParams scheduleParams,
             final LoanRepaymentScheduleTransactionProcessor loanRepaymentScheduleTransactionProcessor,
@@ -670,7 +686,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return modifiedInstallment;
     }
 
-    private void updateAmountsBasedOnCurrentEarlyPayments(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+    protected void updateAmountsBasedOnCurrentEarlyPayments(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             LoanScheduleParams scheduleParams, ScheduleCurrentPeriodParams currentPeriodParams) {
         currentPeriodParams.setReducedBalance(currentPeriodParams.getEarlyPaidAmount());
         currentPeriodParams.minusEarlyPaidAmount(currentPeriodParams.getPrincipalForThisPeriod());
@@ -694,7 +710,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 .reduceOutstandingBalance(currentPeriodParams.getPrincipalForThisPeriod().minus(currentPeriodParams.getReducedBalance()));
     }
 
-    private void updatePrincipalPortionBasedOnPreviousEarlyPayments(final CurrencyData currency, final LoanScheduleParams scheduleParams,
+    protected void updatePrincipalPortionBasedOnPreviousEarlyPayments(final CurrencyData currency, final LoanScheduleParams scheduleParams,
             final ScheduleCurrentPeriodParams currentPeriodParams) {
         if (currentPeriodParams.getPrincipalForThisPeriod().isGreaterThan(scheduleParams.getReducePrincipal())) {
             currentPeriodParams.minusPrincipalForThisPeriod(scheduleParams.getReducePrincipal());
@@ -705,7 +721,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
     }
 
-    private void updateCompoundingDetails(LoanScheduleParams scheduleParams, LocalDate periodStartDateApplicableForInterest) {
+    protected void updateCompoundingDetails(LoanScheduleParams scheduleParams, LocalDate periodStartDateApplicableForInterest) {
         if (scheduleParams.getCompoundingDateVariations().containsKey(periodStartDateApplicableForInterest)) {
             scheduleParams.getCompoundingMap().clear();
             scheduleParams.getCompoundingMap()
@@ -714,7 +730,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
     }
 
-    private void handleRecalculationForNonDueDateTransactions(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+    protected void handleRecalculationForNonDueDateTransactions(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO, LoanScheduleParams scheduleParams,
             final Collection<LoanScheduleModelPeriod> periods, final Money totalInterestChargedForFullLoanTerm,
             final LocalDate idealDisbursementDate, LocalDate firstRepaymentDate, final LocalDate lastRestDate,
@@ -1011,7 +1027,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * Method add extra disbursement periods (if applicable) and update the schedule params
      *
      */
-    private void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
+    protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
             LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate) {
         for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
             if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
@@ -1065,7 +1081,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * @param mc
      * @return
      */
-    private LoanTermVariationParams applyLoanTermVariations(final LoanApplicationTerms loanApplicationTerms,
+    protected LoanTermVariationParams applyLoanTermVariations(final LoanApplicationTerms loanApplicationTerms,
             final LoanScheduleParams scheduleParams, final LocalDate previousRepaymentDate, final LocalDate scheduledDueDate,
             Collection<LoanTermVariationsData> interestRatesForInstallments, PaymentPeriodsInOneYearCalculator calculator, MathContext mc) {
         boolean skipPeriod = false;
@@ -1280,7 +1296,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * @param interestRates
      * @param interestRatesForInstallments
      */
-    private void applyLoanVariationsForPartialScheduleGenerate(final LoanApplicationTerms loanApplicationTerms,
+    protected void applyLoanVariationsForPartialScheduleGenerate(final LoanApplicationTerms loanApplicationTerms,
             LoanScheduleParams scheduleParams, final Collection<LoanTermVariationsData> interestRates,
             final Collection<LoanTermVariationsData> interestRatesForInstallments) {
         // Applies loan variations
@@ -1323,7 +1339,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
     /**
      * this method calculates the principal amount for generating the repayment schedule.
      */
-    private Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
+    protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
         Money principalToBeScheduled;
         if (loanApplicationTerms.isMultiDisburseLoan()) {
             if (loanApplicationTerms.getTotalDisbursedAmount().isGreaterThanZero()) {
@@ -1380,7 +1396,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * current date and adds new repayment schedule detail
      *
      */
-    private Money addInterestOnlyRepaymentScheduleForCurrentDate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+    protected Money addInterestOnlyRepaymentScheduleForCurrentDate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final HolidayDetailDTO holidayDetailDTO, final MonetaryCurrency currency, final Collection<LoanScheduleModelPeriod> periods,
             final LocalDate currentDate, LoanRepaymentScheduleTransactionProcessor loanRepaymentScheduleTransactionProcessor,
             final Collection<RecalculationDetail> transactions, final Set<LoanCharge> loanCharges, final LoanScheduleParams params) {
@@ -1521,7 +1537,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return isCompleted;
     }
 
-    private Collection<RecalculationDetail> getApplicableTransactionsForPeriod(final boolean applyInterestRecalculation,
+    protected Collection<RecalculationDetail> getApplicableTransactionsForPeriod(final boolean applyInterestRecalculation,
             LocalDate repaymentDate, final Collection<RecalculationDetail> transactions) {
         Collection<RecalculationDetail> applicableTransactions = new ArrayList<>();
         if (applyInterestRecalculation && !Objects.isNull(transactions)) {
@@ -1572,7 +1588,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return reducePrincipal;
     }
 
-    private void adjustInstallmentOrPrincipalAmount(final LoanApplicationTerms loanApplicationTerms, final Money totalCumulativePrincipal,
+    protected void adjustInstallmentOrPrincipalAmount(final LoanApplicationTerms loanApplicationTerms, final Money totalCumulativePrincipal,
             int periodNumber, final MathContext mc) {
         // in this case emi amount will be reduced but number of
         // installments won't change
@@ -1825,7 +1841,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
     }
 
-    private void populateCompoundingDatesInPeriod(final LocalDate startDate, final LocalDate endDate,
+    protected void populateCompoundingDatesInPeriod(final LocalDate startDate, final LocalDate endDate,
             final LoanApplicationTerms loanApplicationTerms, final HolidayDetailDTO holidayDetailDTO,
             final LoanScheduleParams scheduleParams, final Set<LoanCharge> charges, MonetaryCurrency currency, final MathContext mc) {
         if (loanApplicationTerms.getInterestRecalculationCompoundingMethod().isCompoundingEnabled()) {
@@ -1880,7 +1896,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * as per rest) changes to single map for interest calculation
      *
      */
-    private TreeMap<LocalDate, Money> mergeVariationsToMap(LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams params) {
+    protected TreeMap<LocalDate, Money> mergeVariationsToMap(LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams params) {
         TreeMap<LocalDate, Money> map = new TreeMap<>(params.getLatePaymentMap());
         for (Map.Entry<LocalDate, Money> mapEntry : params.getDisburseDetailMap().entrySet()) {
             Money value = mapEntry.getValue();
@@ -1923,7 +1939,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      * @param firstRepaymentDate
      *            TODO
      */
-    private LocalDate calculateInterestStartDateForPeriod(final LoanApplicationTerms loanApplicationTerms, LocalDate periodStartDate,
+    protected LocalDate calculateInterestStartDateForPeriod(final LoanApplicationTerms loanApplicationTerms, LocalDate periodStartDate,
             final LocalDate idealDisbursementDate, final LocalDate firstRepaymentDate,
             final Boolean isInterestChargedFromDateSameAsDisbursalDateEnabled, final LocalDate expectedDisbursementDate) {
         LocalDate periodStartDateApplicableForInterest = periodStartDate;
@@ -1963,7 +1979,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             Map<LocalDate, Money> compoundingMap, LocalDate periodStartDate, LocalDate periodEndDate,
             Collection<LoanTermVariationsData> termVariations);
 
-    private BigDecimal deriveTotalChargesDueAtTimeOfDisbursement(final Set<LoanCharge> loanCharges) {
+    protected BigDecimal deriveTotalChargesDueAtTimeOfDisbursement(final Set<LoanCharge> loanCharges) {
         BigDecimal chargesDueAtTimeOfDisbursement = BigDecimal.ZERO;
         for (final LoanCharge loanCharge : loanCharges) {
             if (loanCharge.isDueAtDisbursement()) {
@@ -1977,7 +1993,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return chargesDueAtTimeOfDisbursement;
     }
 
-    private BigDecimal getDisbursementAmount(final LoanApplicationTerms loanApplicationTerms, LocalDate disbursementDate,
+    protected BigDecimal getDisbursementAmount(final LoanApplicationTerms loanApplicationTerms, LocalDate disbursementDate,
             final Map<LocalDate, Money> disburseDetails, final boolean excludePastUnDisbursed) {
 
         // this method relates to multi-disbursement loans
@@ -2014,8 +2030,9 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return principal;
     }
 
-    private List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(final LoanApplicationTerms loanApplicationTerms,
-            final LoanScheduleParams loanScheduleParams, final BigDecimal chargesDueAtTimeOfDisbursement) {
+    protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
+            final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
+            final BigDecimal chargesDueAtTimeOfDisbursement) {
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!loanApplicationTerms.isMultiDisburseLoan()) {
             final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
@@ -2071,7 +2088,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return installment;
     }
 
-    private Set<LoanCharge> separateTotalCompoundingPercentageCharges(final Set<LoanCharge> loanCharges) {
+    protected Set<LoanCharge> separateTotalCompoundingPercentageCharges(final Set<LoanCharge> loanCharges) {
         Set<LoanCharge> interestCharges = new HashSet<>();
         for (final LoanCharge loanCharge : loanCharges) {
             if (loanCharge.isSpecifiedDueDate() && (loanCharge.getChargeCalculation().isPercentageOfInterest()
@@ -2148,7 +2165,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return cumulative;
     }
 
-    private Money cumulativePenaltyChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd,
+    protected Money cumulativePenaltyChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd,
             final Set<LoanCharge> loanCharges, final MonetaryCurrency monetaryCurrency,
             final PrincipalInterest principalInterestForThisPeriod, final Money principalDisbursed,
             final Money totalInterestChargedForFullLoanTerm, boolean isInstallmentChargeApplicable, final boolean isFirstPeriod,
@@ -2676,7 +2693,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return uncompounded;
     }
 
-    private void updateAmortization(final MathContext mc, final LoanApplicationTerms loanApplicationTerms, int periodNumber,
+    protected void updateAmortization(final MathContext mc, final LoanApplicationTerms loanApplicationTerms, int periodNumber,
             Money outstandingBalance) {
         if (loanApplicationTerms.getAmortizationMethod().isEqualInstallment()) {
             updateFixedInstallmentAmount(mc, loanApplicationTerms, periodNumber, outstandingBalance);
@@ -2736,8 +2753,8 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return principalPortionCalculated;
     }
 
-    private LoanRepaymentScheduleInstallment addLoanRepaymentScheduleInstallment(final List<LoanRepaymentScheduleInstallment> installments,
-            final LoanScheduleModelPeriod scheduledLoanInstallment) {
+    protected LoanRepaymentScheduleInstallment addLoanRepaymentScheduleInstallment(
+            final List<LoanRepaymentScheduleInstallment> installments, final LoanScheduleModelPeriod scheduledLoanInstallment) {
         LoanRepaymentScheduleInstallment installment = null;
         if (scheduledLoanInstallment.isRepaymentPeriod() || scheduledLoanInstallment.isDownPaymentPeriod()) {
             installment = new LoanRepaymentScheduleInstallment(null, scheduledLoanInstallment.periodNumber(),
@@ -2768,7 +2785,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 mc);
     }
 
-    private LocalDate getNextRestScheduleDate(LocalDate startDate, LoanApplicationTerms loanApplicationTerms,
+    protected LocalDate getNextRestScheduleDate(LocalDate startDate, LoanApplicationTerms loanApplicationTerms,
             final HolidayDetailDTO holidayDetailDTO) {
         LocalDate nextScheduleDate;
         if (loanApplicationTerms.getRecalculationFrequencyType().isSameAsRepayment()) {

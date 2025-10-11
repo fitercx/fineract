@@ -2,7 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.serialization;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanRepositoryWrapper;
-import com.crediblex.fineract.portfolio.loc.api.LocApiConstants;
+import com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -671,12 +671,12 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
 
         validateOrThrow("lineOfCredit", baseDataValidator -> {
             // Check if lineOfCreditId parameter is provided
-            if (this.fromApiJsonHelper.parameterExists(LocApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME, element)) {
-                final Long lineOfCreditId = this.fromApiJsonHelper.extractLongNamed(LocApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME,
-                        element);
+            if (this.fromApiJsonHelper.parameterExists(LineOfCreditApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME, element)) {
+                final Long lineOfCreditId = this.fromApiJsonHelper
+                        .extractLongNamed(LineOfCreditApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME, element);
 
-                baseDataValidator.reset().parameter(LocApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME).value(lineOfCreditId).notNull()
-                        .longGreaterThanZero();
+                baseDataValidator.reset().parameter(LineOfCreditApiConstants.LINE_OF_CREDIT_ID_PARAMETER_NAME).value(lineOfCreditId)
+                        .notNull().longGreaterThanZero();
 
                 // No need to validate balance here, validate at point of disbursal
             }

@@ -45,6 +45,7 @@ subprojects {
         implementation(project(':fineract-rates'))
         implementation(project(':fineract-progressive-loan'))
         implementation("org.springframework.boot:spring-boot-starter:${springBootVersion}")
+        implementation("org.springframework.boot:spring-boot-starter-batch:${springBootVersion}")
         compileOnly("org.springframework.boot:spring-boot-autoconfigure:${springBootVersion}")
 
         // Add Spring Data JPA to all modules that need it

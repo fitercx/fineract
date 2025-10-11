@@ -136,7 +136,7 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
         Loan loan = mock(Loan.class);
         when(loan.isInterestBearing()).thenReturn(false);
         return new LoanCharge(loan, charge, new BigDecimal(1000), new BigDecimal(10), ChargeTimeType.SPECIFIED_DUE_DATE,
-                ChargeCalculationType.FLAT, LocalDate.of(2023, 1, 15), ChargePaymentMode.REGULAR, 1, null, null);
+                ChargeCalculationType.FLAT, LocalDate.of(2023, 1, 15), ChargePaymentMode.REGULAR, 1, null, null, false, BigDecimal.ZERO);
     }
 
     @NotNull

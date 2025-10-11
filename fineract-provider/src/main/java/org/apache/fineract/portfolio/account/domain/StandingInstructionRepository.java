@@ -47,4 +47,6 @@ public interface StandingInstructionRepository
     @Query(FIND_BY_SAVINGS_AND_STATUS_QUERY)
     Collection<AccountTransferStandingInstruction> findBySavingsAccountAndStatus(@Param("savingsAccount") SavingsAccount savingsAccount,
             @Param("status") Integer status);
+
+    boolean existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(Long loanId, Integer status);
 }

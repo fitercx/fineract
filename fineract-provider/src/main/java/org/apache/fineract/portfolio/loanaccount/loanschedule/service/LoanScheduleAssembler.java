@@ -157,14 +157,14 @@ public class LoanScheduleAssembler {
     private final FloatingRatesReadPlatformService floatingRatesReadPlatformService;
     private final VariableLoanScheduleFromApiJsonValidator variableLoanScheduleFromApiJsonValidator;
     private final CalendarInstanceRepository calendarInstanceRepository;
-    private final LoanUtilService loanUtilService;
+    protected final LoanUtilService loanUtilService;
     private final LoanDisbursementDetailsAssembler loanDisbursementDetailsAssembler;
-    private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
-    private final LoanAccrualsProcessingService loanAccrualsProcessingService;
-    private final LoanDisbursementService loanDisbursementService;
-    private final LoanChargeService loanChargeService;
-    private final LoanScheduleService loanScheduleService;
+    protected final LoanRepositoryWrapper loanRepositoryWrapper;
+    protected final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
+    protected final LoanAccrualsProcessingService loanAccrualsProcessingService;
+    protected final LoanDisbursementService loanDisbursementService;
+    protected final LoanChargeService loanChargeService;
+    protected final LoanScheduleService loanScheduleService;
     private final LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil;
 
     public LoanApplicationTerms assembleLoanTerms(final JsonElement element) {
@@ -248,7 +248,7 @@ public class LoanScheduleAssembler {
 
         // disbursement details
         final BigDecimal principal = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("principal", element);
-        final Money principalMoney = Money.of(currency, principal);
+        Money principalMoney = Money.of(currency, principal);
 
         final LocalDate expectedDisbursementDate = this.fromApiJsonHelper.extractLocalDateNamed("expectedDisbursementDate", element);
         LocalDate repaymentsStartingFromDate = this.fromApiJsonHelper.extractLocalDateNamed("repaymentsStartingFromDate", element);
@@ -525,6 +525,14 @@ public class LoanScheduleAssembler {
             interestRecognitionOnDisbursementDate = this.fromApiJsonHelper
                     .extractBooleanNamed(LoanApiConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE, element);
         }
+        final boolean factorRateEnabled = loanProduct.isFactorRateProductEnabled();
+        final BigDecimal factorRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME,
+                element);
+        if (factorRateEnabled) {
+            final Money totalFactorRateFee = principalMoney.multipliedBy(factorRate).minus(principalMoney);
+            principalMoney = principalMoney.minus(totalFactorRateFee);
+            loanScheduleType = LoanScheduleType.FACTOR_RATE;
+        }
 
         return LoanApplicationTerms.assembleFrom(applicationCurrency.toData(), loanTermFrequency, loanTermPeriodFrequencyType,
                 numberOfRepayments, repaymentEvery, repaymentPeriodFrequencyType, nthDay, weekDayType, amortizationMethod, interestMethod,
@@ -547,7 +555,7 @@ public class LoanScheduleAssembler {
                 loanProduct.getLoanProductRelatedDetail().getDaysInYearCustomStrategy(),
                 loanProduct.getLoanProductRelatedDetail().isEnableIncomeCapitalization(),
                 loanProduct.getLoanProductRelatedDetail().getCapitalizedIncomeCalculationType(),
-                loanProduct.getLoanProductRelatedDetail().getCapitalizedIncomeStrategy());
+                loanProduct.getLoanProductRelatedDetail().getCapitalizedIncomeStrategy(), factorRateEnabled, factorRate);
     }
 
     private CalendarInstance createCalendarForSameAsRepayment(final Integer repaymentEvery,

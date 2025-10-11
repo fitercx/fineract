@@ -21,28 +21,26 @@ package com.crediblex.fineract.portfolio.loc.service;
 
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
-import org.springframework.transaction.annotation.Transactional;
 
 public interface LineOfCreditWritePlatformService {
 
-    @Transactional
     CommandProcessingResult createLineOfCredit(JsonCommand command, Long clientId);
 
-    @Transactional
     CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
-    @Transactional
     CommandProcessingResult activateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
-    @Transactional
     CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
-    @Transactional
     CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId);
 
-    @Transactional
     CommandProcessingResult approveLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
-    @Transactional
     CommandProcessingResult closeLineOfCredit(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult increaseCreditLimit(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult reduceCreditLimit(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult undoCloseLineOfCredit(Long lineOfCreditId, JsonCommand command);
 }

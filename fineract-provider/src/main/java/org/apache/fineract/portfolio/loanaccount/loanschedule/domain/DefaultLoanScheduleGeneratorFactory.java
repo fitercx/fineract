@@ -33,9 +33,8 @@ public class DefaultLoanScheduleGeneratorFactory implements LoanScheduleGenerato
     @Override
     public LoanScheduleGenerator create(final LoanScheduleType loanScheduleType, final InterestMethod interestMethod) {
         return switch (loanScheduleType) {
-            case CUMULATIVE -> cumulativeLoanScheduleGenerator(interestMethod);
+            case CUMULATIVE, FACTOR_RATE -> cumulativeLoanScheduleGenerator(interestMethod);
             case PROGRESSIVE -> progressiveLoanScheduleGenerator(interestMethod);
-            case LINE_OF_CREDIT -> null;
         };
     }
 
