@@ -49,7 +49,7 @@ public class OdooJournalEntryService {
     private final JdbcTemplate jdbcTemplate;
 
     /**
-     * Post a Fineract journal entry to Odoo
+     * Post a Fineract journal entry to Odoo which are not tied to a loan i.e. cash margin journal entries
      */
     public Long postJournalEntryToOdoo(JournalEntry fineractEntry) {
         try {
@@ -62,20 +62,12 @@ public class OdooJournalEntryService {
             // Get journal ID based on GL account code, transaction type and debit flag
             String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
             
-            // Determine transaction type based on transaction IDs
-            String transactionType = null;
-            if (fineractEntry.getLoanTransactionId() != null) {
-                transactionType = "loan_transaction";
-            } else if (fineractEntry.getSavingsTransactionId() != null) {
-                transactionType = "savings_transaction";
-            }
-            
             boolean isDebit = fineractEntry.isDebitEntry();
             
-            Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode, transactionType, isDebit);
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode, null, isDebit);
             if (journalId == null) {
-                log.info("Skipping journal entry {} with GL code {}, transaction type {} and isDebit {} - no journal mapping found", 
-                        fineractEntry.getId(), fineractAccountCode, transactionType, isDebit);
+                log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
+                        fineractEntry.getId(), fineractAccountCode, null, isDebit);
                 return null; // Skip instead of throwing error
             }
 
@@ -119,35 +111,79 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Build the account move values for Odoo
+     * Build the account move values for Odoo - unified method for single and multiple journal entries
      */
-    private Map<String, Object> buildAccountMoveValues(JournalEntry fineractEntry, Integer journalId, Integer accountId) {
+    private Map<String, Object> buildAccountMoveValues(List<JournalEntry> journalEntries, Integer journalId, Long loanId, boolean consolidateLines) {
         Map<String, Object> moveValues = new HashMap<>();
+        
+        if (journalEntries.isEmpty()) {
+            throw new IllegalArgumentException("Journal entries list cannot be empty");
+        }
 
-        // Basic move information
+        // Use the first entry's date as move date
+        JournalEntry firstEntry = journalEntries.get(0);
         moveValues.put("journal_id", journalId);
-        moveValues.put("date", fineractEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
-        moveValues.put("ref", "Haider JE " + fineractEntry.getId());
-        moveValues.put("narration", buildNarration(fineractEntry));
+        moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
+        
+        // Build reference based on whether it's a single entry or multiple entries
+        if (journalEntries.size() == 1) {
+            moveValues.put("ref", "Haider JE " + firstEntry.getId());
+            moveValues.put("narration", buildNarration(firstEntry));
+        } else {
+            moveValues.put("ref", "Haider Loan " + loanId + " - JEs: "
+                    + journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
+            moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
+        }
 
-        // Add loan_id and company name if available
-        if (fineractEntry.getLoanTransactionId() != null) {
-            Long loanId = getLoanIdFromTransactionId(fineractEntry.getLoanTransactionId());
-            if (loanId != null) {
-                moveValues.put("x_studio_loan_id_new", loanId);
-
-                // String clientName = getClientNameFromLoanId(loanId);
-                // if (clientName != null) {
-                //     moveValues.put("x_sme_id", clientName);
-                // }
+        // Add loan_id if available
+        if (loanId != null) {
+            moveValues.put("x_studio_loan_id_new", loanId);
+            // String clientName = getClientNameFromLoanId(loanId);
+            // if (clientName != null) {
+            //     moveValues.put("x_sme_id", clientName);
+            // }
+        } else if (firstEntry.getLoanTransactionId() != null) {
+            // Extract loan ID from the journal entry if not provided
+            Long extractedLoanId = getLoanIdFromTransactionId(firstEntry.getLoanTransactionId());
+            if (extractedLoanId != null) {
+                moveValues.put("x_studio_loan_id_new", extractedLoanId);
             }
         }
 
-        // Build line items
-        List<Object> lines = buildMoveLines(fineractEntry, accountId);
+        // Build line items based on consolidation preference
+        List<Object> lines;
+        if (consolidateLines && journalEntries.size() > 1) {
+            lines = buildConsolidatedMoveLines(journalEntries);
+        } else if (journalEntries.size() == 1) {
+            // For single entries, we need to get the account ID
+            String accountCode = firstEntry.getGlAccount().getGlCode();
+            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
+            if (accountId == null) {
+                throw new RuntimeException(String.format(
+                        "Could not map Fineract GL account '%s' to Odoo account", accountCode));
+            }
+            lines = buildMoveLines(firstEntry, accountId);
+        } else {
+            // Multiple entries but no consolidation - treat each separately
+            lines = buildConsolidatedMoveLines(journalEntries);
+        }
+        
         moveValues.put("line_ids", lines);
-
         return moveValues;
+    }
+    
+    /**
+     * Build account move values for a single journal entry
+     */
+    private Map<String, Object> buildAccountMoveValues(JournalEntry fineractEntry, Integer journalId, Integer accountId) {
+        return buildAccountMoveValues(List.of(fineractEntry), journalId, null, false);
+    }
+
+    /**
+     * Build account move values for multiple journal entries of a loan
+     */
+    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId) {
+        return buildAccountMoveValues(journalEntries, journalId, loanId, true);
     }
 
     /**
@@ -386,34 +422,6 @@ public class OdooJournalEntryService {
         }
 
         return groupedEntries;
-    }
-
-    /**
-     * Build account move values for multiple journal entries of a loan
-     */
-    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId) {
-        Map<String, Object> moveValues = new HashMap<>();
-
-        // Use the first entry's date as move date
-        JournalEntry firstEntry = journalEntries.get(0);
-        moveValues.put("journal_id", journalId);
-        moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
-        moveValues.put("ref", "Haider Loan " + loanId + " - JEs: "
-                + journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
-        moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
-
-        // Add loan_id and company name
-        moveValues.put("x_studio_loan_id_new", loanId);
-        // String clientName = getClientNameFromLoanId(loanId);
-        // if (clientName != null) {
-        //     moveValues.put("x_sme_id", clientName);
-        // }
-
-        // Build consolidated line items
-        List<Object> lines = buildConsolidatedMoveLines(journalEntries);
-        moveValues.put("line_ids", lines);
-
-        return moveValues;
     }
 
     /**

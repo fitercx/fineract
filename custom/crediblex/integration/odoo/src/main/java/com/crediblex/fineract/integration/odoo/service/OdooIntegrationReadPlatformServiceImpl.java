@@ -194,6 +194,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             if ("100003".equals(glCode)) {
                 return "BNK1";
             }
+        // BNK7 (Cash margin) journal for specific GL codes
+        if (Set.of("100006", "23101001").contains(glCode)) {
+            return "BNK7";
+        }
 
         return null; // No mapping found
     }
