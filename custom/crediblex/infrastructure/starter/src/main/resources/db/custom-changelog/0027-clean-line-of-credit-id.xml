@@ -75,5 +75,24 @@
         <dropNotNullConstraint tableName="m_line_of_credit" columnName="end_date" columnDataType="date"/>
     </changeSet>
 
+    <changeSet id="8" author="crediblex" context="postgresql">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="m_line_of_credit"/>
+                <not>
+                    <columnExists tableName="m_line_of_credit" columnName="deativated_on_date"/>
+                </not>
+            </and>
+        </preConditions>
+
+        <addColumn tableName="m_line_of_credit">
+            <column name="deativated_on_date" type="DATE" />
+            <column name="deactivated_by_user_id" type="bigint">
+                <constraints referencedTableName="m_appuser" referencedColumnNames="id" foreignKeyName="fk_loc_deactivated_by_user_id_m_appuser"/>
+            </column>
+        </addColumn>
+
+    </changeSet>
+
 
 </databaseChangeLog>

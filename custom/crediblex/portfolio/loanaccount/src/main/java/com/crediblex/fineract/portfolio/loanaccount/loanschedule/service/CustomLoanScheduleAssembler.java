@@ -60,10 +60,11 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         LoanApplicationTerms terms = super.assembleLoanApplicationTermsFrom(element, loanProduct);
 
         if (loanProduct.isLocEnabled() && element.getAsJsonObject().has("lineOfCreditId")) {
-
             terms.setIsLineOfCredit(true);
-            terms.setIsReceivableLineOfCredit(true);
 
+            if (loanProduct.isEnableLocReceivable()) {
+                terms.setIsReceivableLineOfCredit(true);
+            }
         }
 
         return terms;

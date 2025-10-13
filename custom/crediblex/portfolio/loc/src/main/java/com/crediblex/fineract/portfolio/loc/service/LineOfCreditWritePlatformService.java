@@ -32,6 +32,8 @@ public interface LineOfCreditWritePlatformService {
 
     CommandProcessingResult deactivateLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
+    CommandProcessingResult reactivateLineOfCredit(Long lineOfCreditId, JsonCommand command);
+
     CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId);
 
     CommandProcessingResult approveLineOfCredit(Long lineOfCreditId, JsonCommand command);

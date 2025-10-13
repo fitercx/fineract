@@ -461,8 +461,10 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
         try {
             final String sql = "SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp " + "JOIN m_loan l ON l.id = mlcp.loan_id "
-                    + "WHERE mlcp.line_of_credit_id = ? AND l.loan_status_id IN (300, 600)"; // 300: Active, 600:
-                                                                                             // Overpaid
+                    + "WHERE mlcp.line_of_credit_id = ? AND (l.loan_status_id = 300 or (l.loan_status_id = 600 and l.loan_sub_status_id is null))"; // 300:
+                                                                                                                                                    // Active,
+                                                                                                                                                    // 600:
+            // Overpaid
 
             return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
         } catch (final EmptyResultDataAccessException e) {

@@ -21,6 +21,7 @@ package org.apache.fineract.portfolio.loanaccount.service;
 import static java.lang.Boolean.TRUE;
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
+import com.google.common.base.Strings;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
@@ -1209,14 +1210,16 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
 
         public String schema() {
 
-            return " ls.loan_id as loanId, ls.installment as period, ls.fromdate as fromDate, ls.duedate as dueDate, ls.obligations_met_on_date as obligationsMetOnDate, ls.completed_derived as complete,"
+            return " mlc.product_type as lineOfCreditProductType, ls.loan_id as loanId, ls.installment as period, ls.fromdate as fromDate, ls.duedate as dueDate, ls.obligations_met_on_date as obligationsMetOnDate, ls.completed_derived as complete,"
                     + " ls.principal_amount as principalDue, ls.principal_completed_derived as principalPaid, ls.principal_writtenoff_derived as principalWrittenOff, ls.is_additional as isAdditional, "
                     + " ls.interest_amount as interestDue, ls.interest_completed_derived as interestPaid, ls.interest_waived_derived as interestWaived, ls.interest_writtenoff_derived as interestWrittenOff, "
                     + " ls.fee_charges_amount as feeChargesDue, ls.fee_charges_completed_derived as feeChargesPaid, ls.fee_charges_waived_derived as feeChargesWaived, ls.fee_charges_writtenoff_derived as feeChargesWrittenOff, "
                     + " ls.penalty_charges_amount as penaltyChargesDue, ls.penalty_charges_completed_derived as penaltyChargesPaid, ls.penalty_charges_waived_derived as penaltyChargesWaived, "
                     + " ls.penalty_charges_writtenoff_derived as penaltyChargesWrittenOff, ls.total_paid_in_advance_derived as totalPaidInAdvanceForPeriod, "
                     + " ls.total_paid_late_derived as totalPaidLateForPeriod, ls.credits_amount as principalCredits, ls.credited_fee as feeCredits, ls.credited_penalty as penaltyCredits, ls.is_down_payment isDownPayment, "
-                    + " ls.accrual_interest_derived as accrualInterest " + " from m_loan_repayment_schedule ls ";
+                    + " ls.accrual_interest_derived as accrualInterest " + " from m_loan_repayment_schedule ls "
+                    + " left join m_loan_line_of_credit_params mlocp on mlocp.loan_id = ls.loan_id "
+                    + " left join m_line_of_credit mlc on mlc.id = mlocp.line_of_credit_id ";
         }
 
         @Override
@@ -1335,6 +1338,8 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                         "totalPaidInAdvanceForPeriod");
                 final BigDecimal totalPaidLateForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalPaidLateForPeriod");
 
+                final String lineOfCreditProductType = rs.getString("lineOfCreditProductType");
+
                 final BigDecimal penaltyChargesActualDue = penaltyChargesExpectedDue.subtract(penaltyChargesWaived)
                         .subtract(penaltyChargesWrittenOff);
                 final BigDecimal penaltyChargesOutstanding = penaltyChargesActualDue.subtract(penaltyChargesPaid);
@@ -1365,6 +1370,11 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                 }
 
                 BigDecimal outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+
+                if (!Strings.isNullOrEmpty(lineOfCreditProductType) && lineOfCreditProductType.equalsIgnoreCase("RECEIVABLE")) {
+                    outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(interestExpectedDue)
+                            .subtract(feeChargesExpectedDue).subtract(principalDue);
+                }
 
                 // update based on current period values
                 this.lastDueDate = dueDate;
