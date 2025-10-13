@@ -43,14 +43,11 @@ import java.util.UUID;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.client.models.GetLoansTemplateLineOfCreditOptions;
-import org.apache.fineract.client.models.GetLoansTemplateProductOptions;
 import org.apache.fineract.client.models.GetLoansTemplateResponse;
 import org.apache.fineract.client.models.PostClientsResponse;
-import org.apache.fineract.client.models.PostLoansBuyerDetails;
 import org.apache.fineract.client.models.PostLoansRequest;
 import org.apache.fineract.client.models.PostLoansRequestChargeData;
 import org.apache.fineract.client.models.PostLoansResponse;
-import org.apache.fineract.client.models.PostLoansSupplierDetails;
 import org.apache.fineract.client.models.PostSavingsAccountsResponse;
 import org.apache.fineract.client.models.TableData;
 import org.apache.fineract.client.services.LoansApi;
