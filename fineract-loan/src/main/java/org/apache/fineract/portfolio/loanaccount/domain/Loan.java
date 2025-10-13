@@ -69,6 +69,7 @@ import org.apache.fineract.organisation.holiday.domain.Holiday;
 import org.apache.fineract.organisation.holiday.service.HolidayUtil;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.staff.domain.Staff;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDays;
@@ -450,6 +451,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Transient
     @Setter
     private boolean isReceivableLocLoan;
+
+    @Setter()
+    @Column(name = "factor_rate_loan_amount")
+    private BigDecimal factorRateLoanAmount;
 
     public static Loan newIndividualLoanApplication(final String accountNo, final Client client, final AccountType loanType,
             final LoanProduct loanProduct, final Fund fund, final Staff officer, final CodeValue loanPurpose,
@@ -2088,11 +2093,16 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     continue;
                 }
                 BigDecimal amount;
-                if (loanCharge.getChargeCalculation().isFlat()) {
-                    amount = loanCharge.amountOrPercentage();
+                if (this.isFactorRateEnabled()) {
+                    final BigDecimal numberOfInstallments = BigDecimal.valueOf(installments.size());
+                    amount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
                 } else {
-                    amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(), installment)
-                            .getAmount();
+                    if (loanCharge.getChargeCalculation().isFlat()) {
+                        amount = loanCharge.amountOrPercentage();
+                    } else {
+                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
+                                installment).getAmount();
+                    }
                 }
                 final LoanInstallmentCharge loanInstallmentCharge = new LoanInstallmentCharge(amount, loanCharge, installment);
                 installment.getInstallmentCharges().add(loanInstallmentCharge);

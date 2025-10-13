@@ -226,7 +226,6 @@ public class LoanAssemblerImpl implements LoanAssembler {
         }
 
         final Set<LoanCharge> loanCharges = this.loanChargeAssembler.fromParsedJson(element, disbursementDetails);
-
         BigDecimal fixedPrincipalPercentagePerInstallment = fromApiJsonHelper
                 .extractBigDecimalWithLocaleNamed(LoanApiConstants.fixedPrincipalPercentagePerInstallmentParamName, element);
 
@@ -299,11 +298,21 @@ public class LoanAssemblerImpl implements LoanAssembler {
 
         copyAdvancedPaymentRulesIfApplicable(transactionProcessingStrategyCode, loanProduct, loanApplication);
         loanApplication.setHelpers(defaultLoanLifecycleStateMachine);
-        // TODO: review
+        handleFactorRateProduct(loanApplication, command);
         loanChargeService.recalculateAllCharges(loanApplication);
         topUpLoanConfiguration(element, loanApplication);
         loanAccrualsProcessingService.reprocessExistingAccruals(loanApplication);
         return loanApplication;
+    }
+
+    private void handleFactorRateProduct(final Loan loan, final JsonCommand command) {
+        // Handle Factor Rate product
+        final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
+        final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+        if (factorRateProductEnabled) {
+            loan.setFactorRate(factorRate);
+            loan.setFactorRateEnabled(true);
+        }
     }
 
     // TODO: Review... it might be better somewhere else and rethink due to the account number generation logic is

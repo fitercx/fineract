@@ -202,6 +202,10 @@ public class FromJsonHelper {
         return this.helperDelegator.extractBooleanNamed(parameterName, element, parametersPassedInRequest);
     }
 
+    public boolean extractPrimitiveBooleanNamed(final String parameterName, final JsonElement element) {
+        return this.helperDelegator.extractPrimitiveBooleanNamed(parameterName, element, new HashSet<String>());
+    }
+
     public MonthDay extractMonthDayNamed(final String parameterName, final JsonElement element) {
         return this.helperDelegator.extractMonthDayNamed(parameterName, element);
     }

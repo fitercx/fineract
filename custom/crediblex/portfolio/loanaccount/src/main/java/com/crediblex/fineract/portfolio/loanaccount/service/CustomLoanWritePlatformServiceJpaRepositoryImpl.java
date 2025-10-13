@@ -851,5 +851,4 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
                 StandingInstructionStatus.ACTIVE.getValue());
     }
-
 }

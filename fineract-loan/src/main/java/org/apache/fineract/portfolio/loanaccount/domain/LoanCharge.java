@@ -49,6 +49,7 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
@@ -158,7 +159,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public LoanCharge(final Loan loan, final Charge chargeDefinition, final BigDecimal loanPrincipal, final BigDecimal amount,
             final ChargeTimeType chargeTime, final ChargeCalculationType chargeCalculation, final LocalDate dueDate,
             final ChargePaymentMode chargePaymentMode, final Integer numberOfRepayments, final BigDecimal loanCharge,
-            final ExternalId externalId) {
+            final ExternalId externalId, final boolean factorRateEnabled, final BigDecimal factorRate) {
         this.loan = loan;
         this.charge = chargeDefinition;
         this.submittedOnDate = DateUtils.getBusinessLocalDate();
@@ -200,13 +201,13 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.chargePaymentMode = chargePaymentMode.getValue();
         }
 
-        populateDerivedFields(loanPrincipal, chargeAmount, numberOfRepayments, loanCharge);
+        populateDerivedFields(loanPrincipal, chargeAmount, numberOfRepayments, loanCharge, factorRateEnabled, factorRate);
         this.paid = determineIfFullyPaid();
         this.externalId = externalId;
     }
 
     private void populateDerivedFields(final BigDecimal amountPercentageAppliedTo, final BigDecimal chargeAmount,
-            Integer numberOfRepayments, BigDecimal loanCharge) {
+            Integer numberOfRepayments, BigDecimal loanCharge, final boolean factorRateEnabled, final BigDecimal factorRate) {
 
         switch (ChargeCalculationType.fromInt(this.chargeCalculation)) {
             case INVALID:
@@ -230,8 +231,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 } else {
                     this.amount = chargeAmount;
                 }
-                this.updateTaxAmount();
-                this.amountOutstanding = getAmountWithTaxes();
+                this.updateTaxAmount(factorRateEnabled, factorRate, amountPercentageAppliedTo);
+                if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                    this.amountOutstanding = calculateOutstandingWithoutTax();
+                } else {
+                    this.amountOutstanding = getAmountWithTaxes();
+                }
                 this.amountWaived = null;
                 this.amountWrittenOff = null;
             break;
@@ -246,8 +251,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 }
                 this.amount = minimumAndMaximumCap(loanCharge);
                 this.amountPaid = null;
-                this.updateTaxAmount();
-                this.amountOutstanding = calculateOutstanding();
+                this.updateTaxAmount(factorRateEnabled, factorRate, amountPercentageAppliedTo);
+                if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                    this.amountOutstanding = calculateOutstandingWithoutTax();
+                } else {
+                    this.amountOutstanding = calculateOutstanding();
+                }
                 this.amountWaived = null;
                 this.amountWrittenOff = null;
             break;
@@ -363,8 +372,13 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 break;
             }
             this.amountOrPercentage = amount;
-            this.updateTaxAmount();
-            this.amountOutstanding = calculateOutstanding();
+            final BigDecimal factorRateLoanAmount = this.loan.getFactorRateLoanAmount();
+            this.updateTaxAmount(this.loan.isFactorRateEnabled(), this.loan.getFactorRate(), factorRateLoanAmount);
+            if (this.loan.isFactorRateEnabled() && MathUtil.isGreaterThan(this.loan.getFactorRate(), BigDecimal.ONE) && isInstalmentFee()) {
+                this.amountOutstanding = calculateOutstandingWithoutTax();
+            } else {
+                this.amountOutstanding = calculateOutstanding();
+            }
             if (this.loan != null && isInstalmentFee()) {
                 updateInstallmentCharges();
             }
@@ -423,6 +437,9 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
 
         final String amountParamName = "amount";
+        final boolean factorRateEnabled = this.loan.isFactorRateEnabled();
+        final BigDecimal factorRate = this.loan.getFactorRate();
+        final BigDecimal loanAmount = this.loan.getPrincipal().getAmount();
         if (command.isChangeInBigDecimalParameterNamed(amountParamName, this.amount)) {
             final BigDecimal newValue = command.bigDecimalValueOfParameterNamed(amountParamName);
             BigDecimal loanCharge = null;
@@ -437,8 +454,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     } else {
                         this.amount = newValue;
                     }
-                    this.updateTaxAmount();
-                    this.amountOutstanding = calculateOutstanding();
+                    this.updateTaxAmount(factorRateEnabled, factorRate, loanAmount);
+                    if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                        this.amountOutstanding = calculateOutstandingWithoutTax();
+                    } else {
+                        this.amountOutstanding = calculateOutstanding();
+                    }
                 break;
                 case PERCENT_OF_AMOUNT:
                 case PERCENT_OF_AMOUNT_AND_INTEREST:
@@ -455,8 +476,12 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         loanCharge = percentageOf(this.amountPercentageAppliedTo);
                     }
                     this.amount = minimumAndMaximumCap(loanCharge);
-                    this.updateTaxAmount();
-                    this.amountOutstanding = calculateOutstanding();
+                    this.updateTaxAmount(factorRateEnabled, factorRate, loanAmount);
+                    if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                        this.amountOutstanding = calculateOutstandingWithoutTax();
+                    } else {
+                        this.amountOutstanding = calculateOutstanding();
+                    }
                 break;
             }
             this.amountOrPercentage = newValue;
@@ -557,6 +582,28 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         final BigDecimal totalAccountedFor = amountPaidLocal.add(amountWaivedLocal).add(amountWrittenOffLocal);
         final BigDecimal taxAmountTotal = this.taxAmount != null ? this.taxAmount : BigDecimal.ZERO;
         return this.amount.add(taxAmountTotal).subtract(totalAccountedFor);
+    }
+
+    private BigDecimal calculateOutstandingWithoutTax() {
+        if (this.amount == null) {
+            return null;
+        }
+        BigDecimal amountPaidLocal = BigDecimal.ZERO;
+        if (this.amountPaid != null) {
+            amountPaidLocal = this.amountPaid;
+        }
+
+        BigDecimal amountWaivedLocal = BigDecimal.ZERO;
+        if (this.amountWaived != null) {
+            amountWaivedLocal = this.amountWaived;
+        }
+
+        BigDecimal amountWrittenOffLocal = BigDecimal.ZERO;
+        if (this.amountWrittenOff != null) {
+            amountWrittenOffLocal = this.amountWrittenOff;
+        }
+        final BigDecimal totalAccountedFor = amountPaidLocal.add(amountWaivedLocal).add(amountWrittenOffLocal);
+        return this.amount.subtract(totalAccountedFor);
     }
 
     public BigDecimal percentageOf(final BigDecimal value) {
@@ -699,11 +746,14 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public Money updatePaidAmountBy(final Money incrementBy, final Integer installmentNumber, final Money feeAmount) {
         Money processAmount;
         if (isInstalmentFee()) {
+            final LoanInstallmentCharge unpaidInstallmentLoanCharge;
             if (installmentNumber == null) {
-                processAmount = getUnpaidInstallmentLoanCharge().updatePaidAmountBy(incrementBy, feeAmount);
+                unpaidInstallmentLoanCharge = getUnpaidInstallmentLoanCharge();
             } else {
-                processAmount = getInstallmentLoanCharge(installmentNumber).updatePaidAmountBy(incrementBy, feeAmount);
+                unpaidInstallmentLoanCharge = getInstallmentLoanCharge(installmentNumber);
             }
+            processAmount = unpaidInstallmentLoanCharge != null ? unpaidInstallmentLoanCharge.updatePaidAmountBy(incrementBy, feeAmount)
+                    : Money.zero(incrementBy.getCurrency());
         } else {
             processAmount = incrementBy;
         }
@@ -1021,14 +1071,28 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.getCharge().getTaxGroup() != null && !this.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty();
     }
 
-    public void updateTaxAmount() {
+    public void updateTaxAmount(final boolean factorRateEnabled, final BigDecimal factorRate, final BigDecimal loanAmount) {
         if (this.hasTax() && this.amount != null && this.amount.compareTo(BigDecimal.ZERO) > 0) {
             LocalDate chargeDate = this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate();
-            this.taxAmount = TaxUtils
-                    .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())
-                    .subtract(this.amount);
+            if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                this.taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
+                        this.charge.getTaxGroup().getTaxGroupMappings());
+                final BigDecimal installmentFeeAmount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate,
+                        this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale());
+                this.amount = this.taxAmount.add(installmentFeeAmount);
+            } else {
+                this.taxAmount = TaxUtils
+                        .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())
+                        .subtract(this.amount);
+            }
         } else {
             this.taxAmount = BigDecimal.ZERO;
+            if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount,
+                        this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate(), factorRate,
+                        this.charge.getTaxGroup() != null ? this.charge.getTaxGroup().getTaxGroupMappings() : Collections.emptySet(),
+                        this.amount.scale());
+            }
         }
     }
 
