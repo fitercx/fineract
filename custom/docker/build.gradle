@@ -232,7 +232,7 @@ tasks.register('buildCustomJavaSdk', org.openapitools.generator.gradle.plugin.ta
     skipValidateSpec = true
 
     inputSpec = "file:///$customSwaggerFile"
-    outputDir = "$buildDir/generated/temp-java-custom"
+    outputDir = file("../../fineract-client/build/generated/java").absolutePath
 
     // Only apply templateDir if custom templates actually exist
     if (file("$projectDir/src/main/resources/templates/java").exists()) {

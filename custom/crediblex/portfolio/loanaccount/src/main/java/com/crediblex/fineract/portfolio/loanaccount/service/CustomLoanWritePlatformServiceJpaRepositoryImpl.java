@@ -39,6 +39,7 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.transaction
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
@@ -192,7 +193,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
         Loan loan = loanAssembler.assembleFrom(loanId);
-
+        final MonetaryCurrency currency = loan.getCurrency();
         if (loan.loanProduct().isDisallowExpectedDisbursements()) {
             List<LoanDisbursementDetails> filteredList = loan.getDisbursementDetails().stream()
                     .filter(disbursementDetails -> disbursementDetails.actualDisbursementDate() == null).toList();
@@ -240,6 +241,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final Locale locale = command.extractLocale();
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(command.dateFormat()).withLocale(locale);
 
+        boolean isReceivableLineOfCredit = false;
+        Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        if (lineOfCreditParams.isPresent() && lineOfCreditParams.get().getLineOfCredit() != null
+                && lineOfCreditParams.get().getLineOfCredit().getProductType().isReceivable()) {
+            isReceivableLineOfCredit = true;
+        }
+
         if (loan.canDisburse()) {
             // Get netDisbursalAmount from disbursal screen field.
             final BigDecimal netDisbursalAmount = command
@@ -253,10 +261,46 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             Money amountToDisburse = disburseAmount; // Use the calculated amount directly
 
+            // --- BEGIN Receivable LOC custom capping logic (replaces summary-based approach) ---
+            if (isReceivableLineOfCredit) {
+                LoanLineOfCreditParams locParams = lineOfCreditParams.get();
+                BigDecimal amountAfterAdvance = locParams.getAmountAfterAdvance();
+                if (amountAfterAdvance != null) {
+                    BigDecimal feesDueAtDisbursement = loan.getActiveCharges().stream().filter(LoanCharge::isDueAtDisbursement) // due
+                                                                                                                                // at
+                                                                                                                                // disbursement
+                            .filter(LoanCharge::isChargePending) // not yet paid
+                            .map(LoanCharge::amountOutstanding) // outstanding amount
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    // Compute scheduled interest (pre-disbursement schedule already exists). If schedule empty,
+                    // interest=0.
+                    BigDecimal scheduledInterest = loan.getRepaymentScheduleInstallments().stream()
+                            .map(i -> i.getInterestCharged(currency).getAmount()).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    BigDecimal expectedDisbursementAmount = amountAfterAdvance.subtract(scheduledInterest);
+
+                    if (expectedDisbursementAmount.compareTo(BigDecimal.ZERO) < 0) {
+                        expectedDisbursementAmount = BigDecimal.ZERO;
+                    }
+
+                    Money expectedMoney = Money.of(loan.getCurrency(), expectedDisbursementAmount);
+
+                    if (amountToDisburse.isGreaterThan(expectedMoney)) {
+                        amountToDisburse = expectedMoney;
+
+                        loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
+                    }
+                } else {
+                    log.debug("Receivable LOC has null amountAfterAdvance for loan {} – skipping capping logic", loan.getId());
+                }
+            }
+            // --- END Receivable LOC custom capping logic ---
+
             boolean recalculateSchedule = amountBeforeAdjust.isNotEqualTo(loan.getPrincipal());
             final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
-            if (loan.isTopup() && loan.getClientId() != null) {
+            if (loan.isTopup() && !isReceivableLineOfCredit && loan.getClientId() != null) {
                 final BigDecimal loanOutstanding = loanApplicationValidator.validateTopupLoan(loan, actualDisbursementDate);
 
                 amountToDisburse = disburseAmount.minus(loanOutstanding);
@@ -316,6 +360,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isInterestBearingAndInterestRecalculationEnabled()
                     && (DateUtils.isBeforeBusinessDate(firstInstallmentDueDate) || loan.isDisbursementMissed())) {
                 loanAccrualsProcessingService.processIncomePostingAndAccruals(loan);
+            }
+
+            if (isReceivableLineOfCredit) {
+                // For receivable LOC, disbursement transaction should reflect the actual amount disbursed (after
+                // capping)
+                if (disbursementTransaction != null) {
+                    disbursementTransaction.updateOutstandingLoanBalance(amountToDisburse.add(loan.getTotalInterest()).getAmount());
+                    loanTransactionRepository.saveAndFlush(disbursementTransaction);
+                }
             }
 
             if (loan.isAutoRepaymentForDownPaymentEnabled() && !isWithoutAutoPayment) {

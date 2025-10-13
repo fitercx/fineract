@@ -240,8 +240,7 @@ public class LineOfCreditApiResource {
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "List Line of Credit Transactions", description = "Retrieves paginated transaction history for a line of credit.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionsResponse.class)))
-    })
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionsResponse.class))) })
     public String retrieveTransactions(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @QueryParam("offset") @Parameter(description = "offset") @DefaultValue("0") final Integer offset,
@@ -264,8 +263,7 @@ public class LineOfCreditApiResource {
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Retrieve Line of Credit Transaction", description = "Retrieves a specific transaction for a line of credit.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionResponse.class)))
-    })
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionResponse.class))) })
     public String retrieveTransaction(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("transactionId") @Parameter(description = "transactionId") final Long transactionId,

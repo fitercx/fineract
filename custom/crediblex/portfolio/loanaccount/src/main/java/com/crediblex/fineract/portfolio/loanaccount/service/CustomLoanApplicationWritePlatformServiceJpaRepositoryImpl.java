@@ -447,22 +447,19 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             }
 
-            loanLocParamsRepository.save(loanLocParams);
-
-            // Process buyer and supplier details for line of credit applications
-
             if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
                 this.loanRepositoryWrapper.saveAndFlush(loan);
 
-                loanLocParamsRepository.saveAndFlush(loanLocParams);
             } else {
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
 
             }
+
+            loanLocParamsRepository.save(loanLocParams);
 
             final Money amount = loan.getPrincipal();
             if (amount.isGreaterThanZero()) {

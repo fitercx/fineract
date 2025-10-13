@@ -63,6 +63,7 @@ import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;
 import org.apache.fineract.test.data.ChargeCalculationType;
 import org.apache.fineract.test.data.ChargeTimeType;
+import org.apache.fineract.test.data.LoanTermFrequencyType;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -362,6 +363,37 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         
         log.info("Verified {} transactions on date {}", transactionCount, transactionDate);
     }
+
+
+
+    @Then("Loan has exactly one transactions on {string} of amount {double}")
+    public void verifyLoanTransactionCountAndAmount(String transactionDate, Double amount) throws IOException {
+        Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        assert loanResponse.body() != null;
+        Long loanId = loanResponse.body().getLoanId();
+
+        Response<GetLoansLoanIdResponse> loanDetailsResponse = loansApi.retrieveLoan(loanId, false, "transactions", "", "").execute();
+
+        if (!loanDetailsResponse.isSuccessful()) {
+            throw new RuntimeException("Failed to retrieve loan details: " + loanDetailsResponse.errorBody().string());
+        }
+
+        assert loanDetailsResponse.body() != null;
+        List<GetLoansLoanIdTransactions> transactions = loanDetailsResponse.body().getTransactions();
+
+        long transactionCount = transactions.stream()
+                .filter(t -> {
+                    assert t.getAmount() != null;
+                    return t.getAmount().equals(amount);
+                })
+                .count();
+
+        assertThat(transactionCount)
+                .as("Expected %d transactions on %s but found %d", transactionDate, transactionCount)
+                .isEqualTo(1);
+
+        log.info("Verified {} transactions on date {}", transactionCount, transactionDate);
+    }
     
     private Long findExistingLoanProduct(String productName, String shortName) throws IOException {
         log.info("Checking for existing loan product with name '{}' or shortname '{}'", productName, shortName);
@@ -469,4 +501,89 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             throw new RuntimeException("Failed to create VAT tax group: " + createResponse.errorBody().string());
         }
     }
+    
+    @Given("A Custom EUR product with line of credit {string} loan product name {string} with {int} days tenor exists")
+    public void ensureCustomEURLineOfCreditLoanProductWithTenorExists(String locTypeLabel, String productName, int tenorDays) throws IOException {
+        boolean isReceivable = locTypeLabel.equals("receivable");
+        String shortName = (isReceivable ? "R" : "P") + tenorDays; // Custom EUR Loan Product + tenor (max 4 chars)
+        String currencyCode = "EUR";
+        
+        // First, check if product already exists
+        Long customLoanProductId = findExistingLoanProduct(productName, shortName);
+        
+        if (customLoanProductId == null) {
+            // Product doesn't exist, create it with custom tenor
+            log.info("Creating custom EUR loan product '{}' with {} days tenor and receivable: {}", productName, tenorDays, isReceivable);
+
+            PostLoanProductsRequest request = CustomLoanProductsRequestFactory.createLoanProductRequest(productName, shortName, currencyCode);
+            
+            // Customize the request for line of credit integration matching the exact parameters
+            request = request
+                    .includeInBorrowerCycle(false)
+                    .digitsAfterDecimal(2)
+                    .inMultiplesOf(0)
+                    .useBorrowerCycle(false)
+                    .principal(100000.0)
+                    .numberOfRepayments(1)
+                    .isLinkedToFloatingInterestRates(false)
+                    .allowApprovedDisbursedAmountsOverApplied(false)
+                    .interestRatePerPeriod(1.0)
+                    .interestRateFrequencyType(2) // Per month
+                    .repaymentEvery(tenorDays)
+                    .repaymentFrequencyType(0L) // Days
+                    .repaymentStartDateType(1)
+                    .interestRecognitionOnDisbursementDate(false)
+                    .amortizationType(1) // Equal installments
+                    .interestType(1) // Flat
+                    .isEqualAmortization(false)
+                    .interestCalculationPeriodType(0) // Daily
+                    .transactionProcessingStrategyCode("pro-rata-mifos-standard-strategy")
+                    .daysInYearType(360)
+                    .daysInMonthType(1) // Actual
+                    .canDefineInstallmentAmount(false)
+                    .accountMovesOutOfNPAOnlyOnArrearsCompletion(false)
+                    .allowVariableInstallments(false)
+                    .disallowExpectedDisbursements(false)
+                    .canUseForTopup(false)
+                    .isInterestRecalculationEnabled(false)
+                    .holdGuaranteeFunds(false)
+                    .enableDownPayment(false)
+                    .enableInstallmentLevelDelinquency(false)
+                    .dueDaysForRepaymentEvent(1)
+                    .overDueDaysForRepaymentEvent(2)
+                    .loanScheduleType("CUMULATIVE")
+                    .isLocEnabled(true)
+                    .enableLineOfCreditReceivable(isReceivable)
+                    .accountingRule(1) // None
+                    .allowPartialPeriodInterestCalcualtion(false)
+                    .multiDisburseLoan(false)
+                    .description("Custom EUR loan product for Line of Credit drawdowns with " + tenorDays + " days tenor");
+
+            Response<PostLoanProductsResponse> response = loanProductsApi.createLoanProduct(request).execute();
+            
+            if (response.isSuccessful()) {
+                customLoanProductId = response.body().getResourceId();
+                log.info("Created custom EUR loan product '{}' with ID: {} and tenor: {} days", productName, customLoanProductId, tenorDays);
+            } else {
+                String errorMessage = "Failed to create custom EUR loan product";
+                if (response.errorBody() != null) {
+                    try {
+                        errorMessage += ": " + response.errorBody().string();
+                    } catch (IOException e) {
+                        errorMessage += ": Error reading response body";
+                    }
+                }
+                throw new RuntimeException(errorMessage);
+            }
+        } else {
+            log.info("Using existing custom EUR loan product '{}' with ID: {}", productName, customLoanProductId);
+        }
+        
+        // Store in context for use by line of credit steps using receivable/payable keys
+        String contextKey = isReceivable ? "receivableLOCProduct" : "payableLOCProduct";
+        testContext().set(contextKey, customLoanProductId);
+        log.info("Stored custom loan product ID {} in context with key: '{}' (isReceivable: {})", 
+                 customLoanProductId, contextKey, isReceivable);
+    }
+
 }

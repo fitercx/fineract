@@ -206,6 +206,14 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             }
         }
 
+        // if(loanApplicationTerms.getIsReceivableLineOfCredit() &&
+        // chargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) > 0) {
+        // Money remainingPrincipalAmt = scheduleParams.getPrincipalToBeScheduled().minus(Money.of(currency,
+        // chargesDueAtTimeOfDisbursement));
+        // loanApplicationTerms.setPrincipal(remainingPrincipalAmt);
+        // scheduleParams.setOutstandingBalance(scheduleParams.getOutstandingBalance().minus(chargesDueAtTimeOfDisbursement));
+        // }
+
         while (!scheduleParams.getOutstandingBalance().isZero() || !scheduleParams.getDisburseDetailMap().isEmpty()) {
             LocalDate previousRepaymentDate = scheduleParams.getActualRepaymentDate();
             scheduleParams.setActualRepaymentDate(getScheduledDateGenerator()

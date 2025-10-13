@@ -92,6 +92,47 @@ final class LoansApiResourceSwagger {
             public String name;
         }
 
+        // New nested classes for additionalProperties (Line of Credit support)
+        static final class GetLoansTemplateLineOfCreditApprovedBuyerOrSeller {
+
+            private GetLoansTemplateLineOfCreditApprovedBuyerOrSeller() {}
+
+            @Schema(example = "56")
+            public Long id;
+            @Schema(example = "LOC-39403026345659")
+            public String name;
+        }
+
+        static final class GetLoansTemplateLineOfCreditOptions {
+
+            private GetLoansTemplateLineOfCreditOptions() {}
+
+            @Schema(example = "65")
+            public Long id;
+            @Schema(example = "LOC-39403026345659")
+            public String externalId;
+            @Schema(example = "RECEIVABLE")
+            public String productType;
+            @Schema(example = "12.00")
+            public BigDecimal interestRate;
+            @Schema(example = "60000.000000")
+            public BigDecimal availableBalance;
+            @Schema(example = "100.00")
+            public BigDecimal advancePercentage;
+            @Schema(example = "30")
+            public Integer tenorDays;
+            public List<GetLoansTemplateLineOfCreditApprovedBuyerOrSeller> approvedBuyersOrSellers;
+        }
+
+        static final class GetLoansTemplateAdditionalProperties {
+
+            private GetLoansTemplateAdditionalProperties() {}
+
+            @Schema(example = "true")
+            public Boolean isLocEnabled;
+            public List<GetLoansTemplateLineOfCreditOptions> lineOfCreditOptions;
+        }
+
         @Schema(example = "1")
         public Long clientId;
         @Schema(example = "Kampala first Client")
@@ -100,6 +141,10 @@ final class LoansApiResourceSwagger {
         public Long clientOfficeId;
         public GetLoansTemplateTimeline timeline;
         public Set<GetLoansTemplateProductOptions> productOptions;
+        @Schema(description = "Additional loan properties", example = "{\"isLocEnabled\":true,\"lineOfCreditOptions\":[{\"id\":65,\"externalId\":\"LOC-39403026345659\",\"productType\":\"RECEIVABLE\",\"interestRate\":12.00,\"availableBalance\":60000.000000,\"advancePercentage\":100.00,\"tenorDays\":30,\"approvedBuyersOrSellers\":[{\"id\":56,\"name\":\"LOC-39403026345659\"}]}]}")
+        @JsonProperty("additionalProperties")
+        public GetLoansTemplateAdditionalProperties additionalProperties;
+
     }
 
     @Schema(description = "GetLoansLoanIdResponse")
@@ -1325,6 +1370,40 @@ final class LoansApiResourceSwagger {
         public String capitalizedIncomeStrategy;
         @Schema(example = "1")
         public Long linkAccountId;
+
+        // LOC-specific parameters
+        @Schema(example = "51")
+        public String lineOfCreditId;
+        @Schema(example = "false")
+        public Boolean factorRateEnabled;
+        @Schema(example = "343434")
+        public String invoiceNo;
+        @Schema(example = "10 October 2025")
+        public String invoiceDate;
+        @Schema(example = "10 October 2025")
+        public String invoiceDueDate;
+        @Schema(example = "43333333")
+        public BigDecimal invoiceAmount;
+        @Schema(example = "AED")
+        public String invoiceCurrency;
+        @Schema(example = "90")
+        public BigDecimal disapprovedAmount;
+        @Schema(example = "43333243")
+        public BigDecimal approvedReceivableAmount;
+        @Schema(example = "100")
+        public BigDecimal advancePercentage;
+        @Schema(example = "43333243")
+        public BigDecimal amountAfterAdvance;
+        @Schema(description = "List of buyer details")
+        public List<Long> buyerDetails;
+        @Schema(example = "0")
+        public BigDecimal markup;
+        @Schema(example = "0")
+        public BigDecimal exchangeRate;
+        @Schema(description = "List of supplier details")
+        public List<Long> supplierDetails;
+        @Schema(example = "false")
+        public Boolean allowPartialPeriodInterestCalcualtion;
 
         @Schema(description = "Set of table data associated with the loan request")
         public Set<TableData> datatables;

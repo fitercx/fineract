@@ -40,7 +40,7 @@ public class LineOfCreditApiResourceSwagger {
         public Long clientId;
         @Schema(example = "John Doe")
         public String clientName;
-        @Schema(example = "TRADE_FINANCE")
+        @Schema(example = "RECEIVABLE")
         public String productType;
         @Schema(example = "100000.00")
         public BigDecimal maximumAmount;
@@ -48,8 +48,7 @@ public class LineOfCreditApiResourceSwagger {
         public BigDecimal availableBalance;
         @Schema(example = "25000.00")
         public BigDecimal consumedAmount;
-        @Schema(example = "ACTIVE")
-        public String status;
+        public GetLineOfCreditStatusOptions status;
         @Schema(example = "2024-01-01")
         public LocalDate startDate;
         @Schema(example = "2024-12-31")
@@ -77,8 +76,7 @@ public class LineOfCreditApiResourceSwagger {
         public BigDecimal principalAmount;
         @Schema(example = "5000.00")
         public BigDecimal principalOutstanding;
-        @Schema(example = "ACTIVE")
-        public String status;
+        public GetLineOfCreditStatusOptions status;
     }
 
     @Schema(description = "GetLineOfCreditTemplateResponse")
@@ -159,6 +157,19 @@ public class LineOfCreditApiResourceSwagger {
         public String value;
     }
 
+    @Schema(description = "GetLineOfCreditRateTypeOptions")
+    public static final class GetLineOfCreditRateTypeOptions {
+
+        private GetLineOfCreditRateTypeOptions() {}
+
+        @Schema(example = "1")
+        public Long id;
+        @Schema(example = "FIXED")
+        public String code;
+        @Schema(example = "Fixed")
+        public String value;
+    }
+
     @Schema(description = "GetLineOfCreditLoanOfficersOptions")
     public static final class GetLineOfCreditLoanOfficersOptions {
 
@@ -185,7 +196,7 @@ public class LineOfCreditApiResourceSwagger {
         public String accountNumber;
         @Schema(example = "1")
         public Long clientId;
-        @Schema(example = "TRADE_FINANCE")
+        @Schema(example = "RECEIVABLE")
         public String productType;
         @Schema(example = "100000.00")
         public BigDecimal maximumAmount;
@@ -193,8 +204,7 @@ public class LineOfCreditApiResourceSwagger {
         public BigDecimal availableBalance;
         @Schema(example = "25000.00")
         public BigDecimal consumedAmount;
-        @Schema(example = "ACTIVE")
-        public String status;
+        public GetLineOfCreditStatusOptions status;
         @Schema(example = "2024-01-01")
         public LocalDate startDate;
         @Schema(example = "2024-12-31")
@@ -211,6 +221,8 @@ public class LineOfCreditApiResourceSwagger {
         public Integer tenorDays;
         @Schema(example = "Buyer1,Buyer2")
         public String approvedBuyers;
+        @Schema(description = "List of approved buyers or suppliers for this LOC")
+        public Collection<GetLineOfCreditApprovedBuyerOrSeller> approvedBuyersOrSellers;
         @Schema(example = "PERCENTAGE")
         public String cashMarginType;
         @Schema(example = "10.0")
@@ -258,6 +270,17 @@ public class LineOfCreditApiResourceSwagger {
 
         public Collection<GetLineOfCreditChargesResponse> charges;
         public GetLineOfCreditTimeLineResponse timeLineData;
+    }
+
+    @Schema(description = "GetLineOfCreditApprovedBuyerOrSeller")
+    public static final class GetLineOfCreditApprovedBuyerOrSeller {
+
+        private GetLineOfCreditApprovedBuyerOrSeller() {}
+
+        @Schema(example = "1")
+        public Long id;
+        @Schema(example = "Premium Buyer Ltd")
+        public String name;
     }
 
     @Schema(description = "GetLineOfCreditChargesResponse")

@@ -56,4 +56,8 @@ public enum LocProductType {
     public boolean isReceivable() {
         return this == RECEIVABLE;
     }
+
+    public boolean isPayable() {
+        return this == PAYABLE;
+    }
 }
