@@ -18,7 +18,11 @@
  */
 package com.crediblex.fineract.integration.job;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAuditRepository;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
+import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
+import org.apache.fineract.organisation.office.domain.OfficeRepository;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;

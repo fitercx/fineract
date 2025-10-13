@@ -541,4 +541,103 @@ public class OdooJournalEntryService {
             return null;
         }
     }
+
+    /**
+     * Post accrual journal entries directly to Odoo without creating Fineract journal entry records.
+     * Creates debit and credit journal lines on-the-fly and posts them to Odoo.
+     */
+    public Long postAccrualJournalEntriesToOdoo(Long loanId, String transactionId, java.time.LocalDate transactionDate, 
+            String description, BigDecimal accrualAmount, String creditGLCode, String debitGLCode, String OdooJournalCode) {
+        
+        try {
+            // Authenticate with Odoo
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                throw new RuntimeException("Odoo authentication failed - check credentials and connection settings");
+            }
+
+            // Get journal ID for accrual entries (you might want to configure this or derive it from business logic)
+            // For now, we'll use the debit GL code to determine the journal
+            Integer journalId = odooIntegrationService.getJournalIdByOdooCode(OdooJournalCode);
+            if (journalId == null) {
+                throw new RuntimeException("No journal mapping found for accrual entries with GL code: " + debitGLCode);
+            }
+
+            // Get Odoo account IDs for both GL codes
+            Integer creditAccountId = odooIntegrationService.getOdooAccountId(creditGLCode);
+            if (creditAccountId == null) {
+                throw new RuntimeException("Could not map GL account " + creditGLCode + " to Odoo account");
+            }
+
+            Integer debitAccountId = odooIntegrationService.getOdooAccountId(debitGLCode);
+            if (debitAccountId == null) {
+                throw new RuntimeException("Could not map GL account " + debitGLCode + " to Odoo account");
+            }
+
+            // Build account move values
+            Map<String, Object> moveValues = buildAccrualMoveValues(loanId, transactionId, transactionDate, 
+                    description, accrualAmount, journalId, creditAccountId, debitAccountId);
+
+            // Create the move in Odoo
+            Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
+            if (odooMoveId == null) {
+                throw new RuntimeException("Failed to create accrual move in Odoo for loan " + loanId);
+            }
+
+            // Post the move (from draft to posted state)
+            Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
+            if (!posted) {
+                log.warn("Created accrual move {} in Odoo but failed to post it - move remains in draft state", odooMoveId);
+            }
+
+            log.info("Successfully posted accrual journal entries to Odoo for loan {} as move {} with amount {}", 
+                    loanId, odooMoveId, accrualAmount);
+
+            return odooMoveId;
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error while posting accrual entries for loan {} to Odoo", loanId, e);
+            throw new RuntimeException("Unexpected error posting accrual entries to Odoo: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Build account move values for accrual journal entries
+     */
+    private Map<String, Object> buildAccrualMoveValues(Long loanId, String transactionId, java.time.LocalDate transactionDate, 
+            String description, BigDecimal accrualAmount, Integer journalId, Integer creditAccountId, Integer debitAccountId) {
+        
+        Map<String, Object> moveValues = new HashMap<>();
+        moveValues.put("journal_id", journalId);
+        moveValues.put("date", transactionDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
+        moveValues.put("ref", "Accrual " + transactionId);
+        moveValues.put("narration", description);
+        moveValues.put("x_studio_loan_id_new", loanId);
+
+        // Create journal lines
+        List<Object> lines = new ArrayList<>();
+
+        // Credit line (Interest Income)
+        Map<String, Object> creditLine = new HashMap<>();
+        creditLine.put("account_id", creditAccountId);
+        creditLine.put("debit", BigDecimal.ZERO);
+        creditLine.put("credit", accrualAmount);
+        creditLine.put("name", description + " - Interest Income");
+
+        // Debit line (Interest Receivable)
+        Map<String, Object> debitLine = new HashMap<>();
+        debitLine.put("account_id", debitAccountId);
+        debitLine.put("debit", accrualAmount);
+        debitLine.put("credit", BigDecimal.ZERO);
+        debitLine.put("name", description + " - Interest Receivable");
+
+        // Add lines using Odoo's line creation format: (0, 0, values)
+        lines.add(Arrays.asList(0, 0, creditLine));
+        lines.add(Arrays.asList(0, 0, debitLine));
+
+        moveValues.put("line_ids", lines);
+        return moveValues;
+    }
 }
