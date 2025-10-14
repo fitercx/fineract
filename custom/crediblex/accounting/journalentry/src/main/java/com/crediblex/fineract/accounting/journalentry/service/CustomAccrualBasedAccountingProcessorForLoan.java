@@ -215,8 +215,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         /**
          * Single DEBIT transaction for write-offs or Repayments
          ***/
-        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
-                && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement() && !loanTransactionDTO.isAccountTransfer()) {
+        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0) {
             if (writeOff) {
                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.AccrualAccountsForLoan.LOSSES_WRITTEN_OFF.getValue(), loanProductId, paymentTypeId, loanId,
