@@ -42,6 +42,7 @@ import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -323,7 +324,14 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
                     updateLinkedAccountAssociation(accountAssociations, savingsAccount, changes);
                 }
             }
+        } else {
+            throwLinkedSavingsAccountRequired();
         }
+    }
+
+    private void throwLinkedSavingsAccountRequired() {
+        throw new GeneralPlatformDomainRuleException("error.msg.loan.linked.savings.account.id.is.required",
+                "Linked savings account is required for loan disbursement later!");
     }
 
     private void updateLinkedAccountAssociation(AccountAssociations accountAssociations, SavingsAccount savingsAccount,
@@ -806,6 +814,8 @@ public class LoanApplicationWritePlatformServiceJpaRepositoryImpl implements Loa
             accountAssociations = AccountAssociations.associateSavingsAccount(loan, savingsAccount,
                     AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION.getValue(), isActive);
             this.accountAssociationsRepository.save(accountAssociations);
+        } else {
+            throwLinkedSavingsAccountRequired();
         }
     }
 

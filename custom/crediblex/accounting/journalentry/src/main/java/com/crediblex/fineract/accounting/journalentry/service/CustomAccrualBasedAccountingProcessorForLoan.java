@@ -213,9 +213,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         }
 
         /**
-         * Single DEBIT transaction for write-offs or Repayments
+         * Exclude DEBIT entry for Repayments of Fees at Disbursement and VAT Deduction at Disbursement
          ***/
-        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && isDebitAccountEntryPermitted(loanTransactionDTO)) {
             if (writeOff) {
                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.AccrualAccountsForLoan.LOSSES_WRITTEN_OFF.getValue(), loanProductId, paymentTypeId, loanId,
@@ -256,5 +256,10 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, totalDebitAmount);
         }
+    }
+
+    private boolean isDebitAccountEntryPermitted(final LoanTransactionDTO loanTransactionDTO) {
+        return !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
+                && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement();
     }
 }
