@@ -164,10 +164,12 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // Find which journal this GL code belongs to based on business event type and debit flag
         String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit);
         if (journalCode != null) {
-            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit, journalCode);
+            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit,
+                    journalCode);
             return getJournalIdByCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry", glCode, businessEventType, isDebit);
+            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
+                    glCode, businessEventType, isDebit);
             return null;
         }
     }
@@ -181,20 +183,18 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
-        if ("DISBURSEMENT".equals(businessEventType) && 
-            Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
+        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
         }
 
         // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
-        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) &&
-            Set.of("200040", "100003").contains(glCode)) {
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
             return "BNK6";
         }
 
         // BNK5 journal for SAVINGS_WITHDRAWAL with specific conditions i.e. refund from savings account
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType)) {
-            // When GL code is 100062 
+            // When GL code is 100062
             if ("100062".equals(glCode)) {
                 return "BNK5";
             }
@@ -206,7 +206,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
         // BNK4 journal for SAVINGS_DEPOSIT business events
         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
-            // When GL code is 210003 
+            // When GL code is 210003
             if ("210003".equals(glCode)) {
                 return "BNK4";
             }
@@ -220,7 +220,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         if ("200040".equals(glCode) && isDebit) {
             return "BNK1";
         }
-        
+
         // For GL code 100003, map regardless of debit/credit
         if ("100003".equals(glCode)) {
             return "BNK1";

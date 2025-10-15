@@ -61,9 +61,9 @@ public class OdooJournalEntryService {
 
             // Get journal ID based on GL account code, transaction type and debit flag
             String fineractAccountCode = fineractEntry.getGlAccount().getGlCode();
-            
+
             boolean isDebit = fineractEntry.isDebitEntry();
-            
+
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode, null, isDebit);
             if (journalId == null) {
                 log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
@@ -113,9 +113,10 @@ public class OdooJournalEntryService {
     /**
      * Build the account move values for Odoo - unified method for single and multiple journal entries
      */
-    private Map<String, Object> buildAccountMoveValues(List<JournalEntry> journalEntries, Integer journalId, Long loanId, boolean consolidateLines) {
+    private Map<String, Object> buildAccountMoveValues(List<JournalEntry> journalEntries, Integer journalId, Long loanId,
+            boolean consolidateLines) {
         Map<String, Object> moveValues = new HashMap<>();
-        
+
         if (journalEntries.isEmpty()) {
             throw new IllegalArgumentException("Journal entries list cannot be empty");
         }
@@ -124,7 +125,7 @@ public class OdooJournalEntryService {
         JournalEntry firstEntry = journalEntries.get(0);
         moveValues.put("journal_id", journalId);
         moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
-        
+
         // Build reference based on whether it's a single entry or multiple entries
         if (journalEntries.size() == 1) {
             moveValues.put("ref", "Haider JE " + firstEntry.getId());
@@ -140,7 +141,7 @@ public class OdooJournalEntryService {
             moveValues.put("x_studio_loan_id_new", loanId);
             // String clientName = getClientNameFromLoanId(loanId);
             // if (clientName != null) {
-            //     moveValues.put("x_sme_id", clientName);
+            // moveValues.put("x_sme_id", clientName);
             // }
         } else if (firstEntry.getLoanTransactionId() != null) {
             // Extract loan ID from the journal entry if not provided
@@ -159,19 +160,18 @@ public class OdooJournalEntryService {
             String accountCode = firstEntry.getGlAccount().getGlCode();
             Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
             if (accountId == null) {
-                throw new RuntimeException(String.format(
-                        "Could not map Fineract GL account '%s' to Odoo account", accountCode));
+                throw new RuntimeException(String.format("Could not map Fineract GL account '%s' to Odoo account", accountCode));
             }
             lines = buildMoveLines(firstEntry, accountId);
         } else {
             // Multiple entries but no consolidation - treat each separately
             lines = buildConsolidatedMoveLines(journalEntries);
         }
-        
+
         moveValues.put("line_ids", lines);
         return moveValues;
     }
-    
+
     /**
      * Build account move values for a single journal entry
      */
@@ -404,19 +404,19 @@ public class OdooJournalEntryService {
         for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
             JournalEntry entry = sync.getJournalEntry();
             String glCode = entry.getGlAccount().getGlCode();
-            
+
             // Use the business event type from the tracking record
             String businessEventType = sync.getBusinessEventType();
             boolean isDebit = entry.isDebitEntry();
-            
+
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
 
             if (journalId != null) {
                 groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
-                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}) to journal {}", 
-                         entry.getId(), glCode, businessEventType, isDebit, journalId);
+                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}) to journal {}", entry.getId(), glCode,
+                        businessEventType, isDebit, journalId);
             } else {
-                log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found", 
+                log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
                         entry.getId(), glCode, businessEventType, isDebit);
             }
         }
