@@ -250,18 +250,21 @@ public class JournalEntryOdooTrackingService {
                 Integer transactionTypeEnum = transactionTypes.get(0);
                 
                 // Static mapping based on transaction_type_enum values
-                // transaction_type_enum IN (1, 5, 35) maps to "DISBURSEMENT"
-                if (transactionTypeEnum != null && (transactionTypeEnum == 1 || transactionTypeEnum == 5 || transactionTypeEnum == 35)) {
-                    log.debug("Savings transaction {} with type {} mapped to DISBURSEMENT business event", savingsTransactionId, transactionTypeEnum);
-                    return "DISBURSEMENT";
+                if (transactionTypeEnum != null) {
+                    switch (transactionTypeEnum) {
+                        case 1:
+                            log.debug("Savings transaction {} with type {} mapped to SAVINGS_DEPOSIT business event", savingsTransactionId, transactionTypeEnum);
+                            return "SAVINGS_DEPOSIT";
+                        case 2:
+                            log.debug("Savings transaction {} with type {} mapped to SAVINGS_WITHDRAWAL business event", savingsTransactionId, transactionTypeEnum);
+                            return "SAVINGS_WITHDRAWAL";
+                        default:
+                            log.debug("Savings transaction {} with type {} has no specific business event mapping", savingsTransactionId, transactionTypeEnum);
+                            return null;
+                    }
                 }
                 
-                // Add more mappings as needed in the future
-                // For example:
-                // if (transactionTypeEnum == 2) return "REPAYMENT";
-                // if (transactionTypeEnum == 3) return "WAIVE_INTEREST";
-                
-                log.debug("Savings transaction {} with type {} has no specific business event mapping", savingsTransactionId, transactionTypeEnum);
+                log.debug("Savings transaction {} has null transaction type", savingsTransactionId);
                 return null;
             } else {
                 log.warn("No transaction type found for savings transaction ID: {}", savingsTransactionId);
