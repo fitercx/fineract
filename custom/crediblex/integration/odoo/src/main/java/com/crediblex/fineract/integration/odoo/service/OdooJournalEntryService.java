@@ -543,12 +543,12 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Post accrual journal entries directly to Odoo without creating Fineract journal entry records.
-     * Creates debit and credit journal lines on-the-fly and posts them to Odoo.
+     * Post accrual journal entries directly to Odoo without creating Fineract journal entry records. Creates debit and
+     * credit journal lines on-the-fly and posts them to Odoo.
      */
-    public Long postAccrualJournalEntriesToOdoo(Long loanId, String transactionId, java.time.LocalDate transactionDate, 
-            String description, BigDecimal accrualAmount, String creditGLCode, String debitGLCode, String OdooJournalCode) {
-        
+    public Long postAccrualJournalEntriesToOdoo(Long loanId, String transactionId, java.time.LocalDate transactionDate, String description,
+            BigDecimal accrualAmount, String creditGLCode, String debitGLCode, String OdooJournalCode) {
+
         try {
             // Authenticate with Odoo
             Integer uid = odooApiClient.authenticate();
@@ -575,8 +575,8 @@ public class OdooJournalEntryService {
             }
 
             // Build account move values
-            Map<String, Object> moveValues = buildAccrualMoveValues(loanId, transactionId, transactionDate, 
-                    description, accrualAmount, journalId, creditAccountId, debitAccountId);
+            Map<String, Object> moveValues = buildAccrualMoveValues(loanId, transactionId, transactionDate, description, accrualAmount,
+                    journalId, creditAccountId, debitAccountId);
 
             // Create the move in Odoo
             Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
@@ -590,8 +590,8 @@ public class OdooJournalEntryService {
                 log.warn("Created accrual move {} in Odoo but failed to post it - move remains in draft state", odooMoveId);
             }
 
-            log.info("Successfully posted accrual journal entries to Odoo for loan {} as move {} with amount {}", 
-                    loanId, odooMoveId, accrualAmount);
+            log.info("Successfully posted accrual journal entries to Odoo for loan {} as move {} with amount {}", loanId, odooMoveId,
+                    accrualAmount);
 
             return odooMoveId;
 
@@ -606,9 +606,9 @@ public class OdooJournalEntryService {
     /**
      * Build account move values for accrual journal entries
      */
-    private Map<String, Object> buildAccrualMoveValues(Long loanId, String transactionId, java.time.LocalDate transactionDate, 
+    private Map<String, Object> buildAccrualMoveValues(Long loanId, String transactionId, java.time.LocalDate transactionDate,
             String description, BigDecimal accrualAmount, Integer journalId, Integer creditAccountId, Integer debitAccountId) {
-        
+
         Map<String, Object> moveValues = new HashMap<>();
         moveValues.put("journal_id", journalId);
         moveValues.put("date", transactionDate.format(DateTimeFormatter.ISO_LOCAL_DATE));

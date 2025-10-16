@@ -164,7 +164,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // Find which journal this GL code belongs to based on business event type and debit flag
         String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit);
         if (journalCode != null) {
-            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit, journalCode);
+            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit,
+                    journalCode);
             return getJournalIdByOdooCode(journalCode);
         } else {
             log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
