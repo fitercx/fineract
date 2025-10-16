@@ -80,22 +80,22 @@ public class JournalEntryOdooTrackingService {
         if (journalEntryOdooSyncRepository.findByJournalEntryId(journalEntry.getId()).isEmpty()) {
             // Check if the transaction is reversed - only create tracking records for non-reversed transactions
             boolean isTransactionReversed = false;
-            
+
             if (journalEntry.getLoanTransactionId() != null) {
                 isTransactionReversed = isLoanTransactionReversed(journalEntry.getLoanTransactionId());
             } else if (journalEntry.getSavingsTransactionId() != null) {
                 isTransactionReversed = isSavingsTransactionReversed(journalEntry.getSavingsTransactionId());
             }
-            
+
             if (isTransactionReversed) {
                 log.debug("Skipping tracking record creation for journal entry ID: {} - transaction is reversed", journalEntry.getId());
                 return;
             }
-            
+
             // Get loan ID from loan transaction if available
             Long loanId = null;
             String businessEventType = null;
-            
+
             if (journalEntry.getLoanTransactionId() != null) {
                 loanId = getLoanIdFromTransactionId(journalEntry.getLoanTransactionId());
                 businessEventType = getBusinessEventTypeFromLoanTransaction(journalEntry.getLoanTransactionId());
@@ -109,7 +109,7 @@ public class JournalEntryOdooTrackingService {
             journalEntryOdooSyncRepository.save(trackingRecord);
 
             String transactionType = journalEntry.getLoanTransactionId() != null ? "loan" : "savings";
-            log.info("Created Odoo sync tracking record for {} journal entry ID: {} with loan ID: {} and business event type: {}", 
+            log.info("Created Odoo sync tracking record for {} journal entry ID: {} with loan ID: {} and business event type: {}",
                     transactionType, journalEntry.getId(), loanId, businessEventType);
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
@@ -147,7 +147,7 @@ public class JournalEntryOdooTrackingService {
         try {
             String sql = "SELECT is_reversed FROM m_loan_transaction WHERE id = ?";
             List<Boolean> results = accountDetailsService.getJdbcTemplate().queryForList(sql, Boolean.class, loanTransactionId);
-            
+
             if (!results.isEmpty()) {
                 Boolean isReversed = results.get(0);
                 boolean reversed = Boolean.TRUE.equals(isReversed);
@@ -174,7 +174,7 @@ public class JournalEntryOdooTrackingService {
         try {
             String sql = "SELECT is_reversed FROM m_savings_account_transaction WHERE id = ?";
             List<Boolean> results = accountDetailsService.getJdbcTemplate().queryForList(sql, Boolean.class, savingsTransactionId);
-            
+
             if (!results.isEmpty()) {
                 Boolean isReversed = results.get(0);
                 boolean reversed = Boolean.TRUE.equals(isReversed);
@@ -191,8 +191,7 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Get business event type based on loan transaction type
-     * Maps transaction_type_enum values to business event types
+     * Get business event type based on loan transaction type Maps transaction_type_enum values to business event types
      */
     private String getBusinessEventTypeFromLoanTransaction(Long loanTransactionId) {
         if (loanTransactionId == null) {
@@ -203,29 +202,31 @@ public class JournalEntryOdooTrackingService {
             // Query the loan transaction to get the transaction type
             String sql = "SELECT transaction_type_enum FROM m_loan_transaction WHERE id = ?";
             List<Integer> transactionTypes = accountDetailsService.getJdbcTemplate().queryForList(sql, Integer.class, loanTransactionId);
-            
+
             if (!transactionTypes.isEmpty()) {
                 Integer transactionTypeEnum = transactionTypes.get(0);
-                
+
                 // Static mapping based on transaction_type_enum values
                 // transaction_type_enum IN (1, 5, 35) maps to "DISBURSEMENT"
                 if (transactionTypeEnum != null && (transactionTypeEnum == 1 || transactionTypeEnum == 5 || transactionTypeEnum == 35)) {
-                    log.debug("Loan transaction {} with type {} mapped to DISBURSEMENT business event", loanTransactionId, transactionTypeEnum);
+                    log.debug("Loan transaction {} with type {} mapped to DISBURSEMENT business event", loanTransactionId,
+                            transactionTypeEnum);
                     return "DISBURSEMENT";
                 }
-                
+
                 // Add more mappings as needed in the future
                 // For example:
                 // if (transactionTypeEnum == 2) return "REPAYMENT";
                 // if (transactionTypeEnum == 3) return "WAIVE_INTEREST";
-                
-                log.debug("Loan transaction {} with type {} has no specific business event mapping", loanTransactionId, transactionTypeEnum);
+
+                log.debug("Loan transaction {} with type {} has no specific business event mapping", loanTransactionId,
+                        transactionTypeEnum);
                 return null;
             } else {
                 log.warn("No transaction type found for loan transaction ID: {}", loanTransactionId);
                 return null;
             }
-            
+
         } catch (Exception e) {
             log.warn("Failed to get business event type for loan transaction ID: {}", loanTransactionId, e);
             return null;
@@ -233,8 +234,8 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Get business event type based on savings transaction type
-     * Maps transaction_type_enum values to business event types
+     * Get business event type based on savings transaction type Maps transaction_type_enum values to business event
+     * types
      */
     private String getBusinessEventTypeFromSavingsTransaction(Long savingsTransactionId) {
         if (savingsTransactionId == null) {
@@ -245,29 +246,35 @@ public class JournalEntryOdooTrackingService {
             // Query the savings transaction to get the transaction type
             String sql = "SELECT transaction_type_enum FROM m_savings_account_transaction WHERE id = ?";
             List<Integer> transactionTypes = accountDetailsService.getJdbcTemplate().queryForList(sql, Integer.class, savingsTransactionId);
-            
+
             if (!transactionTypes.isEmpty()) {
                 Integer transactionTypeEnum = transactionTypes.get(0);
-                
+
                 // Static mapping based on transaction_type_enum values
-                // transaction_type_enum IN (1, 5, 35) maps to "DISBURSEMENT"
-                if (transactionTypeEnum != null && (transactionTypeEnum == 1 || transactionTypeEnum == 5 || transactionTypeEnum == 35)) {
-                    log.debug("Savings transaction {} with type {} mapped to DISBURSEMENT business event", savingsTransactionId, transactionTypeEnum);
-                    return "DISBURSEMENT";
+                if (transactionTypeEnum != null) {
+                    switch (transactionTypeEnum) {
+                        case 1:
+                            log.debug("Savings transaction {} with type {} mapped to SAVINGS_DEPOSIT business event", savingsTransactionId,
+                                    transactionTypeEnum);
+                            return "SAVINGS_DEPOSIT";
+                        case 2:
+                            log.debug("Savings transaction {} with type {} mapped to SAVINGS_WITHDRAWAL business event",
+                                    savingsTransactionId, transactionTypeEnum);
+                            return "SAVINGS_WITHDRAWAL";
+                        default:
+                            log.debug("Savings transaction {} with type {} has no specific business event mapping", savingsTransactionId,
+                                    transactionTypeEnum);
+                            return null;
+                    }
                 }
-                
-                // Add more mappings as needed in the future
-                // For example:
-                // if (transactionTypeEnum == 2) return "REPAYMENT";
-                // if (transactionTypeEnum == 3) return "WAIVE_INTEREST";
-                
-                log.debug("Savings transaction {} with type {} has no specific business event mapping", savingsTransactionId, transactionTypeEnum);
+
+                log.debug("Savings transaction {} has null transaction type", savingsTransactionId);
                 return null;
             } else {
                 log.warn("No transaction type found for savings transaction ID: {}", savingsTransactionId);
                 return null;
             }
-            
+
         } catch (Exception e) {
             log.warn("Failed to get business event type for savings transaction ID: {}", savingsTransactionId, e);
             return null;

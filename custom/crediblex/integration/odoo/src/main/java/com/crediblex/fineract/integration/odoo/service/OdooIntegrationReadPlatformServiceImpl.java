@@ -167,7 +167,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit, journalCode);
             return getJournalIdByOdooCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry", glCode, businessEventType, isDebit);
+            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
+                    glCode, businessEventType, isDebit);
             return null;
         }
     }
@@ -181,19 +182,49 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
-        if ("DISBURSEMENT".equals(businessEventType) && 
-            Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
+        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
         }
 
-        // For GL code 200040, only map to BNK1 if it's a debit transaction
+        // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
+            return "BNK6";
+        }
+
+        // BNK5 journal for SAVINGS_WITHDRAWAL with specific conditions i.e. refund from savings account
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType)) {
+            // When GL code is 100062
+            if ("100062".equals(glCode)) {
+                return "BNK2";
+            }
+            // When GL code is 210003 and it's a debit transaction
             if ("200040".equals(glCode) && isDebit) {
+                return "BNK2";
+            }
+        }
+
+        // BNK4 journal for SAVINGS_DEPOSIT business events
+        if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
+            // When GL code is 210003
+            if ("200040".equals(glCode)) {
                 return "BNK1";
             }
-            // For GL code 100003, map regardless of debit/credit
-            if ("100003".equals(glCode)) {
+            // When GL code is 100062 and it's a debit transaction
+            if ("100062".equals(glCode) && isDebit) {
                 return "BNK1";
             }
+        }
+
+        // For GL code 200040, only map to BNK1 if it's a debit transaction
+        if ("200040".equals(glCode) && isDebit) {
+            return "BNK1";
+        }
+
+        // For GL code 100003, map regardless of debit/credit
+        if ("100003".equals(glCode)) {
+            return "BNK1";
+        }
+
         // BNK7 (Cash margin) journal for specific GL codes
         if (Set.of("100006", "23101001").contains(glCode)) {
             return "BNK7";
