@@ -2054,7 +2054,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 loanApplicationTerms.getDisbursementDatas()
                         .add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
                                 loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal().getAmount(), null,
-                                null, null, null));
+                                null, null, null, null));
             }
             for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
                 if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
@@ -2314,6 +2314,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             Money totalCumulativeInterest = principalToBeScheduled.zero();
             Money totalFeeChargesCharged = principalToBeScheduled.zero().plus(chargesDueAtTimeOfDisbursement);
             Money totalPenaltyChargesCharged = principalToBeScheduled.zero();
+            Money totalTaxChargesCharged = principalToBeScheduled.zero();
             Money totalRepaymentExpected;
 
             // Actual period Number as per the schedule
@@ -2552,7 +2553,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                 Money totalOutstandingInterestPaymentDueToGrace = Money.zero(currency);
                 loanScheduleParams = LoanScheduleParams.createLoanScheduleParamsForPartialUpdate(periodNumber, instalmentNumber,
                         loanTermInDays, periodStartDate, actualRepaymentDate, totalCumulativePrincipal, totalCumulativeInterest,
-                        totalFeeChargesCharged, totalPenaltyChargesCharged, totalRepaymentExpected,
+                        totalFeeChargesCharged, totalPenaltyChargesCharged, totalTaxChargesCharged, totalRepaymentExpected,
                         totalOutstandingInterestPaymentDueToGrace, reducePrincipal, principalPortionMap, latePaymentMap, compoundingMap,
                         uncompoundedAmount, disburseDetailMap, principalToBeScheduled, outstandingBalance, outstandingBalanceAsPerRest,
                         newRepaymentScheduleInstallments, recalculationDetails, loanRepaymentScheduleTransactionProcessor, scheduleTillDate,

@@ -234,7 +234,112 @@
             </not>
         </preConditions>
         <addColumn tableName="m_loan_arrears_aging">
-            <column name="tax_charges_overdue_derived" type="DECIMAL(19,6)" defaultValueNumeric="0.000000">
+            <column name="tax_charges_overdue_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+
+    <changeSet author="CredibleX" id="19">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_paid_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_paid_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="20">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_waived_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="21">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_writtenoff_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_writtenoff_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="22">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_outstanding_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_outstanding_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="23">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_transaction" columnName="tax_charges_portion_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_transaction">
+            <column name="tax_charges_portion_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="24">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge_paid_by" columnName="tax_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge_paid_by">
+            <column name="tax_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="25">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="is_taxes_paid_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="is_taxes_paid_derived" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="26">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="is_taxes_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="is_taxes_waived_derived" type="boolean" defaultValueBoolean="false">
                 <constraints nullable="false"/>
             </column>
         </addColumn>

@@ -29,6 +29,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -190,6 +191,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Override
     public CommandProcessingResult disburseLoan(final Long loanId, final JsonCommand command, Boolean isAccountTransfer,
             Boolean isWithoutAutoPayment) {
+
+        if (Boolean.FALSE.equals(isAccountTransfer)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.only.allowed.via.savings.account.transfer",
+                    "Loan disbursement is only allowed via savings account transfer");
+        }
         loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
         Loan loan = loanAssembler.assembleFrom(loanId);

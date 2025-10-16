@@ -590,6 +590,31 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return feePortionOfTransaction;
     }
 
+    public Money payTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money taxPortionOfTransaction = Money.zero(currency);
+        if (transactionAmountRemaining.isZero()) {
+            return taxPortionOfTransaction;
+        }
+        final Money taxChargesDue = getTaxChargesOutstanding(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxChargesDue)) {
+            this.taxChargesPaid = getTaxChargesPaid(currency).plus(taxChargesDue).getAmount();
+            taxPortionOfTransaction = taxPortionOfTransaction.plus(taxChargesDue);
+        } else {
+            this.taxChargesPaid = getTaxChargesPaid(currency).plus(transactionAmountRemaining).getAmount();
+            taxPortionOfTransaction = taxPortionOfTransaction.plus(transactionAmountRemaining);
+        }
+
+        this.taxChargesPaid = defaultToNullIfZero(this.taxChargesPaid);
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, taxPortionOfTransaction);
+
+        return taxPortionOfTransaction;
+    }
+
     public Money payInterestComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
 
         final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
@@ -710,6 +735,28 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return waivedFeeChargesPortionOfTransaction;
     }
 
+    public Money waiveTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money waivedTaxChargesPortionOfTransaction = Money.zero(currency);
+        if (transactionAmountRemaining.isZero()) {
+            return waivedTaxChargesPortionOfTransaction;
+        }
+        final Money taxesDue = getTaxChargesOutstanding(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxesDue)) {
+            this.taxChargesWaived = getTaxChargesWaived(currency).plus(taxesDue).getAmount();
+            waivedTaxChargesPortionOfTransaction = waivedTaxChargesPortionOfTransaction.plus(taxesDue);
+        } else {
+            this.taxChargesWaived = getTaxChargesWaived(currency).plus(transactionAmountRemaining).getAmount();
+            waivedTaxChargesPortionOfTransaction = waivedTaxChargesPortionOfTransaction.plus(transactionAmountRemaining);
+        }
+
+        this.taxChargesWaived = defaultToNullIfZero(this.taxChargesWaived);
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        return waivedTaxChargesPortionOfTransaction;
+    }
+
     public Money writeOffOutstandingPrincipal(final LocalDate transactionDate, final MonetaryCurrency currency) {
 
         final Money principalDue = getPrincipalOutstanding(currency);
@@ -739,6 +786,15 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return feeChargesOutstanding;
     }
 
+    public Money writeOffOutstandingTaxCharges(final LocalDate transactionDate, final MonetaryCurrency currency) {
+        final Money taxChargesOutstanding = getTaxChargesOutstanding(currency);
+        this.taxChargesWrittenOff = defaultToNullIfZero(taxChargesOutstanding.getAmount());
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        return taxChargesOutstanding;
+    }
+
     public Money writeOffOutstandingPenaltyCharges(final LocalDate transactionDate, final MonetaryCurrency currency) {
         final Money penaltyChargesOutstanding = getPenaltyChargesOutstanding(currency);
         this.penaltyChargesWrittenOff = defaultToNullIfZero(penaltyChargesOutstanding.getAmount());
@@ -753,7 +809,8 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public void updateChargePortion(final Money feeChargesDue, final Money feeChargesWaived, final Money feeChargesWrittenOff,
-            final Money penaltyChargesDue, final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff) {
+            final Money penaltyChargesDue, final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff,
+            final Money taxChargesDue, final Money taxChargesWaived, final Money taxChargesWrittenOff) {
         this.feeChargesCharged = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesDue));
         this.feeChargesWaived = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesWaived));
         this.feeChargesWrittenOff = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesWrittenOff));
@@ -956,6 +1013,27 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         reduceAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, feePortionOfTransactionDeducted);
 
         return feePortionOfTransactionDeducted;
+    }
+
+    public Money unpayTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money taxPortionOfTransactionDeducted;
+
+        final Money taxChargesCompleted = getTaxChargesPaid(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxChargesCompleted)) {
+            this.taxChargesPaid = Money.zero(currency).getAmount();
+            taxPortionOfTransactionDeducted = taxChargesCompleted;
+        } else {
+            this.taxChargesPaid = taxChargesCompleted.minus(transactionAmountRemaining).getAmount();
+            taxPortionOfTransactionDeducted = transactionAmountRemaining;
+        }
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        reduceAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, taxPortionOfTransactionDeducted);
+
+        return taxPortionOfTransactionDeducted;
     }
 
     public Money unpayInterestComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {

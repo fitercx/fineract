@@ -121,12 +121,13 @@ public class LoanImportHandler implements ImportHandler {
     private DisbursementData readDisbursalData(final Row row, final String locale, final String dateFormat) {
         LocalDate disbursedDate = ImportHandlerUtils.readAsDate(LoanConstants.DISBURSED_DATE_COL, row);
         String linkAccountId = null;
+        final BigDecimal factorRateLoanAmount = null;
         if (ImportHandlerUtils.readAsLong(LoanConstants.LINK_ACCOUNT_ID, row) != null) {
             linkAccountId = Objects.requireNonNull(ImportHandlerUtils.readAsLong(LoanConstants.LINK_ACCOUNT_ID, row)).toString();
         }
 
         if (disbursedDate != null) {
-            return DisbursementData.importInstance(disbursedDate, linkAccountId, row.getRowNum(), locale, dateFormat);
+            return DisbursementData.importInstance(disbursedDate, factorRateLoanAmount, linkAccountId, row.getRowNum(), locale, dateFormat);
         }
         return null;
     }

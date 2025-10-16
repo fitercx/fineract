@@ -91,6 +91,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         final BigDecimal principalAmount = loanTransactionDTO.getPrincipal();
         final BigDecimal interestAmount = loanTransactionDTO.getInterest();
         final BigDecimal feesAmount = loanTransactionDTO.getFees();
+        final BigDecimal taxesAmount = loanTransactionDTO.getTaxes();
         final BigDecimal penaltiesAmount = loanTransactionDTO.getPenalties();
         final BigDecimal overPaymentAmount = loanTransactionDTO.getOverPayment();
         final Long paymentTypeId = loanTransactionDTO.getPaymentTypeId();
@@ -142,7 +143,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments(), true);
+                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
                 GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                         AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), paymentTypeId);
@@ -157,6 +158,15 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 populateDebitAccountEntry(loanProductId, feesAmount,
                         AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_FEES.getValue(),
                         debitAccountMapForGoodwillCredit, paymentTypeId);
+            }
+        }
+
+        // handle taxes payment
+        if (taxesAmount != null && taxesAmount.compareTo(BigDecimal.ZERO) > 0) {
+            totalDebitAmount = totalDebitAmount.add(taxesAmount);
+            if (loanTransactionDTO.getTransactionType().isRepayment()) {
+                this.customAccountingProcessorHelper.createJournalEntriesForInstallmentChargeTaxes(office, currencyCode, loanId,
+                        transactionId, transactionDate, taxesAmount, loanTransactionDTO.getTaxPayments());
             }
         }
 
@@ -213,10 +223,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         }
 
         /**
-         * Single DEBIT transaction for write-offs or Repayments
+         * Exclude DEBIT entry for Repayments of Fees at Disbursement and VAT Deduction at Disbursement
          ***/
-        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
-                && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement() && !loanTransactionDTO.isAccountTransfer()) {
+        if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && isDebitAccountEntryPermitted(loanTransactionDTO)) {
             if (writeOff) {
                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.AccrualAccountsForLoan.LOSSES_WRITTEN_OFF.getValue(), loanProductId, paymentTypeId, loanId,
@@ -257,5 +266,10 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, totalDebitAmount);
         }
+    }
+
+    private boolean isDebitAccountEntryPermitted(final LoanTransactionDTO loanTransactionDTO) {
+        return !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
+                && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement();
     }
 }

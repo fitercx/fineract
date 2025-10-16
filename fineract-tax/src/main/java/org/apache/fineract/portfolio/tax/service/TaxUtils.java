@@ -151,6 +151,26 @@ public final class TaxUtils {
         return totalAmount;
     }
 
+    public static BigDecimal calculateChargeTaxAmount(final BigDecimal chargeAmount, final LocalDate date,
+            final Set<TaxGroupMappings> taxGroupMappings) {
+        BigDecimal taxAmount = null;
+        if (chargeAmount != null && chargeAmount.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal percentageVal = BigDecimal.ZERO;
+            for (TaxGroupMappings groupMappings : taxGroupMappings) {
+                if (groupMappings.occursOnDayFromAndUpToAndIncluding(date)) {
+                    TaxComponent component = groupMappings.getTaxComponent();
+                    BigDecimal percentage = component.getApplicablePercentage(date);
+                    if (percentage != null) {
+                        percentageVal = percentageVal.add(percentage);
+                    }
+                }
+            }
+            final BigDecimal multiplier = percentageVal.divide(BigDecimal.valueOf(100), MoneyHelper.getRoundingMode());
+            taxAmount = chargeAmount.multiply(multiplier);
+        }
+        return taxAmount;
+    }
+
     public static BigDecimal calculateFactorRateTaxAmount(final BigDecimal loanAmount, final LocalDate chargeDate,
             final BigDecimal factorRate, final Set<TaxGroupMappings> taxGroupMappings) {
         BigDecimal totalFactorRateTaxAmount = BigDecimal.ZERO;

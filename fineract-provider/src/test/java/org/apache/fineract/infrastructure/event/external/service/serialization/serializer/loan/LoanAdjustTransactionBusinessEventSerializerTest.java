@@ -140,8 +140,9 @@ public class LoanAdjustTransactionBusinessEventSerializerTest {
         LoanTransactionData transactionToAdjustData = new LoanTransactionData(1L, 1L, "", LoanEnumerations.transactionType(2), null, null,
                 LocalDate.now(ZoneId.systemDefault()), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
                 BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                new ExternalId("testExternalId"), null, null, BigDecimal.valueOf(0.0), LocalDate.now(ZoneId.systemDefault()).minusDays(4),
-                true, new ExternalId("testReversalExternalId"), reversedOnDate, 1L, new ExternalId("testExternalLoanId"));
+                BigDecimal.valueOf(0.0), new ExternalId("testExternalId"), null, null, BigDecimal.valueOf(0.0),
+                LocalDate.now(ZoneId.systemDefault()).minusDays(4), true, new ExternalId("testReversalExternalId"), reversedOnDate, 1L,
+                new ExternalId("testExternalLoanId"));
 
         when(service.retrieveLoanTransaction(anyLong(), anyLong())).thenReturn(transactionToAdjustData);
         when(loanChargePaidByReadService.fetchLoanChargesPaidByDataTransactionId(anyLong())).thenReturn(new ArrayList<>());

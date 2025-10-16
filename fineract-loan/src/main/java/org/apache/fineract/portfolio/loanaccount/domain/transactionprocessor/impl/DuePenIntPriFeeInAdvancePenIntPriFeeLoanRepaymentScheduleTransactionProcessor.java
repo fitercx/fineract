@@ -277,11 +277,17 @@ public class DuePenIntPriFeeInAdvancePenIntPriFeeLoanRepaymentScheduleTransactio
             transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
         }
 
+        Money taxChargesPortion = Money.zero(currency);
+        if (transactionAmountRemaining.isGreaterThanZero()) {
+            taxChargesPortion = currentInstallment.unpayTaxChargesComponent(transactionDate, transactionAmountRemaining);
+            transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+        }
+
         if (transactionAmountRemaining.isGreaterThanZero()) {
             penaltyChargesPortion = currentInstallment.unpayPenaltyChargesComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(penaltyChargesPortion);
         }
-        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion);
+        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
         if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {
             transactionMappings.add(LoanTransactionToRepaymentScheduleMapping.createFrom(loanTransaction, currentInstallment,
                     principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion));

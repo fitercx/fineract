@@ -197,14 +197,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
         final BigDecimal penaltyDue = result.getPenaltyDue();
-        final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue);
+        final BigDecimal taxDue = result.getTaxDue();
+        final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
         final BigDecimal netDisbursalAmount = result.getNetDisbursalAmount();
         boolean manuallyReversed = false;
         final Collection<PaymentTypeData> paymentTypeOptions = paymentTypeReadPlatformService.retrieveAllPaymentTypes();
 
         return new LoanTransactionData(null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
-                principalPortion, interestDue, feeDue, penaltyDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null, null,
-                manuallyReversed, loanId, ExternalId.empty());
+                principalPortion, interestDue, feeDue, penaltyDue, taxDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null,
+                null, manuallyReversed, loanId, ExternalId.empty());
     }
 
     @Override
@@ -440,7 +441,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " l.expected_disbursedon_date as expectedDisbursementDate, l.disbursedon_date as actualDisbursementDate, dbu.username as disbursedByUsername, dbu.firstname as disbursedByFirstname, dbu.lastname as disbursedByLastname,"
                     + " l.closedon_date as closedOnDate, cbu.username as closedByUsername, cbu.firstname as closedByFirstname, cbu.lastname as closedByLastname, l.writtenoffon_date as writtenOffOnDate, "
                     + " l.expected_firstrepaymenton_date as expectedFirstRepaymentOnDate, l.interest_calculated_from_date as interestChargedFromDate, l.maturedon_date as actualMaturityDate, l.expected_maturedon_date as expectedMaturityDate, "
-                    + " l.principal_amount_proposed as proposedPrincipal, l.principal_amount as principal, l.approved_principal as approvedPrincipal, l.net_disbursal_amount as netDisbursalAmount, l.arrearstolerance_amount as inArrearsTolerance, l.number_of_repayments as numberOfRepayments, l.repay_every as repaymentEvery,"
+                    + " l.principal_amount_proposed as proposedPrincipal, l.principal_amount as principal, l.approved_principal as approvedPrincipal, l.net_disbursal_amount as netDisbursalAmount, l.factor_rate_loan_amount as factorRateLoanAmount, l.arrearstolerance_amount as inArrearsTolerance, l.number_of_repayments as numberOfRepayments, l.repay_every as repaymentEvery,"
                     + " l.grace_on_principal_periods as graceOnPrincipalPayment, l.recurring_moratorium_principal_periods as recurringMoratoriumOnPrincipalPeriods, l.grace_on_interest_periods as graceOnInterestPayment, l.grace_interest_free_periods as graceOnInterestCharged,l.grace_on_arrears_ageing as graceOnArrearsAgeing,"
                     + " l.nominal_interest_rate_per_period as interestRatePerPeriod, l.annual_nominal_interest_rate as annualInterestRate, "
                     + " l.repayment_period_frequency_enum as repaymentFrequencyType, l.interest_period_frequency_enum as interestRateFrequencyType, "
@@ -666,6 +667,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final BigDecimal approvedPrincipal = rs.getBigDecimal("approvedPrincipal");
             final BigDecimal proposedPrincipal = rs.getBigDecimal("proposedPrincipal");
             final BigDecimal netDisbursalAmount = rs.getBigDecimal("netDisbursalAmount");
+            final BigDecimal factorRateLoanAmount = rs.getBigDecimal("factorRateLoanAmount");
             final BigDecimal totalOverpaid = rs.getBigDecimal("totalOverpaid");
             final BigDecimal inArrearsTolerance = rs.getBigDecimal("inArrearsTolerance");
 
@@ -937,7 +939,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     disbursedAmountPercentageForDownPayment, enableAutoRepaymentForDownPayment, enableInstallmentLevelDelinquency,
                     loanScheduleType.asEnumOptionData(), loanScheduleProcessingType.asEnumOptionData(), fixedLength,
                     chargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate, daysInYearCustomStrategy,
-                    enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
+                    enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy, factorRateLoanAmount);
 
             // Adding custom parameters for CredibleX requirements
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
@@ -1041,7 +1043,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     public Collection<DisbursementData> retrieveLoanDisbursementDetails(final Long loanId) {
         final CredXLoanDisbursementDetailMapper rm = new CredXLoanDisbursementDetailMapper(sqlGenerator);
         final String sql = "select " + rm.schema()
-                + " where dd.loan_id=? and dd.is_reversed=false group by dd.id, lc.amount_waived_derived order by dd.expected_disburse_date,dd.disbursedon_date,dd.id";
+                + " where dd.loan_id=? and dd.is_reversed=false group by dd.id, lc.amount_waived_derived, l.factor_rate_loan_amount order by dd.expected_disburse_date,dd.disbursedon_date,dd.id";
         return this.jdbcTemplate.query(sql, rm, loanId); // NOSONAR
     }
 
@@ -1054,7 +1056,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         public String schema() {
-            return "dd.id as id,dd.expected_disburse_date as expectedDisbursementdate, dd.disbursedon_date as actualDisbursementdate,dd.principal as principal,dd.net_disbursal_amount as netDisbursalAmount,sum(lc.amount) chargeAmount, lc.amount_waived_derived waivedAmount, sum(lc.tax_amount) as taxAmount, "
+            return "dd.id as id,dd.expected_disburse_date as expectedDisbursementdate, dd.disbursedon_date as actualDisbursementdate,dd.principal as principal,dd.net_disbursal_amount as netDisbursalAmount, l.factor_rate_loan_amount AS factorRateLoanAmount, sum(lc.amount) chargeAmount, lc.amount_waived_derived waivedAmount, sum(lc.tax_amount) as taxAmount, "
                     + sqlGenerator.groupConcat("lc.id") + " loanChargeId "
                     + "from m_loan l inner join m_loan_disbursement_detail dd on dd.loan_id = l.id left join m_loan_tranche_disbursement_charge tdc on tdc.disbursement_detail_id=dd.id "
                     + "left join m_loan_charge lc on  lc.id=tdc.loan_charge_id and lc.is_active=true";
@@ -1068,6 +1070,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final BigDecimal principal = rs.getBigDecimal("principal");
             final String loanChargeId = rs.getString("loanChargeId");
             final BigDecimal netDisbursalAmount = rs.getBigDecimal("netDisbursalAmount");
+            final BigDecimal factorRateLoanAmount = rs.getBigDecimal("factorRateLoanAmount");
             BigDecimal chargeAmount = rs.getBigDecimal("chargeAmount");
             final BigDecimal waivedAmount = rs.getBigDecimal("waivedAmount");
             final BigDecimal taxAmount = rs.getBigDecimal("taxAmount");
@@ -1079,8 +1082,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // Assumption is that tax is not waivable, so we add it to the charge amount
                 chargeAmount = chargeAmount.add(taxAmount);
             }
-            return new DisbursementData(id, expectedDisbursementdate, actualDisbursementdate, principal, netDisbursalAmount, loanChargeId,
-                    chargeAmount, waivedAmount);
+            return new DisbursementData(id, expectedDisbursementdate, actualDisbursementdate, principal, netDisbursalAmount,
+                    factorRateLoanAmount, loanChargeId, chargeAmount, waivedAmount);
         }
 
     }

@@ -1283,18 +1283,25 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 charge = loanCharge;
             }
         }
-        final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(), null);
+        final BigDecimal amount = charge != null ? charge.amount() : BigDecimal.ZERO;
+        final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, amount, null);
         chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
         final Money zero = Money.zero(getCurrency());
-        final Money chargeAmount = chargesPayment.getTypeOf().equals(LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT)
-                ? charge.getTaxAmount(getCurrency())
-                : charge.getAmount(getCurrency());
+
+        Money chargeAmount = Money.zero(getCurrency());
+        if (charge != null) {
+            chargeAmount = chargesPayment.getTypeOf().equals(LoanTransactionType.VAT_DEDUCTION_AT_DISBURSEMENT)
+                    ? charge.getTaxAmount(getCurrency())
+                    : charge.getAmount(getCurrency());
+        }
         chargesPayment.updateComponentsAndTotal(zero, zero, chargeAmount, zero);
         chargesPayment.updateLoan(this);
         addLoanTransaction(chargesPayment);
         updateLoanOutstandingBalances();
         // Doesn't matter since the tax transaction still gets run immediately
-        charge.markAsFullyPaidWithTaxes();
+        if (charge != null) {
+            charge.markAsFullyPaidWithTaxes();
+        }
     }
 
     public void removePostDatedChecks() {
@@ -1517,7 +1524,8 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         for (final LoanRepaymentScheduleInstallment scheduledRepayment : installments) {
             cumulativeTotalPaidOnInstallments = cumulativeTotalPaidOnInstallments
                     .plus(scheduledRepayment.getPrincipalCompleted(currency).plus(scheduledRepayment.getInterestPaid(currency)))
-                    .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getPenaltyChargesPaid(currency));
+                    .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getTaxChargesPaid())
+                    .plus(scheduledRepayment.getPenaltyChargesPaid(currency));
 
             cumulativeTotalWaivedOnInstallments = cumulativeTotalWaivedOnInstallments.plus(scheduledRepayment.getInterestWaived(currency));
         }

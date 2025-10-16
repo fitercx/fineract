@@ -109,7 +109,8 @@ public final class AccountingConstants {
         INCOME_FROM_CHARGE_OFF_PENALTY(18), //
         INCOME_FROM_GOODWILL_CREDIT_INTEREST(19), //
         INCOME_FROM_GOODWILL_CREDIT_FEES(20), //
-        INCOME_FROM_GOODWILL_CREDIT_PENALTY(21); //
+        INCOME_FROM_GOODWILL_CREDIT_PENALTY(21), //
+        LIABILITY_FROM_TAXES(22); //
 
         private final Integer value;
 

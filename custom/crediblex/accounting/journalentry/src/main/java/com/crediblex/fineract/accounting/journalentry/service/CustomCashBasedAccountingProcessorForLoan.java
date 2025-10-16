@@ -180,6 +180,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
         final BigDecimal principalAmount = loanTransactionDTO.getPrincipal();
         final BigDecimal interestAmount = loanTransactionDTO.getInterest();
         final BigDecimal feesAmount = loanTransactionDTO.getFees();
+        final BigDecimal taxesAmount = loanTransactionDTO.getTaxes();
         final BigDecimal penaltiesAmount = loanTransactionDTO.getPenalties();
         final BigDecimal overPaymentAmount = loanTransactionDTO.getOverPayment();
         final Long paymentTypeId = loanTransactionDTO.getPaymentTypeId();
@@ -214,7 +215,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
 
             if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments(), true);
+                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
                 this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
                         AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
