@@ -33,7 +33,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
-import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepository;
 import org.springframework.batch.core.StepContribution;
@@ -193,8 +192,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
-     * Process unposted loan monthly accrual summations by creating corresponding journal entries.
-     * This method creates debit and credit entries for interest accruals and marks them for Odoo posting.
+     * Process unposted loan monthly accrual summations by creating corresponding journal entries. This method creates
+     * debit and credit entries for interest accruals and marks them for Odoo posting.
      */
     private void processLoanAccrualJournalEntries() {
         try {
@@ -207,15 +206,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             }
 
             // Get GL accounts for accrual entries
-            GLAccount interestIncomeAccount = glAccountRepository.findOneByGlCode(INTEREST_INCOME_GL_CODE)
-                    .orElseThrow(() -> new RuntimeException("Interest Income GL Account with code " + INTEREST_INCOME_GL_CODE + " not found"));
-            
-            GLAccount interestReceivableAccount = glAccountRepository.findOneByGlCode(INTEREST_RECEIVABLE_GL_CODE)
-                    .orElseThrow(() -> new RuntimeException("Interest Receivable GL Account with code " + INTEREST_RECEIVABLE_GL_CODE + " not found"));
+            GLAccount interestIncomeAccount = glAccountRepository.findOneByGlCode(INTEREST_INCOME_GL_CODE).orElseThrow(
+                    () -> new RuntimeException("Interest Income GL Account with code " + INTEREST_INCOME_GL_CODE + " not found"));
+
+            GLAccount interestReceivableAccount = glAccountRepository.findOneByGlCode(INTEREST_RECEIVABLE_GL_CODE).orElseThrow(
+                    () -> new RuntimeException("Interest Receivable GL Account with code " + INTEREST_RECEIVABLE_GL_CODE + " not found"));
 
             // Get head office (adjust this logic based on your office structure)
-            Office headOffice = officeRepository.findById(1L)
-                    .orElseThrow(() -> new RuntimeException("Head Office not found"));
+            Office headOffice = officeRepository.findById(1L).orElseThrow(() -> new RuntimeException("Head Office not found"));
 
             int successCount = 0;
             int failureCount = 0;
@@ -223,14 +221,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             for (LoanMonthlyAccrualJobAudit accrualAudit : unpostedAccruals) {
                 try {
                     createAccrualJournalEntries(accrualAudit, interestIncomeAccount, interestReceivableAccount, headOffice);
-                    
+
                     // Mark as posted to Odoo
                     accrualAudit.setPostedToOdoo(true);
                     loanMonthlyAccrualJobAuditRepository.saveAndFlush(accrualAudit);
-                    
+
                     successCount++;
-                    log.info("Successfully created accrual journal entries for Loan ID: {} with amount: {}", 
-                            accrualAudit.getLoanId(), accrualAudit.getTotalInterestAccrualDerived());
+                    log.info("Successfully created accrual journal entries for Loan ID: {} with amount: {}", accrualAudit.getLoanId(),
+                            accrualAudit.getTotalInterestAccrualDerived());
 
                 } catch (Exception e) {
                     failureCount++;
@@ -247,12 +245,12 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
-     * Post accrual journal entries directly to Odoo without creating database records.
-     * Creates debit and credit journal lines on-the-fly and posts them to Odoo.
+     * Post accrual journal entries directly to Odoo without creating database records. Creates debit and credit journal
+     * lines on-the-fly and posts them to Odoo.
      */
-    private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, GLAccount interestIncomeAccount, 
+    private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, GLAccount interestIncomeAccount,
             GLAccount interestReceivableAccount, Office office) {
-        
+
         String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getId() + "_" + System.currentTimeMillis();
         BigDecimal accrualAmount = accrualAudit.getTotalInterestAccrualDerived();
         LocalDate transactionDate = accrualAudit.getGeneratedOnDate();
@@ -260,31 +258,25 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
         try {
             // Post accrual journal entries directly to Odoo without creating database records
-            Long odooMoveId = odooJournalEntryService.postAccrualJournalEntriesToOdoo(
-                accrualAudit.getLoanId(),
-                transactionId,
-                transactionDate,
-                description,
-                accrualAmount,
-                INTEREST_INCOME_GL_CODE,    // Credit account (300000)
-                INTEREST_RECEIVABLE_GL_CODE, // Debit account (100034)
-                ODOO_ACCRUAL_JOURNAL_CODE
-            );
+            Long odooMoveId = odooJournalEntryService.postAccrualJournalEntriesToOdoo(accrualAudit.getLoanId(), transactionId,
+                    transactionDate, description, accrualAmount, INTEREST_INCOME_GL_CODE, // Credit account (300000)
+                    INTEREST_RECEIVABLE_GL_CODE, // Debit account (100034)
+                    ODOO_ACCRUAL_JOURNAL_CODE);
 
             if (odooMoveId != null) {
-                log.info("Successfully posted accrual journal entries to Odoo for Loan ID: {} with move ID: {} and amount: {}", 
+                log.info("Successfully posted accrual journal entries to Odoo for Loan ID: {} with move ID: {} and amount: {}",
                         accrualAudit.getLoanId(), odooMoveId, accrualAmount);
             } else {
                 throw new RuntimeException("Failed to post accrual journal entries to Odoo - No move ID returned");
             }
 
         } catch (Exception e) {
-            log.error("Failed to post accrual journal entries to Odoo for Loan ID: {} with amount: {}", 
-                    accrualAudit.getLoanId(), accrualAmount, e);
+            log.error("Failed to post accrual journal entries to Odoo for Loan ID: {} with amount: {}", accrualAudit.getLoanId(),
+                    accrualAmount, e);
             throw e;
         }
 
-        log.debug("Posted accrual journal entries to Odoo for Loan ID: {} with transaction ID: {}", 
-                accrualAudit.getLoanId(), transactionId);
+        log.debug("Posted accrual journal entries to Odoo for Loan ID: {} with transaction ID: {}", accrualAudit.getLoanId(),
+                transactionId);
     }
 }
