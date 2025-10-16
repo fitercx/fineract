@@ -27,8 +27,8 @@ import org.springframework.stereotype.Repository;
 public interface LoanMonthlyAccrualJobAuditRepository extends JpaRepository<LoanMonthlyAccrualJobAudit, Long> {
 
     /**
-     * Find all loan monthly accrual audit records that have not been posted to Odoo yet.
-     * These records need journal entries to be created and posted.
+     * Find all loan monthly accrual audit records that have not been posted to Odoo yet. These records need journal
+     * entries to be created and posted.
      *
      * @return List of unposted accrual audit records
      */
