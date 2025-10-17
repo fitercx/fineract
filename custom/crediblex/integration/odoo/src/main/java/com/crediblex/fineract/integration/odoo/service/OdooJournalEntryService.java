@@ -148,7 +148,7 @@ public class OdooJournalEntryService {
             moveValues.put("x_studio_lms_loan_id", loanId);
             String clientName = getClientNameFromLoanId(loanId);
             if (clientName != null) {
-            moveValues.put("x_studio_lms_customer_name", clientName);
+                moveValues.put("x_studio_lms_customer_name", clientName);
             }
         } else if (firstEntry.getLoanTransactionId() != null) {
             // Extract loan ID from the journal entry if not provided
@@ -649,20 +649,20 @@ public class OdooJournalEntryService {
         return moveValues;
     }
 
-
     /**
-     * Post multiple journal entries for a business event as grouped account moves in Odoo
-     * Groups entries by their target journal based on GL codes
+     * Post multiple journal entries for a business event as grouped account moves in Odoo Groups entries by their
+     * target journal based on GL codes
      */
-    public Map<Integer, Long> postJournalEntriesForBusinessEvent(String businessEventType, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+    public Map<Integer, Long> postJournalEntriesForBusinessEvent(String businessEventType,
+            List<JournalEntryOdooSync> journalEntryOdooSyncs) {
         Map<Integer, Long> journalToMoveMap = new HashMap<>();
 
         try {
             // Authenticate with Odoo
             Integer uid = odooApiClient.authenticate();
             if (uid == null) {
-                throw new RuntimeException(
-                        "Odoo authentication failed for business event " + businessEventType + " - check credentials and connection settings");
+                throw new RuntimeException("Odoo authentication failed for business event " + businessEventType
+                        + " - check credentials and connection settings");
             }
 
             // Group journal entries by target journal
@@ -671,9 +671,9 @@ public class OdooJournalEntryService {
             // Validate all entries
             for (JournalEntry entry : journalEntries) {
                 if (!canPostToOdoo(entry)) {
-                    throw new RuntimeException(
-                            String.format("Journal entry %d for business event %s failed validation - check GL account, amount, or transaction date",
-                                    entry.getId(), businessEventType));
+                    throw new RuntimeException(String.format(
+                            "Journal entry %d for business event %s failed validation - check GL account, amount, or transaction date",
+                            entry.getId(), businessEventType));
                 }
             }
 
@@ -707,8 +707,8 @@ public class OdooJournalEntryService {
                 }
 
                 journalToMoveMap.put(journalId, odooMoveId);
-                log.info("Successfully created and posted account move {} in Odoo for business event {} and journal {}",
-                        odooMoveId, businessEventType, journalId);
+                log.info("Successfully created and posted account move {} in Odoo for business event {} and journal {}", odooMoveId,
+                        businessEventType, journalId);
             }
 
             // Log summary of skipped entries
@@ -717,8 +717,8 @@ public class OdooJournalEntryService {
             int skippedEntries = totalEntries - processedEntries;
 
             if (skippedEntries > 0) {
-                log.info("Processed {} entries, skipped {} entries without journal mappings for business event {}", 
-                        processedEntries, skippedEntries, businessEventType);
+                log.info("Processed {} entries, skipped {} entries without journal mappings for business event {}", processedEntries,
+                        skippedEntries, businessEventType);
             }
 
             return journalToMoveMap;
@@ -728,17 +728,19 @@ public class OdooJournalEntryService {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error while posting journal entries for business event {} to Odoo", businessEventType, e);
-            throw new RuntimeException(
-                    String.format("Unexpected error posting journal entries for business event %s to Odoo: %s", businessEventType, e.getMessage()), e);
+            throw new RuntimeException(String.format("Unexpected error posting journal entries for business event %s to Odoo: %s",
+                    businessEventType, e.getMessage()), e);
         }
     }
 
     /**
      * Build account move values for business event entries
      */
-    private Map<String, Object> buildAccountMoveValuesForBusinessEvent(String businessEventType, List<JournalEntry> entries, Integer journalId) {
+    private Map<String, Object> buildAccountMoveValuesForBusinessEvent(String businessEventType, List<JournalEntry> entries,
+            Integer journalId) {
         if (entries.isEmpty()) {
-            throw new IllegalArgumentException("Cannot build account move values for business event " + businessEventType + " - no entries provided");
+            throw new IllegalArgumentException(
+                    "Cannot build account move values for business event " + businessEventType + " - no entries provided");
         }
 
         // Use the first entry for common values like date

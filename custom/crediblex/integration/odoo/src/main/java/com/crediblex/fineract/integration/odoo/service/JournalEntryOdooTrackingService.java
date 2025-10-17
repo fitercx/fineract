@@ -258,14 +258,16 @@ public class JournalEntryOdooTrackingService {
                         case 1:
                             // Special case: GL code 200040 with credit entry should return DISBURSEMENT
                             if ("200040".equals(glCode) && !isDebit) {
-                                log.debug("Savings transaction {} with type {} and GL code {} (credit) mapped to DISBURSEMENT business event",
+                                log.debug(
+                                        "Savings transaction {} with type {} and GL code {} (credit) mapped to DISBURSEMENT business event",
                                         savingsTransactionId, transactionTypeEnum, glCode);
                                 return "DISBURSEMENT";
                             }
-                            
+
                             // Check for cash margin GL codes to determine if it's SAVINGS_DEPOSIT_TO_CASH_MARGIN
                             if (hasCashMarginGLCodes(savingsTransactionId, glCode)) {
-                                log.debug("Savings transaction {} with type {} and GL code {} mapped to SAVINGS_DEPOSIT_TO_CASH_MARGIN business event",
+                                log.debug(
+                                        "Savings transaction {} with type {} and GL code {} mapped to SAVINGS_DEPOSIT_TO_CASH_MARGIN business event",
                                         savingsTransactionId, transactionTypeEnum, glCode);
                                 return "SAVINGS_DEPOSIT_TO_CASH_MARGIN";
                             }
@@ -371,8 +373,8 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Check if the current journal entry has specific GL codes (100006 or 210002)
-     * This is used to determine if a SAVINGS_DEPOSIT should be categorized as SAVINGS_DEPOSIT_TO_CASH_MARGIN
+     * Check if the current journal entry has specific GL codes (100006 or 210002) This is used to determine if a
+     * SAVINGS_DEPOSIT should be categorized as SAVINGS_DEPOSIT_TO_CASH_MARGIN
      */
     private boolean hasCashMarginGLCodes(Long savingsTransactionId, String glCode) {
         if (savingsTransactionId == null || glCode == null) {
@@ -381,10 +383,10 @@ public class JournalEntryOdooTrackingService {
 
         // Check if the current journal entry has one of the specific GL codes
         boolean hasSpecificCode = "100006".equals(glCode) || "210002".equals(glCode);
-        
-        log.debug("Savings transaction {} with GL code {} has specific code (100006 or 210002): {}", 
-                savingsTransactionId, glCode, hasSpecificCode);
-        
+
+        log.debug("Savings transaction {} with GL code {} has specific code (100006 or 210002): {}", savingsTransactionId, glCode,
+                hasSpecificCode);
+
         return hasSpecificCode;
     }
 }
