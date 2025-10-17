@@ -49,11 +49,13 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
 import java.util.Collection;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -205,8 +207,9 @@ public class LineOfCreditApiResource {
             case "increasecreditlimit" -> builder.increaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
             case "decreasecreditlimit" -> builder.decreaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
             case "undoclose" -> builder.undoCloseLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            default -> throw new IllegalArgumentException(
-                    "Unsupported action: " + action + ". Supported actions are: approve, activate, close, deactivate");
+            case "reactivate" -> builder.reactivateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            default -> throw new PlatformApiDataValidationException("error.msg.lineofcredit.invalid.action",
+                    "The action `" + action + "` is not valid for line of credit " + lineOfCreditId, List.of());
         };
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
@@ -236,7 +239,8 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "List Line of Credit Transactions", description = "Retrieves paginated transaction history for a line of credit.")
-    @ApiResponses({ @ApiResponse(responseCode = "200", description = "OK") })
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionsResponse.class))) })
     public String retrieveTransactions(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @QueryParam("offset") @Parameter(description = "offset") @DefaultValue("0") final Integer offset,
@@ -258,7 +262,8 @@ public class LineOfCreditApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Retrieve Line of Credit Transaction", description = "Retrieves a specific transaction for a line of credit.")
-    @ApiResponses({ @ApiResponse(responseCode = "200", description = "OK") })
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.GetLineOfCreditTransactionResponse.class))) })
     public String retrieveTransaction(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("transactionId") @Parameter(description = "transactionId") final Long transactionId,

@@ -40,7 +40,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CustomSavingsAccountStepDef extends AbstractStepDef {
 
-    private static final String DATE_FORMAT = "dd MMMM yyyy";
     private static final String DEFAULT_LOCALE = "en";
     
     @Autowired

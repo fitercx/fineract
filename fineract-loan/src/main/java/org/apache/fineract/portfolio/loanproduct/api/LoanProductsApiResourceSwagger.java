@@ -346,6 +346,10 @@ public final class LoanProductsApiResourceSwagger {
         public List<String> supportedInterestRefundTypes;
         @Schema(example = "REGULAR")
         public String chargeOffBehaviour;
+        @Schema(example = "false")
+        public Boolean isLocEnabled;
+        @Schema(example = "false")
+        public Boolean enableLineOfCreditReceivable;
 
         static final class PostChargeOffReasonToExpenseAccountMappings {
 
@@ -1705,6 +1709,8 @@ public final class LoanProductsApiResourceSwagger {
         public String capitalizedIncomeStrategy;
         @Schema(example = "false")
         public Boolean isLocEnabled;
+        @Schema(example = "false")
+        public Boolean enableLineOfCreditReceivable;
     }
 
     public static final class AdvancedPaymentData {

@@ -231,6 +231,20 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     }
 
     /**
+     * Check if the line of credit is deactivated.
+     */
+    public boolean isDeactivated() {
+        return this.status == LocStatus.INACTIVE;
+    }
+
+    /**
+     * Reactivate the line of credit.
+     */
+    public void reactivate() {
+        this.status = LocStatus.ACTIVE;
+    }
+
+    /**
      * Check if the line of credit can be activated.
      */
     public boolean canActivate() {

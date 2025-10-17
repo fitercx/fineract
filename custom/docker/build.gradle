@@ -21,6 +21,7 @@ description = 'Fineract Custom Docker Image'
 apply plugin: 'java'
 apply plugin: 'com.google.cloud.tools.jib'
 apply plugin: 'io.swagger.core.v3.swagger-gradle-plugin'
+apply plugin: 'org.openapi.generator'
 apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.dependencies.gradle"
 
 jib {
@@ -219,6 +220,47 @@ tasks.register('mergeSwaggerSpecs') {
     }
 }
 
+ext['customSwaggerFile'] = "$rootDir/custom/docker/build/classes/java/main/static/fineract-custom.json".toString()
+// Custom Java SDK generation task (includes CredibleX APIs)
+tasks.register('buildCustomJavaSdk', org.openapitools.generator.gradle.plugin.tasks.GenerateTask) {
+    group = 'codegen'
+    description = 'Generates a custom Java SDK including Crediblex APIs.'
+
+    generatorName = 'java'
+    verbose = false
+    validateSpec = false
+    skipValidateSpec = true
+
+    inputSpec = "file:///$customSwaggerFile"
+    outputDir = file("../../fineract-client/build/generated/java").absolutePath
+
+    // Only apply templateDir if custom templates actually exist
+    if (file("$projectDir/src/main/resources/templates/java").exists()) {
+        templateDir = "$projectDir/src/main/resources/templates/java"
+    }
+
+    groupId = 'com.crediblex'
+    apiPackage = 'com.crediblex.client.services'
+    invokerPackage = 'org.apache.fineract.client'
+    modelPackage = 'com.crediblex.client.models'
+
+    configOptions = [
+            dateLibrary            : 'java8',
+            useRxJava2             : 'false',
+            library                : 'retrofit2',
+            hideGenerationTimestamp: 'true',
+            containerDefaultToNull : 'true'
+    ]
+
+    generateModelTests = false
+    generateApiTests = false
+
+    def ignoreFile = file("$projectDir/.openapi-generator-ignore")
+    if (ignoreFile.exists()) {
+        ignoreFileOverride = ignoreFile.absolutePath
+    }
+}
+
 // Task to copy merged swagger spec to fineract-provider for Swagger UI
 tasks.register('copyMergedSwaggerToProvider') {
     description = 'Copy merged swagger spec to fineract-provider static resources for Swagger UI'
@@ -243,6 +285,8 @@ tasks.register('copyMergedSwaggerToProvider') {
 
         println "Copied merged swagger spec to fineract-provider: ${providerSwaggerFile}"
     }
+
+    finalizedBy(buildCustomJavaSdk)
 }
 
 // Make jib tasks depend on swagger merging

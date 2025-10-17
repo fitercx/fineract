@@ -127,17 +127,15 @@ public class LoanLineOfCreditParams {
 
     // Business logic: Approved Receivable Amount = Invoice Amount - Disapproved Amount
     private void computeApprovedReceivableAmount() {
-        if (this.loan != null && this.disapprovedAmount != null) {
-            BigDecimal invoiceAmount = this.loan.getApprovedPrincipal();
-            if (invoiceAmount != null) {
-                this.approvedReceivableAmount = invoiceAmount.subtract(this.disapprovedAmount);
-            }
+        if (this.loan != null && this.disapprovedAmount != null && lineOfCredit.getProductType().isReceivable()) {
+            this.approvedReceivableAmount = invoiceAmount.subtract(this.disapprovedAmount);
+
         }
     }
 
     // Business logic: Amount After Advance = Approved Receivable Amount * (Advance % / 100)
     private void computeAmountAfterAdvance() {
-        if (this.approvedReceivableAmount != null && this.advancePercentage != null) {
+        if (this.approvedReceivableAmount != null && this.advancePercentage != null && lineOfCredit.getProductType().isReceivable()) {
             this.amountAfterAdvance = this.approvedReceivableAmount.multiply(this.advancePercentage).divide(BigDecimal.valueOf(100), 6,
                     RoundingMode.HALF_UP);
         }
@@ -145,15 +143,15 @@ public class LoanLineOfCreditParams {
 
     // Business logic: Amount In Facility Currency = Approved Receivable Amount * Exchange Rate
     private void computeAmountInFacilityCurrency() {
-        if (this.approvedReceivableAmount != null && this.exchangeRate != null) {
-            this.amountInFacilityCurrency = this.approvedReceivableAmount.multiply(this.exchangeRate);
+        if (this.approvedReceivableAmount != null && this.exchangeRate != null && lineOfCredit.getProductType().isPayable()) {
+            this.amountInFacilityCurrency = this.approvedPayableAmount.multiply(this.exchangeRate.add(this.markup));
         }
     }
 
-    // Business logic: Approved Payable Amount = Amount In Facility Currency + Markup
+    // Business logic: Approved Payable Amount = Invoice amount - Disapproved Amount
     private void computeApprovedPayableAmount() {
-        if (this.amountInFacilityCurrency != null && this.markup != null) {
-            this.approvedPayableAmount = this.amountInFacilityCurrency.add(this.markup);
+        if (this.invoiceAmount != null && this.disapprovedAmount != null && lineOfCredit.getProductType().isPayable()) {
+            this.approvedPayableAmount = this.invoiceAmount.subtract(this.disapprovedAmount);
         }
     }
 

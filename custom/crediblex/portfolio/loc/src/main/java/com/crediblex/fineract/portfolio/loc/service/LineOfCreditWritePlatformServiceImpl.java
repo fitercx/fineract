@@ -599,6 +599,39 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     @Override
     @Transactional
+    public CommandProcessingResult reactivateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (!loc.isDeactivated()) {
+            throw new LineOfCreditInvalidStateException("Only DEACTIVATED LOC can be reactivated");
+        }
+
+        // Extract date from command
+        LocalDate reactivationDate = command.localDateValueOfParameterNamed("actionDate");
+        if (reactivationDate == null) {
+            reactivationDate = DateUtils.getBusinessLocalDate();
+        }
+
+        // Validate reactivation date is not before deactivation date
+        if (loc.getLineOfCreditStateChange().getDeactivatedOnDate() != null
+                && reactivationDate.isBefore(loc.getLineOfCreditStateChange().getDeactivatedOnDate())) {
+            throw new LineOfCreditInvalidStateException("Reactivation date cannot be before deactivation date");
+        }
+
+        loc.reactivate();
+        loc.getLineOfCreditStateChange().setActivateOnDate(reactivationDate);
+        loc.getLineOfCreditStateChange().setActivatedBy(context.authenticatedUser());
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.RE_ACTIVATE);
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).build();
+    }
+
+    @Override
+    @Transactional
     public CommandProcessingResult deleteLineOfCredit(Long lineOfCreditId) {
         final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
