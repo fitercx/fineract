@@ -138,16 +138,24 @@ public class OdooJournalEntryService {
 
         // Add loan_id if available
         if (loanId != null) {
-            moveValues.put("x_studio_loan_id_new", loanId);
+            // TODO: Add x_studio_loan_id_new && x_sme_id fields later
+            // moveValues.put("x_studio_loan_id_new", loanId);
             // String clientName = getClientNameFromLoanId(loanId);
             // if (clientName != null) {
             // moveValues.put("x_sme_id", clientName);
             // }
+
+            moveValues.put("x_studio_lms_loan_id", loanId);
+            String clientName = getClientNameFromLoanId(loanId);
+            if (clientName != null) {
+            moveValues.put("x_studio_lms_customer_name", clientName);
+            }
         } else if (firstEntry.getLoanTransactionId() != null) {
             // Extract loan ID from the journal entry if not provided
             Long extractedLoanId = getLoanIdFromTransactionId(firstEntry.getLoanTransactionId());
             if (extractedLoanId != null) {
-                moveValues.put("x_studio_loan_id_new", extractedLoanId);
+                // moveValues.put("x_studio_loan_id_new", extractedLoanId);
+                moveValues.put("x_studio_lms_loan_id", extractedLoanId);
             }
         }
 

@@ -192,27 +192,27 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
-        // BNK5 journal for SAVINGS_WITHDRAWAL with specific conditions i.e. refund from savings account
+        // BNK5 journal for SAVINGS_WITHDRAWAL i.e. refund from savings account
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType)) {
             // When GL code is 100062
             if ("100062".equals(glCode)) {
-                return "BNK2";
+                return "BNK10";
             }
             // When GL code is 210003 and it's a debit transaction
-            if ("200040".equals(glCode) && isDebit) {
-                return "BNK2";
+            if ("210003".equals(glCode) && isDebit) {
+                return "BNK10";
             }
         }
 
-        // BNK4 journal for SAVINGS_DEPOSIT business events
+        // BNK4 journal for SAVINGS_DEPOSIT i.e. deposit money to savings account
         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
             // When GL code is 210003
-            if ("200040".equals(glCode)) {
-                return "BNK1";
+            if ("210003".equals(glCode)) {
+                return "BNK9";
             }
             // When GL code is 100062 and it's a debit transaction
             if ("100062".equals(glCode) && isDebit) {
-                return "BNK1";
+                return "BNK9";
             }
         }
 
@@ -227,7 +227,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK7 (Cash margin) journal for specific GL codes
-        if (Set.of("100006", "23101001").contains(glCode)) {
+        if (Set.of("100006", "210002").contains(glCode)) {
             return "BNK7";
         }
 
