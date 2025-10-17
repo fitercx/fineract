@@ -22,6 +22,7 @@ dependencies {
     implementation(project(':fineract-provider'))
     implementation(project(':fineract-accounting'))
     implementation(project(':custom:crediblex:integration:odoo'))
+    implementation(project(':custom:crediblex:portfolio:loanaccount'))
 
     // Spring Batch for job framework
     implementation('org.springframework.batch:spring-batch-core')

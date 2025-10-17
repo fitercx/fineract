@@ -18,8 +18,20 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.domain;
 
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface LoanMonthlyAccrualJobAuditRepository extends JpaRepository<LoanMonthlyAccrualJobAudit, Long> {}
+public interface LoanMonthlyAccrualJobAuditRepository extends JpaRepository<LoanMonthlyAccrualJobAudit, Long> {
+
+    /**
+     * Find all loan monthly accrual audit records that have not been posted to Odoo yet. These records need journal
+     * entries to be created and posted.
+     *
+     * @return List of unposted accrual audit records
+     */
+    @Query("SELECT lmaja FROM LoanMonthlyAccrualJobAudit lmaja WHERE lmaja.postedToOdoo = false ORDER BY lmaja.generatedOnDate ASC")
+    List<LoanMonthlyAccrualJobAudit> findUnpostedAccruals();
+}
