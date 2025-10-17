@@ -149,7 +149,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     @Override
     public Integer getDefaultJournalId() {
         // Default fallback - use BNK5 if no specific mapping found
-        return getJournalIdByCode("BNK5");
+        return getJournalIdByOdooCode("BNK5");
     }
 
     /**
@@ -166,7 +166,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         if (journalCode != null) {
             log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit,
                     journalCode);
-            return getJournalIdByCode(journalCode);
+            return getJournalIdByOdooCode(journalCode);
         } else {
             log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
                     glCode, businessEventType, isDebit);
@@ -242,7 +242,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Get journal ID by journal code from Odoo
      */
-    private Integer getJournalIdByCode(String journalCode) {
+    public Integer getJournalIdByOdooCode(String journalCode) {
         String journalKey = "journal_" + journalCode;
 
         // Check cache first

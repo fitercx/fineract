@@ -81,4 +81,8 @@ public final class LoanMonthlyAccrualJobAudit extends AbstractAuditableWithUTCDa
             final BigDecimal totalInterestAccrualDerived, final boolean postedToOdoo, final LocalDate generatedOnDate) {
         return new LoanMonthlyAccrualJobAudit(loanId, accrualTransactionIds, totalInterestAccrualDerived, postedToOdoo, generatedOnDate);
     }
+
+    public void setPostedToOdoo(final boolean postedToOdoo) {
+        this.postedToOdoo = postedToOdoo;
+    }
 }
