@@ -136,11 +136,10 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 }
             }
 
-            // Process entries without loan ID - only group SAVINGS_DEPOSIT_TO_CASH_MARGIN entries, process others individually
+            // Process entries without loan ID - only group SAVINGS_DEPOSIT_TO_CASH_MARGIN entries, process others
+            // individually
             List<JournalEntryOdooSync> cashMarginEntries = entriesWithoutLoanId.stream()
-                    .filter(entry -> "SAVINGS_DEPOSIT_TO_CASH_MARGIN".equals(entry.getBusinessEventType()))
-                    .collect(Collectors.toList());
-
+                    .filter(entry -> "SAVINGS_DEPOSIT_TO_CASH_MARGIN".equals(entry.getBusinessEventType())).collect(Collectors.toList());
 
             // Process SAVINGS_DEPOSIT_TO_CASH_MARGIN entries as a group
             if (!cashMarginEntries.isEmpty()) {
@@ -148,8 +147,10 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 log.info("Processing {} journal entries for business event type: {}", cashMarginEntries.size(), businessEventType);
 
                 try {
-                    // Post all journal entries for this business event (may create multiple moves for different journals)
-                    Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForBusinessEvent(businessEventType, cashMarginEntries);
+                    // Post all journal entries for this business event (may create multiple moves for different
+                    // journals)
+                    Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForBusinessEvent(businessEventType,
+                            cashMarginEntries);
 
                     if (!journalToMoveMap.isEmpty()) {
                         // Mark all entries in this business event as posted
@@ -167,7 +168,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         // This should rarely happen as the service method should throw exceptions for specific failures
                         String errorMsg = "Failed to create any moves in Odoo for business event " + businessEventType
                                 + " - No specific error details available (possible authentication or configuration issue)";
-                        log.error("No moves created for business event {}: This suggests a service-level issue without specific error details",
+                        log.error(
+                                "No moves created for business event {}: This suggests a service-level issue without specific error details",
                                 businessEventType);
 
                         for (JournalEntryOdooSync sync : cashMarginEntries) {
@@ -179,9 +181,11 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 } catch (Exception e) {
                     // Capture the specific error details for better debugging
                     String specificError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                    String detailedErrorMsg = String.format("Failed to post journal entries for business event %s to Odoo: %s", businessEventType, specificError);
+                    String detailedErrorMsg = String.format("Failed to post journal entries for business event %s to Odoo: %s",
+                            businessEventType, specificError);
 
-                    log.error("Failed to post journal entries for business event {} to Odoo - Error: {}", businessEventType, specificError, e);
+                    log.error("Failed to post journal entries for business event {} to Odoo - Error: {}", businessEventType, specificError,
+                            e);
 
                     for (JournalEntryOdooSync sync : cashMarginEntries) {
                         journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), detailedErrorMsg);
