@@ -29,6 +29,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
+import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -278,18 +279,20 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     BigDecimal scheduledInterest = loan.getRepaymentScheduleInstallments().stream()
                             .map(i -> i.getInterestCharged(currency).getAmount()).reduce(BigDecimal.ZERO, BigDecimal::add);
 
-                    BigDecimal expectedDisbursementAmount = amountAfterAdvance.subtract(scheduledInterest);
+                    BigDecimal expectedDisbursementAmount = amountAfterAdvance.subtract(scheduledInterest).subtract(feesDueAtDisbursement);
 
                     if (expectedDisbursementAmount.compareTo(BigDecimal.ZERO) < 0) {
-                        expectedDisbursementAmount = BigDecimal.ZERO;
+                        throw new PlatformDataIntegrityException("amount.after.advance.too.low",
+                                "The value of Amount After Advance (" + amountAfterAdvance
+                                        + ") is too low to cover the fees at disbursement (" + feesDueAtDisbursement
+                                        + ") and scheduled interest (" + scheduledInterest + "). Increase Amount After Advance value.",
+                                "amountAfterAdvance", amountAfterAdvance);
                     }
 
                     Money expectedMoney = Money.of(loan.getCurrency(), expectedDisbursementAmount);
 
                     if (amountToDisburse.isGreaterThan(expectedMoney)) {
                         amountToDisburse = expectedMoney;
-
-                        loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
                     }
                 } else {
                     log.debug("Receivable LOC has null amountAfterAdvance for loan {} – skipping capping logic", loan.getId());
@@ -352,7 +355,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
             disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
                     scheduleGeneratorDTO);
-            loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
+
+            if (!isReceivableLineOfCredit) {
+                loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
+            }
 
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
@@ -360,15 +366,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isInterestBearingAndInterestRecalculationEnabled()
                     && (DateUtils.isBeforeBusinessDate(firstInstallmentDueDate) || loan.isDisbursementMissed())) {
                 loanAccrualsProcessingService.processIncomePostingAndAccruals(loan);
-            }
-
-            if (isReceivableLineOfCredit) {
-                // For receivable LOC, disbursement transaction should reflect the actual amount disbursed (after
-                // capping)
-                if (disbursementTransaction != null) {
-                    disbursementTransaction.updateOutstandingLoanBalance(amountToDisburse.add(loan.getTotalInterest()).getAmount());
-                    loanTransactionRepository.saveAndFlush(disbursementTransaction);
-                }
             }
 
             if (loan.isAutoRepaymentForDownPaymentEnabled() && !isWithoutAutoPayment) {

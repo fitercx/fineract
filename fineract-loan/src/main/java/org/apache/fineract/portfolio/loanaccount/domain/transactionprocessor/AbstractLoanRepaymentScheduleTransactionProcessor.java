@@ -684,6 +684,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             if (transactionAmountUnprocessed.isGreaterThanZero()) {
                 if (currentInstallment.isNotFullyPaidOff()) {
                     if (isTransactionInAdvanceOfInstallment(installmentIndex, installments, transactionDate)) {
+                        currentInstallment.setRecievableLineOfCreditInstallment(loanTransaction.getLoan().isReceivableLocLoan());
                         transactionAmountUnprocessed = handleTransactionThatIsPaymentInAdvanceOfInstallment(currentInstallment,
                                 installments, loanTransaction, transactionAmountUnprocessed, transactionMappings, charges);
                     } else if (isTransactionALateRepaymentOnInstallment(installmentIndex, installments, transactionDate)) {

@@ -26,6 +26,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -72,6 +73,12 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     @Column(name = "principal_writtenoff_derived", scale = 6, precision = 19)
     private BigDecimal principalWrittenOff;
 
+    @Column(name = "principal_receivable_expected", scale = 6, precision = 19)
+    private BigDecimal principalReceivableExpected;
+
+    @Column(name = "principal_receivable_completed_derived", scale = 6, precision = 19)
+    private BigDecimal principalReceivableCompleted;
+
     @Column(name = "interest_amount", scale = 6, precision = 19)
     private BigDecimal interestCharged;
 
@@ -83,6 +90,9 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     @Column(name = "interest_writtenoff_derived", scale = 6, precision = 19)
     private BigDecimal interestWrittenOff;
+
+    @Column(name = "interest_receivable_completed_derived", scale = 6, precision = 19)
+    private BigDecimal interestReceivableCompleted;
 
     @Column(name = "accrual_interest_derived", scale = 6, precision = 19)
     private BigDecimal interestAccrued;
@@ -170,6 +180,14 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY, mappedBy = "installment")
     private Set<LoanTransactionToRepaymentScheduleMapping> loanTransactionToRepaymentScheduleMappings = new HashSet<>();
+
+    @Transient
+    @Setter
+    private boolean recievableLineOfCreditInstallment = false;
+
+    @Transient
+    @Setter
+    private BigDecimal proRatedInterestForCurrentTransaction;
 
     public LoanRepaymentScheduleInstallment() {
         this.installmentNumber = null;
@@ -392,13 +410,29 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
                 .plus(getPenaltyChargesOutstanding(currency));
     }
 
-    /**
-     * Returns the total outstanding amount for obligation checking purposes. This method excludes interest from the
-     * calculation, meaning obligations are met when principal, fees, and penalties are fully paid, regardless of
-     * interest outstanding. Any remaining interest is treated as an overpaid portion.
-     */
     public Money getTotalOutstandingForObligationCheck(final MonetaryCurrency currency) {
-        return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
+        Money principalOutstanding = getPrincipalOutstanding(currency);
+
+        // For receivable line of credit with pro-rated interest, adjust principal by excluding uncharged interest
+        if (isRecievableLineOfCreditInstallment() && proRatedInterestForCurrentTransaction != null) {
+            Money fullInterest = getInterestCharged(currency);
+            Money proRatedInterest = Money.of(currency, proRatedInterestForCurrentTransaction);
+
+            // The uncharged interest is the difference between full interest and pro-rated interest
+            // This amount is embedded in the principal and should be excluded from obligation check
+            Money unchargedInterest = fullInterest.minus(proRatedInterest);
+            principalOutstanding = principalOutstanding.minus(unchargedInterest);
+        }
+
+        return principalOutstanding.plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
+    }
+
+    public Money getInterestReceivableCompleted(final MonetaryCurrency currency) {
+        return Money.of(currency, interestReceivableCompleted);
+    }
+
+    public Money getPrincipalReceivableCompleted(final MonetaryCurrency currency) {
+        return Money.of(currency, principalReceivableCompleted);
     }
 
     void updateLoan(final Loan loan) {
@@ -550,19 +584,29 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
             return interestPortionOfTransaction;
         }
         final Money interestDue = getInterestOutstanding(currency);
-        if (transactionAmountRemaining.isGreaterThanOrEqualTo(interestDue)) {
-            this.interestPaid = getInterestPaid(currency).plus(interestDue).getAmount();
-            interestPortionOfTransaction = interestPortionOfTransaction.plus(interestDue);
+
+        if (!isRecievableLineOfCreditInstallment()) {
+            if (transactionAmountRemaining.isGreaterThanOrEqualTo(interestDue)) {
+                this.interestPaid = getInterestPaid(currency).plus(interestDue).getAmount();
+                interestPortionOfTransaction = interestPortionOfTransaction.plus(interestDue);
+            } else {
+                this.interestPaid = getInterestPaid(currency).plus(transactionAmountRemaining).getAmount();
+                interestPortionOfTransaction = interestPortionOfTransaction.plus(transactionAmountRemaining);
+            }
+            this.interestPaid = defaultToNullIfZero(this.interestPaid);
+
+            checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, interestPortionOfTransaction);
+
         } else {
-            this.interestPaid = getInterestPaid(currency).plus(transactionAmountRemaining).getAmount();
+
+            this.interestReceivableCompleted = defaultToNullIfZero(
+                    (getInterestReceivableCompleted(currency).plus(transactionAmountRemaining)).getAmount());
             interestPortionOfTransaction = interestPortionOfTransaction.plus(transactionAmountRemaining);
+
+            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, transactionAmountRemaining);
         }
-
-        this.interestPaid = defaultToNullIfZero(this.interestPaid);
-
-        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
-
-        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, interestPortionOfTransaction);
 
         return interestPortionOfTransaction;
     }
@@ -571,7 +615,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return payPrincipalComponent(transactionDate, transactionAmount, false);
     }
 
-    public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount, boolean proRataInterest) {
+    public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount, boolean hasProRataInterest) {
 
         final MonetaryCurrency currency = transactionAmount.getCurrency();
         Money principalPortionOfTransaction = Money.zero(currency);
@@ -588,8 +632,13 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
 
         this.principalCompleted = defaultToNullIfZero(this.principalCompleted);
-
-        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, proRataInterest);
+        if (isRecievableLineOfCreditInstallment()) {
+            this.principalReceivableCompleted = defaultToNullIfZero(
+                    getPrincipalReceivableCompleted(currency).add(getPrincipalCompleted(currency)).getAmount());
+            checkIfRepaymentPeriodObligationsAreMetForReceivableLineOfCredit(transactionDate, currency, hasProRataInterest);
+        } else {
+            checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, hasProRataInterest);
+        }
 
         trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
 
@@ -773,6 +822,20 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
             boolean isProRataInterest) {
         this.obligationsMet = isProRataInterest ? getTotalOutstandingForObligationCheck(currency).isZero()
                 : getTotalOutstanding(currency).isZero();
+        if (this.obligationsMet) {
+            this.obligationsMetOnDate = transactionDate;
+        } else {
+            this.obligationsMetOnDate = null;
+        }
+    }
+
+    public void checkIfRepaymentPeriodObligationsAreMetForReceivableLineOfCredit(final LocalDate transactionDate,
+            final MonetaryCurrency currency, boolean isProRataInterest) {
+        Money totalPrincipal = getPrincipal(currency).add(getPenaltyChargesCharged(currency)).minus(getInterestCharged());
+        Money totalCompleted = getPrincipalReceivableCompleted(currency).add(getPenaltyChargesPaid(currency));
+        // Ignoring interest for recievable line of credit because what matters is that the principal and panalty is
+        // paid off
+        this.obligationsMet = isProRataInterest ? totalPrincipal.minus(totalCompleted).isZero() : getTotalOutstanding(currency).isZero();
         if (this.obligationsMet) {
             this.obligationsMetOnDate = transactionDate;
         } else {

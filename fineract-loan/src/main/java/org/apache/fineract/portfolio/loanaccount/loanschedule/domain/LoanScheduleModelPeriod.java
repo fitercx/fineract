@@ -64,4 +64,8 @@ public interface LoanScheduleModelPeriod {
     BigDecimal rescheduleInterestPortion();
 
     void setRescheduleInterestPortion(BigDecimal rescheduleInterestPortion);
+
+    void addTotalDue(Money amount);
+
+    void addInterestDueWithoutTotalUpdate(Money interestDue);
 }

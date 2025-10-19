@@ -104,8 +104,12 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             // Calculate how much pro-rated interest remains to be paid
             Money interestToPay = proRatedInterest.minus(interestAlreadyPaid);
 
+            if (currentInstallment.isRecievableLineOfCreditInstallment()) {
+                interestToPay = proRatedInterest;
+            }
+
             // Ensure we don't pay more than outstanding
-            if (interestToPay.isGreaterThan(interestOutstanding)) {
+            if (interestToPay.isGreaterThan(interestOutstanding) && !currentInstallment.isRecievableLineOfCreditInstallment()) {
                 interestToPay = interestOutstanding;
             }
 
@@ -122,10 +126,16 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         }
 
         // 4. Pay principal last
-        // Only using prorata interest flag here because its the last action to be performed. If we have reached here,
-        // it means all other components have been paid to the extent possible.
         if (transactionAmountRemaining.isGreaterThanZero()) {
-            principalPortion = currentInstallment.payPrincipalComponent(transactionDate, transactionAmountRemaining, true);
+
+            Money principalToPay = transactionAmountRemaining;
+            if (currentInstallment.isRecievableLineOfCreditInstallment()) {
+                principalToPay = currentInstallment.getPrincipal(currency).minus(currentInstallment.getPrincipalCompleted(currency))
+                        .minus(currentInstallment.getInterestCharged());
+
+            }
+
+            principalPortion = currentInstallment.payPrincipalComponent(transactionDate, principalToPay, true);
             transactionAmountRemaining = transactionAmountRemaining.minus(principalPortion);
         }
 

@@ -488,6 +488,60 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
     }
 
+    @Override
+    public CommandProcessingResult rejectApplication(Long loanId, JsonCommand command) {
+        // Retrieve the loan
+        final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+        // Check if this loan has an associated LOC
+        Optional<LoanLineOfCreditParams> loanLocParamsOpt = loanLocParamsRepository.findByLoanId(loanId);
+
+        if (loanLocParamsOpt.isPresent()) {
+            LoanLineOfCreditParams loanLocParams = loanLocParamsOpt.get();
+            LineOfCredit lineOfCredit = loanLocParams.getLineOfCredit();
+
+            // Reverse the LOC balance impact before rejecting
+            // When we submitted the loan, we did a DISBURSEMENT which reduced available balance
+            // Now we need to undo that by doing an UNDO_DISBURSEMENT which increases available balance
+            final BigDecimal loanPrincipal = loan.getPrincipal().getAmount();
+
+            if (loanPrincipal.compareTo(BigDecimal.ZERO) > 0) {
+                lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanPrincipal, lineOfCredit, loan.getSubmittedOnDate(),
+                        LineOfCreditTransactionType.UNDO_DISBURSEMENT);
+            }
+        }
+
+        // Call the parent implementation to handle the actual rejection
+        return super.rejectApplication(loanId, command);
+    }
+
+    @Override
+    public CommandProcessingResult rejectGLIMApplicationApproval(Long glimId, JsonCommand command) {
+        // For GLIM accounts, we need to handle each child loan's LOC reversal
+        List<Loan> childLoans = this.loanRepository.findByGlimId(glimId);
+
+        // First, reverse LOC balances for all child loans that have LOC associations
+        for (Loan childLoan : childLoans) {
+            Optional<LoanLineOfCreditParams> loanLocParamsOpt = loanLocParamsRepository.findByLoanId(childLoan.getId());
+
+            if (loanLocParamsOpt.isPresent()) {
+                LoanLineOfCreditParams loanLocParams = loanLocParamsOpt.get();
+                LineOfCredit lineOfCredit = loanLocParams.getLineOfCredit();
+
+                // Reverse the LOC balance impact
+                final BigDecimal loanPrincipal = childLoan.getPrincipal().getAmount();
+
+                if (loanPrincipal.compareTo(BigDecimal.ZERO) > 0) {
+                    lineOfCreditBalanceUpdateService.computeLocBalance(childLoan.getId(), loanPrincipal, lineOfCredit,
+                            childLoan.getSubmittedOnDate(), LineOfCreditTransactionType.UNDO_DISBURSEMENT);
+                }
+            }
+        }
+
+        // Call the parent implementation to handle the actual GLIM rejection
+        return super.rejectGLIMApplicationApproval(glimId, command);
+    }
+
     /**
      * Process buyer and supplier details for line of credit applications
      */
