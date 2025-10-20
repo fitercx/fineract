@@ -1013,7 +1013,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     ? repaymentScheduleInstallments.stream().map(t -> t.getInterestCharged()).reduce(BigDecimal.ZERO, BigDecimal::add)
                     : BigDecimal.ZERO);
             this.summary.updateSummary(getCurrency(), principal, getRepaymentScheduleInstallments(), this.charges);
-            if (isReceivableLocLoan() && !overpaidBy.isLessThanZero()) {
+            if (isReceivableLocLoan() && overpaidBy.isGreaterThanZero()) {
                 this.summary.updateTotalOutstanding(BigDecimal.ZERO);
             }
             updateLoanOutstandingBalances();
@@ -1523,14 +1523,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         Money cumulativeTotalWaivedOnInstallments = Money.zero(currency);
         List<LoanRepaymentScheduleInstallment> installments = getRepaymentScheduleInstallments();
         for (final LoanRepaymentScheduleInstallment scheduledRepayment : installments) {
-            Money principalCompleted = isReceivableLocLoan() && scheduledRepayment.isObligationsMet()
-                    ? scheduledRepayment.getPrincipalReceivableCompleted(currency)
-                    : scheduledRepayment.getPrincipalCompleted(currency);
-            Money interestPaid = isReceivableLocLoan() && scheduledRepayment.isObligationsMet()
-                    ? scheduledRepayment.getInterestReceivableCompleted(currency)
-                    : scheduledRepayment.getInterestPaid(currency);
 
-            cumulativeTotalPaidOnInstallments = cumulativeTotalPaidOnInstallments.plus(principalCompleted.plus(interestPaid))
+            Money interestPaid = isReceivableLocLoan() ? Money.zero(currency) : scheduledRepayment.getInterestPaid(currency);
+
+            cumulativeTotalPaidOnInstallments = cumulativeTotalPaidOnInstallments
+                    .plus(scheduledRepayment.getPrincipalCompleted(currency).plus(interestPaid))
                     .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getPenaltyChargesPaid(currency));
 
             cumulativeTotalWaivedOnInstallments = cumulativeTotalWaivedOnInstallments.plus(scheduledRepayment.getInterestWaived(currency));

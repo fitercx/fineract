@@ -1473,23 +1473,25 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
                 final BigDecimal totalDueForPeriod = isRLoc ? principalDue : principalDue.add(totalExpectedCostOfLoanForPeriod);
 
-                final BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(penaltyChargesPaid);
+                BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(penaltyChargesPaid);
+                if (isRLoc) {
+                    totalPaidForPeriod = totalPaidForPeriod.subtract(interestPaid);
+                }
                 final BigDecimal totalWaivedForPeriod = interestWaived.add(feeChargesWaived).add(penaltyChargesWaived);
                 totalWaived = totalWaived.plus(totalWaivedForPeriod);
                 final BigDecimal totalWrittenOffForPeriod = principalWrittenOff.add(interestWrittenOff).add(feeChargesWrittenOff)
                         .add(penaltyChargesWrittenOff);
                 totalWrittenOff = totalWrittenOff.plus(totalWrittenOffForPeriod);
 
-                final BigDecimal totalOutstandingForPeriod = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
-                        .add(penaltyChargesOutstanding);
+                final BigDecimal totalOutstandingForPeriod = isRLoc && obligationsMetOnDate != null ? BigDecimal.ZERO
+                        : principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding).add(penaltyChargesOutstanding);
 
                 totalRepaymentExpected = totalRepaymentExpected.plus(totalDueForPeriod);
                 totalRepayment = totalRepayment.plus(totalPaidForPeriod);
                 totalPaidInAdvance = totalPaidInAdvance.plus(totalPaidInAdvanceForPeriod);
                 totalPaidLate = totalPaidLate.plus(totalPaidLateForPeriod);
                 // We always expect that interest is paid at disbursement so not including it here.
-                totalOutstanding = isRLoc ? totalOutstanding.plus(totalOutstandingForPeriod).minus(interestOutstanding)
-                        : totalOutstanding.plus(totalOutstandingForPeriod);
+                totalOutstanding = totalOutstanding.plus(totalOutstandingForPeriod);
                 totalCredits = totalCredits.add(credits);
 
                 if (fromDate == null) {

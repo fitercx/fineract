@@ -411,20 +411,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public Money getTotalOutstandingForObligationCheck(final MonetaryCurrency currency) {
-        Money principalOutstanding = getPrincipalOutstanding(currency);
-
-        // For receivable line of credit with pro-rated interest, adjust principal by excluding uncharged interest
-        if (isRecievableLineOfCreditInstallment() && proRatedInterestForCurrentTransaction != null) {
-            Money fullInterest = getInterestCharged(currency);
-            Money proRatedInterest = Money.of(currency, proRatedInterestForCurrentTransaction);
-
-            // The uncharged interest is the difference between full interest and pro-rated interest
-            // This amount is embedded in the principal and should be excluded from obligation check
-            Money unchargedInterest = fullInterest.minus(proRatedInterest);
-            principalOutstanding = principalOutstanding.minus(unchargedInterest);
-        }
-
-        return principalOutstanding.plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
+        return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
     }
 
     public Money getInterestReceivableCompleted(final MonetaryCurrency currency) {
@@ -632,15 +619,19 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
 
         this.principalCompleted = defaultToNullIfZero(this.principalCompleted);
-        if (isRecievableLineOfCreditInstallment()) {
-            this.principalReceivableCompleted = defaultToNullIfZero(
-                    getPrincipalReceivableCompleted(currency).add(getPrincipalCompleted(currency)).getAmount());
-            checkIfRepaymentPeriodObligationsAreMetForReceivableLineOfCredit(transactionDate, currency, hasProRataInterest);
+        if (isRecievableLineOfCreditInstallment() && transactionAmount.isGreaterThan(getPrincipalOutstanding(currency))) {
+            // If this is true, then its a full foreclosure, we need to find the exact principal paid for correct
+            // overpayment portion generation
+            Money excessPrincipalPaid = transactionAmount.minus(this.getPrincipalCompleted());
+            this.principalCompleted = getPrincipalCompleted(currency).minus(excessPrincipalPaid).getAmount();
+
+            markReceivableScheduleScheduleAsCompleted(transactionDate);
+            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency,
+                    principalPortionOfTransaction.minus(this.interestPaid).minus(excessPrincipalPaid));
         } else {
             checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, hasProRataInterest);
+            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
         }
-
-        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
 
         return principalPortionOfTransaction;
     }
@@ -829,18 +820,9 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
     }
 
-    public void checkIfRepaymentPeriodObligationsAreMetForReceivableLineOfCredit(final LocalDate transactionDate,
-            final MonetaryCurrency currency, boolean isProRataInterest) {
-        Money totalPrincipal = getPrincipal(currency).add(getPenaltyChargesCharged(currency)).minus(getInterestCharged());
-        Money totalCompleted = getPrincipalReceivableCompleted(currency).add(getPenaltyChargesPaid(currency));
-        // Ignoring interest for recievable line of credit because what matters is that the principal and panalty is
-        // paid off
-        this.obligationsMet = isProRataInterest ? totalPrincipal.minus(totalCompleted).isZero() : getTotalOutstanding(currency).isZero();
-        if (this.obligationsMet) {
-            this.obligationsMetOnDate = transactionDate;
-        } else {
-            this.obligationsMetOnDate = null;
-        }
+    public void markReceivableScheduleScheduleAsCompleted(final LocalDate transactionDate) {
+        this.obligationsMet = true;
+        this.obligationsMetOnDate = transactionDate;
     }
 
     public void updateDueDate(final LocalDate newDueDate) {

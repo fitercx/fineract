@@ -104,12 +104,8 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             // Calculate how much pro-rated interest remains to be paid
             Money interestToPay = proRatedInterest.minus(interestAlreadyPaid);
 
-            if (currentInstallment.isRecievableLineOfCreditInstallment()) {
-                interestToPay = proRatedInterest;
-            }
-
             // Ensure we don't pay more than outstanding
-            if (interestToPay.isGreaterThan(interestOutstanding) && !currentInstallment.isRecievableLineOfCreditInstallment()) {
+            if (interestToPay.isGreaterThan(interestOutstanding)) {
                 interestToPay = interestOutstanding;
             }
 
@@ -119,7 +115,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             }
 
             // Only pay if there's interest to pay
-            if (interestToPay.isGreaterThanZero()) {
+            if (interestToPay.isGreaterThanZero() && !currentInstallment.isRecievableLineOfCreditInstallment()) {
                 interestPortion = currentInstallment.payInterestComponent(transactionDate, interestToPay);
                 transactionAmountRemaining = transactionAmountRemaining.minus(interestPortion);
             }
@@ -129,14 +125,17 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         if (transactionAmountRemaining.isGreaterThanZero()) {
 
             Money principalToPay = transactionAmountRemaining;
-            if (currentInstallment.isRecievableLineOfCreditInstallment()) {
-                principalToPay = currentInstallment.getPrincipal(currency).minus(currentInstallment.getPrincipalCompleted(currency))
-                        .minus(currentInstallment.getInterestCharged());
-
+            Money principalOutstanding = currentInstallment.getPrincipalOutstanding(currency);
+            if (principalToPay.isEqualTo(principalOutstanding)) {
+                Money excessInterestAmountPaid = currentInstallment.getInterestPaid(currency).minus(proRatedInterest)
+                        .add(currentInstallment.getPrincipalCompleted(currency));
+                if (excessInterestAmountPaid.isGreaterThanZero()) {
+                    principalToPay = principalToPay.plus(excessInterestAmountPaid);
+                }
             }
 
             principalPortion = currentInstallment.payPrincipalComponent(transactionDate, principalToPay, true);
-            transactionAmountRemaining = transactionAmountRemaining.minus(principalPortion);
+            transactionAmountRemaining = principalToPay.minus(principalPortion);
         }
 
         // Update transaction components
