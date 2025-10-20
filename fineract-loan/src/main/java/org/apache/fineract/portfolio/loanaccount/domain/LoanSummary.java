@@ -20,6 +20,7 @@ package org.apache.fineract.portfolio.loanaccount.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
@@ -132,6 +133,14 @@ public class LoanSummary {
     @Setter
     private transient BigDecimal totalChargesPayableByPrincipalDeduction;
 
+    @Transient
+    @Setter
+    boolean isReceivableLineOfCredit = false;
+
+    @Transient
+    @Setter
+    BigDecimal totalInterestPayableAtDisbursement = BigDecimal.ZERO;
+
     public static LoanSummary create(final BigDecimal totalFeeChargesDueAtDisbursement) {
         return new LoanSummary(totalFeeChargesDueAtDisbursement);
     }
@@ -232,6 +241,10 @@ public class LoanSummary {
         final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipalDisbursed).plus(this.totalInterestCharged)
                 .plus(this.totalFeeChargesCharged).plus(this.totalPenaltyChargesCharged);
         this.totalExpectedRepayment = totalExpectedRepayment.getAmount();
+        if (isReceivableLineOfCredit) {
+            this.totalExpectedRepayment = this.totalExpectedRepayment.subtract(this.totalInterestCharged)
+                    .subtract(calculateTotalChargesRepaidAtDisbursement(charges, currency).getAmount());
+        }
 
         final Money totalRepayment = Money.of(currency, this.totalPrincipalRepaid).plus(this.totalInterestRepaid)
                 .plus(this.totalFeeChargesRepaid).plus(this.totalPenaltyChargesRepaid);

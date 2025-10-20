@@ -583,7 +583,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.fixedPrincipalPercentagePerInstallment = fixedPrincipalPercentagePerInstallment;
 
         // Add net get net disbursal amount from charges and principal
-        this.netDisbursalAmount = this.approvedPrincipal.subtract(deriveSumTotalOfChargesDueAtDisbursement());
+        // For line of credit receivable, we dont post the interest to the customer
+        this.netDisbursalAmount = loanApplicationTerms.getIsReceivableLineOfCredit()
+                ? this.approvedPrincipal.subtract(loanScheduleModel.getTotalInterestCharged())
+                        .subtract(deriveSumTotalOfChargesDueAtDisbursement())
+                : this.approvedPrincipal.subtract(deriveSumTotalOfChargesDueAtDisbursement());
         this.loanStatus = LoanStatus.SUBMITTED_AND_PENDING_APPROVAL;
         this.externalId = externalId;
         this.termFrequency = loanApplicationTerms.getLoanTermFrequency();
@@ -1004,10 +1008,14 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.totalRecovered = recoveredAmount.getAmountDefaultedToNullIfZero();
 
             Money principal = this.loanRepaymentScheduleDetail.getPrincipal();
-            if (isReceivableLocLoan) {
-                principal = principal.minus(this.getTotalInterest());
-            }
+            this.summary.setReceivableLineOfCredit(this.isReceivableLocLoan);
+            this.summary.setTotalInterestPayableAtDisbursement(this.isReceivableLocLoan
+                    ? repaymentScheduleInstallments.stream().map(t -> t.getInterestCharged()).reduce(BigDecimal.ZERO, BigDecimal::add)
+                    : BigDecimal.ZERO);
             this.summary.updateSummary(getCurrency(), principal, getRepaymentScheduleInstallments(), this.charges);
+            if (isReceivableLocLoan() && overpaidBy.isGreaterThanZero()) {
+                this.summary.updateTotalOutstanding(BigDecimal.ZERO);
+            }
             updateLoanOutstandingBalances();
         }
     }
@@ -1515,8 +1523,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         Money cumulativeTotalWaivedOnInstallments = Money.zero(currency);
         List<LoanRepaymentScheduleInstallment> installments = getRepaymentScheduleInstallments();
         for (final LoanRepaymentScheduleInstallment scheduledRepayment : installments) {
+
+            Money interestPaid = isReceivableLocLoan() ? Money.zero(currency) : scheduledRepayment.getInterestPaid(currency);
+
             cumulativeTotalPaidOnInstallments = cumulativeTotalPaidOnInstallments
-                    .plus(scheduledRepayment.getPrincipalCompleted(currency).plus(scheduledRepayment.getInterestPaid(currency)))
+                    .plus(scheduledRepayment.getPrincipalCompleted(currency).plus(interestPaid))
                     .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getPenaltyChargesPaid(currency));
 
             cumulativeTotalWaivedOnInstallments = cumulativeTotalWaivedOnInstallments.plus(scheduledRepayment.getInterestWaived(currency));
@@ -2247,6 +2258,9 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             if (loanTransaction.isDisbursement() || loanTransaction.isIncomePosting()) {
                 outstanding = outstanding.plus(loanTransaction.getAmount(getCurrency()))
                         .minus(loanTransaction.getOverPaymentPortion(getCurrency()));
+                if (this.isReceivableLocLoan && loanTransaction.isDisbursement()) {
+                    outstanding = outstanding.add(this.getTotalInterest()).add(this.summary.getTotalFeeChargesDueAtDisbursement());
+                }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             } else if (loanTransaction.isChargeback() || loanTransaction.isCreditBalanceRefund()) {
                 Money transactionOutstanding = loanTransaction.getPrincipalPortion(getCurrency());
@@ -2514,7 +2528,19 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public LoanRepaymentScheduleInstallment fetchLoanForeclosureDetail(final LocalDate closureDate) {
         Money[] receivables = retrieveIncomeOutstandingTillDate(closureDate);
         Money totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
-        totalPrincipal = totalPrincipal.minus(receivables[3]);
+
+        // For Receivable Line of Credit: Use net disbursed amount instead of gross principal
+        // This ensures foreclosure only charges what was actually disbursed to the customer
+        if (this.isReceivableLocLoan) {
+
+            BigDecimal principalOutstanding = this.getSummary().getTotalPrincipalDisbursed()
+                    .subtract(this.getSummary().getTotalPrincipalRepaid()).subtract(this.getSummary().getTotalInterestCharged());
+
+            totalPrincipal = Money.of(getCurrency(), principalOutstanding);
+        } else {
+            totalPrincipal = totalPrincipal.minus(receivables[3]);
+        }
+
         final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
         final LocalDate currentDate = DateUtils.getBusinessLocalDate();
         return new LoanRepaymentScheduleInstallment(null, 0, currentDate, currentDate, totalPrincipal.getAmount(),
@@ -2583,6 +2609,9 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 .valueOf(calculateInterestForDays(totalPeriodDays, installment.getInterestCharged(getCurrency()).getAmount(), tillDays)));
         Money interestAccountedForCurrentPeriod = installment.getInterestWaived(getCurrency())
                 .plus(installment.getInterestPaid(getCurrency()));
+        if (isReceivableLocLoan) {
+            interestAccountedForCurrentPeriod = interestAccountedForCurrentPeriod.minus(installment.getInterestPaid());
+        }
         for (LoanCharge loanCharge : this.charges) {
             if (loanCharge.isActive() && !loanCharge.isDueAtDisbursement()) {
                 boolean isDue = loanCharge.isDueInPeriod(installment.getFromDate(), paymentDate, isFirstNormalInstallment);

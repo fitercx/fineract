@@ -99,8 +99,15 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         addChargeOnlyRepaymentInstallmentIfRequired(charges, installments);
 
         for (final LoanRepaymentScheduleInstallment currentInstallment : installments) {
-            currentInstallment.resetDerivedComponents();
-            currentInstallment.updateObligationsMet(currency, disbursementDate);
+            if (currentInstallment.getLoan().isReceivableLocLoan()) {
+                Money interestPaid = currentInstallment.getInterestPaid(currency);
+                currentInstallment.resetDerivedComponents();
+                currentInstallment.updateObligationsMet(currency, disbursementDate);
+                currentInstallment.setInterestPaid(interestPaid.getAmount());
+            } else {
+                currentInstallment.resetDerivedComponents();
+                currentInstallment.updateObligationsMet(currency, disbursementDate);
+            }
         }
 
         // re-process loan charges over repayment periods (picking up on waived
@@ -684,6 +691,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             if (transactionAmountUnprocessed.isGreaterThanZero()) {
                 if (currentInstallment.isNotFullyPaidOff()) {
                     if (isTransactionInAdvanceOfInstallment(installmentIndex, installments, transactionDate)) {
+                        currentInstallment.setRecievableLineOfCreditInstallment(loanTransaction.getLoan().isReceivableLocLoan());
                         transactionAmountUnprocessed = handleTransactionThatIsPaymentInAdvanceOfInstallment(currentInstallment,
                                 installments, loanTransaction, transactionAmountUnprocessed, transactionMappings, charges);
                     } else if (isTransactionALateRepaymentOnInstallment(installmentIndex, installments, transactionDate)) {

@@ -1,6 +1,9 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import java.time.LocalDate;
+import java.util.Optional;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -15,49 +18,44 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 
 public class CustomLoanDisbursementService extends LoanDisbursementService {
 
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
+
     public CustomLoanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator,
-            ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
+        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
     }
 
     public void handleDisbursementTransaction(final Loan loan, final LocalDate disbursedOn, final PaymentDetail paymentDetail) {
-        // add repayment transaction to track incoming money from client to mfi
-        // for (charges due at time of disbursement)
-
-        /*
-         * TODO Vishwas: do we need to be able to pass in payment type details for repayments at disbursements too?
-         */
+        // add repayment transaction to track incoming money from client to mfi for (charges due at time of
+        // disbursement)
 
         final Money totalFeeChargesDueAtDisbursement = loan.getSummary().getTotalFeeChargesDueAtDisbursement(loan.getCurrency());
-        /*
-         * all Charges repaid at disbursal is marked as repaid and "APPLY Charge" transactions are created for all other
-         * fees ( which are created during disbursal but not repaid)
-         */
 
-        Money disbursentMoney = Money.zero(loan.getCurrency());
+        Money feeAndPenaltyPortion = Money.zero(loan.getCurrency());
+        Money interestPortion = Money.zero(loan.getCurrency()); // upfront interest for receivable LOC
         Money taxesPaid = Money.zero(loan.getCurrency());
-        final LoanTransaction chargesPayment = LoanTransaction.repaymentAtDisbursement(loan.getOffice(), disbursentMoney, paymentDetail,
+
+        final LoanTransaction chargesPayment = LoanTransaction.repaymentAtDisbursement(loan.getOffice(), feeAndPenaltyPortion,
+                paymentDetail, disbursedOn, null);
+        final LoanTransaction taxPaymentTransaction = LoanTransaction.vatDeductionAtDisbursement(loan.getOffice(), taxesPaid, paymentDetail,
                 disbursedOn, null);
 
-        final LoanTransaction taxPaymentTransaction = LoanTransaction.vatDeductionAtDisbursement(loan.getOffice(), disbursentMoney,
-                paymentDetail, disbursedOn, null);
         final Integer installmentNumber = null;
         for (final LoanCharge charge : loan.getActiveCharges()) {
             LocalDate actualDisbursementDate = loan.getActualDisbursementDate(charge);
-            /*
-             * create a Charge applied transaction if Up front Accrual, None or Cash based accounting is enabled
-             */
             if ((charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
                     && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
                             && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
                 if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                     charge.markAsFullyPaid();
-                    // Add "Loan Charge Paid By" details to this transaction
                     final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(),
                             installmentNumber);
                     chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
-                    disbursentMoney = disbursentMoney.plus(charge.amount());
+                    // Treat all such charge amounts as fee portion (no longer misusing interest portion here)
+                    feeAndPenaltyPortion = feeAndPenaltyPortion.plus(charge.amount());
                     if (charge.hasTax()) {
                         taxesPaid = taxesPaid.plus(charge.getTaxAmount());
                         final LoanChargePaidBy taxChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.getTaxAmount(),
@@ -72,9 +70,19 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
             }
         }
 
-        if (disbursentMoney.isGreaterThanZero()) {
+        // Separate handling: if loan is linked to a Line of Credit with receivable product type, collect upfront
+        // interest
+        Optional<LoanLineOfCreditParams> params = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        if (params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable()) {
+            // Upfront interest collection (discount) equals total interest over the schedule
+            interestPortion = Money.of(loan.getCurrency(), loan.getTotalInterest());
+            loan.getRepaymentScheduleInstallments()
+                    .forEach(t -> t.payInterestComponent(disbursedOn, Money.of(loan.getCurrency(), t.getInterestCharged())));
+        }
+
+        if (feeAndPenaltyPortion.isGreaterThanZero() || interestPortion.isGreaterThanZero()) {
             final Money zero = Money.zero(loan.getCurrency());
-            chargesPayment.updateComponentsAndTotal(zero, zero, disbursentMoney, zero);
+            chargesPayment.updateComponentsAndTotal(zero, interestPortion, feeAndPenaltyPortion, zero);
             chargesPayment.updateLoan(loan);
             loan.addLoanTransaction(chargesPayment);
             loan.updateLoanOutstandingBalances();
@@ -91,5 +99,4 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
         final LocalDate expectedDate = loan.getExpectedFirstRepaymentOnDate();
         loanDisbursementValidator.validateDisburseDate(loan, disbursedOn, expectedDate);
     }
-
 }

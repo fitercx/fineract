@@ -87,6 +87,7 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
     private BigDecimal principalPortion;
 
     @Column(name = "interest_portion_derived", scale = 6, precision = 19)
+    @Setter
     private BigDecimal interestPortion;
 
     @Column(name = "fee_charges_portion_derived", scale = 6, precision = 19)

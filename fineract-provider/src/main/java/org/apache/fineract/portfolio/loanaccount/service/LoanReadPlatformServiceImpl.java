@@ -1390,7 +1390,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                         feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, penaltyChargesExpectedDue,
                         penaltyChargesPaid, penaltyChargesWaived, penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod,
                         totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits,
-                        isDownPayment, accrualInterest);
+                        isDownPayment, accrualInterest, false);
 
                 periods.add(periodData);
             }

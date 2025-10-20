@@ -147,4 +147,14 @@ public final class LoanScheduleModelDownPaymentPeriod implements LoanScheduleMod
     public void setRescheduleInterestPortion(BigDecimal rescheduleInterestPortion) {
 
     }
+
+    @Override
+    public void addTotalDue(Money amount) {
+
+    }
+
+    @Override
+    public void addInterestDueWithoutTotalUpdate(Money interestDue) {
+
+    }
 }

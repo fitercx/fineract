@@ -75,7 +75,7 @@ public class LoanScheduleComponent {
         loan.updateLoanSummaryDerivedFields();
     }
 
-    private LoanRepaymentScheduleInstallment findByInstallmentNumber(final Collection<LoanRepaymentScheduleInstallment> installments,
+    protected LoanRepaymentScheduleInstallment findByInstallmentNumber(final Collection<LoanRepaymentScheduleInstallment> installments,
             final Integer installmentNumber) {
         return installments.stream().filter(i -> installmentNumber.compareTo(i.getInstallmentNumber()) == 0).findFirst().orElse(null);
     }
@@ -84,7 +84,7 @@ public class LoanScheduleComponent {
         return installments.stream().anyMatch(i -> installmentNumber.compareTo(i.getInstallmentNumber()) == 0);
     }
 
-    private boolean existInstallment(final List<LoanScheduleModelPeriod> periods, final Integer installmentNumber) {
+    protected boolean existInstallment(final List<LoanScheduleModelPeriod> periods, final Integer installmentNumber) {
         return periods.stream().anyMatch(p -> p.periodNumber() != null && installmentNumber.compareTo(p.periodNumber()) == 0);
     }
 
