@@ -73,12 +73,6 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     @Column(name = "principal_writtenoff_derived", scale = 6, precision = 19)
     private BigDecimal principalWrittenOff;
 
-    @Column(name = "principal_receivable_expected", scale = 6, precision = 19)
-    private BigDecimal principalReceivableExpected;
-
-    @Column(name = "principal_receivable_completed_derived", scale = 6, precision = 19)
-    private BigDecimal principalReceivableCompleted;
-
     @Column(name = "interest_amount", scale = 6, precision = 19)
     private BigDecimal interestCharged;
 
@@ -90,9 +84,6 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     @Column(name = "interest_writtenoff_derived", scale = 6, precision = 19)
     private BigDecimal interestWrittenOff;
-
-    @Column(name = "interest_receivable_completed_derived", scale = 6, precision = 19)
-    private BigDecimal interestReceivableCompleted;
 
     @Column(name = "accrual_interest_derived", scale = 6, precision = 19)
     private BigDecimal interestAccrued;
@@ -414,14 +405,6 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
     }
 
-    public Money getInterestReceivableCompleted(final MonetaryCurrency currency) {
-        return Money.of(currency, interestReceivableCompleted);
-    }
-
-    public Money getPrincipalReceivableCompleted(final MonetaryCurrency currency) {
-        return Money.of(currency, principalReceivableCompleted);
-    }
-
     void updateLoan(final Loan loan) {
         this.loan = loan;
     }
@@ -572,28 +555,18 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
         final Money interestDue = getInterestOutstanding(currency);
 
-        if (!isRecievableLineOfCreditInstallment()) {
-            if (transactionAmountRemaining.isGreaterThanOrEqualTo(interestDue)) {
-                this.interestPaid = getInterestPaid(currency).plus(interestDue).getAmount();
-                interestPortionOfTransaction = interestPortionOfTransaction.plus(interestDue);
-            } else {
-                this.interestPaid = getInterestPaid(currency).plus(transactionAmountRemaining).getAmount();
-                interestPortionOfTransaction = interestPortionOfTransaction.plus(transactionAmountRemaining);
-            }
-            this.interestPaid = defaultToNullIfZero(this.interestPaid);
-
-            checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
-
-            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, interestPortionOfTransaction);
-
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(interestDue)) {
+            this.interestPaid = getInterestPaid(currency).plus(interestDue).getAmount();
+            interestPortionOfTransaction = interestPortionOfTransaction.plus(interestDue);
         } else {
-
-            this.interestReceivableCompleted = defaultToNullIfZero(
-                    (getInterestReceivableCompleted(currency).plus(transactionAmountRemaining)).getAmount());
+            this.interestPaid = getInterestPaid(currency).plus(transactionAmountRemaining).getAmount();
             interestPortionOfTransaction = interestPortionOfTransaction.plus(transactionAmountRemaining);
-
-            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, transactionAmountRemaining);
         }
+        this.interestPaid = defaultToNullIfZero(this.interestPaid);
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, interestPortionOfTransaction);
 
         return interestPortionOfTransaction;
     }
