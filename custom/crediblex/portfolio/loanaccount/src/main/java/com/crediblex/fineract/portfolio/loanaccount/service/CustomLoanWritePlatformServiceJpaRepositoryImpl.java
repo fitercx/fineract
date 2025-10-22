@@ -694,16 +694,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
-            final BigDecimal amount = result.getChanges().get("eventAmount") != null
-                    ? new BigDecimal(result.getChanges().get("eventAmount").toString())
-                    : BigDecimal.ZERO;
+
+            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+            BigDecimal amount = loan.getPrincipal().getAmount();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
+            loan.setIsRestructured( Boolean.TRUE.equals(isRestructured));
+            loan.setIsForcedClosure(Boolean.TRUE.equals(isForcedClosure));
 
-            // TODO Look at loc foreclosure
-            jdbcTemplate.update("UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
-                    Boolean.TRUE.equals(isForcedClosure), Boolean.TRUE.equals(isRestructured), loanId);
+            loanRepositoryWrapper.save(loan);
         }
 
         return result;

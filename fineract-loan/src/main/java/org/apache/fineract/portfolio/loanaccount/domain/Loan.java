@@ -456,6 +456,14 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "factor_rate_loan_amount")
     private BigDecimal factorRateLoanAmount;
 
+    @Setter()
+    @Column(name = "is_forced_closure")
+    private Boolean isForcedClosure = Boolean.FALSE;
+
+    @Setter()
+    @Column(name = "is_restructured")
+    private Boolean isRestructured =Boolean.FALSE;
+
     public static Loan newIndividualLoanApplication(final String accountNo, final Client client, final AccountType loanType,
             final LoanProduct loanProduct, final Fund fund, final Staff officer, final CodeValue loanPurpose,
             final LoanRepaymentScheduleTransactionProcessor transactionProcessingStrategy,
