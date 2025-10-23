@@ -137,10 +137,10 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
 
                     loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream().findFirst().ifPresent(mapping -> {
                         loanChargePaidData.setTaxGLAccountId(
-                                mapping.getTaxComponent().getDebitAcount() != null ? mapping.getTaxComponent().getDebitAcount().getId()
+                                mapping.getTaxComponent().getDebitAccount() != null ? mapping.getTaxComponent().getDebitAccount().getId()
                                         : null);
                         loanChargePaidData.setIncomeGLAccountId(
-                                mapping.getTaxComponent().getCreditAcount() != null ? mapping.getTaxComponent().getCreditAcount().getId()
+                                mapping.getTaxComponent().getCreditAccount() != null ? mapping.getTaxComponent().getCreditAccount().getId()
                                         : null);
                     });
 
@@ -155,8 +155,8 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
                                         "error.msg.loan.charge.paid.by.tax.group.mapping.not.found",
                                         "Tax group mapping not found for tax group: " + loanCharge.getCharge().getTaxGroup().getName()));
                         final TaxComponent taxComponent = taxGroupMappings.getTaxComponent();
-                        final Long creditGLAccountId = taxComponent.getCreditAcount().getId();
-                        final Long debitGLAccountId = taxComponent.getDebitAcount().getId();
+                        final Long creditGLAccountId = taxComponent.getCreditAccount().getId();
+                        final Long debitGLAccountId = taxComponent.getDebitAccount().getId();
                         loanChargePaidData.markAsApplicableToFactoRateFeeTaxes();
                         loanChargePaidData.setCreditGLAccountId(creditGLAccountId);
                         loanChargePaidData.setDebitGLAccountId(debitGLAccountId);

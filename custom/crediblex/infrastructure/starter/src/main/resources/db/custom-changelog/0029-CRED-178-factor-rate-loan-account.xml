@@ -345,4 +345,17 @@
         </addColumn>
     </changeSet>
 
+    <changeSet author="CredibleX" id="27">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="credited_tax"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="credited_tax" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

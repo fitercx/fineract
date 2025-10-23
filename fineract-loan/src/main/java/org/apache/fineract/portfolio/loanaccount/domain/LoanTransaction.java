@@ -87,6 +87,7 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
     private BigDecimal principalPortion;
 
     @Column(name = "interest_portion_derived", scale = 6, precision = 19)
+    @Setter
     private BigDecimal interestPortion;
 
     @Column(name = "fee_charges_portion_derived", scale = 6, precision = 19)
@@ -276,7 +277,8 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         return new LoanTransaction(loan, office, LoanTransactionType.INITIATE_TRANSFER, transferDate,
                 loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
                 loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
-                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), loan.getSummary().getTotalTaxChargesOutstanding(), null, false, null,
+                externalId);
     }
 
     public static LoanTransaction approveTransfer(final Office office, final Loan loan, final LocalDate transferDate,
@@ -284,7 +286,8 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         return new LoanTransaction(loan, office, LoanTransactionType.APPROVE_TRANSFER, transferDate,
                 loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
                 loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
-                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), loan.getSummary().getTotalTaxChargesOutstanding(), null, false, null,
+                externalId);
     }
 
     public static LoanTransaction withdrawTransfer(final Office office, final Loan loan, final LocalDate transferDate,
@@ -292,7 +295,8 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         return new LoanTransaction(loan, office, LoanTransactionType.WITHDRAW_TRANSFER, transferDate,
                 loan.getSummary().getTotalOutstanding(), loan.getSummary().getTotalPrincipalOutstanding(),
                 loan.getSummary().getTotalInterestOutstanding(), loan.getSummary().getTotalFeeChargesOutstanding(),
-                loan.getSummary().getTotalPenaltyChargesOutstanding(), null, false, null, externalId);
+                loan.getSummary().getTotalPenaltyChargesOutstanding(), loan.getSummary().getTotalTaxChargesOutstanding(), null, false, null,
+                externalId);
     }
 
     public static LoanTransaction refund(final Office office, final Money amount, final PaymentDetail paymentDetail,
@@ -326,7 +330,7 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
     public static LoanTransaction creditBalanceRefund(final Loan loan, final Office office, final Money amount, final LocalDate paymentDate,
             final ExternalId externalId, PaymentDetail paymentDetail) {
         return new LoanTransaction(loan, office, LoanTransactionType.CREDIT_BALANCE_REFUND, paymentDate, amount.getAmount(), null, null,
-                null, null, amount.getAmount(), false, paymentDetail, externalId);
+                null, null, null, amount.getAmount(), false, paymentDetail, externalId);
     }
 
     public static LoanTransaction refundForActiveLoan(final Office office, final Money amount, final PaymentDetail paymentDetail,
@@ -339,7 +343,7 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
             final BigDecimal interest, final BigDecimal feeCharges, final BigDecimal penaltyCharges, final PaymentDetail paymentDetail,
             final LocalDate refundDate, final ExternalId externalId) {
         return new LoanTransaction(loan, office, LoanTransactionType.INTEREST_REFUND, refundDate, amount, principal, interest, feeCharges,
-                penaltyCharges, amount, false, paymentDetail, externalId);
+                penaltyCharges, null, amount, false, paymentDetail, externalId);
     }
 
     public static boolean transactionAmountsMatch(final MonetaryCurrency currency, final LoanTransaction loanTransaction,
@@ -375,29 +379,6 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         this.submittedOnDate = DateUtils.getBusinessLocalDate();
     }
 
-    // Alternative constructor for transfer transactions and similar cases (13 parameters)
-    public LoanTransaction(final Loan loan, final Office office, final LoanTransactionType typeOf, final LocalDate dateOf,
-            final BigDecimal amount, final BigDecimal principalPortion, final BigDecimal interestPortion,
-            final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion, final BigDecimal overPaymentPortion,
-            final boolean reversed, final PaymentDetail paymentDetail, final ExternalId externalId) {
-
-        this.loan = loan;
-        this.typeOf = typeOf;
-        this.dateOf = dateOf;
-        this.amount = amount;
-        this.principalPortion = principalPortion;
-        this.interestPortion = interestPortion;
-        this.feeChargesPortion = feeChargesPortion;
-        this.penaltyChargesPortion = penaltyChargesPortion;
-        this.taxChargesPortion = null; // No tax charges portion in this constructor variant
-        this.overPaymentPortion = overPaymentPortion;
-        this.reversed = reversed;
-        this.paymentDetail = paymentDetail;
-        this.office = office;
-        this.externalId = externalId;
-        this.submittedOnDate = DateUtils.getBusinessLocalDate();
-    }
-
     public static LoanTransaction waiveLoanCharge(final Loan loan, final Office office, final Money waived, final LocalDate waiveDate,
             final Money feeChargesWaived, final Money penaltyChargesWaived, final Money unrecognizedCharge, final ExternalId externalId) {
         final LoanTransaction waiver = new LoanTransaction(loan, office, LoanTransactionType.WAIVE_CHARGES, waived.getAmount(), waiveDate,
@@ -425,10 +406,13 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         BigDecimal penaltyPortion = loan.getSummary().getTotalPenaltyChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
                 ? loan.getSummary().getTotalPenaltyChargesOutstanding()
                 : null;
+        BigDecimal taxPortion = loan.getSummary().getTotalTaxChargesOutstanding().compareTo(BigDecimal.ZERO) != 0
+                ? loan.getSummary().getTotalTaxChargesOutstanding()
+                : null;
         BigDecimal totalOutstanding = loan.getSummary().getTotalOutstanding();
 
         return new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.CHARGE_OFF, chargeOffDate, totalOutstanding,
-                principalPortion, interestPortion, feePortion, penaltyPortion, null, false, null, externalId);
+                principalPortion, interestPortion, feePortion, penaltyPortion, taxPortion, null, false, null, externalId);
     }
 
     private LoanTransaction(final Loan loan, final Office office, final LoanTransactionType type, final BigDecimal amount,

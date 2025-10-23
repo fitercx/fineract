@@ -2074,7 +2074,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         return periods;
     }
 
-    private LoanScheduleModelDownPaymentPeriod createDownPaymentPeriod(LoanApplicationTerms loanApplicationTerms,
+    protected LoanScheduleModelDownPaymentPeriod createDownPaymentPeriod(LoanApplicationTerms loanApplicationTerms,
             LoanScheduleParams scheduleParams, LocalDate date, BigDecimal periodBaseAmount) {
         Money downPaymentAmount = Money.of(loanApplicationTerms.getCurrency(),
                 MathUtil.percentageOf(periodBaseAmount, loanApplicationTerms.getDisbursedAmountPercentageForDownPayment(), 19));
