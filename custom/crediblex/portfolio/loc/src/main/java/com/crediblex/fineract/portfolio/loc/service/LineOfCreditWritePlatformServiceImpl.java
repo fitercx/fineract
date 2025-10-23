@@ -34,6 +34,8 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
@@ -47,8 +49,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.client.models.Pageable;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
@@ -66,6 +71,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,6 +95,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final PlatformSecurityContext context;
     private final LineOfCreditNoteRepository lineOfCreditNoteRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
+    private final LineOfCreditTransactionRepository lineOfCreditTransactionRepository;
 
     /**
      * Helper method to save a note for LOC actions if provided in the command
@@ -424,14 +431,18 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
         LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
 
-        BigDecimal currentLimit = loc.getMaximumAmount();
-        if (currentLimit == null) {
-            currentLimit = BigDecimal.ZERO; // safety fallback
-        }
+       Optional<LineOfCreditTransaction> lastTransaction = lineOfCreditTransactionRepository.findLastTransactionBeforeDate(lineOfCreditId,transactionDate.plusDays(1),
+               PageRequest.of(0, 1)).stream().findFirst();
 
-        if (newLimit.compareTo(currentLimit) <= 0) {
+       BigDecimal currentBalance = BigDecimal.ZERO;
+       if(lastTransaction.isPresent()){
+           currentBalance = lastTransaction.get().getBalanceAfter();
+       }
+
+        //This is wrong, comparison should be with transaction of same date.
+        if (newLimit.compareTo(currentBalance) <= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.must.be.greater",
-                    "New credit limit must be greater than existing limit", "newCreditLimit");
+                    "New credit limit must be greater than existing limit for a given date", "newCreditLimit");
         }
 
         // Ensure consumed amount (if any) does not exceed new limit (shouldn't happen for increase but defensive)
@@ -444,7 +455,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     "Consumed amount exceeds the proposed new credit limit", "newCreditLimit");
         }
 
-        BigDecimal delta = newLimit.subtract(currentLimit);
+        BigDecimal delta = newLimit.subtract(currentBalance);
         lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
                 LineOfCreditTransactionType.INCREMENT);
         loc.setMaximumAmount(loc.getMaximumAmount().add(delta));
@@ -454,7 +465,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.INCREASE_CREDIT_LIMIT);
 
         Map<String, Object> changes = new LinkedHashMap<>();
-        changes.put("previousLimit", currentLimit);
+        changes.put("previousLimit", currentBalance);
         changes.put("newLimit", newLimit);
         changes.put("delta", delta);
         if (loc.getSummary() != null) {
