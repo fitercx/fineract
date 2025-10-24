@@ -126,7 +126,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
-    private final JdbcTemplate jdbcTemplate;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final StandingInstructionRepository standingInstructionRepository;
@@ -182,7 +181,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 loanScheduleService, loanChargeValidator, loanOfficerService, reprocessLoanTransactionsService, loanAccountService,
                 journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService,
                 fineractProperties);
-        this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
         this.standingInstructionRepository = standingInstructionRepository;
@@ -359,6 +357,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isInterestBearingAndInterestRecalculationEnabled() || downPaymentEnabled) {
                 createAndSaveLoanScheduleArchive(loan, scheduleGeneratorDTO);
             }
+            loan.getSummary().setReceivableLineOfCredit(isReceivableLineOfCredit);
             disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
                     scheduleGeneratorDTO);
 
@@ -694,13 +693,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
-
             Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
             BigDecimal amount = loan.getPrincipal().getAmount();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
-            loan.setIsRestructured( Boolean.TRUE.equals(isRestructured));
+            loan.setIsRestructured(Boolean.TRUE.equals(isRestructured));
             loan.setIsForcedClosure(Boolean.TRUE.equals(isForcedClosure));
 
             loanRepositoryWrapper.save(loan);

@@ -17,17 +17,14 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.workingdays.data.AdjustedDateDetailsDTO;
 import org.apache.fineract.organisation.workingdays.domain.RepaymentRescheduleType;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
-import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeFlatInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelRepaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanTermVariationParams;
@@ -121,8 +118,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             final LoanApplicationTerms loanApplicationTerms, final int periodNumber, final MathContext mc, final LocalDate periodStartDate,
             final LocalDate periodEndDate) {
 
-        // Step 1: Get the NOMINAL principal (loan amount)
         Money nominalPrincipal = loanApplicationTerms.getPrincipal();
+        Money disbursalPrincipal = loanApplicationTerms.getDisbursedPrincipal();
         int totalPeriods = loanApplicationTerms.getNumberOfRepayments();
 
         // Step 2: Calculate FIXED installment amount (based on NOMINAL principal)
@@ -134,11 +131,19 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                     loanApplicationTerms.getInstallmentAmountInMultiplesOf());
         }
 
-        // Step 3: Calculate INTEREST for this period
-        // For flat rate, interest is same in each period (total interest / periods)
+        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            loanApplicationTerms.setDisbursedPrincipal(
+                    Money.of(nominalPrincipal.getCurrency(), loanApplicationTerms.getApprovedReceivableLineAmount()));
+        }
+
         final PrincipalInterest result = loanApplicationTerms.calculateTotalInterestForPeriod(calculator,
                 interestCalculationGraceOnRepaymentPeriodFraction, periodNumber, mc, cumulatingInterestPaymentDueToGrace,
                 outstandingBalance, periodStartDate, periodEndDate);
+
+        // We dont care because LOC is always 1 period
+        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            loanApplicationTerms.setDisbursedPrincipal(disbursalPrincipal);
+        }
 
         Money interestForThisInstallment = result.interest();
         Money cumulatingInterestDueToGrace = result.interestPaymentDueToGrace();
@@ -163,81 +168,6 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 totalCumulativeInterest.plus(interestForThisInstallment), totalInterestDueForLoan, periodNumber);
 
         return new PrincipalInterest(principalForThisInstallment, interestForThisInstallment, interestBroughtForwardDueToGrace);
-    }
-
-    @Override
-    public Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
-        Money principalToBeScheduled;
-        if (loanApplicationTerms.isMultiDisburseLoan()) {
-            if (loanApplicationTerms.getTotalDisbursedAmount().isGreaterThanZero()) {
-                principalToBeScheduled = loanApplicationTerms.getTotalMultiDisbursedAmount();
-            } else if (loanApplicationTerms.getApprovedPrincipal().isGreaterThanZero()) {
-                principalToBeScheduled = loanApplicationTerms.getApprovedPrincipal();
-            } else {
-                principalToBeScheduled = loanApplicationTerms.getPrincipal();
-            }
-        } else {
-            principalToBeScheduled = loanApplicationTerms.getPrincipal();
-        }
-
-        if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()
-                && loanApplicationTerms.getInterestMethod().isFlat()) {
-            Money totalInterest = loanApplicationTerms.getTotalInterestDue();
-
-            if (totalInterest != null && totalInterest.isGreaterThanZero()) {
-                principalToBeScheduled = principalToBeScheduled.minus(totalInterest);
-            }
-        }
-
-        return principalToBeScheduled.minus(loanApplicationTerms.getDownPaymentAmount());
-    }
-
-    @Override
-    protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
-            final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
-            final BigDecimal chargesDueAtTimeOfDisbursement) {
-        List<LoanScheduleModelPeriod> periods = new ArrayList<>();
-        if (!loanApplicationTerms.isMultiDisburseLoan()) {
-            final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
-                    loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal(),
-                    chargesDueAtTimeOfDisbursement);
-
-            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-                Money totalPrincipalInterest = loanApplicationTerms.calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(),
-                        loanApplicationTerms.getPrincipal().getMc());
-                disbursementPeriod.setInterestDueAtDisbursement(totalPrincipalInterest);
-            }
-
-            periods.add(disbursementPeriod);
-            if (loanApplicationTerms.isDownPaymentEnabled()) {
-                final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
-                        loanScheduleParams, loanApplicationTerms.getExpectedDisbursementDate(),
-                        loanApplicationTerms.getPrincipal().getAmount());
-                periods.add(downPaymentPeriod);
-            }
-        } else {
-            if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
-                loanApplicationTerms.getDisbursementDatas()
-                        .add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
-                                loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal().getAmount(), null,
-                                null, null, null));
-            }
-            for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
-                if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
-                    final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
-                            disbursementData.disbursementDate(),
-                            Money.of(loanScheduleParams.getCurrency(), disbursementData.getPrincipal()), chargesDueAtTimeOfDisbursement);
-                    periods.add(disbursementPeriod);
-                    if (loanApplicationTerms.isDownPaymentEnabled()) {
-                        final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
-                                loanScheduleParams, loanApplicationTerms.getExpectedDisbursementDate(), disbursementData.getPrincipal());
-                        periods.add(downPaymentPeriod);
-                    }
-                }
-            }
-        }
-
-        return periods;
     }
 
     @Override
@@ -293,10 +223,24 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         // Determine the total interest owed over the full loan for FLAT
         // interest method .
         if (!scheduleParams.isPartialUpdate() && !loanApplicationTerms.isEqualAmortization()) {
-            Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
-                    .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
 
-            loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
+            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+                // this does not matter for LOC (may have to check if less amount can be disbursed)
+                Money disbursedPrincipal = loanApplicationTerms.getDisbursedPrincipal();
+                loanApplicationTerms.setDisbursedPrincipal(Money.of(loanApplicationTerms.getPrincipal().getCurrency(),
+                        loanApplicationTerms.getApprovedReceivableLineAmount()));
+
+                Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
+                        .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
+                loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
+
+                loanApplicationTerms.setDisbursedPrincipal(disbursedPrincipal);
+
+            } else {
+                Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
+                        .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
+                loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
+            }
 
         }
 
@@ -378,10 +322,6 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             if (!DateUtils.isAfter(firstRepaymentDate, scheduleParams.getActualRepaymentDate())) {
                 isFirstRepayment = false;
             }
-        }
-
-        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-            scheduleParams.addTotalRepaymentExpected(Money.of(currency, chargesDueAtTimeOfDisbursement.negate()));
         }
 
         while (!scheduleParams.getOutstandingBalance().isZero() || !scheduleParams.getDisburseDetailMap().isEmpty()) {
@@ -595,15 +535,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         if (scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().isGreaterThanZero()) {
             LoanScheduleModelPeriod installment = periods.get(periods.size() - 1);
             installment.addInterestAmount(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
-            // We want the total due to be the principal only for line of credit receivable
-            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-                installment.addTotalDue(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
-                installment.addInterestDueWithoutTotalUpdate(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
-            } else {
-                scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
-            }
+            scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
             scheduleParams.addTotalCumulativeInterest(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
-
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(Money.zero(currency));
         }
 

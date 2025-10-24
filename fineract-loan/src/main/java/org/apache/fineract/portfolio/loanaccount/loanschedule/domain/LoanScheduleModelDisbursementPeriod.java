@@ -22,7 +22,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Set;
 import lombok.Getter;
-import lombok.Setter;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInterestRecalcualtionAdditionalDetails;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
@@ -36,11 +35,9 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     @SuppressWarnings("unused")
     private final Integer periodNumber;
     private final LocalDate disbursementDate;
-    private final Money principalDisbursed;
+    private Money principalDisbursed;
     private final BigDecimal chargesDueAtTimeOfDisbursement;
     private boolean isEMIFixedSpecificToInstallment = false;
-    @Setter
-    private Money interestDueAtDisbursement;
 
     public static LoanScheduleModelDisbursementPeriod disbursement(final LocalDate disbursementDate, final Money principalDisbursed,
             final BigDecimal chargesDueAtTimeOfDisbursement) {
@@ -152,12 +149,7 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     }
 
     @Override
-    public void addTotalDue(Money amount) {
-
-    }
-
-    @Override
-    public void addInterestDueWithoutTotalUpdate(Money interestDue) {
-
+    public void minusPrincipalAmount(Money reduction) {
+        this.principalDisbursed = this.principalDisbursed.minus(reduction);
     }
 }

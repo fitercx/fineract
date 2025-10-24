@@ -115,7 +115,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             }
 
             // Only pay if there's interest to pay
-            if (interestToPay.isGreaterThanZero() && !currentInstallment.isRecievableLineOfCreditInstallment()) {
+            if (interestToPay.isGreaterThanZero()) {
                 interestPortion = currentInstallment.payInterestComponent(transactionDate, interestToPay);
                 transactionAmountRemaining = transactionAmountRemaining.minus(interestPortion);
             }
@@ -123,19 +123,8 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
 
         // 4. Pay principal last
         if (transactionAmountRemaining.isGreaterThanZero()) {
-
-            Money principalToPay = transactionAmountRemaining;
-            Money principalOutstanding = currentInstallment.getPrincipalOutstanding(currency);
-            if (principalToPay.isEqualTo(principalOutstanding)) {
-                Money excessInterestAmountPaid = currentInstallment.getInterestPaid(currency).minus(proRatedInterest)
-                        .add(currentInstallment.getPrincipalCompleted(currency));
-                if (excessInterestAmountPaid.isGreaterThanZero()) {
-                    principalToPay = principalToPay.plus(excessInterestAmountPaid);
-                }
-            }
-
-            principalPortion = currentInstallment.payPrincipalComponent(transactionDate, principalToPay, true);
-            transactionAmountRemaining = principalToPay.minus(principalPortion);
+            principalPortion = currentInstallment.payPrincipalComponent(transactionDate, transactionAmountRemaining, true);
+            transactionAmountRemaining = transactionAmountRemaining.minus(principalPortion);
         }
 
         // Update transaction components

@@ -40,11 +40,11 @@ public enum LineOfCreditTransactionType {
         return this == UNDO_DISBURSEMENT;
     }
 
-    public boolean isBalanceIncrement(){
+    public boolean isBalanceIncrement() {
         return isIncrement();
     }
 
-    public boolean isBalanceDecrement(){
+    public boolean isBalanceDecrement() {
         return isDecrement();
     }
 

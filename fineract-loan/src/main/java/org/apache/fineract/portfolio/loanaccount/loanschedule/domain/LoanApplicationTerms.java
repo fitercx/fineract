@@ -228,6 +228,7 @@ public class LoanApplicationTerms {
 
     private RepaymentStartDateType repaymentStartDateType;
     private LocalDate submittedOnDate;
+    @Getter
     private Money disbursedPrincipal;
     private LoanScheduleType loanScheduleType;
     private LoanScheduleProcessingType loanScheduleProcessingType;
@@ -246,6 +247,9 @@ public class LoanApplicationTerms {
     @Getter
     @Setter
     private Boolean isReceivableLineOfCredit = Boolean.FALSE;
+    @Setter
+    @Getter
+    private BigDecimal approvedReceivableLineAmount;
 
     @Setter
     @Getter

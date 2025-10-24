@@ -50,10 +50,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.fineract.client.models.Pageable;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
@@ -431,15 +429,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
         LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
 
-       Optional<LineOfCreditTransaction> lastTransaction = lineOfCreditTransactionRepository.findLastTransactionBeforeDate(lineOfCreditId,transactionDate.plusDays(1),
-               PageRequest.of(0, 1)).stream().findFirst();
+        Optional<LineOfCreditTransaction> lastTransaction = lineOfCreditTransactionRepository
+                .findLastTransactionBeforeDate(lineOfCreditId, transactionDate.plusDays(1), PageRequest.of(0, 1)).stream().findFirst();
 
-       BigDecimal currentBalance = BigDecimal.ZERO;
-       if(lastTransaction.isPresent()){
-           currentBalance = lastTransaction.get().getBalanceAfter();
-       }
+        BigDecimal currentBalance = BigDecimal.ZERO;
+        if (lastTransaction.isPresent()) {
+            currentBalance = lastTransaction.get().getBalanceAfter();
+        }
 
-        //This is wrong, comparison should be with transaction of same date.
+        // This is wrong, comparison should be with transaction of same date.
         if (newLimit.compareTo(currentBalance) <= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.must.be.greater",
                     "New credit limit must be greater than existing limit for a given date", "newCreditLimit");
