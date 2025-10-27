@@ -150,12 +150,12 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
     private final LoanRepaymentScheduleTransactionProcessorFactory transactionProcessorFactory;
     private final InterestRefundServiceDelegate interestRefundServiceDelegate;
     protected final LoanTransactionValidator loanTransactionValidator;
-    private final LoanForeclosureValidator loanForeclosureValidator;
+    protected final LoanForeclosureValidator loanForeclosureValidator;
     protected final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
     protected final LoanChargeService loanChargeService;
     private final LoanScheduleService loanScheduleService;
     private final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
-    private final LoanChargeValidator loanChargeValidator;
+    protected final LoanChargeValidator loanChargeValidator;
     private final LoanRefundService loanRefundService;
     protected final LoanAccountService loanAccountService;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
@@ -991,7 +991,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         return interestRefundTransaction;
     }
 
-    private void updateInstallmentsPostDate(final Loan loan, final LocalDate transactionDate) {
+    protected void updateInstallmentsPostDate(final Loan loan, final LocalDate transactionDate) {
         final List<LoanRepaymentScheduleInstallment> newInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
         final MonetaryCurrency currency = loan.getCurrency();
         Money totalPrincipal = Money.zero(currency);
@@ -1073,7 +1073,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
                 null, scheduleGeneratorDTO);
     }
 
-    private void handleForeClosureTransactions(final Loan loan, final LoanTransaction repaymentTransaction,
+    protected void handleForeClosureTransactions(final Loan loan, final LoanTransaction repaymentTransaction,
             final LoanLifecycleStateMachine loanLifecycleStateMachine, final ScheduleGeneratorDTO scheduleGeneratorDTO) {
         loan.setLoanSubStatus(LoanSubStatus.FORECLOSED);
         loanDownPaymentHandlerService.handleRepaymentOrRecoveryOrWaiverTransaction(loan, repaymentTransaction, loanLifecycleStateMachine,

@@ -39,6 +39,7 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     private final LocalDate dueDate;
     private Money principalDue;
     private Money outstandingLoanBalance;
+    private Money interestOriginalDue;
     private Money interestDue;
     private Money feeChargesDue;
     private Money penaltyChargesDue;
@@ -168,6 +169,7 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     public void addInterestAmount(Money interestDue) {
         this.interestDue = this.interestDue.plus(interestDue, mc);
         this.totalDue = this.totalDue.plus(interestDue, mc);
+        this.interestOriginalDue = this.interestDue;
     }
 
     public void setPeriodNumber(int periodNumber) {
@@ -199,7 +201,17 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     }
 
     @Override
+    public void addTotalDue(Money amount) {
+        this.totalDue = this.totalDue.plus(amount, mc);
+    }
+
+    @Override
     public BigDecimal rescheduleInterestPortion() {
         return this.rescheduleInterestPortion;
+    }
+
+    @Override
+    public void addInterestDueWithoutTotalUpdate(Money interestDue) {
+        // this.interestDue = this.interestDue.plus(interestDue, mc);
     }
 }

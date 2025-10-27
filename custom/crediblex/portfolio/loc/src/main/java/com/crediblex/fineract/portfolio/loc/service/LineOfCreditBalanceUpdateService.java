@@ -7,6 +7,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -85,8 +86,20 @@ public class LineOfCreditBalanceUpdateService {
 
         // 5. Trigger Re-computation if Backdated
         if (isBackdatedTransaction) {
-            // We now have to recalculate all subsequent transactions' effect on the summary balance.
+            // First, create and save the new backdated transaction with placeholder balances
+            // The actual balances will be corrected during recomputation
+            LineOfCreditTransaction backdatedTransaction = createTransactionRecord(lineOfCredit, loanId, amount, BigDecimal.ZERO,
+                    BigDecimal.ZERO, transactionDate, lineOfCreditTransactionType);
+            backdatedTransaction.setIsBackdatedEntry(true);
+            lineOfCreditTransactionRepository.saveAndFlush(backdatedTransaction);
+
+            // We now have to recalculate all transactions from the backdated date onwards
             recomputeLocSummaryFromDate(transactionDate, lineOfCredit);
+        }
+
+        if (lineOfCredit.getSummary().getConsumedAmount().compareTo(BigDecimal.ZERO) < 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative", "Consumed amount cannot be negative",
+                    "consumedAmount", lineOfCredit.getSummary().getConsumedAmount());
         }
     }
 
@@ -102,23 +115,21 @@ public class LineOfCreditBalanceUpdateService {
             BigDecimal newAvailableBalance = currentAvailableBalance.subtract(amount);
             BigDecimal newConsumedAmount = currentConsumedAmount.add(amount);
 
-            if (!type.isDecrement()) {
-                lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
-            }
+            lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
 
             BigDecimal totalIncrement = type.isDisbursement() ? BigDecimal.ONE : BigDecimal.ZERO;
 
-            lineOfCredit.getSummary()
-                    .setTotalDrawDownCountDerived(lineOfCredit.getSummary().getTotalDrawDownCountDerived().add(totalIncrement));
+            if (type.isDisbursement()) {
+                lineOfCredit.getSummary()
+                        .setTotalDrawDownCountDerived(lineOfCredit.getSummary().getTotalDrawDownCountDerived().add(totalIncrement));
+            }
         } else if (type.isIncrementTransaction()) {
             // Repayments, refunds, and foreclosures increase available balance and decrease consumed amount
             BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
             BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
 
-            if (!type.isIncrement()) {
-                lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
-            }
+            lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
         }
     }
@@ -157,115 +168,77 @@ public class LineOfCreditBalanceUpdateService {
      */
     private void recomputeLocSummaryFromDate(LocalDate startDate, LineOfCredit lineOfCredit) {
 
-        // 1. Calculate the date from which we need to fetch transactions (day before startDate)
-        LocalDate fetchFromDate = startDate.minusDays(1);
+        // 1. Find the single last transaction strictly before startDate (baseline)
+        Optional<LineOfCreditTransaction> lastTransactionBeforeStartOpt = lineOfCreditTransactionRepository
+                .findLastTransactionBeforeDate(lineOfCredit.getId(), startDate, PageRequest.of(0, 1)).stream().findFirst();
 
-        List<LineOfCreditTransaction> relevantTransactions = lineOfCreditTransactionRepository
-                .findByLineOfCreditIdAndTransactionDateGreaterThanOrEqualTo(lineOfCredit.getId(), fetchFromDate);
+        // 2. Fetch all transactions from startDate onward (these are the ones we will re-apply)
+        List<LineOfCreditTransaction> transactionsFromStartDate = lineOfCreditTransactionRepository
+                .findByLineOfCreditIdAndTransactionDateGreaterThanOrEqualTo(lineOfCredit.getId(), startDate);
 
-        // Split transactions into before startDate and from startDate
-        List<LineOfCreditTransaction> transactionsBeforeStartDate = new ArrayList<>();
-        List<LineOfCreditTransaction> transactionsFromStartDate = new ArrayList<>();
+        // Ensure chronological order (oldest -> newest). If transactionDate can be same for multiple txs,
+        // add a tiebreaker (e.g., id) for deterministic application.
+        transactionsFromStartDate
+                .sort(Comparator.comparing(LineOfCreditTransaction::getTransactionDate).thenComparing(LineOfCreditTransaction::getId));
 
-        for (LineOfCreditTransaction tx : relevantTransactions) {
-            if (tx.getTransactionDate().isBefore(startDate)) {
-                transactionsBeforeStartDate.add(tx);
-            } else {
-                transactionsFromStartDate.add(tx);
-            }
-        }
-
-        // 3. Calculate baseline balance from the last transaction before startDate
+        // 3. Derive baseline (available balance and drawdown count) as of startDate
         BigDecimal baseAvailableBalance;
         BigDecimal baseTotalDrawDownCount;
 
-        if (transactionsBeforeStartDate.isEmpty()) {
-            // No transactions before startDate in our fetched set, use the balance from the last known transaction
-            Optional<LineOfCreditTransaction> lastTransactionBeforeStart = lineOfCreditTransactionRepository
-                    .findLatestTransaction(lineOfCredit.getId(), PageRequest.of(0, 1)).stream().findFirst();
-
-            if (lastTransactionBeforeStart.isPresent()) {
-                baseAvailableBalance = lastTransactionBeforeStart.get().getBalanceAfter();
-                // Count disbursements up to this point (this is an approximation, could be optimized with a count
-                // query)
-                baseTotalDrawDownCount = BigDecimal
-                        .valueOf(lineOfCreditTransactionRepository.countByLineOfCreditIdAndTransactionDateLessThanAndTransactionType(
-                                lineOfCredit.getId(), startDate, LineOfCreditTransactionType.DISBURSEMENT));
-            } else {
-                // No transactions before startDate at all, use the original maximum amount
-                baseAvailableBalance = lineOfCredit.getMaximumAmount();
-                baseTotalDrawDownCount = BigDecimal.ZERO;
-            }
+        if (lastTransactionBeforeStartOpt.isPresent()) {
+            LineOfCreditTransaction lastBefore = lastTransactionBeforeStartOpt.get();
+            baseAvailableBalance = lastBefore.getBalanceAfter();
+            baseTotalDrawDownCount = BigDecimal
+                    .valueOf(lineOfCreditTransactionRepository.countByLineOfCreditIdAndTransactionDateLessThanAndTransactionType(
+                            lineOfCredit.getId(), startDate, LineOfCreditTransactionType.DISBURSEMENT));
         } else {
-            // Calculate baseline from the fetched transactions before startDate
+            // No history before startDate: begin from maximum amount
             baseAvailableBalance = lineOfCredit.getMaximumAmount();
             baseTotalDrawDownCount = BigDecimal.ZERO;
-
-            Optional<LineOfCreditTransaction> lastTransactionBeforeFetch = lineOfCreditTransactionRepository
-                    .findLastTransactionBeforeDate(lineOfCredit.getId(), fetchFromDate, PageRequest.of(0, 1)).stream().findFirst();
-
-            if (lastTransactionBeforeFetch.isPresent()) {
-                baseAvailableBalance = lastTransactionBeforeFetch.get().getBalanceAfter();
-                // Get the count of disbursements before our fetch date
-                baseTotalDrawDownCount = BigDecimal
-                        .valueOf(lineOfCreditTransactionRepository.countByLineOfCreditIdAndTransactionDateLessThanAndTransactionType(
-                                lineOfCredit.getId(), startDate, LineOfCreditTransactionType.DISBURSEMENT));
-            }
-
-            // Apply the transactions we fetched that are before startDate
-            for (LineOfCreditTransaction tx : transactionsBeforeStartDate) {
-                if (tx.getTransactionType().isDecrementTransaction()) {
-                    baseAvailableBalance = baseAvailableBalance.subtract(tx.getAmount());
-                    baseTotalDrawDownCount = baseTotalDrawDownCount.add(BigDecimal.ONE);
-                } else if (tx.getTransactionType().isIncrementTransaction()) {
-                    baseAvailableBalance = baseAvailableBalance.add(tx.getAmount());
-                }
-            }
         }
 
         BigDecimal baseConsumedAmount = lineOfCredit.getMaximumAmount().subtract(baseAvailableBalance);
 
-        // 4. Start with the calculated base values for recomputation
+        // 4. Start running values from the baseline
         BigDecimal runningAvailableBalance = baseAvailableBalance;
         BigDecimal runningConsumedAmount = baseConsumedAmount;
         BigDecimal totalDrawDownCount = baseTotalDrawDownCount;
 
         List<LineOfCreditTransaction> transactionsToSave = new ArrayList<>();
 
-        // 5. Iterate and re-apply transactions from startDate forward chronologically
+        // 5. Re-apply only transactions that are >= startDate (no overlap with baseline)
         for (LineOfCreditTransaction tx : transactionsFromStartDate) {
             BigDecimal transactionAmount = tx.getAmount();
-
-            // Record the balance *before* this transaction for the updated record
             BigDecimal balanceBefore = runningAvailableBalance;
 
-            if (tx.isDisbursement()) {
-                // Validate availability during re-computation for integrity check
+            if (tx.getTransactionType().isDecrementTransaction()) {
                 if (runningAvailableBalance.compareTo(transactionAmount) < 0) {
-                    // This indicates an over-disbursement in history, which is a severe data error.
                     throw new IllegalStateException(
                             "LOC history error: Insufficient balance during re-computation for Tx ID: " + tx.getId());
                 }
                 runningAvailableBalance = runningAvailableBalance.subtract(transactionAmount);
                 runningConsumedAmount = runningConsumedAmount.add(transactionAmount);
-                totalDrawDownCount = totalDrawDownCount.add(BigDecimal.ONE);
+
+                // Only increment drawdown count for actual disbursements, not for other decrement types
+                if (tx.getTransactionType().isDisbursement()) {
+                    totalDrawDownCount = totalDrawDownCount.add(BigDecimal.ONE);
+                }
             } else if (tx.getTransactionType().isIncrementTransaction()) {
                 runningAvailableBalance = runningAvailableBalance.add(transactionAmount);
                 runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
             }
 
-            // Update the transaction record itself with the correct calculated balances
             tx.setBalanceBefore(balanceBefore);
             tx.setBalanceAfter(runningAvailableBalance);
             transactionsToSave.add(tx);
         }
 
-        // 6. Update the LOC Summary with the final, correct balances
+        // 6. Update LOC summary
         lineOfCredit.getSummary().setConsumedAmount(runningConsumedAmount);
         lineOfCredit.getSummary().setAvailableBalance(runningAvailableBalance);
         lineOfCredit.getSummary().setTotalDrawDownCountDerived(totalDrawDownCount);
 
-        // 7. Save all updated transaction records in a batch
+        // 7. Save updated transactions (those from startDate onward)
         lineOfCreditTransactionRepository.saveAll(transactionsToSave);
     }
 
