@@ -218,7 +218,9 @@ public class JournalEntryOdooTrackingService {
 
                 // Add more mappings as needed in the future
                 // For example:
-                if (transactionTypeEnum == 2) return "REPAYMENT";
+                if (transactionTypeEnum == 2) {
+                    return "REPAYMENT";
+                }
                 // if (transactionTypeEnum == 3) return "WAIVE_INTEREST";
 
                 log.debug("Loan transaction {} with type {} has no specific business event mapping", loanTransactionId,
