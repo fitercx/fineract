@@ -650,14 +650,18 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
 
         final Set<LoanCharge> loanFees = extractFeeCharges(charges);
         final Set<LoanCharge> loanPenalties = extractPenaltyCharges(charges);
+        final Set<LoanCharge> loanFeeTaxCharges = extractFeeTaxCharges(charges);
+        final Set<LoanCharge> loanPenaltyTaxCharges = extractPenaltyTaxCharges(charges);
         Integer installmentNumber = null;
         if (loanTransaction.isChargePayment() && installments.size() == 1) {
-            installmentNumber = installments.get(0).getInstallmentNumber();
+            installmentNumber = installments.getFirst().getInstallmentNumber();
         }
 
         if (loanTransaction.isNotWaiver() && !loanTransaction.isAccrual() && !loanTransaction.isAccrualActivity()) {
             Money feeCharges = loanTransaction.getFeeChargesPortion(currency);
             Money penaltyCharges = loanTransaction.getPenaltyChargesPortion(currency);
+            Money taxCharges = loanTransaction.getTaxChargesPortion(currency);
+
             if (chargeAmountToProcess != null && feeCharges.isGreaterThan(chargeAmountToProcess)) {
                 if (isFeeCharge) {
                     feeCharges = chargeAmountToProcess;
@@ -665,12 +669,21 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                     penaltyCharges = chargeAmountToProcess;
                 }
             }
+
             if (feeCharges.isGreaterThanZero()) {
                 updateChargesPaidAmountBy(loanTransaction, feeCharges, loanFees, installmentNumber);
             }
 
+            if (taxCharges.isGreaterThanZero() && !loanFeeTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxCharges, loanFeeTaxCharges, installmentNumber);
+            }
+
             if (penaltyCharges.isGreaterThanZero()) {
                 updateChargesPaidAmountBy(loanTransaction, penaltyCharges, loanPenalties, installmentNumber);
+            }
+
+            if (taxCharges.isGreaterThanZero() && !loanPenaltyTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxCharges, loanPenaltyTaxCharges, installmentNumber);
             }
         }
         return transactionAmountUnprocessed;
@@ -730,6 +743,26 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         return penaltyCharges;
     }
 
+    protected Set<LoanCharge> extractFeeTaxCharges(final Set<LoanCharge> loanCharges) {
+        final Set<LoanCharge> feeTaxCharges = new HashSet<>();
+        for (final LoanCharge loanCharge : loanCharges) {
+            if (loanCharge.hasTax() && loanCharge.isFeeCharge()) {
+                feeTaxCharges.add(loanCharge);
+            }
+        }
+        return feeTaxCharges;
+    }
+
+    protected Set<LoanCharge> extractPenaltyTaxCharges(final Set<LoanCharge> loanCharges) {
+        final Set<LoanCharge> penaltyTaxCharges = new HashSet<>();
+        for (final LoanCharge loanCharge : loanCharges) {
+            if (loanCharge.hasTax() && loanCharge.isPenaltyCharge()) {
+                penaltyTaxCharges.add(loanCharge);
+            }
+        }
+        return penaltyTaxCharges;
+    }
+
     protected void updateChargesPaidAmountBy(final LoanTransaction loanTransaction, final Money chargeAmount, final Set<LoanCharge> charges,
             final Integer installmentNumber) {
 
@@ -759,6 +792,37 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                     chargesPaidBies.add(loanChargePaidBy);
                 }
                 amountRemaining = amountRemaining.minus(amountPaidTowardsCharge);
+            }
+        }
+
+    }
+
+    protected void updateTaxChargesPaidAmountBy(final LoanTransaction loanTransaction, final Money taxAmount, final Set<LoanCharge> charges,
+            final Integer installmentNumber) {
+
+        Money amountRemaining = taxAmount;
+        while (amountRemaining.isGreaterThanZero()) {
+            final LoanCharge unpaidCharge = findEarliestUnpaidTaxChargeFromUnOrderedSet(charges, taxAmount.getCurrency());
+            if (unpaidCharge == null) {
+                break;
+            }
+            final Money amountPaidTowardsTaxCharge = unpaidCharge.updateTaxAmountPaidBy(amountRemaining);
+            if (!amountPaidTowardsTaxCharge.isZero()) {
+                Set<LoanChargePaidBy> chargesPaidBies = loanTransaction.getLoanChargesPaid();
+                if (loanTransaction.isChargePayment()) {
+                    for (final LoanChargePaidBy chargePaidBy : chargesPaidBies) {
+                        final LoanCharge loanCharge = chargePaidBy.getLoanCharge();
+                        if (loanCharge != null && Objects.equals(loanCharge.getId(), unpaidCharge.getId())) {
+                            chargePaidBy.setTaxAmount(amountPaidTowardsTaxCharge.getAmount());
+                        }
+                    }
+                } else {
+                    final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(loanTransaction, unpaidCharge, BigDecimal.ZERO,
+                            installmentNumber);
+                    loanChargePaidBy.setTaxAmount(amountPaidTowardsTaxCharge.getAmount());
+                    chargesPaidBies.add(loanChargePaidBy);
+                }
+                amountRemaining = amountRemaining.minus(amountPaidTowardsTaxCharge);
             }
         }
 
@@ -803,6 +867,33 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         return earliestUnpaidCharge;
     }
 
+    protected LoanCharge findEarliestUnpaidTaxChargeFromUnOrderedSet(final Set<LoanCharge> charges, final MonetaryCurrency currency) {
+        LoanCharge earliestUnpaidCharge = null;
+        LoanCharge installemntCharge = null;
+        LoanInstallmentCharge chargePerInstallment = null;
+        for (final LoanCharge loanCharge : charges) {
+            if (loanCharge.getTaxAmountOutstanding(currency).isGreaterThanZero() && !loanCharge.isDueAtDisbursement()) {
+                if (loanCharge.isInstalmentFee()) {
+                    final LoanInstallmentCharge unpaidLoanChargePerInstallment = loanCharge.getUnpaidInstallmentLoanCharge();
+                    if (chargePerInstallment == null || DateUtils.isAfter(chargePerInstallment.getRepaymentInstallment().getDueDate(),
+                            unpaidLoanChargePerInstallment.getRepaymentInstallment().getDueDate())) {
+                        installemntCharge = loanCharge;
+                        chargePerInstallment = unpaidLoanChargePerInstallment;
+                    }
+                } else if (earliestUnpaidCharge == null
+                        || DateUtils.isBefore(loanCharge.getDueLocalDate(), earliestUnpaidCharge.getDueLocalDate())) {
+                    earliestUnpaidCharge = loanCharge;
+                }
+            }
+        }
+        if (earliestUnpaidCharge == null || (chargePerInstallment != null && DateUtils.isAfter(earliestUnpaidCharge.getDueLocalDate(),
+                chargePerInstallment.getRepaymentInstallment().getDueDate()))) {
+            earliestUnpaidCharge = installemntCharge;
+        }
+
+        return earliestUnpaidCharge;
+    }
+
     protected void handleWriteOff(final LoanTransaction loanTransaction, final MonetaryCurrency currency,
             final List<LoanRepaymentScheduleInstallment> installments) {
 
@@ -811,6 +902,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         Money interestPortion = Money.zero(currency);
         Money feeChargesPortion = Money.zero(currency);
         Money penaltychargesPortion = Money.zero(currency);
+        Money taxChargesPortion = Money.zero(currency);
 
         // determine how much is written off in total and breakdown for
         // principal, interest and charges
@@ -820,12 +912,14 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                 principalPortion = principalPortion.plus(currentInstallment.writeOffOutstandingPrincipal(transactionDate, currency));
                 interestPortion = interestPortion.plus(currentInstallment.writeOffOutstandingInterest(transactionDate, currency));
                 feeChargesPortion = feeChargesPortion.plus(currentInstallment.writeOffOutstandingFeeCharges(transactionDate, currency));
+                taxChargesPortion = taxChargesPortion.plus(currentInstallment.writeOffOutstandingTaxCharges(transactionDate, currency));
                 penaltychargesPortion = penaltychargesPortion
                         .plus(currentInstallment.writeOffOutstandingPenaltyCharges(transactionDate, currency));
             }
         }
 
-        loanTransaction.updateComponentsAndTotal(principalPortion, interestPortion, feeChargesPortion, penaltychargesPortion);
+        loanTransaction.updateComponentsAndTotal(principalPortion, interestPortion, feeChargesPortion, penaltychargesPortion,
+                taxChargesPortion);
     }
 
     protected void handleChargeback(LoanTransaction loanTransaction, TransactionCtx ctx) {
@@ -894,7 +988,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                 final Money amountDeductedTowardsCharge = paidCharge.undoPaidOrPartiallyAmountBy(amountRemaining, installmentNumber,
                         feeAmount);
                 if (amountDeductedTowardsCharge.isGreaterThanZero()) {
-
+                    final Money taxAmount = chargeAmount.zero();
                     final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(loanTransaction, paidCharge,
                             amountDeductedTowardsCharge.getAmount().multiply(new BigDecimal(-1)), null);
                     loanTransaction.getLoanChargesPaid().add(loanChargePaidBy);
@@ -1024,10 +1118,10 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
 
         if (missingAccrualAmount.compareTo(BigDecimal.ZERO) > 0) {
             newAccrualTransaction = accrueTransaction(loan, loan.getOffice(), chargeOffDate, missingAccrualAmount, missingAccrualAmount,
-                    ZERO, ZERO, externalIdFactory.create());
+                    ZERO, ZERO, ZERO, externalIdFactory.create());
         } else {
             newAccrualTransaction = accrualAdjustment(loan, loan.getOffice(), chargeOffDate, missingAccrualAmount.abs(),
-                    missingAccrualAmount.abs(), ZERO, ZERO, externalIdFactory.create());
+                    missingAccrualAmount.abs(), ZERO, ZERO, ZERO, externalIdFactory.create());
         }
 
         changedTransactionDetail.addNewTransactionChangeBeforeExistingOne(new TransactionChangeData(null, newAccrualTransaction),

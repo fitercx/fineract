@@ -33,13 +33,15 @@ public final class LoanRescheduleModelRepaymentPeriod implements LoanRescheduleM
     private Money outstandingLoanBalance;
     private Money interestDue;
     private Money feeChargesDue;
+    private Money taxChargesDue;
     private Money penaltyChargesDue;
     private Money totalDue;
     private boolean isNew;
 
     public LoanRescheduleModelRepaymentPeriod(final int periodNumber, final int oldPeriodNumber, LocalDate fromDate,
             final LocalDate dueDate, final Money principalDue, final Money outstandingLoanBalance, final Money interestDue,
-            final Money feeChargesDue, final Money penaltyChargesDue, final Money totalDue, final boolean isNew) {
+            final Money feeChargesDue, final Money taxChargesDue, final Money penaltyChargesDue, final Money totalDue,
+            final boolean isNew) {
         this.periodNumber = periodNumber;
         this.oldPeriodNumber = oldPeriodNumber;
         this.fromDate = fromDate;
@@ -48,6 +50,7 @@ public final class LoanRescheduleModelRepaymentPeriod implements LoanRescheduleM
         this.outstandingLoanBalance = outstandingLoanBalance;
         this.interestDue = interestDue;
         this.feeChargesDue = feeChargesDue;
+        this.taxChargesDue = taxChargesDue;
         this.penaltyChargesDue = penaltyChargesDue;
         this.totalDue = totalDue;
         this.isNew = isNew;
@@ -55,17 +58,18 @@ public final class LoanRescheduleModelRepaymentPeriod implements LoanRescheduleM
 
     public static LoanRescheduleModelRepaymentPeriod instance(final int periodNumber, final int oldPeriodNumber, LocalDate fromDate,
             final LocalDate dueDate, final Money principalDue, final Money outstandingLoanBalance, final Money interestDue,
-            final Money feeChargesDue, final Money penaltyChargesDue, final Money totalDue, final boolean isNew) {
+            final Money feeChargesDue, final Money taxChargesDue, final Money penaltyChargesDue, final Money totalDue,
+            final boolean isNew) {
 
         return new LoanRescheduleModelRepaymentPeriod(periodNumber, oldPeriodNumber, fromDate, dueDate, principalDue,
-                outstandingLoanBalance, interestDue, feeChargesDue, penaltyChargesDue, totalDue, isNew);
+                outstandingLoanBalance, interestDue, feeChargesDue, taxChargesDue, penaltyChargesDue, totalDue, isNew);
     }
 
     @Override
     public LoanSchedulePeriodData toData() {
         return LoanSchedulePeriodData.repaymentOnlyPeriod(this.periodNumber, this.fromDate, this.dueDate, this.principalDue.getAmount(),
                 this.outstandingLoanBalance.getAmount(), this.interestDue.getAmount(), this.feeChargesDue.getAmount(),
-                this.penaltyChargesDue.getAmount());
+                this.taxChargesDue.getAmount(), this.penaltyChargesDue.getAmount());
     }
 
     @Override
@@ -121,6 +125,16 @@ public final class LoanRescheduleModelRepaymentPeriod implements LoanRescheduleM
         return value;
     }
 
+    public BigDecimal taxChargesDue() {
+        BigDecimal value = null;
+
+        if (this.taxChargesDue != null) {
+            value = this.taxChargesDue.getAmount();
+        }
+
+        return value;
+    }
+
     @Override
     public BigDecimal penaltyChargesDue() {
         BigDecimal value = null;
@@ -163,6 +177,10 @@ public final class LoanRescheduleModelRepaymentPeriod implements LoanRescheduleM
 
     public void updateFeeChargesDue(Money feeChargesDue) {
         this.feeChargesDue = feeChargesDue;
+    }
+
+    public void updateTaxChargesDue(Money taxChargesDue) {
+        this.taxChargesDue = taxChargesDue;
     }
 
     public void updatePenaltyChargesDue(Money penaltyChargesDue) {

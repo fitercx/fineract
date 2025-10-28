@@ -121,7 +121,7 @@ public class CheckLoanRepaymentDueBusinessStepTest {
         List<LoanRepaymentScheduleInstallment> loanRepaymentScheduleInstallments = Arrays
                 .asList(new LoanRepaymentScheduleInstallment(loanForProcessing, 1, LocalDate.now(ZoneId.systemDefault()),
                         loanInstallmentRepaymentDueDateAfter5Days, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                        BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
+                        BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
         when(loanForProcessing.getLoanProduct()).thenReturn(loanProduct);
         when(loanProduct.getDueDaysForRepaymentEvent()).thenReturn(null);
         when(loanForProcessing.getRepaymentScheduleInstallments()).thenReturn(loanRepaymentScheduleInstallments);

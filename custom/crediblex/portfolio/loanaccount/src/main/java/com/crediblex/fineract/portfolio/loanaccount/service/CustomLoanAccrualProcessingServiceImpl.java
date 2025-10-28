@@ -111,10 +111,10 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
                     final Money feeAdjustmentPortion = MathUtil.negate(feePortion);
                     final Money penaltyAdjustmentPortion = MathUtil.negate(penaltyPortion);
                     mergeAdjustTransaction = createOrMergeAccrualTransaction(loan, mergeAdjustTransaction, accrualDate, period,
-                            accrualTransactions, null, feeAdjustmentPortion, penaltyAdjustmentPortion, true);
+                            accrualTransactions, null, feeAdjustmentPortion, penaltyAdjustmentPortion, null, true);
                 }
                 mergeAccrualTransaction = createOrMergeAccrualTransaction(loan, mergeAccrualTransaction, accrualDate, period,
-                        accrualTransactions, null, feePortion, penaltyPortion, false);
+                        accrualTransactions, null, feePortion, penaltyPortion, null, false);
             } else {
                 final LocalDate dueDate = period.getDueDate();
                 if (!isFinal && DateUtils.isAfter(dueDate, tillDate) && DateUtils.isBefore(tillDate, accruedTill)) {
@@ -122,7 +122,7 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
                 }
                 final LocalDate periodAccrualDate = DateUtils.isBefore(dueDate, accrualDate) ? dueDate : accrualDate;
                 final LoanTransaction accrualTransaction = addAccrualTransaction(loan, periodAccrualDate, period, interestPortion,
-                        feePortion, penaltyPortion, false);
+                        feePortion, penaltyPortion, null, false);
                 if (accrualTransaction != null) {
                     accrualTransactions.add(accrualTransaction);
                 }
@@ -134,10 +134,10 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
             if (progressiveAccrual) {
                 final Money interestAdjustmentPortion = MathUtil.negate(totalInterestPortion);
                 createOrMergeAccrualTransaction(loan, mergeAdjustTransaction, accrualDate, null, accrualTransactions,
-                        interestAdjustmentPortion, null, null, true);
+                        interestAdjustmentPortion, null, null, null, true);
             }
             createOrMergeAccrualTransaction(loan, mergeAccrualTransaction, accrualDate, null, accrualTransactions, totalInterestPortion,
-                    null, null, false);
+                    null, null, null, false);
         }
         if (accrualTransactions.isEmpty()) {
             return;

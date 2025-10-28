@@ -106,6 +106,21 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     @Column(name = "accrual_fee_charges_derived", scale = 6, precision = 19)
     private BigDecimal feeAccrued;
 
+    @Column(name = "tax_charges_amount", scale = 6, precision = 19)
+    private BigDecimal taxChargesCharged;
+
+    @Column(name = "tax_charges_completed_derived", scale = 6, precision = 19)
+    private BigDecimal taxChargesPaid;
+
+    @Column(name = "tax_charges_waived_derived", scale = 6, precision = 19)
+    private BigDecimal taxChargesWaived;
+
+    @Column(name = "tax_charges_writtenoff_derived", scale = 6, precision = 19)
+    private BigDecimal taxChargesWrittenOff;
+
+    @Column(name = "accrual_tax_charges_derived", scale = 6, precision = 19)
+    private BigDecimal taxAccrued;
+
     @Column(name = "penalty_charges_amount", scale = 6, precision = 19)
     private BigDecimal penaltyCharges;
 
@@ -151,6 +166,9 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     @Column(name = "credited_fee", scale = 6, precision = 19)
     private BigDecimal creditedFee;
 
+    @Column(name = "credited_tax", scale = 6, precision = 19)
+    private BigDecimal creditedTax;
+
     @Column(name = "credited_penalty", scale = 6, precision = 19)
     private BigDecimal creditedPenalty;
 
@@ -189,15 +207,15 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     public LoanRepaymentScheduleInstallment(final Loan loan, final Integer installmentNumber, final LocalDate fromDate,
             final LocalDate dueDate, final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
-            final BigDecimal penaltyCharges, final boolean recalculatedInterestComponent,
+            final BigDecimal taxCharges, final BigDecimal penaltyCharges, final boolean recalculatedInterestComponent,
             final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails, final BigDecimal rescheduleInterestPortion) {
-        this(loan, installmentNumber, fromDate, dueDate, principal, interest, feeCharges, penaltyCharges, recalculatedInterestComponent,
-                compoundingDetails, rescheduleInterestPortion, false);
+        this(loan, installmentNumber, fromDate, dueDate, principal, interest, feeCharges, taxCharges, penaltyCharges,
+                recalculatedInterestComponent, compoundingDetails, rescheduleInterestPortion, false);
     }
 
     public LoanRepaymentScheduleInstallment(final Loan loan, final Integer installmentNumber, final LocalDate fromDate,
             final LocalDate dueDate, final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
-            final BigDecimal penaltyCharges, final boolean recalculatedInterestComponent,
+            final BigDecimal taxCharges, final BigDecimal penaltyCharges, final boolean recalculatedInterestComponent,
             final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails, final BigDecimal rescheduleInterestPortion,
             final boolean isDownPayment) {
         this.loan = loan;
@@ -207,6 +225,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         this.principal = defaultToNullIfZero(principal);
         this.interestCharged = defaultToNullIfZero(interest);
         this.feeChargesCharged = defaultToNullIfZero(feeCharges);
+        this.taxChargesCharged = defaultToNullIfZero(taxCharges);
         this.penaltyCharges = defaultToNullIfZero(penaltyCharges);
         this.obligationsMet = false;
         this.recalculatedInterestComponent = recalculatedInterestComponent;
@@ -291,6 +310,10 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     public Money getCreditedFee(final MonetaryCurrency currency) {
         return Money.of(currency, this.creditedFee);
+    }
+
+    public Money getCreditedTax(final MonetaryCurrency currency) {
+        return Money.of(currency, this.creditedTax);
     }
 
     public Money getCreditedPenalty(final MonetaryCurrency currency) {
@@ -392,17 +415,44 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return Money.of(currency, this.penaltyAccrued);
     }
 
+    public Money getTaxChargesCharged(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxChargesCharged);
+    }
+
+    public Money getTaxChargesPaid(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxChargesPaid);
+    }
+
+    public Money getTaxChargesWaived(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxChargesWaived);
+    }
+
+    public Money getTaxChargesWrittenOff(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxChargesWrittenOff);
+    }
+
+    public Money getTaxChargesOutstanding(final MonetaryCurrency currency) {
+        final Money taxChargesAccountedFor = getTaxChargesPaid(currency).plus(getTaxChargesWaived(currency))
+                .plus(getTaxChargesWrittenOff(currency));
+        return getTaxChargesCharged(currency).minus(taxChargesAccountedFor);
+    }
+
+    public Money getTaxAccrued(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxAccrued);
+    }
+
     public boolean isInterestDue(final MonetaryCurrency currency) {
         return getInterestOutstanding(currency).isGreaterThanZero();
     }
 
     public Money getTotalOutstanding(final MonetaryCurrency currency) {
         return getPrincipalOutstanding(currency).plus(getInterestOutstanding(currency)).plus(getFeeChargesOutstanding(currency))
-                .plus(getPenaltyChargesOutstanding(currency));
+                .plus(getTaxChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
     }
 
     public Money getTotalOutstandingForObligationCheck(final MonetaryCurrency currency) {
-        return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getPenaltyChargesOutstanding(currency));
+        return getPrincipalOutstanding(currency).plus(getFeeChargesOutstanding(currency)).plus(getTaxChargesOutstanding(currency))
+                .plus(getPenaltyChargesOutstanding(currency));
     }
 
     void updateLoan(final Loan loan) {
@@ -439,6 +489,9 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         this.feeChargesPaid = null;
         this.feeChargesWaived = null;
         this.feeChargesWrittenOff = null;
+        this.taxChargesPaid = null;
+        this.taxChargesWaived = null;
+        this.taxChargesWrittenOff = null;
         this.penaltyChargesPaid = null;
         this.penaltyChargesWaived = null;
         this.penaltyChargesWrittenOff = null;
@@ -468,11 +521,13 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     public void resetAccrualComponents() {
         this.interestAccrued = null;
         this.feeAccrued = null;
+        this.taxAccrued = null;
         this.penaltyAccrued = null;
     }
 
     public void resetChargesCharged() {
         this.feeChargesCharged = null;
+        this.taxChargesCharged = null;
         this.penaltyCharges = null;
     }
 
@@ -544,6 +599,31 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, feePortionOfTransaction);
 
         return feePortionOfTransaction;
+    }
+
+    public Money payTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money taxPortionOfTransaction = Money.zero(currency);
+        if (transactionAmountRemaining.isZero()) {
+            return taxPortionOfTransaction;
+        }
+        final Money taxChargesDue = getTaxChargesOutstanding(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxChargesDue)) {
+            this.taxChargesPaid = getTaxChargesPaid(currency).plus(taxChargesDue).getAmount();
+            taxPortionOfTransaction = taxPortionOfTransaction.plus(taxChargesDue);
+        } else {
+            this.taxChargesPaid = getTaxChargesPaid(currency).plus(transactionAmountRemaining).getAmount();
+            taxPortionOfTransaction = taxPortionOfTransaction.plus(transactionAmountRemaining);
+        }
+
+        this.taxChargesPaid = defaultToNullIfZero(this.taxChargesPaid);
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, taxPortionOfTransaction);
+
+        return taxPortionOfTransaction;
     }
 
     public Money payInterestComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
@@ -675,6 +755,28 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return waivedFeeChargesPortionOfTransaction;
     }
 
+    public Money waiveTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money waivedTaxChargesPortionOfTransaction = Money.zero(currency);
+        if (transactionAmountRemaining.isZero()) {
+            return waivedTaxChargesPortionOfTransaction;
+        }
+        final Money taxesDue = getTaxChargesOutstanding(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxesDue)) {
+            this.taxChargesWaived = getTaxChargesWaived(currency).plus(taxesDue).getAmount();
+            waivedTaxChargesPortionOfTransaction = waivedTaxChargesPortionOfTransaction.plus(taxesDue);
+        } else {
+            this.taxChargesWaived = getTaxChargesWaived(currency).plus(transactionAmountRemaining).getAmount();
+            waivedTaxChargesPortionOfTransaction = waivedTaxChargesPortionOfTransaction.plus(transactionAmountRemaining);
+        }
+
+        this.taxChargesWaived = defaultToNullIfZero(this.taxChargesWaived);
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        return waivedTaxChargesPortionOfTransaction;
+    }
+
     public Money writeOffOutstandingPrincipal(final LocalDate transactionDate, final MonetaryCurrency currency) {
 
         final Money principalDue = getPrincipalOutstanding(currency);
@@ -704,6 +806,15 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return feeChargesOutstanding;
     }
 
+    public Money writeOffOutstandingTaxCharges(final LocalDate transactionDate, final MonetaryCurrency currency) {
+        final Money taxChargesOutstanding = getTaxChargesOutstanding(currency);
+        this.taxChargesWrittenOff = defaultToNullIfZero(taxChargesOutstanding.getAmount());
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        return taxChargesOutstanding;
+    }
+
     public Money writeOffOutstandingPenaltyCharges(final LocalDate transactionDate, final MonetaryCurrency currency) {
         final Money penaltyChargesOutstanding = getPenaltyChargesOutstanding(currency);
         this.penaltyChargesWrittenOff = defaultToNullIfZero(penaltyChargesOutstanding.getAmount());
@@ -718,7 +829,8 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public void updateChargePortion(final Money feeChargesDue, final Money feeChargesWaived, final Money feeChargesWrittenOff,
-            final Money penaltyChargesDue, final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff) {
+            final Money penaltyChargesDue, final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff,
+            final Money taxChargesDue, final Money taxChargesWaived, final Money taxChargesWrittenOff) {
         this.feeChargesCharged = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesDue));
         this.feeChargesWaived = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesWaived));
         this.feeChargesWrittenOff = MathUtil.zeroToNull(MathUtil.toBigDecimal(feeChargesWrittenOff));
@@ -928,6 +1040,27 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return feePortionOfTransactionDeducted;
     }
 
+    public Money unpayTaxChargesComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+
+        final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money taxPortionOfTransactionDeducted;
+
+        final Money taxChargesCompleted = getTaxChargesPaid(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(taxChargesCompleted)) {
+            this.taxChargesPaid = Money.zero(currency).getAmount();
+            taxPortionOfTransactionDeducted = taxChargesCompleted;
+        } else {
+            this.taxChargesPaid = taxChargesCompleted.minus(transactionAmountRemaining).getAmount();
+            taxPortionOfTransactionDeducted = transactionAmountRemaining;
+        }
+
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
+
+        reduceAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, taxPortionOfTransactionDeducted);
+
+        return taxPortionOfTransactionDeducted;
+    }
+
     public Money unpayInterestComponent(final LocalDate transactionDate, final Money transactionAmountRemaining) {
 
         final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
@@ -1000,12 +1133,12 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     public Money getDue(MonetaryCurrency currency) {
         return getPrincipal(currency).plus(getInterestCharged(currency)).plus(getFeeChargesCharged(currency))
-                .plus(getPenaltyChargesCharged(currency));
+                .plus(getTaxChargesCharged(currency)).plus(getPenaltyChargesCharged(currency));
     }
 
     public Money getTotalPaid(final MonetaryCurrency currency) {
-        return getPenaltyChargesPaid(currency).plus(getFeeChargesPaid(currency)).plus(getInterestPaid(currency))
-                .plus(getPrincipalCompleted(currency));
+        return getPenaltyChargesPaid(currency).plus(getTaxChargesPaid(currency)).plus(getFeeChargesPaid(currency))
+                .plus(getInterestPaid(currency)).plus(getPrincipalCompleted(currency));
     }
 
     public void markAsAdditional() {
@@ -1036,8 +1169,8 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public boolean isDueBalanceZero() {
-        return MathUtil.isZero(
-                MathUtil.nullToZero(MathUtil.add(getPrincipal(), getInterestCharged(), getFeeChargesCharged(), getPenaltyCharges())));
+        return MathUtil.isZero(MathUtil.nullToZero(
+                MathUtil.add(getPrincipal(), getInterestCharged(), getFeeChargesCharged(), getTaxChargesCharged(), getPenaltyCharges())));
     }
 
     public void copyFrom(final LoanScheduleModelPeriod period) {
@@ -1053,6 +1186,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         setPrincipal(period.principalDue());
         setInterestCharged(period.interestDue());
         setFeeChargesCharged(period.feeChargesDue());
+        setTaxChargesCharged(period.taxChargesDue());
         setPenaltyCharges(period.penaltyChargesDue());
         setRecalculatedInterestComponent(period.isRecalculatedInterestComponent());
         setRescheduleInterestPortion(period.rescheduleInterestPortion());

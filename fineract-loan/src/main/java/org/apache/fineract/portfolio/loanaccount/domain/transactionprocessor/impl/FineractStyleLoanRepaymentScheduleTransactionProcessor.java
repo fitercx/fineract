@@ -100,6 +100,7 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
         Money principalPortion = Money.zero(transactionAmountRemaining.getCurrency());
         Money interestPortion = Money.zero(transactionAmountRemaining.getCurrency());
         Money feeChargesPortion = Money.zero(transactionAmountRemaining.getCurrency());
+        Money taxChargesPortion = Money.zero(transactionAmountRemaining.getCurrency());
         Money penaltyChargesPortion = Money.zero(transactionAmountRemaining.getCurrency());
 
         if (loanTransaction.isChargesWaiver()) {
@@ -110,6 +111,11 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             feeChargesPortion = currentInstallment.waiveFeeChargesComponent(transactionDate,
                     loanTransaction.getFeeChargesPortion(currency));
             transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
+
+            if (transactionAmountRemaining.isGreaterThanZero()) {
+                taxChargesPortion = currentInstallment.waiveTaxChargesComponent(transactionDate, transactionAmountRemaining);
+                transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+            }
 
         } else if (loanTransaction.isInterestWaiver()) {
             interestPortion = currentInstallment.waiveInterestComponent(transactionDate, transactionAmountRemaining);
@@ -123,8 +129,13 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             } else {
                 feeChargesPortion = currentInstallment.payFeeChargesComponent(transactionDate, transactionAmountRemaining);
                 transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
+                if (transactionAmountRemaining.isGreaterThanZero()) {
+                    taxChargesPortion = currentInstallment.payTaxChargesComponent(transactionDate, transactionAmountRemaining);
+                    transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+                }
             }
-            loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion);
+            loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion,
+                    taxChargesPortion);
         } else {
             penaltyChargesPortion = currentInstallment.payPenaltyChargesComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(penaltyChargesPortion);
@@ -132,13 +143,19 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             feeChargesPortion = currentInstallment.payFeeChargesComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
 
+            if (transactionAmountRemaining.isGreaterThanZero()) {
+                taxChargesPortion = currentInstallment.payTaxChargesComponent(transactionDate, transactionAmountRemaining);
+                transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+            }
+
             interestPortion = currentInstallment.payInterestComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(interestPortion);
 
             principalPortion = currentInstallment.payPrincipalComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(principalPortion);
 
-            loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion);
+            loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion,
+                    taxChargesPortion);
         }
         if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {
             transactionMappings.add(LoanTransactionToRepaymentScheduleMapping.createFrom(loanTransaction, currentInstallment,
@@ -173,11 +190,17 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
         }
 
+        Money taxChargesPortion = Money.zero(currency);
+        if (transactionAmountRemaining.isGreaterThanZero()) {
+            taxChargesPortion = currentInstallment.unpayTaxChargesComponent(transactionDate, transactionAmountRemaining);
+            transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+        }
+
         if (transactionAmountRemaining.isGreaterThanZero()) {
             penaltyChargesPortion = currentInstallment.unpayPenaltyChargesComponent(transactionDate, transactionAmountRemaining);
             transactionAmountRemaining = transactionAmountRemaining.minus(penaltyChargesPortion);
         }
-        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion);
+        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
         if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {
             transactionMappings.add(LoanTransactionToRepaymentScheduleMapping.createFrom(loanTransaction, currentInstallment,
                     principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion));

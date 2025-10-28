@@ -102,6 +102,7 @@ public class LoanAccrualActivityProcessingServiceImpl implements LoanAccrualActi
         BigDecimal feeChargesPortion = BigDecimal.ZERO;
         BigDecimal penaltyChargesPortion = BigDecimal.ZERO;
         BigDecimal interestPortion = BigDecimal.ZERO;
+        BigDecimal taxChargesPortion = BigDecimal.ZERO;
 
         // Calculate total portions from all installments
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
@@ -148,8 +149,8 @@ public class LoanAccrualActivityProcessingServiceImpl implements LoanAccrualActi
                 || MathUtil.isGreaterThanZero(interestPortion)) {
             BigDecimal transactionAmount = MathUtil.add(feeChargesPortion, penaltyChargesPortion, interestPortion);
             LoanTransaction newActivity = new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.ACCRUAL_ACTIVITY, closureDate,
-                    transactionAmount, null, interestPortion, feeChargesPortion, penaltyChargesPortion, null, false, null,
-                    externalIdFactory.create());
+                    transactionAmount, null, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, null, false,
+                    null, externalIdFactory.create());
             makeAccrualActivityTransaction(loan, newActivity);
         }
     }

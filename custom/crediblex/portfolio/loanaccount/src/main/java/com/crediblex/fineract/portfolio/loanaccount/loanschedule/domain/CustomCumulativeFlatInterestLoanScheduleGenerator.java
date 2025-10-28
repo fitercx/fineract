@@ -220,7 +220,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 loanApplicationTerms.getDisbursementDatas()
                         .add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
                                 loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal().getAmount(), null,
-                                null, null, null));
+                                null, null, null, null));
             }
             for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
                 if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
@@ -550,8 +550,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             LoanScheduleModelPeriod installment = LoanScheduleModelRepaymentPeriod.repayment(scheduleParams.getInstalmentNumber(),
                     scheduleParams.getPeriodStartDate(), scheduledDueDate, currentPeriodParams.getPrincipalForThisPeriod(),
                     scheduleParams.getOutstandingBalance(), currentPeriodParams.getInterestForThisPeriod(),
-                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getPenaltyChargesForInstallment(),
-                    totalInstallmentDue, !isCompletePeriod, mc);
+                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getTaxChargesForInstallment(),
+                    currentPeriodParams.getPenaltyChargesForInstallment(), totalInstallmentDue, !isCompletePeriod, mc);
             if (principalInterestForThisPeriod.getRescheduleInterestPortion() != null) {
                 installment.setRescheduleInterestPortion(principalInterestForThisPeriod.getRescheduleInterestPortion().getAmount());
             }
@@ -634,8 +634,9 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 scheduleParams.getPrincipalToBeScheduled().plus(loanApplicationTerms.getDownPaymentAmount()),
                 scheduleParams.getTotalCumulativePrincipal().plus(loanApplicationTerms.getDownPaymentAmount()).getAmount(),
                 totalPrincipalPaid, scheduleParams.getTotalCumulativeInterest().getAmount(),
-                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalPenaltyChargesCharged().getAmount(),
-                scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
+                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalTaxChargesCharged().getAmount(),
+                scheduleParams.getTotalPenaltyChargesCharged().getAmount(), scheduleParams.getTotalRepaymentExpected().getAmount(),
+                totalOutstanding);
     }
 
 }

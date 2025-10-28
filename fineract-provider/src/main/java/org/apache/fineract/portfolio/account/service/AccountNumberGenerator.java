@@ -181,7 +181,7 @@ public class AccountNumberGenerator {
     }
 
     private String randomNumberGenerator(int accountMaxLength, Map<String, String> propertyMap) {
-        String randomNumber = RandomStringUtils.random(accountMaxLength, false, true); // NOSONAR
+        String randomNumber = RandomStringUtils.randomNumeric(accountMaxLength); // NOSONAR
 
         BigInteger accNumber = new BigInteger(randomNumber);
         if (accNumber.equals(BigInteger.ZERO)) { // to avoid account no. 00 in randomisation

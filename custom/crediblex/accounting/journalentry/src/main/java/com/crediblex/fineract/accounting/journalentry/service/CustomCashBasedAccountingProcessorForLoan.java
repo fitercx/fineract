@@ -214,7 +214,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
 
             if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments(), true);
+                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
                 this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
                         AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,

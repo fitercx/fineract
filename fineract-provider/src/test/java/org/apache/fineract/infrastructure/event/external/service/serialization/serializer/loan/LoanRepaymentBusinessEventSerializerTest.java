@@ -118,7 +118,7 @@ public class LoanRepaymentBusinessEventSerializerTest {
 
         LoanRepaymentScheduleInstallment repaymentInstallment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), loanInstallmentRepaymentDueDate, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
         LoanRepaymentDueBusinessEvent event = new LoanRepaymentDueBusinessEvent(repaymentInstallment);
 
         RepaymentPastDueDataV1 pastDueAmount = new RepaymentPastDueDataV1(BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
@@ -169,7 +169,7 @@ public class LoanRepaymentBusinessEventSerializerTest {
 
         LoanRepaymentScheduleInstallment repaymentInstallment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), loanInstallmentRepaymentDueDate, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
         LoanRepaymentDueBusinessEvent event = new LoanRepaymentDueBusinessEvent(repaymentInstallment);
 
         RepaymentPastDueDataV1 pastDueAmount = new RepaymentPastDueDataV1(BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),

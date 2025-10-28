@@ -262,7 +262,7 @@ public class LoanArrearsAgeingUpdateHandler {
             final BigDecimal feeChargesDueForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeAmount");
             final BigDecimal penaltyChargesDueForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyAmount");
             return LoanSchedulePeriodData.repaymentOnlyPeriod(installmentNumber, fromDate, dueDate, principalDue, null,
-                    interestDueOnPrincipalOutstanding, feeChargesDueForPeriod, penaltyChargesDueForPeriod);
+                    interestDueOnPrincipalOutstanding, feeChargesDueForPeriod, null, penaltyChargesDueForPeriod);
 
         }
     }

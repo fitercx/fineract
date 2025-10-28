@@ -117,9 +117,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipal() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -149,9 +149,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfInterest() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -181,9 +181,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfFee() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -212,9 +212,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPenalty() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -243,9 +243,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenalty() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -273,9 +273,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFee() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(6L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(6L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -305,9 +305,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFeeAndInterest() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -337,9 +337,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPartialPrincipal() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(2));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -359,9 +359,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPrincipalAndPartialPenalty() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(4));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(0.0),
+                BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -386,9 +386,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPrincipalAndPenaltyAndPartialFee() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(8));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -415,9 +415,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     public void inAdvancePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPrincipalAndPenaltyAndFeeAndPartialInterest() {
         Mockito.when(charges.stream()).thenReturn(Stream.empty());
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -456,9 +456,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
 
         Mockito.when(charges.stream()).thenReturn(Stream.of(loanCharge1, loanCharge2));
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -499,9 +499,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
 
         Mockito.when(charges.stream()).thenReturn(Stream.of(loanCharge1, loanCharge2));
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -542,9 +542,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
 
         Mockito.when(charges.stream()).thenReturn(Stream.of(loanCharge1, loanCharge2));
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(2L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, transactionDate, ExternalId.empty()));
         underTest.handleTransactionThatIsPaymentInAdvanceOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -567,9 +567,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipal() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -590,9 +590,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfInterest() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -613,9 +613,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfFee() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -636,9 +636,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPenalty() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -659,9 +659,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenalty() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -682,9 +682,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFee() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(6L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(6L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -705,9 +705,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFeeAndInterest() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -728,9 +728,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPartialPenalty() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(1));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -751,9 +751,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndPartialFee() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(5));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -774,9 +774,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndFeeAndPartialInterest() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(7));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -797,9 +797,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void onTimePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndFeeAndInterestAndPartialPrincipal() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, firstInstallmentDueDate, ExternalId.empty()));
         underTest.handleTransactionThatIsOnTimePaymentOfInstallment(installment, loanTransaction, transactionAmount, transactionMappings,
@@ -821,9 +821,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipal() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -844,9 +844,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfInterest() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -867,9 +867,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfFee() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -890,9 +890,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPenalty() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -913,9 +913,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenalty() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(5L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(5L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), BigDecimal.valueOf(5L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -936,9 +936,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFee() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(6L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(0L), BigDecimal.valueOf(2L), BigDecimal.valueOf(6L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -959,9 +959,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFeeAndInterest() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -982,9 +982,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPartialPenalty() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(1));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -1005,9 +1005,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndPartialFee() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(5));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -1028,9 +1028,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndFeeAndPartialInterest() {
         Money transactionAmount = Money.of(MONETARY_CURRENCY, BigDecimal.valueOf(7));
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
@@ -1051,9 +1051,9 @@ public class DuePenFeeIntPriInAdvancePriPenFeeIntLoanRepaymentScheduleTransactio
     @Test
     public void latePaymentOfPrincipalAndPenaltyAndFeeAndInterestButNotEnoughOnlyForPenaltyAndFeeAndInterestAndPartialPrincipal() {
         Money transactionAmount = ten;
-        LoanRepaymentScheduleInstallment installment = Mockito
-                .spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate, firstInstallmentDueDate, BigDecimal.valueOf(3L),
-                        BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = Mockito.spy(new LoanRepaymentScheduleInstallment(loan, 1, firstInstallmentToDate,
+                firstInstallmentDueDate, BigDecimal.valueOf(3L), BigDecimal.valueOf(2L), BigDecimal.valueOf(2L), BigDecimal.valueOf(4L),
+                BigDecimal.valueOf(0.0), false, null, BigDecimal.ZERO));
         LoanTransaction loanTransaction = Mockito
                 .spy(LoanTransaction.repayment(office, transactionAmount, null, lateDate, ExternalId.empty()));
         underTest.handleTransactionThatIsALateRepaymentOfInstallment(installment, null, loanTransaction, transactionAmount,
