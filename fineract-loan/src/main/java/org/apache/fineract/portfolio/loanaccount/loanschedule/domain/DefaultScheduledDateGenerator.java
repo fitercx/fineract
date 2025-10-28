@@ -67,7 +67,7 @@ public class DefaultScheduledDateGenerator implements ScheduledDateGenerator {
             }
             nextRepaymentDate = applyLoanTermVariations(loanApplicationTerms, nextRepaymentDate);
             repaymentPeriods.add(LoanScheduleModelRepaymentPeriod.repayment(repaymentPeriodNumber, lastRepaymentDate, nextRepaymentDate,
-                    zeroAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, mc));
+                    zeroAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, mc));
             lastRepaymentDate = nextRepaymentDate;
             isFirstRepayment = false;
         }

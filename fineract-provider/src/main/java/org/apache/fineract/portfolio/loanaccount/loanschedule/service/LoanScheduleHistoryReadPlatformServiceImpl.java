@@ -120,7 +120,7 @@ public class LoanScheduleHistoryReadPlatformServiceImpl implements LoanScheduleH
             StringBuilder stringBuilder = new StringBuilder(200);
             stringBuilder.append(" ls.installment as period, ls.fromdate as fromDate, ls.duedate as dueDate, ");
             stringBuilder.append(
-                    "ls.principal_amount as principalDue, ls.interest_amount as interestDue, ls.fee_charges_amount as feeChargesDue, ls.penalty_charges_amount as penaltyChargesDue ");
+                    "ls.principal_amount as principalDue, ls.interest_amount as interestDue, ls.fee_charges_amount as feeChargesDue, ls.tax_charges_amount as taxChargesDue, ls.penalty_charges_amount as penaltyChargesDue ");
             stringBuilder.append(" from m_loan_repayment_schedule_history ls ");
             return stringBuilder.toString();
         }
@@ -146,6 +146,7 @@ public class LoanScheduleHistoryReadPlatformServiceImpl implements LoanScheduleH
             Money totalPrincipalExpected = Money.zero(monCurrency);
             Money totalInterestCharged = Money.zero(monCurrency);
             Money totalFeeChargesCharged = Money.zero(monCurrency);
+            Money totalTaxChargesCharged = Money.zero(monCurrency);
             Money totalPenaltyChargesCharged = Money.zero(monCurrency);
             Money totalRepaymentExpected = Money.zero(monCurrency);
 
@@ -194,11 +195,14 @@ public class LoanScheduleHistoryReadPlatformServiceImpl implements LoanScheduleH
                 final BigDecimal feeChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
                 totalFeeChargesCharged = totalFeeChargesCharged.plus(feeChargesExpectedDue);
 
+                final BigDecimal taxChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesDue");
+                totalTaxChargesCharged = totalTaxChargesCharged.plus(taxChargesExpectedDue);
+
                 final BigDecimal penaltyChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesDue");
                 totalPenaltyChargesCharged = totalPenaltyChargesCharged.plus(penaltyChargesExpectedDue);
 
                 final BigDecimal totalExpectedCostOfLoanForPeriod = interestExpectedDue.add(feeChargesExpectedDue)
-                        .add(penaltyChargesExpectedDue);
+                        .add(taxChargesExpectedDue).add(penaltyChargesExpectedDue);
 
                 final BigDecimal totalDueForPeriod = principalDue.add(totalExpectedCostOfLoanForPeriod);
 
@@ -214,15 +218,15 @@ public class LoanScheduleHistoryReadPlatformServiceImpl implements LoanScheduleH
                 this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
 
                 final LoanSchedulePeriodData periodData = LoanSchedulePeriodData.repaymentOnlyPeriod(period, fromDate, dueDate,
-                        principalDue, outstandingPrincipalBalanceOfLoan, interestExpectedDue, feeChargesExpectedDue,
+                        principalDue, outstandingPrincipalBalanceOfLoan, interestExpectedDue, feeChargesExpectedDue, taxChargesExpectedDue,
                         penaltyChargesExpectedDue);
 
                 periods.add(periodData);
             }
 
             return new LoanScheduleData(this.currency, periods, loanTermInDays, totalPrincipalDisbursed, totalPrincipalExpected.getAmount(),
-                    totalInterestCharged.getAmount(), totalFeeChargesCharged.getAmount(), totalPenaltyChargesCharged.getAmount(),
-                    totalRepaymentExpected.getAmount());
+                    totalInterestCharged.getAmount(), totalFeeChargesCharged.getAmount(), totalTaxChargesCharged.getAmount(),
+                    totalPenaltyChargesCharged.getAmount(), totalRepaymentExpected.getAmount());
         }
 
     }

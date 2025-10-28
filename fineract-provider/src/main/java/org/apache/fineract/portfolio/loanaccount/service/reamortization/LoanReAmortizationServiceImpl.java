@@ -157,6 +157,6 @@ public class LoanReAmortizationServiceImpl {
         BigDecimal txPrincipalAmount = txPrincipal.getAmount();
 
         return new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.REAMORTIZE, transactionDate, txPrincipalAmount,
-                txPrincipalAmount, ZERO, ZERO, ZERO, null, false, null, txExternalId);
+                txPrincipalAmount, ZERO, ZERO, ZERO, ZERO, null, false, null, txExternalId);
     }
 }

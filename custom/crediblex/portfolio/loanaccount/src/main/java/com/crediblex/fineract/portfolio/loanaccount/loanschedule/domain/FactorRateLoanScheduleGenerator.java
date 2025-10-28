@@ -57,6 +57,7 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDa
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementEmiAmountException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -77,8 +78,23 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
         // Adjust principal based on factor rate
         final BigDecimal factorRate = loanApplicationTerms.getFactorRate();
-        final Money totalFactorRateFeeAmount = determineFactorRateFee(factorRate, loanApplicationTerms.getPrincipal(), mc);
-        final Money factorRateFeePerInstallment = totalFactorRateFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
+        final Money principalMoney = loanApplicationTerms.getPrincipal();
+        final Money totalFactorRateFeeAmount = determineFactorRateFee(factorRate, principalMoney, mc);
+        final LoanCharge factorRateInstallmentFee = loanCharges.stream().filter(LoanCharge::isInstalmentFee).findFirst().orElse(null);
+        Money factorRateTaxAmount = Money.zero(loanApplicationTerms.getCurrency());
+        Money factorRateNetFeeAmount = totalFactorRateFeeAmount;
+        if (factorRateInstallmentFee != null && factorRateInstallmentFee.isActive()) {
+            final LocalDate chargeDate = factorRateInstallmentFee.getDueDate() != null ? factorRateInstallmentFee.getDueDate()
+                    : DateUtils.getBusinessLocalDate();
+            final BigDecimal loanAmount = principalMoney.add(totalFactorRateFeeAmount).getAmount();
+            final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
+                    factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings());
+            factorRateTaxAmount = Money.of(loanApplicationTerms.getCurrency(), taxAmount);
+            factorRateNetFeeAmount = totalFactorRateFeeAmount.minus(factorRateTaxAmount);
+        }
+
+        final Money factorRateFeePerInstallment = factorRateNetFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
+        final Money factorRateTaxPerInstallment = factorRateTaxAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
 
         // generate list of proposed schedule due dates
         LocalDate loanEndDate = getScheduledDateGenerator().getLastRepaymentDate(loanApplicationTerms, holidayDetailDTO);
@@ -346,7 +362,7 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
             // applies charges for the period
             applyChargesForCurrentPeriod(loanCharges, monetaryCurrency, scheduleParams, scheduledDueDate, currentPeriodParams,
-                    factorRateFeePerInstallment, mc);
+                    factorRateFeePerInstallment, factorRateTaxPerInstallment, mc);
 
             // sum up real totalInstallmentDue from components
             final Money totalInstallmentDue = currentPeriodParams.fetchTotalAmountForPeriod();
@@ -362,8 +378,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
             LoanScheduleModelPeriod installment = LoanScheduleModelRepaymentPeriod.repayment(scheduleParams.getInstalmentNumber(),
                     scheduleParams.getPeriodStartDate(), scheduledDueDate, currentPeriodParams.getPrincipalForThisPeriod(),
                     scheduleParams.getOutstandingBalance(), currentPeriodParams.getInterestForThisPeriod(),
-                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getPenaltyChargesForInstallment(),
-                    totalInstallmentDue, !isCompletePeriod, mc);
+                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getTaxChargesForInstallment(),
+                    currentPeriodParams.getPenaltyChargesForInstallment(), totalInstallmentDue, !isCompletePeriod, mc);
             if (principalInterestForThisPeriod.getRescheduleInterestPortion() != null) {
                 installment.setRescheduleInterestPortion(principalInterestForThisPeriod.getRescheduleInterestPortion().getAmount());
             }
@@ -435,12 +451,15 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
         final BigDecimal totalOutstanding = BigDecimal.ZERO;
 
         updateCompoundingDetails(periods, scheduleParams, loanApplicationTerms);
+        final Money totalTaxChargesCharged = scheduleParams.getTotalTaxChargesCharged() != null ? scheduleParams.getTotalTaxChargesCharged()
+                : Money.zero(currency);
         return LoanScheduleModel.from(periods, currency, scheduleParams.getLoanTermInDays(),
                 scheduleParams.getPrincipalToBeScheduled().plus(loanApplicationTerms.getDownPaymentAmount()),
                 scheduleParams.getTotalCumulativePrincipal().plus(loanApplicationTerms.getDownPaymentAmount()).getAmount(),
                 totalPrincipalPaid, scheduleParams.getTotalCumulativeInterest().getAmount(),
-                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalPenaltyChargesCharged().getAmount(),
-                scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
+                scheduleParams.getTotalFeeChargesCharged().getAmount(), totalTaxChargesCharged.getAmount(),
+                scheduleParams.getTotalPenaltyChargesCharged().getAmount(), scheduleParams.getTotalRepaymentExpected().getAmount(),
+                totalOutstanding);
     }
 
     private Money determineFactorRateFee(final BigDecimal factorRate, final Money principal, final MathContext mc) {
@@ -577,15 +596,17 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
     private void applyChargesForCurrentPeriod(final Set<LoanCharge> loanCharges, final MonetaryCurrency currency,
             LoanScheduleParams scheduleParams, LocalDate scheduledDueDate, ScheduleCurrentPeriodParams currentPeriodParams,
-            final Money factorRateFeePerInstallment, final MathContext mc) {
+            final Money factorRateFeePerInstallment, final Money factorRateTaxPerInstallment, final MathContext mc) {
         final PrincipalInterest principalInterest = new PrincipalInterest(currentPeriodParams.getPrincipalForThisPeriod(),
                 currentPeriodParams.getInterestForThisPeriod(), null);
         currentPeriodParams.setFeeChargesForInstallment(factorRateFeePerInstallment);
+        currentPeriodParams.setTaxChargesForInstallment(factorRateTaxPerInstallment);
         final Money penaltyChargesForInstallment = cumulativePenaltyChargesDueWithin(scheduleParams.getPeriodStartDate(), scheduledDueDate,
                 loanCharges, currency, principalInterest, scheduleParams.getPrincipalToBeScheduled(),
                 scheduleParams.getTotalCumulativeInterest(), true, scheduleParams.isFirstPeriod(), mc);
         currentPeriodParams.setPenaltyChargesForInstallment(penaltyChargesForInstallment);
         scheduleParams.addTotalFeeChargesCharged(currentPeriodParams.getFeeChargesForInstallment());
+        scheduleParams.addTotalTaxChargesCharged(currentPeriodParams.getTaxChargesForInstallment());
         scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
     }
 }

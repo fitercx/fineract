@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
 import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeLoanTransactionDTO;
@@ -18,6 +19,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationTypeEnum;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.tax.domain.TaxComponent;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -81,6 +84,8 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
     @Override
     public AccountingBridgeLoanTransactionDTO mapToLoanTransactionData(final LoanTransaction transaction, final String currencyCode) {
         final AccountingBridgeLoanTransactionDTO transactionDTO = new AccountingBridgeLoanTransactionDTO();
+        final boolean isFactorRateEnabled = transaction.getLoan().isFactorRateEnabled();
+        transactionDTO.setFactorRateEnabled(isFactorRateEnabled);
 
         transactionDTO.setId(transaction.getId());
         transactionDTO.setOfficeId(transaction.getOffice().getId());
@@ -100,6 +105,7 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
 
         transactionDTO.setInterestPortion(transaction.getInterestPortion());
         transactionDTO.setFeeChargesPortion(transaction.getFeeChargesPortion());
+        transactionDTO.setTaxChargesPortion(transaction.getTaxChargesPortion());
         transactionDTO.setPenaltyChargesPortion(transaction.getPenaltyChargesPortion());
         transactionDTO.setOverPaymentPortion(transaction.getOverPaymentPortion());
 
@@ -131,17 +137,34 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
 
                     loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream().findFirst().ifPresent(mapping -> {
                         loanChargePaidData.setTaxGLAccountId(
-                                mapping.getTaxComponent().getDebitAcount() != null ? mapping.getTaxComponent().getDebitAcount().getId()
+                                mapping.getTaxComponent().getDebitAccount() != null ? mapping.getTaxComponent().getDebitAccount().getId()
                                         : null);
                         loanChargePaidData.setIncomeGLAccountId(
-                                mapping.getTaxComponent().getCreditAcount() != null ? mapping.getTaxComponent().getCreditAcount().getId()
+                                mapping.getTaxComponent().getCreditAccount() != null ? mapping.getTaxComponent().getCreditAccount().getId()
                                         : null);
                     });
 
                     loanChargePaidData.setBaseAmount(loanCharge.getAmount());
                     loanChargePaidData.setTaxAmount(Money.of(loanCharge.getLoan().getCurrency(), loanCharge.getTaxAmount()).getAmount());
+                } else if (loanCharge.hasTax() && loanCharge.isInstalmentFee() && isFactorRateEnabled) {
+                    final BigDecimal taxAmount = chargePaidBy.getTaxAmount();
+                    if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        final TaxGroupMappings taxGroupMappings = loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream()
+                                .findFirst()
+                                .orElseThrow(() -> new GeneralPlatformDomainRuleException(
+                                        "error.msg.loan.charge.paid.by.tax.group.mapping.not.found",
+                                        "Tax group mapping not found for tax group: " + loanCharge.getCharge().getTaxGroup().getName()));
+                        final TaxComponent taxComponent = taxGroupMappings.getTaxComponent();
+                        final Long creditGLAccountId = taxComponent.getCreditAccount().getId();
+                        final Long debitGLAccountId = taxComponent.getDebitAccount().getId();
+                        loanChargePaidData.markAsApplicableToFactoRateFeeTaxes();
+                        loanChargePaidData.setCreditGLAccountId(creditGLAccountId);
+                        loanChargePaidData.setDebitGLAccountId(debitGLAccountId);
+                        loanChargePaidData.setTaxAmount(taxAmount);
+                        loanChargePaidData.setTaxGroupId(loanCharge.getCharge().getTaxGroup().getId());
+                        loanChargePaidData.setTaxGroupName(loanCharge.getCharge().getTaxGroup().getName());
+                    }
                 }
-
                 loanChargesPaidData.add(loanChargePaidData);
             }
             transactionDTO.setLoanChargesPaid(loanChargesPaidData);

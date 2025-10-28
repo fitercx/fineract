@@ -18,11 +18,16 @@ public class CustomLoanChargePaidByDTO extends LoanChargePaidByDTO {
     private Long taxGLAccountId;
     private Long incomeGLAccountId;
 
+    private Long creditGLAccountId;
+    private Long debitGLAccountId;
+    private boolean applicableToFactoRateFeeTaxes;
+
     // Calculated VAT breakdown
     private BigDecimal baseAmount;
     private BigDecimal taxAmount;
 
-    public boolean hasTax() {
-        return taxGroupId != null && taxGLAccountId != null;
+    public void markAsApplicableToFactoRateFeeTaxes() {
+        this.applicableToFactoRateFeeTaxes = true;
     }
+
 }

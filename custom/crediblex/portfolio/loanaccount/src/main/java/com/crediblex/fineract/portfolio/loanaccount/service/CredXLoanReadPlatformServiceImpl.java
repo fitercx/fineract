@@ -203,14 +203,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
         final BigDecimal penaltyDue = result.getPenaltyDue();
-        final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue);
+        final BigDecimal taxDue = result.getTaxDue();
+        final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
         final BigDecimal netDisbursalAmount = result.getNetDisbursalAmount();
         boolean manuallyReversed = false;
         final Collection<PaymentTypeData> paymentTypeOptions = paymentTypeReadPlatformService.retrieveAllPaymentTypes();
 
         return new LoanTransactionData(null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
-                principalPortion, interestDue, feeDue, penaltyDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null, null,
-                manuallyReversed, loanId, ExternalId.empty());
+                principalPortion, interestDue, feeDue, penaltyDue, taxDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null,
+                null, manuallyReversed, loanId, ExternalId.empty());
     }
 
     @Override
@@ -416,6 +417,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     BigDecimal.ZERO, // outstandingLoanBalance
                     BigDecimal.ZERO, // interestDue
                     BigDecimal.ZERO, // feeDue
+                    BigDecimal.ZERO, // taxDue
                     BigDecimal.ZERO // penaltyDue
             );
         }
@@ -469,7 +471,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " l.expected_disbursedon_date as expectedDisbursementDate, l.disbursedon_date as actualDisbursementDate, dbu.username as disbursedByUsername, dbu.firstname as disbursedByFirstname, dbu.lastname as disbursedByLastname,"
                     + " l.closedon_date as closedOnDate, cbu.username as closedByUsername, cbu.firstname as closedByFirstname, cbu.lastname as closedByLastname, l.writtenoffon_date as writtenOffOnDate, "
                     + " l.expected_firstrepaymenton_date as expectedFirstRepaymentOnDate, l.interest_calculated_from_date as interestChargedFromDate, l.maturedon_date as actualMaturityDate, l.expected_maturedon_date as expectedMaturityDate, "
-                    + " l.principal_amount_proposed as proposedPrincipal, l.principal_amount as principal, l.approved_principal as approvedPrincipal, l.net_disbursal_amount as netDisbursalAmount, l.arrearstolerance_amount as inArrearsTolerance, l.number_of_repayments as numberOfRepayments, l.repay_every as repaymentEvery,"
+                    + " l.principal_amount_proposed as proposedPrincipal, l.principal_amount as principal, l.approved_principal as approvedPrincipal, l.net_disbursal_amount as netDisbursalAmount, l.factor_rate_loan_amount as factorRateLoanAmount, l.arrearstolerance_amount as inArrearsTolerance, l.number_of_repayments as numberOfRepayments, l.repay_every as repaymentEvery,"
                     + " l.grace_on_principal_periods as graceOnPrincipalPayment, l.recurring_moratorium_principal_periods as recurringMoratoriumOnPrincipalPeriods, l.grace_on_interest_periods as graceOnInterestPayment, l.grace_interest_free_periods as graceOnInterestCharged,l.grace_on_arrears_ageing as graceOnArrearsAgeing,"
                     + " l.nominal_interest_rate_per_period as interestRatePerPeriod, l.annual_nominal_interest_rate as annualInterestRate, "
                     + " l.repayment_period_frequency_enum as repaymentFrequencyType, l.interest_period_frequency_enum as interestRateFrequencyType, "
@@ -500,6 +502,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " l.penalty_charges_waived_derived as penaltyChargesWaived,"
                     + " l.penalty_charges_writtenoff_derived as penaltyChargesWrittenOff,"
                     + " l.penalty_charges_outstanding_derived as penaltyChargesOutstanding, "
+                    + " l.tax_charges_charged_derived as taxChargesCharged," + " l.taxes_adjustments_derived as taxAdjustments,"
+                    + " l.tax_charges_repaid_derived as taxChargesPaid," + " l.tax_charges_waived_derived as taxChargesWaived,"
+                    + " l.tax_charges_writtenoff_derived as taxChargesWrittenOff,"
+                    + " l.tax_charges_outstanding_derived as taxChargesOutstanding, "
                     + " l.total_expected_repayment_derived as totalExpectedRepayment, l.total_repayment_derived as totalRepayment,"
                     + " l.total_expected_costofloan_derived as totalExpectedCostOfLoan, l.total_costofloan_derived as totalCostOfLoan,"
                     + " l.total_waived_derived as totalWaived, l.total_writtenoff_derived as totalWrittenOff,"
@@ -508,7 +514,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " l.fixed_emi_amount as fixedEmiAmount, l.max_outstanding_loan_balance as outstandingLoanBalance,"
                     + " l.loan_sub_status_id as loanSubStatusId, la.principal_overdue_derived as principalOverdue, l.is_fraud as isFraud, "
                     + " la.interest_overdue_derived as interestOverdue, la.fee_charges_overdue_derived as feeChargesOverdue,"
-                    + " la.penalty_charges_overdue_derived as penaltyChargesOverdue, la.total_overdue_derived as totalOverdue,"
+                    + " la.penalty_charges_overdue_derived as penaltyChargesOverdue, la.tax_charges_overdue_derived as taxChargesOverdue, la.total_overdue_derived as totalOverdue,"
                     + " la.overdue_since_date_derived as overdueSinceDate, "
                     + " l.sync_disbursement_with_meeting as syncDisbursementWithMeeting,"
                     + " l.loan_counter as loanCounter, l.loan_product_counter as loanProductCounter,"
@@ -691,6 +697,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final BigDecimal approvedPrincipal = rs.getBigDecimal("approvedPrincipal");
             final BigDecimal proposedPrincipal = rs.getBigDecimal("proposedPrincipal");
             final BigDecimal netDisbursalAmount = rs.getBigDecimal("netDisbursalAmount");
+            final BigDecimal factorRateLoanAmount = rs.getBigDecimal("factorRateLoanAmount");
             final BigDecimal totalOverpaid = rs.getBigDecimal("totalOverpaid");
             final BigDecimal inArrearsTolerance = rs.getBigDecimal("inArrearsTolerance");
 
@@ -784,6 +791,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal penaltyChargesOutstanding = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesOutstanding");
                 final BigDecimal penaltyChargesOverdue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesOverdue");
 
+                final BigDecimal taxChargesCharged = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesCharged");
+                final BigDecimal taxAdjustments = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxAdjustments");
+                final BigDecimal taxChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesPaid");
+                final BigDecimal taxChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesWaived");
+                final BigDecimal taxChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesWrittenOff");
+                final BigDecimal taxChargesOutstanding = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesOutstanding");
+                final BigDecimal taxChargesOverdue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesOverdue");
+
                 final BigDecimal totalExpectedRepayment = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalExpectedRepayment");
                 final BigDecimal totalRepayment = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalRepayment");
                 final BigDecimal totalExpectedCostOfLoan = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalExpectedCostOfLoan");
@@ -808,12 +823,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         .penaltyChargesCharged(penaltyChargesCharged).penaltyAdjustments(penaltyAdjustments)
                         .penaltyChargesPaid(penaltyChargesPaid).penaltyChargesWaived(penaltyChargesWaived)
                         .penaltyChargesWrittenOff(penaltyChargesWrittenOff).penaltyChargesOutstanding(penaltyChargesOutstanding)
-                        .penaltyChargesOverdue(penaltyChargesOverdue).totalExpectedRepayment(totalExpectedRepayment)
-                        .totalRepayment(totalRepayment).totalExpectedCostOfLoan(totalExpectedCostOfLoan).totalCostOfLoan(totalCostOfLoan)
-                        .totalWaived(totalWaived).totalWrittenOff(totalWrittenOff).totalOutstanding(totalOutstanding)
-                        .totalOverdue(totalOverdue).overdueSinceDate(overdueSinceDate).writeoffReasonId(writeoffReasonId)
-                        .writeoffReason(writeoffReason).totalRecovered(totalRecovered).chargeOffReasonId(chargeOffReasonId)
-                        .chargeOffReason(chargeOffReason).build();
+                        .penaltyChargesOverdue(penaltyChargesOverdue).taxChargesCharged(taxChargesCharged).taxAdjustments(taxAdjustments)
+                        .taxChargesPaid(taxChargesPaid).taxChargesWaived(taxChargesWaived).taxChargesWrittenOff(taxChargesWrittenOff)
+                        .taxChargesOutstanding(taxChargesOutstanding).taxChargesOverdue(taxChargesOverdue)
+                        .totalExpectedRepayment(totalExpectedRepayment).totalRepayment(totalRepayment)
+                        .totalExpectedCostOfLoan(totalExpectedCostOfLoan).totalCostOfLoan(totalCostOfLoan).totalWaived(totalWaived)
+                        .totalWrittenOff(totalWrittenOff).totalOutstanding(totalOutstanding).totalOverdue(totalOverdue)
+                        .overdueSinceDate(overdueSinceDate).writeoffReasonId(writeoffReasonId).writeoffReason(writeoffReason)
+                        .totalRecovered(totalRecovered).chargeOffReasonId(chargeOffReasonId).chargeOffReason(chargeOffReason).build();
 
             }
 
@@ -952,7 +969,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     disbursedAmountPercentageForDownPayment, enableAutoRepaymentForDownPayment, enableInstallmentLevelDelinquency,
                     loanScheduleType.asEnumOptionData(), loanScheduleProcessingType.asEnumOptionData(), fixedLength,
                     chargeOffBehaviour.getValueAsStringEnumOptionData(), interestRecognitionOnDisbursementDate, daysInYearCustomStrategy,
-                    enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
+                    enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy, factorRateLoanAmount);
 
             // Adding custom parameters for CredibleX requirements
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
@@ -1056,7 +1073,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     public Collection<DisbursementData> retrieveLoanDisbursementDetails(final Long loanId) {
         final CredXLoanDisbursementDetailMapper rm = new CredXLoanDisbursementDetailMapper(sqlGenerator);
         final String sql = "select " + rm.schema()
-                + " where dd.loan_id=? and dd.is_reversed=false group by dd.id, lc.amount_waived_derived order by dd.expected_disburse_date,dd.disbursedon_date,dd.id";
+                + " where dd.loan_id=? and dd.is_reversed=false group by dd.id, lc.amount_waived_derived, l.factor_rate_loan_amount order by dd.expected_disburse_date,dd.disbursedon_date,dd.id";
         return this.jdbcTemplate.query(sql, rm, loanId); // NOSONAR
     }
 
@@ -1069,7 +1086,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         public String schema() {
-            return "dd.id as id,dd.expected_disburse_date as expectedDisbursementdate, dd.disbursedon_date as actualDisbursementdate,dd.principal as principal,dd.net_disbursal_amount as netDisbursalAmount,sum(lc.amount) chargeAmount, lc.amount_waived_derived waivedAmount, sum(lc.tax_amount) as taxAmount, "
+            return "dd.id as id,dd.expected_disburse_date as expectedDisbursementdate, dd.disbursedon_date as actualDisbursementdate,dd.principal as principal,dd.net_disbursal_amount as netDisbursalAmount, l.factor_rate_loan_amount AS factorRateLoanAmount, sum(lc.amount) chargeAmount, lc.amount_waived_derived waivedAmount, sum(lc.tax_amount) as taxAmount, "
                     + sqlGenerator.groupConcat("lc.id") + " loanChargeId "
                     + "from m_loan l inner join m_loan_disbursement_detail dd on dd.loan_id = l.id left join m_loan_tranche_disbursement_charge tdc on tdc.disbursement_detail_id=dd.id "
                     + "left join m_loan_charge lc on  lc.id=tdc.loan_charge_id and lc.is_active=true";
@@ -1083,6 +1100,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final BigDecimal principal = rs.getBigDecimal("principal");
             final String loanChargeId = rs.getString("loanChargeId");
             final BigDecimal netDisbursalAmount = rs.getBigDecimal("netDisbursalAmount");
+            final BigDecimal factorRateLoanAmount = rs.getBigDecimal("factorRateLoanAmount");
             BigDecimal chargeAmount = rs.getBigDecimal("chargeAmount");
             final BigDecimal waivedAmount = rs.getBigDecimal("waivedAmount");
             final BigDecimal taxAmount = rs.getBigDecimal("taxAmount");
@@ -1094,8 +1112,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // Assumption is that tax is not waivable, so we add it to the charge amount
                 chargeAmount = chargeAmount.add(taxAmount);
             }
-            return new DisbursementData(id, expectedDisbursementdate, actualDisbursementdate, principal, netDisbursalAmount, loanChargeId,
-                    chargeAmount, waivedAmount);
+            return new DisbursementData(id, expectedDisbursementdate, actualDisbursementdate, principal, netDisbursalAmount,
+                    factorRateLoanAmount, loanChargeId, chargeAmount, waivedAmount);
         }
 
     }
@@ -1337,6 +1355,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " ls.principal_amount as principalDue, ls.principal_completed_derived as principalPaid, ls.principal_writtenoff_derived as principalWrittenOff, ls.is_additional as isAdditional, "
                     + " ls.interest_amount as interestDue, ls.interest_completed_derived as interestPaid, ls.interest_waived_derived as interestWaived, ls.interest_writtenoff_derived as interestWrittenOff, "
                     + " ls.fee_charges_amount as feeChargesDue, ls.fee_charges_completed_derived as feeChargesPaid, ls.fee_charges_waived_derived as feeChargesWaived, ls.fee_charges_writtenoff_derived as feeChargesWrittenOff, "
+                    + " ls.tax_charges_amount as taxChargesDue, ls.tax_charges_completed_derived as taxChargesPaid, ls.tax_charges_waived_derived as taxChargesWaived, ls.tax_charges_writtenoff_derived as taxChargesWrittenOff, "
                     + " ls.penalty_charges_amount as penaltyChargesDue, ls.penalty_charges_completed_derived as penaltyChargesPaid, ls.penalty_charges_waived_derived as penaltyChargesWaived, "
                     + " ls.penalty_charges_writtenoff_derived as penaltyChargesWrittenOff, ls.total_paid_in_advance_derived as totalPaidInAdvanceForPeriod, "
                     + " ls.total_paid_late_derived as totalPaidLateForPeriod, ls.credits_amount as principalCredits, ls.credited_fee as feeCredits, ls.credited_penalty as penaltyCredits, ls.is_down_payment isDownPayment, "
@@ -1379,6 +1398,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             Money totalPrincipalPaid = Money.zero(monCurrency);
             Money totalInterestCharged = Money.zero(monCurrency);
             Money totalFeeChargesCharged = Money.zero(monCurrency);
+            Money totalTaxChargesCharged = Money.zero(monCurrency);
             Money totalPenaltyChargesCharged = Money.zero(monCurrency);
             Money totalWaived = Money.zero(monCurrency);
             Money totalWrittenOff = Money.zero(monCurrency);
@@ -1454,6 +1474,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal feeChargesActualDue = feeChargesExpectedDue.subtract(feeChargesWaived).subtract(feeChargesWrittenOff);
                 final BigDecimal feeChargesOutstanding = feeChargesActualDue.subtract(feeChargesPaid);
 
+                final BigDecimal taxChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesDue");
+                totalTaxChargesCharged = totalTaxChargesCharged.plus(taxChargesExpectedDue);
+                final BigDecimal taxChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesPaid");
+                final BigDecimal taxChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesWaived");
+                final BigDecimal taxChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxChargesWrittenOff");
+
+                final BigDecimal taxChargesActualDue = taxChargesExpectedDue.subtract(taxChargesWaived).subtract(taxChargesWrittenOff);
+                final BigDecimal taxChargesOutstanding = taxChargesActualDue.subtract(taxChargesPaid);
+
                 final BigDecimal penaltyChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesDue");
                 totalPenaltyChargesCharged = totalPenaltyChargesCharged.plus(penaltyChargesExpectedDue);
                 final BigDecimal penaltyChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyChargesPaid");
@@ -1511,7 +1540,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate, obligationsMetOnDate, complete,
                         principalDue, principalPaid, principalWrittenOff, principalOutstanding, outstandingPrincipalBalanceOfLoan,
                         interestExpectedDue, interestPaid, interestWaived, interestWrittenOff, interestOutstanding, feeChargesExpectedDue,
-                        feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, penaltyChargesExpectedDue,
+                        feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, taxChargesExpectedDue,
+                        taxChargesPaid, taxChargesWaived, taxChargesWrittenOff, taxChargesOutstanding, penaltyChargesExpectedDue,
                         penaltyChargesPaid, penaltyChargesWaived, penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod,
                         totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits,
                         isDownPayment, accrualInterest, isRLoc);
@@ -1521,9 +1551,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             return new LoanScheduleData(this.currency, periods, loanTermInDays, totalPrincipalDisbursed, totalPrincipalExpected.getAmount(),
                     totalPrincipalPaid.getAmount(), totalInterestCharged.getAmount(), totalFeeChargesCharged.getAmount(),
-                    totalPenaltyChargesCharged.getAmount(), totalWaived.getAmount(), totalWrittenOff.getAmount(),
-                    totalRepaymentExpected.getAmount(), totalRepayment.getAmount(), totalPaidInAdvance.getAmount(),
-                    totalPaidLate.getAmount(), totalOutstanding.getAmount(), totalCredits.getAmount());
+                    totalTaxChargesCharged.getAmount(), totalPenaltyChargesCharged.getAmount(), totalWaived.getAmount(),
+                    totalWrittenOff.getAmount(), totalRepaymentExpected.getAmount(), totalRepayment.getAmount(),
+                    totalPaidInAdvance.getAmount(), totalPaidLate.getAmount(), totalOutstanding.getAmount(), totalCredits.getAmount());
         }
 
         private BigDecimal processDisbursementData(LoanScheduleType loanScheduleType, Collection<DisbursementData> disbursementData,

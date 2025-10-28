@@ -30,6 +30,7 @@ public class ScheduleCurrentPeriodParams {
     Money interestForThisPeriod;
     Money principalForThisPeriod;
     Money feeChargesForInstallment;
+    Money taxChargesForInstallment;
     Money penaltyChargesForInstallment;
     // for adjusting outstandingBalances
     Money reducedBalance;
@@ -48,6 +49,7 @@ public class ScheduleCurrentPeriodParams {
         this.principalForThisPeriod = Money.zero(currency);
         this.reducedBalance = Money.zero(currency);
         this.feeChargesForInstallment = Money.zero(currency);
+        this.taxChargesForInstallment = Money.zero(currency);
         this.penaltyChargesForInstallment = Money.zero(currency);
         this.isEmiAmountChanged = false;
         this.interestCalculationGraceOnRepaymentPeriodFraction = interestCalculationGraceOnRepaymentPeriodFraction;
@@ -121,8 +123,16 @@ public class ScheduleCurrentPeriodParams {
         return this.feeChargesForInstallment;
     }
 
+    public Money getTaxChargesForInstallment() {
+        return this.taxChargesForInstallment;
+    }
+
     public void setFeeChargesForInstallment(Money feeChargesForInstallment) {
         this.feeChargesForInstallment = feeChargesForInstallment;
+    }
+
+    public void setTaxChargesForInstallment(Money taxForInstallment) {
+        this.taxChargesForInstallment = taxForInstallment;
     }
 
     public void minusFeeChargesForInstallment(Money feeChargesForInstallment) {
@@ -142,7 +152,9 @@ public class ScheduleCurrentPeriodParams {
     }
 
     public Money fetchTotalAmountForPeriod() {
-        return this.principalForThisPeriod.plus(interestForThisPeriod).plus(feeChargesForInstallment).plus(penaltyChargesForInstallment);
+        Money taxAmount = this.taxChargesForInstallment != null ? this.taxChargesForInstallment : this.principalForThisPeriod.zero();
+        return this.principalForThisPeriod.plus(interestForThisPeriod).plus(feeChargesForInstallment).plus(taxAmount)
+                .plus(penaltyChargesForInstallment);
     }
 
     public boolean isEmiAmountChanged() {

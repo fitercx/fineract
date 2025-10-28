@@ -214,7 +214,7 @@ public class DelinquencyWritePlatformServiceRangeChangeEventTest {
         final BigDecimal zeroAmount = BigDecimal.ZERO;
 
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1, fromDate, dueDate,
-                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment.setId(1L);
 
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(installment);
@@ -342,7 +342,7 @@ public class DelinquencyWritePlatformServiceRangeChangeEventTest {
         final BigDecimal zeroAmount = BigDecimal.ZERO;
 
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1, fromDate, dueDate,
-                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment.setId(1L);
 
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(installment);
@@ -420,7 +420,7 @@ public class DelinquencyWritePlatformServiceRangeChangeEventTest {
         final BigDecimal zeroAmount = BigDecimal.ZERO;
 
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loanForProcessing, 1, fromDate, dueDate,
-                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment.setId(1L);
 
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(installment);
@@ -504,11 +504,11 @@ public class DelinquencyWritePlatformServiceRangeChangeEventTest {
         final BigDecimal zeroAmount = BigDecimal.ZERO;
 
         LoanRepaymentScheduleInstallment installment_1 = new LoanRepaymentScheduleInstallment(loanForProcessing, 1, fromDate, dueDate,
-                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment_1.setId(1L);
 
         LoanRepaymentScheduleInstallment installment_2 = new LoanRepaymentScheduleInstallment(loanForProcessing, 2, fromDate, dueDate,
-                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                installmentPrincipalAmount, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment_2.setId(2L);
 
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(installment_1, installment_2);

@@ -84,6 +84,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         Money principalPortion = Money.zero(currency);
         Money interestPortion = Money.zero(currency);
         Money feeChargesPortion = Money.zero(currency);
+        Money taxChargesPortion = Money.zero(currency);
         Money penaltyChargesPortion = Money.zero(currency);
 
         // 1. Pay penalty charges first
@@ -96,7 +97,13 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             transactionAmountRemaining = transactionAmountRemaining.minus(feeChargesPortion);
         }
 
-        // 3. Pay pro-rated interest (not full interest)
+        // 3. Pay tax charges (if any) after fee charges
+        if (transactionAmountRemaining.isGreaterThanZero()) {
+            taxChargesPortion = currentInstallment.payTaxChargesComponent(transactionDate, transactionAmountRemaining);
+            transactionAmountRemaining = transactionAmountRemaining.minus(taxChargesPortion);
+        }
+
+        // 4. Pay pro-rated interest (not full interest)
         if (transactionAmountRemaining.isGreaterThanZero()) {
             Money interestOutstanding = currentInstallment.getInterestOutstanding(currency);
             Money interestAlreadyPaid = currentInstallment.getInterestPaid(currency);
@@ -121,7 +128,9 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             }
         }
 
-        // 4. Pay principal last
+        // 5. Pay principal last
+        // Only using prorata interest flag here because its the last action to be performed. If we have reached here,
+        // it means all other components have been paid to the extent possible.
         if (transactionAmountRemaining.isGreaterThanZero()) {
 
             Money principalToPay = transactionAmountRemaining;
@@ -139,7 +148,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         }
 
         // Update transaction components
-        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion);
+        loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
 
         // Create mapping if any amount was paid
         if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {

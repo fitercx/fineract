@@ -61,6 +61,13 @@ public class LoanSummaryData {
     private final BigDecimal penaltyChargesWrittenOff;
     private final BigDecimal penaltyChargesOutstanding;
     private final BigDecimal penaltyChargesOverdue;
+    private final BigDecimal taxChargesCharged;
+    private final BigDecimal taxAdjustments;
+    private final BigDecimal taxChargesPaid;
+    private final BigDecimal taxChargesWaived;
+    private final BigDecimal taxChargesWrittenOff;
+    private final BigDecimal taxChargesOutstanding;
+    private final BigDecimal taxChargesOverdue;
     private final BigDecimal totalExpectedRepayment;
     private final BigDecimal totalRepayment;
     private final BigDecimal totalExpectedCostOfLoan;

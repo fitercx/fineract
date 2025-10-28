@@ -344,7 +344,7 @@ public class LoanArrearsAgingServiceImpl implements LoanArrearsAgingService {
             scheduleDetail.append(
                     "select ml.id as loanId, mr.installment as installmentNumber, mr.fromdate as fromDate, mr.duedate as dueDate, mr.principal_amount as principalAmount, ");
             scheduleDetail.append(
-                    "mr.interest_amount as interestAmount, mr.fee_charges_amount as feeAmount, mr.penalty_charges_amount as penaltyAmount  ");
+                    "mr.interest_amount as interestAmount, mr.fee_charges_amount as feeAmount, mr.tax_charges_amount as taxAmount, mr.penalty_charges_amount as penaltyAmount  ");
             scheduleDetail.append("from m_loan ml  INNER JOIN m_loan_repayment_schedule_history mr on mr.loan_id = ml.id ");
             scheduleDetail.append("where mr.duedate  < "
                     + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "COALESCE(ml.grace_on_arrears_ageing, 0)", "day") + " and ");
@@ -376,10 +376,11 @@ public class LoanArrearsAgingServiceImpl implements LoanArrearsAgingService {
             final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalAmount");
             final BigDecimal interestDueOnPrincipalOutstanding = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestAmount");
             final BigDecimal feeChargesDueForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeAmount");
+            final BigDecimal taxChargesDueForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxAmount");
             final BigDecimal penaltyChargesDueForPeriod = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "penaltyAmount");
 
             return LoanSchedulePeriodData.repaymentOnlyPeriod(installmentNumber, fromDate, dueDate, principalDue, null,
-                    interestDueOnPrincipalOutstanding, feeChargesDueForPeriod, penaltyChargesDueForPeriod);
+                    interestDueOnPrincipalOutstanding, feeChargesDueForPeriod, taxChargesDueForPeriod, penaltyChargesDueForPeriod);
 
         }
     }

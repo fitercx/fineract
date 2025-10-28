@@ -122,7 +122,7 @@ public class LoanDelinquencyDomainServiceTest {
         final LocalDate fromDate = businessDate.minusMonths(1);
         final LocalDate dueDate = businessDate;
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(new LoanRepaymentScheduleInstallment(loan, 1,
-                fromDate, dueDate, principal, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount));
+                fromDate, dueDate, principal, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount));
 
         // when
         when(loanProductRelatedDetail.getGraceOnArrearsAgeing()).thenReturn(0);
@@ -148,7 +148,7 @@ public class LoanDelinquencyDomainServiceTest {
         final LocalDate fromDate = businessDate.minusMonths(1).minusDays(daysDiff);
         final LocalDate dueDate = businessDate.minusDays(daysDiff);
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(new LoanRepaymentScheduleInstallment(loan, 1,
-                fromDate, dueDate, principal, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount));
+                fromDate, dueDate, principal, zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount));
 
         // when
         when(loanProductRelatedDetail.getGraceOnArrearsAgeing()).thenReturn(0);
@@ -182,7 +182,7 @@ public class LoanDelinquencyDomainServiceTest {
 
         final Money zeroMoney = Money.zero(currency);
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 1, fromDate, dueDate, principal,
-                zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         LoanTransaction loanTransaction = LoanTransaction.chargeback(loan, Money.of(currency, principal), paymentDetail, transactionDate,
                 null);
         installment.getLoanTransactionToRepaymentScheduleMappings().add(LoanTransactionToRepaymentScheduleMapping
@@ -215,7 +215,7 @@ public class LoanDelinquencyDomainServiceTest {
         final LocalDate dueDate = businessDate.minusDays(daysDiff);
 
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 1, fromDate, dueDate, principal,
-                zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment.setId(1L);
         List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = Arrays.asList(installment);
 
@@ -264,7 +264,7 @@ public class LoanDelinquencyDomainServiceTest {
 
         final Money zeroMoney = Money.zero(currency);
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 1, fromDate, dueDate, principal,
-                zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
+                zeroAmount, zeroAmount, zeroAmount, zeroAmount, false, new HashSet<>(), zeroAmount);
         installment.setId(1L);
         LoanTransaction loanTransaction = LoanTransaction.chargeback(loan, Money.of(currency, principal), paymentDetail, transactionDate,
                 null);

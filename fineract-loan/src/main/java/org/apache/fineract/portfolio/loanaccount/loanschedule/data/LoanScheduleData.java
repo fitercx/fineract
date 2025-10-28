@@ -49,6 +49,7 @@ public class LoanScheduleData {
     private final BigDecimal totalPrincipalPaid;
     private final BigDecimal totalInterestCharged;
     private final BigDecimal totalFeeChargesCharged;
+    private final BigDecimal totalTaxChargesCharged;
     private final BigDecimal totalPenaltyChargesCharged;
     private final BigDecimal totalWaived;
     private final BigDecimal totalWrittenOff;
@@ -69,10 +70,10 @@ public class LoanScheduleData {
 
     public LoanScheduleData(final CurrencyData currency, final Collection<LoanSchedulePeriodData> periods, final Integer loanTermInDays,
             final BigDecimal totalPrincipalDisbursed, final BigDecimal totalPrincipalExpected, final BigDecimal totalPrincipalPaid,
-            final BigDecimal totalInterestCharged, final BigDecimal totalFeeChargesCharged, final BigDecimal totalPenaltyChargesCharged,
-            final BigDecimal totalWaived, final BigDecimal totalWrittenOff, final BigDecimal totalRepaymentExpected,
-            final BigDecimal totalRepayment, final BigDecimal totalPaidInAdvance, final BigDecimal totalPaidLate,
-            final BigDecimal totalOutstanding, final BigDecimal totalCredits) {
+            final BigDecimal totalInterestCharged, final BigDecimal totalFeeChargesCharged, final BigDecimal totalTaxChargesCharged,
+            final BigDecimal totalPenaltyChargesCharged, final BigDecimal totalWaived, final BigDecimal totalWrittenOff,
+            final BigDecimal totalRepaymentExpected, final BigDecimal totalRepayment, final BigDecimal totalPaidInAdvance,
+            final BigDecimal totalPaidLate, final BigDecimal totalOutstanding, final BigDecimal totalCredits) {
         this.currency = currency;
         this.periods = periods;
         this.loanTermInDays = loanTermInDays;
@@ -81,6 +82,7 @@ public class LoanScheduleData {
         this.totalPrincipalPaid = totalPrincipalPaid;
         this.totalInterestCharged = totalInterestCharged;
         this.totalFeeChargesCharged = totalFeeChargesCharged;
+        this.totalTaxChargesCharged = totalTaxChargesCharged;
         this.totalPenaltyChargesCharged = totalPenaltyChargesCharged;
         this.totalWaived = totalWaived;
         this.totalWrittenOff = totalWrittenOff;
@@ -94,7 +96,8 @@ public class LoanScheduleData {
 
     public LoanScheduleData(final CurrencyData currency, final Collection<LoanSchedulePeriodData> periods, final Integer loanTermInDays,
             final BigDecimal totalPrincipalDisbursed, final BigDecimal totalPrincipalExpected, final BigDecimal totalInterestCharged,
-            final BigDecimal totalFeeChargesCharged, final BigDecimal totalPenaltyChargesCharged, final BigDecimal totalRepaymentExpected) {
+            final BigDecimal totalFeeChargesCharged, final BigDecimal totalTaxChargesCharged, final BigDecimal totalPenaltyChargesCharged,
+            final BigDecimal totalRepaymentExpected) {
         this.currency = currency;
         this.periods = periods;
         this.loanTermInDays = loanTermInDays;
@@ -103,6 +106,7 @@ public class LoanScheduleData {
         this.totalPrincipalPaid = null;
         this.totalInterestCharged = totalInterestCharged;
         this.totalFeeChargesCharged = totalFeeChargesCharged;
+        this.totalTaxChargesCharged = totalTaxChargesCharged;
         this.totalPenaltyChargesCharged = totalPenaltyChargesCharged;
         this.totalWaived = null;
         this.totalWrittenOff = null;

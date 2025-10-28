@@ -58,14 +58,14 @@ public class TaxComponent extends AbstractAuditableCustom {
 
     @ManyToOne
     @JoinColumn(name = "debit_account_id")
-    private GLAccount debitAcount;
+    private GLAccount debitAccount;
 
     @Column(name = "credit_account_type_enum")
     private Integer creditAccountType;
 
     @ManyToOne
     @JoinColumn(name = "credit_account_id")
-    private GLAccount creditAcount;
+    private GLAccount creditAccount;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -88,11 +88,11 @@ public class TaxComponent extends AbstractAuditableCustom {
         if (debitAccountType != null) {
             this.debitAccountType = debitAccountType.getValue();
         }
-        this.debitAcount = debitAcount;
+        this.debitAccount = debitAcount;
         if (creditAccountType != null) {
             this.creditAccountType = creditAccountType.getValue();
         }
-        this.creditAcount = creditAcount;
+        this.creditAccount = creditAcount;
         this.startDate = startDate;
     }
 
@@ -192,15 +192,15 @@ public class TaxComponent extends AbstractAuditableCustom {
         return this.debitAccountType;
     }
 
-    public GLAccount getDebitAcount() {
-        return this.debitAcount;
+    public GLAccount getDebitAccount() {
+        return this.debitAccount;
     }
 
     public Integer getCreditAccountType() {
         return this.creditAccountType;
     }
 
-    public GLAccount getCreditAcount() {
-        return this.creditAcount;
+    public GLAccount getCreditAccount() {
+        return this.creditAccount;
     }
 }

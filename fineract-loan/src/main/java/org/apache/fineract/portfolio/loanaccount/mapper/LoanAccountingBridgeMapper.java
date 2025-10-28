@@ -107,6 +107,7 @@ public class LoanAccountingBridgeMapper {
 
         transactionDTO.setInterestPortion(transaction.getInterestPortion());
         transactionDTO.setFeeChargesPortion(transaction.getFeeChargesPortion());
+        transactionDTO.setTaxChargesPortion(transaction.getTaxChargesPortion());
         transactionDTO.setPenaltyChargesPortion(transaction.getPenaltyChargesPortion());
         transactionDTO.setOverPaymentPortion(transaction.getOverPaymentPortion());
 
