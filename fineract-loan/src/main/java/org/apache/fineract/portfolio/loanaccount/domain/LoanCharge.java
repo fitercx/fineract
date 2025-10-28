@@ -256,7 +256,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     this.amount = chargeAmount;
                 }
                 this.updateTaxAmount(factorRateEnabled, factorRate, amountPercentageAppliedTo);
-                if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                if (isTaxAppliedToSpecifiedDueDateCharge() || isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate)) {
                     this.amountOutstanding = calculateOutstandingWithoutTax();
                 } else {
                     this.amountOutstanding = calculateOutstanding();
@@ -280,7 +280,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 this.amount = minimumAndMaximumCap(loanCharge);
                 this.amountPaid = null;
                 this.updateTaxAmount(factorRateEnabled, factorRate, amountPercentageAppliedTo);
-                if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                if (isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate) || isTaxAppliedToSpecifiedDueDateCharge()) {
                     this.amountOutstanding = calculateOutstandingWithoutTax();
                 } else {
                     this.amountOutstanding = calculateOutstanding();
@@ -422,7 +422,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.amountOrPercentage = amount;
             final BigDecimal factorRateLoanAmount = this.loan.getFactorRateLoanAmount();
             this.updateTaxAmount(this.loan.isFactorRateEnabled(), this.loan.getFactorRate(), factorRateLoanAmount);
-            if (this.loan.isFactorRateEnabled() && MathUtil.isGreaterThan(this.loan.getFactorRate(), BigDecimal.ONE) && isInstalmentFee()) {
+            if (isTaxAppliedToFactorRateCharge(loan.isFactorRateEnabled(), loan.getFactorRate()) || isTaxAppliedToSpecifiedDueDateCharge()) {
                 this.amountOutstanding = calculateOutstandingWithoutTax();
             } else {
                 this.amountOutstanding = calculateOutstanding();
@@ -503,7 +503,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         this.amount = newValue;
                     }
                     this.updateTaxAmount(factorRateEnabled, factorRate, loanAmount);
-                    if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                    if (isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate) || isTaxAppliedToSpecifiedDueDateCharge()) {
                         this.amountOutstanding = calculateOutstandingWithoutTax();
                     } else {
                         this.amountOutstanding = calculateOutstanding();
@@ -525,7 +525,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     }
                     this.amount = minimumAndMaximumCap(loanCharge);
                     this.updateTaxAmount(factorRateEnabled, factorRate, loanAmount);
-                    if (factorRateEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                    if (isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate) || isTaxAppliedToSpecifiedDueDateCharge()) {
                         this.amountOutstanding = calculateOutstandingWithoutTax();
                     } else {
                         this.amountOutstanding = calculateOutstanding();
@@ -1194,14 +1194,26 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.getCharge().getTaxGroup() != null && !this.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty();
     }
 
+
+    private boolean isTaxAppliedToSpecifiedDueDateCharge() {
+        return this.hasTax() && isSpecifiedDueDate() && MathUtil.isGreaterThanZero(this.amount);
+    }
+
+    private boolean isTaxAppliedToFactorRateCharge(final boolean factorRateEnabled, final BigDecimal factorRate) {
+        return this.hasTax() && factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee();
+    }
+
+
     public void updateTaxAmount(final boolean factorRateEnabled, final BigDecimal factorRate, final BigDecimal loanAmount) {
         if (this.hasTax() && this.amount != null && this.amount.compareTo(BigDecimal.ZERO) > 0) {
             LocalDate chargeDate = this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate();
-            if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+            if (isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate)) {
                 this.taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
                         this.charge.getTaxGroup().getTaxGroupMappings());
                 this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate,
                         this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale());
+            } else if (isTaxAppliedToSpecifiedDueDateCharge()) {
+                this.taxAmount = TaxUtils.calculateSpecifiedDueDateTaxAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings());
             } else {
                 this.taxAmount = TaxUtils
                         .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())

@@ -721,14 +721,14 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
         if (fee.isGreaterThanZero()) {
             installment.addToCreditedFee(fee.getAmount());
             installment.addToChargePortion(fee, Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency),
-                    Money.zero(currency));
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency));
         }
 
         Money penalty = chargebackAllocation.get(PENALTY);
         if (penalty.isGreaterThanZero()) {
             installment.addToCreditedPenalty(penalty.getAmount());
             installment.addToChargePortion(Money.zero(currency), Money.zero(currency), Money.zero(currency), penalty, Money.zero(currency),
-                    Money.zero(currency));
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency));
         }
     }
 
