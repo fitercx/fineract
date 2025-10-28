@@ -638,7 +638,7 @@ public class LoanScheduleAssembler {
                     }
                     BigDecimal waivedChargeAmount = null;
                     disbursementDatas.add(new DisbursementData(null, expectedDisbursementDate, null, principal, netDisbursalAmount, null,
-                            null, waivedChargeAmount));
+                            null, null, waivedChargeAmount));
                     i++;
                 } while (i < disbursementDataArray.size());
             }

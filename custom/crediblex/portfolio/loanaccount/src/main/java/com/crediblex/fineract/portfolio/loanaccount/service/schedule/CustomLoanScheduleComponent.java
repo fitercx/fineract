@@ -26,8 +26,8 @@ public class CustomLoanScheduleComponent extends LoanScheduleComponent {
                             scheduledLoanInstallment.periodNumber(), scheduledLoanInstallment.periodFromDate(),
                             scheduledLoanInstallment.periodDueDate(), scheduledLoanInstallment.principalDue(),
                             loan.isReceivableLocLoan() ? BigDecimal.ZERO : scheduledLoanInstallment.interestDue(),
-                            scheduledLoanInstallment.feeChargesDue(), scheduledLoanInstallment.penaltyChargesDue(),
-                            scheduledLoanInstallment.isRecalculatedInterestComponent(),
+                            scheduledLoanInstallment.feeChargesDue(), scheduledLoanInstallment.taxChargesDue(),
+                            scheduledLoanInstallment.penaltyChargesDue(), scheduledLoanInstallment.isRecalculatedInterestComponent(),
                             scheduledLoanInstallment.getLoanCompoundingDetails(), scheduledLoanInstallment.rescheduleInterestPortion(),
                             scheduledLoanInstallment.isDownPaymentPeriod());
                     loan.addLoanRepaymentScheduleInstallment(installment);

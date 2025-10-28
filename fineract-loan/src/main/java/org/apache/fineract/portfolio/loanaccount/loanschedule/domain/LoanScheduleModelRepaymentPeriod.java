@@ -41,6 +41,7 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     private Money outstandingLoanBalance;
     private Money interestDue;
     private Money feeChargesDue;
+    private Money taxChargesDue;
     private Money penaltyChargesDue;
     private Money totalDue;
     private final boolean recalculatedInterestComponent;
@@ -51,16 +52,17 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
 
     public static LoanScheduleModelRepaymentPeriod repayment(final int periodNumber, final LocalDate startDate,
             final LocalDate scheduledDueDate, final Money principalDue, final Money outstandingLoanBalance, final Money interestDue,
-            final Money feeChargesDue, final Money penaltyChargesDue, final Money totalDue, boolean recalculatedInterestComponent,
-            final MathContext mc) {
+            final Money feeChargesDue, final Money taxChargesDue, final Money penaltyChargesDue, final Money totalDue,
+            boolean recalculatedInterestComponent, final MathContext mc) {
 
         return new LoanScheduleModelRepaymentPeriod(periodNumber, startDate, scheduledDueDate, principalDue, outstandingLoanBalance,
-                interestDue, feeChargesDue, penaltyChargesDue, totalDue, recalculatedInterestComponent, mc);
+                interestDue, feeChargesDue, taxChargesDue, penaltyChargesDue, totalDue, recalculatedInterestComponent, mc);
     }
 
     public LoanScheduleModelRepaymentPeriod(final int periodNumber, final LocalDate fromDate, final LocalDate dueDate,
             final Money principalDue, final Money outstandingLoanBalance, final Money interestDue, final Money feeChargesDue,
-            final Money penaltyChargesDue, final Money totalDue, final boolean recalculatedInterestComponent, final MathContext mc) {
+            final Money taxChargesDue, final Money penaltyChargesDue, final Money totalDue, final boolean recalculatedInterestComponent,
+            final MathContext mc) {
         this.periodNumber = periodNumber;
         this.fromDate = fromDate;
         this.dueDate = dueDate;
@@ -68,6 +70,7 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
         this.outstandingLoanBalance = outstandingLoanBalance;
         this.interestDue = interestDue;
         this.feeChargesDue = feeChargesDue;
+        this.taxChargesDue = taxChargesDue;
         this.penaltyChargesDue = penaltyChargesDue;
         this.totalDue = totalDue;
         this.recalculatedInterestComponent = recalculatedInterestComponent;
@@ -78,7 +81,7 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     public LoanSchedulePeriodData toData() {
         return LoanSchedulePeriodData.repaymentOnlyPeriod(this.periodNumber, this.fromDate, this.dueDate, this.principalDue.getAmount(),
                 this.outstandingLoanBalance.getAmount(), this.interestDue.getAmount(), this.feeChargesDue.getAmount(),
-                this.penaltyChargesDue.getAmount());
+                this.taxChargesDue.getAmount(), this.penaltyChargesDue.getAmount());
     }
 
     @Override
@@ -137,6 +140,16 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     }
 
     @Override
+    public BigDecimal taxChargesDue() {
+        BigDecimal value = null;
+        if (this.taxChargesDue != null) {
+            value = this.taxChargesDue.getAmount();
+        }
+
+        return value;
+    }
+
+    @Override
     public BigDecimal penaltyChargesDue() {
         BigDecimal value = null;
         if (this.penaltyChargesDue != null) {
@@ -147,10 +160,11 @@ public final class LoanScheduleModelRepaymentPeriod implements LoanScheduleModel
     }
 
     @Override
-    public void addLoanCharges(BigDecimal feeCharge, BigDecimal penaltyCharge) {
+    public void addLoanCharges(BigDecimal feeCharge, BigDecimal taxCharge, BigDecimal penaltyCharge) {
         this.feeChargesDue = this.feeChargesDue.plus(feeCharge, mc);
+        this.taxChargesDue = this.taxChargesDue.plus(taxCharge, mc);
         this.penaltyChargesDue = this.penaltyChargesDue.plus(penaltyCharge, mc);
-        this.totalDue = this.totalDue.plus(feeCharge, mc).plus(penaltyCharge, mc);
+        this.totalDue = this.totalDue.plus(feeCharge, mc).plus(taxCharge, mc).plus(penaltyCharge, mc);
     }
 
     @Override

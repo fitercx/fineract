@@ -99,12 +99,18 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     }
 
     @Override
+    public BigDecimal taxChargesDue() {
+        return null;
+    }
+
+    @Override
     public BigDecimal penaltyChargesDue() {
         return null;
     }
 
     @Override
-    public void addLoanCharges(@SuppressWarnings("unused") BigDecimal feeCharge, @SuppressWarnings("unused") BigDecimal penaltyCharge) {
+    public void addLoanCharges(@SuppressWarnings("unused") BigDecimal feeCharge, @SuppressWarnings("unused") BigDecimal taxCharge,
+            @SuppressWarnings("unused") BigDecimal penaltyCharge) {
         return;
     }
 

@@ -99,12 +99,17 @@ public final class LoanScheduleModelDownPaymentPeriod implements LoanScheduleMod
     }
 
     @Override
+    public BigDecimal taxChargesDue() {
+        return BigDecimal.ZERO;
+    }
+
+    @Override
     public BigDecimal penaltyChargesDue() {
         return BigDecimal.ZERO;
     }
 
     @Override
-    public void addLoanCharges(BigDecimal feeCharge, BigDecimal penaltyCharge) {
+    public void addLoanCharges(BigDecimal feeCharge, BigDecimal taxCharge, BigDecimal penaltyCharge) {
 
     }
 

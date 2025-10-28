@@ -43,6 +43,7 @@ public class LoanTransactionDTO {
     private final BigDecimal principal;
     private final BigDecimal interest;
     private final BigDecimal fees;
+    private final BigDecimal taxes;
     private final BigDecimal penalties;
     private final BigDecimal overPayment;
 
@@ -52,6 +53,7 @@ public class LoanTransactionDTO {
     /** Breakdowns of fees and penalties this Transaction pays **/
     private final List<ChargePaymentDTO> penaltyPayments;
     private final List<ChargePaymentDTO> feePayments;
+    private final List<ChargePaymentDTO> taxPayments;
 
     private final boolean isAccountTransfer;
 

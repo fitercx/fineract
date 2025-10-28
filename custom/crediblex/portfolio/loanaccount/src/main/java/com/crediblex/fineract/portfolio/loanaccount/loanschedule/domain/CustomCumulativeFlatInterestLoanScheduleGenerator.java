@@ -223,24 +223,10 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         // Determine the total interest owed over the full loan for FLAT
         // interest method .
         if (!scheduleParams.isPartialUpdate() && !loanApplicationTerms.isEqualAmortization()) {
+            Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
+                    .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
 
-            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-                // this does not matter for LOC (may have to check if less amount can be disbursed)
-                Money disbursedPrincipal = loanApplicationTerms.getDisbursedPrincipal();
-                loanApplicationTerms.setDisbursedPrincipal(Money.of(loanApplicationTerms.getPrincipal().getCurrency(),
-                        loanApplicationTerms.getApprovedReceivableLineAmount()));
-
-                Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
-                        .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
-                loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
-
-                loanApplicationTerms.setDisbursedPrincipal(disbursedPrincipal);
-
-            } else {
-                Money totalInterestChargedForFullLoanTerm = loanApplicationTerms
-                        .calculateTotalInterestCharged(getPaymentPeriodsInOneYearCalculator(), mc);
-                loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
-            }
+            loanApplicationTerms.updateTotalInterestDue(totalInterestChargedForFullLoanTerm);
 
         }
 
@@ -322,6 +308,10 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             if (!DateUtils.isAfter(firstRepaymentDate, scheduleParams.getActualRepaymentDate())) {
                 isFirstRepayment = false;
             }
+        }
+
+        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            scheduleParams.addTotalRepaymentExpected(Money.of(currency, chargesDueAtTimeOfDisbursement.negate()));
         }
 
         while (!scheduleParams.getOutstandingBalance().isZero() || !scheduleParams.getDisburseDetailMap().isEmpty()) {
@@ -490,8 +480,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             LoanScheduleModelPeriod installment = LoanScheduleModelRepaymentPeriod.repayment(scheduleParams.getInstalmentNumber(),
                     scheduleParams.getPeriodStartDate(), scheduledDueDate, currentPeriodParams.getPrincipalForThisPeriod(),
                     scheduleParams.getOutstandingBalance(), currentPeriodParams.getInterestForThisPeriod(),
-                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getPenaltyChargesForInstallment(),
-                    totalInstallmentDue, !isCompletePeriod, mc);
+                    currentPeriodParams.getFeeChargesForInstallment(), currentPeriodParams.getTaxChargesForInstallment(),
+                    currentPeriodParams.getPenaltyChargesForInstallment(), totalInstallmentDue, !isCompletePeriod, mc);
             if (principalInterestForThisPeriod.getRescheduleInterestPortion() != null) {
                 installment.setRescheduleInterestPortion(principalInterestForThisPeriod.getRescheduleInterestPortion().getAmount());
             }
@@ -535,8 +525,15 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         if (scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().isGreaterThanZero()) {
             LoanScheduleModelPeriod installment = periods.get(periods.size() - 1);
             installment.addInterestAmount(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
-            scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
+            // We want the total due to be the principal only for line of credit receivable
+            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+                installment.addTotalDue(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
+                installment.addInterestDueWithoutTotalUpdate(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
+            } else {
+                scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
+            }
             scheduleParams.addTotalCumulativeInterest(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
+
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(Money.zero(currency));
         }
 
@@ -567,8 +564,9 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 scheduleParams.getPrincipalToBeScheduled().plus(loanApplicationTerms.getDownPaymentAmount()),
                 scheduleParams.getTotalCumulativePrincipal().plus(loanApplicationTerms.getDownPaymentAmount()).getAmount(),
                 totalPrincipalPaid, scheduleParams.getTotalCumulativeInterest().getAmount(),
-                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalPenaltyChargesCharged().getAmount(),
-                scheduleParams.getTotalRepaymentExpected().getAmount(), totalOutstanding);
+                scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalTaxChargesCharged().getAmount(),
+                scheduleParams.getTotalPenaltyChargesCharged().getAmount(), scheduleParams.getTotalRepaymentExpected().getAmount(),
+                totalOutstanding);
     }
 
 }

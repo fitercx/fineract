@@ -23,7 +23,12 @@ WITH pending_installments
                     sum(coalesce(penalty_charges_amount, 0))             as penalties,
                     sum(coalesce(penalty_charges_writtenoff_derived, 0)) as penalties_written_off,
                     sum(coalesce(penalty_charges_waived_derived, 0))     as penalties_waived,
-                    sum(coalesce(penalty_charges_completed_derived, 0))  as penalties_completed
+                    sum(coalesce(penalty_charges_completed_derived, 0))  as penalties_completed,
+
+                    sum(coalesce(tax_charges_amount, 0))                 as taxes,
+                    sum(coalesce(tax_charges_writtenoff_derived, 0))     as taxes_written_off,
+                    sum(coalesce(tax_charges_waived_derived, 0))         as taxes_waived,
+                    sum(coalesce(tax_charges_completed_derived, 0))      as taxes_completed
              from pending_installments
              group by loan_id),
      due_amounts
@@ -31,7 +36,8 @@ WITH pending_installments
                     principal - principal_written_off - principal_completed                    as principal_due,
                     interest - interest_written_off - interest_waived - interest_completed     as interest_due,
                     fees - fees_written_off - fees_waived - fees_completed                     as fee_due,
-                    penalties - penalties_written_off - penalties_waived - penalties_completed as penalty_due
+                    penalties - penalties_written_off - penalties_waived - penalties_completed as penalty_due,
+                    taxes - taxes_written_off - taxes_waived - taxes_completed                 as tax_due
              from aggregated_balances),
      latest_transaction
          AS (SELECT tr.loan_id
@@ -65,7 +71,12 @@ WITH pending_installments
                 coalesce(penalty_charges_amount, 0) -
                 coalesce(penalty_charges_writtenoff_derived, 0) -
                 coalesce(penalty_charges_waived_derived, 0) -
-                coalesce(penalty_charges_completed_derived, 0) as penalties_due
+                coalesce(penalty_charges_completed_derived, 0) as penalties_due,
+
+                coalesce(tax_charges_amount, 0) -
+                coalesce(tax_charges_writtenoff_derived, 0) -
+                coalesce(tax_charges_waived_derived, 0) -
+                coalesce(tax_charges_completed_derived, 0)     as taxes_due
          FROM m_loan_repayment_schedule ls
          WHERE loan_id = :loanId
            AND completed_derived = false
@@ -78,6 +89,7 @@ SELECT (CASE
        coalesce(ls.interest_due, eus.interest_due)   as interestDue_decimal,
        coalesce(ls.fee_due, eus.fees_due)            as feeDue_decimal,
        coalesce(ls.penalty_due, eus.penalties_due)   as penaltyDue_decimal,
+       coalesce(ls.tax_due, eus.taxes_due)           as taxDue_decimal,
        l.currency_code                               as currencyCode_string,
        l.currency_digits                             as currencyDigits_int,
        l.currency_multiplesof                        as inMultiplesOf_int,

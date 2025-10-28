@@ -396,17 +396,17 @@ public class BulkImportWorkbookPopulatorServiceImpl implements BulkImportWorkboo
     }
 
     private List<CurrencyData> fetchCurrencies() {
-        List<CurrencyData> currencies = (List<CurrencyData>) this.currencyReadPlatformService.retrieveAllPlatformCurrencies();
+        List<CurrencyData> currencies = this.currencyReadPlatformService.retrieveAllPlatformCurrencies();
         return currencies;
     }
 
     private List<PaymentTypeData> fetchPaymentTypes() {
-        List<PaymentTypeData> paymentTypeData = (List<PaymentTypeData>) this.paymentTypeReadPlatformService.retrieveAllPaymentTypes();
+        List<PaymentTypeData> paymentTypeData = this.paymentTypeReadPlatformService.retrieveAllPaymentTypes();
         return paymentTypeData;
     }
 
     private List<FundData> fetchFunds() {
-        List<FundData> funds = (List<FundData>) this.fundReadPlatformService.retrieveAllFunds();
+        List<FundData> funds = this.fundReadPlatformService.retrieveAllFunds();
         return funds;
     }
 
@@ -508,8 +508,7 @@ public class BulkImportWorkbookPopulatorServiceImpl implements BulkImportWorkboo
         this.context.authenticatedUser().validateHasReadPermission(TemplatePopulateImportConstants.GL_ACCOUNT_ENTITY_TYPE);
         List<GLAccountData> glAccounts = fetchGLAccounts();
         List<OfficeData> offices = fetchOffices(null);
-        return new ChartOfAccountsWorkbook(glAccounts, offices,
-                (List<CurrencyData>) this.currencyReadPlatformService.retrieveAllowedCurrencies());
+        return new ChartOfAccountsWorkbook(glAccounts, offices, this.currencyReadPlatformService.retrieveAllowedCurrencies());
     }
 
     private WorkbookPopulator populateStaffWorkbook(Long officeId) {
@@ -531,7 +530,7 @@ public class BulkImportWorkbookPopulatorServiceImpl implements BulkImportWorkboo
     }
 
     private List<ChargeData> fetchChargesForShares() {
-        List<ChargeData> chargesForShares = (List<ChargeData>) chargeReadPlatformService.retrieveSharesApplicableCharges();
+        List<ChargeData> chargesForShares = chargeReadPlatformService.retrieveSharesApplicableCharges();
         return chargesForShares;
     }
 

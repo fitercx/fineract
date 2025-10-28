@@ -61,7 +61,7 @@ public class ExtendedLoanAccountData extends LoanAccountData {
             final EnumOptionData loanScheduleProcessingType, final Integer fixedLength, final StringEnumOptionData chargeOffBehaviour,
             final boolean isInterestRecognitionOnDisbursementDate, final StringEnumOptionData daysInYearCustomStrategy,
             final boolean enableIncomeCapitalization, final StringEnumOptionData capitalizedIncomeCalculationType,
-            final StringEnumOptionData capitalizedIncomeStrategy) {
+            final StringEnumOptionData capitalizedIncomeStrategy, final BigDecimal factorRateLoanAmount) {
 
         final CollectionData delinquent = CollectionData.template();
 
@@ -110,6 +110,6 @@ public class ExtendedLoanAccountData extends LoanAccountData {
                 .setChargeOffBehaviour(chargeOffBehaviour).setInterestRecognitionOnDisbursementDate(isInterestRecognitionOnDisbursementDate)
                 .setDaysInYearCustomStrategy(daysInYearCustomStrategy).setEnableIncomeCapitalization(enableIncomeCapitalization)
                 .setCapitalizedIncomeCalculationType(capitalizedIncomeCalculationType)
-                .setCapitalizedIncomeStrategy(capitalizedIncomeStrategy);
+                .setCapitalizedIncomeStrategy(capitalizedIncomeStrategy).setFactorRateLoanAmount(factorRateLoanAmount);
     }
 }

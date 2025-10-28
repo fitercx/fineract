@@ -42,6 +42,7 @@ public class AccountingBridgeLoanTransactionDTO {
     private BigDecimal principalPortion;
     private BigDecimal interestPortion;
     private BigDecimal feeChargesPortion;
+    private BigDecimal taxChargesPortion;
     private BigDecimal penaltyChargesPortion;
     private BigDecimal overPaymentPortion;
     private String chargeRefundChargeType;
@@ -52,5 +53,6 @@ public class AccountingBridgeLoanTransactionDTO {
     private BigDecimal penaltyPaid;
     private LoanChargeData loanChargeData;
     private boolean loanToLoanTransfer;
+    private boolean factorRateEnabled;
 
 }

@@ -121,6 +121,7 @@ public class AccountingProcessorHelper {
             final BigDecimal principal = loanTxnDto.getPrincipalPortion();
             final BigDecimal interest = loanTxnDto.getInterestPortion();
             final BigDecimal fees = loanTxnDto.getFeeChargesPortion();
+            final BigDecimal taxes = loanTxnDto.getTaxChargesPortion();
             final BigDecimal penalties = loanTxnDto.getPenaltyChargesPortion();
             final BigDecimal overPayments = loanTxnDto.getOverPaymentPortion();
             final boolean reversed = loanTxnDto.isReversed();
@@ -130,6 +131,7 @@ public class AccountingProcessorHelper {
 
             final List<ChargePaymentDTO> feePaymentDetails = new ArrayList<>();
             final List<ChargePaymentDTO> penaltyPaymentDetails = new ArrayList<>();
+            final List<ChargePaymentDTO> taxesPaymentDetails = new ArrayList<>();
             // extract charge payment details (if exists)
             if (loanTxnDto.getLoanChargesPaid() != null) {
                 List<LoanChargePaidByDTO> loanChargesPaidData = loanTxnDto.getLoanChargesPaid();
@@ -158,9 +160,9 @@ public class AccountingProcessorHelper {
             BigDecimal penaltyPaid = loanTxnDto.getPenaltyPaid();
 
             final LoanTransactionDTO transaction = new LoanTransactionDTO(transactionOfficeId, paymentTypeId, transactionId,
-                    transactionDate, transactionType, amount, principal, interest, fees, penalties, overPayments, reversed,
-                    penaltyPaymentDetails, feePaymentDetails, localIsAccountTransfer, chargeRefundChargeType, loanChargeData, principalPaid,
-                    feePaid, penaltyPaid);
+                    transactionDate, transactionType, amount, principal, interest, fees, taxes, penalties, overPayments, reversed,
+                    penaltyPaymentDetails, feePaymentDetails, taxesPaymentDetails, localIsAccountTransfer, chargeRefundChargeType,
+                    loanChargeData, principalPaid, feePaid, penaltyPaid);
 
             transaction.setLoanToLoanTransfer(loanTxnDto.isLoanToLoanTransfer());
             newLoanTransactions.add(transaction);
