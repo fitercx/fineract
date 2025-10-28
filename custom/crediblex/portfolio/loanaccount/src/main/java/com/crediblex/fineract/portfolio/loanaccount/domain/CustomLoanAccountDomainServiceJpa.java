@@ -201,15 +201,17 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money interestPayable = foreCloseDetail.getInterestCharged(currency);
         Money feePayable = foreCloseDetail.getFeeChargesCharged(currency);
         Money penaltyPayable = foreCloseDetail.getPenaltyChargesCharged(currency);
+        Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
         updateInstallmentsPostDate(loan, foreClosureDate);
 
         LoanTransaction payment = null;
 
-        if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).isGreaterThanZero()) {
+        if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).isGreaterThanZero()) {
             final PaymentDetail paymentDetail = null;
-            payment = LoanTransaction.repayment(loan.getOffice(), payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable),
-                    paymentDetail, foreClosureDate, externalId);
+            payment = LoanTransaction.repayment(loan.getOffice(),
+                    payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
+                    foreClosureDate, externalId);
             payment.updateLoan(loan);
             newTransactions.add(payment);
         }
@@ -297,7 +299,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
 
         final LoanRepaymentScheduleInstallment newInstallment = new LoanRepaymentScheduleInstallment(null, newInstallments.size() + 1,
                 installmentStartDate, transactionDate, totalPrincipal.getAmount(), balances[0].getAmount(), balances[1].getAmount(),
-                balances[2].getAmount(), isInterestComponent, null);
+                balances[2].getAmount(), balances[3].getAmount(), isInterestComponent, null);
         newInstallment.updateInstallmentNumber(newInstallments.size() + 1);
         newInstallments.add(newInstallment);
         loan.updateLoanScheduleOnForeclosure(newInstallments);

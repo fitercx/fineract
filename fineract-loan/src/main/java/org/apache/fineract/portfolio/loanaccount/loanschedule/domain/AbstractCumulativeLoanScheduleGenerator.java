@@ -2860,19 +2860,22 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         Money totalInterest = Money.zero(currency);
         Money feeCharges = Money.zero(currency);
         Money penaltyCharges = Money.zero(currency);
+        Money taxCharges = Money.zero(currency);
         for (final LoanRepaymentScheduleInstallment currentInstallment : loanScheduleDTO.getInstallments()) {
             if (currentInstallment.isNotFullyPaidOff()) {
                 totalPrincipal = totalPrincipal.plus(currentInstallment.getPrincipalOutstanding(currency));
                 totalInterest = totalInterest.plus(currentInstallment.getInterestOutstanding(currency));
                 feeCharges = feeCharges.plus(currentInstallment.getFeeChargesOutstanding(currency));
                 penaltyCharges = penaltyCharges.plus(currentInstallment.getPenaltyChargesOutstanding(currency));
+                taxCharges = taxCharges.plus(currentInstallment.getTaxChargesOutstanding(currency));
             }
         }
         return new OutstandingAmountsDTO(currency) //
                 .principal(totalPrincipal) //
                 .interest(totalInterest) //
                 .feeCharges(feeCharges) //
-                .penaltyCharges(penaltyCharges);
+                .penaltyCharges(penaltyCharges) //
+                .taxCharges(taxCharges);
     }
 
     @Override

@@ -72,9 +72,9 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
             final Money feeChargesWrittenOff = calcChargeWrittenOff(startDate, dueDate, loanCharge, currency, installmentChargeApplicable,
                     isFirstPeriod, feePredicate);
 
-            final Money taxChargesDue = calculateTaxChargeDue(loanCharge, currency);
-            final Money taxChargesWaived = calculateTaxChargeWaived(dueDate, loanCharge, currency);
-            final Money taxChargesWrittenOff = calculateTaxChargeWrittenOff(dueDate, loanCharge, currency);
+            final Money taxChargesDue = calculateTaxChargeDue(loanCharge, currency, startDate, dueDate, isFirstPeriod);
+            final Money taxChargesWaived = calculateTaxChargeWaived(loanCharge, currency, startDate, dueDate, isFirstPeriod);
+            final Money taxChargesWrittenOff = calculateTaxChargeWrittenOff(loanCharge, currency, startDate, dueDate, isFirstPeriod);
 
             Predicate<LoanCharge> penaltyPredicate = LoanCharge::isPenaltyCharge;
             final Money penaltyChargesDue = calcChargeDue(startDate, dueDate, loanCharge, currency, installment, totalPrincipal,
@@ -84,10 +84,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
             final Money penaltyChargesWrittenOff = calcChargeWrittenOff(startDate, dueDate, loanCharge, currency,
                     installmentChargeApplicable, isFirstPeriod, penaltyPredicate);
 
-            installment.addToChargePortion(feeChargesDue, feeChargesWaived, feeChargesWrittenOff,
-                    taxChargesDue, taxChargesWaived, taxChargesWrittenOff,
-                    penaltyChargesDue, penaltyChargesWaived,
-                    penaltyChargesWrittenOff);
+            installment.addToChargePortion(feeChargesDue, feeChargesWaived, feeChargesWrittenOff, taxChargesDue, taxChargesWaived,
+                    taxChargesWrittenOff, penaltyChargesDue, penaltyChargesWaived, penaltyChargesWrittenOff);
 
             if (accruals != null && !accruals.isEmpty() && installment.isAdditional()
                     && loanCharge.isDueInPeriod(startDate, dueDate, isFirstPeriod)) {
@@ -182,18 +180,24 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
         return zero;
     }
 
-
-    private Money calculateTaxChargeDue(final LoanCharge loanCharge, final MonetaryCurrency currency) {
+    private Money calculateTaxChargeDue(final LoanCharge loanCharge, final MonetaryCurrency currency, final LocalDate periodStart,
+            final LocalDate periodEnd, final boolean isFirstPeriod) {
         Money taxDue = Money.zero(currency);
+        if (!loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod)) {
+            return taxDue;
+        }
         if (loanCharge.isSpecifiedDueDate() && loanCharge.getAmount(currency).isGreaterThanZero()) {
-            taxDue = loanCharge.getTaxAmount(currency) ;
+            taxDue = loanCharge.getTaxAmount(currency);
         }
         return taxDue;
     }
 
-    private Money calculateTaxChargeWaived(final LocalDate periodEnd, final LoanCharge loanCharge,
-                                           final MonetaryCurrency currency) {
+    private Money calculateTaxChargeWaived(final LoanCharge loanCharge, final MonetaryCurrency currency, final LocalDate periodStart,
+            final LocalDate periodEnd, final boolean isFirstPeriod) {
         Money zero = Money.zero(currency);
+        if (!loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod)) {
+            return zero;
+        }
         if (loanCharge.isSpecifiedDueDate()) {
             final LoanInstallmentCharge installmentCharge = loanCharge.getInstallmentLoanCharge(periodEnd);
             return installmentCharge == null ? zero : installmentCharge.getAmountWaived(currency);
@@ -201,9 +205,12 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
         return zero;
     }
 
-    private Money calculateTaxChargeWrittenOff(final LocalDate periodEnd, final LoanCharge loanCharge,
-                                               final MonetaryCurrency currency) {
+    private Money calculateTaxChargeWrittenOff(final LoanCharge loanCharge, final MonetaryCurrency currency, final LocalDate periodStart,
+            final LocalDate periodEnd, final boolean isFirstPeriod) {
         Money zero = Money.zero(currency);
+        if (!loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod)) {
+            return zero;
+        }
         if (loanCharge.isSpecifiedDueDate()) {
             final LoanInstallmentCharge installmentCharge = loanCharge.getInstallmentLoanCharge(periodEnd);
             return installmentCharge == null ? zero : installmentCharge.getAmountWrittenOff(currency);
@@ -263,7 +270,7 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
             Loan loan = loanCharge.getLoan();
             final LoanRepaymentScheduleInstallment additionalInstallment = new LoanRepaymentScheduleInstallment(loan,
                     (loan.getLoanRepaymentScheduleInstallmentsSize() + 1), latestInstallment.getDueDate(), chargeDueDate, BigDecimal.ZERO,
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, null);
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, null);
             additionalInstallment.markAsAdditional();
             loan.addLoanRepaymentScheduleInstallment(additionalInstallment);
             return additionalInstallment;

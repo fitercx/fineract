@@ -113,8 +113,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
             String expectedPenaltyChargesWrittenOff) {
 
         verify(period, times(1)).addToChargePortion(feeChargesDue.capture(), feeChargesWaived.capture(), feeChargesWrittenOff.capture(),
-                taxChargesDue.capture(), taxChargesWaived.capture(), taxChargesWrittenOff.capture(),
-                penaltyChargesDue.capture(), penaltyChargesWaived.capture(), penaltyChargesWrittenOff.capture());
+                taxChargesDue.capture(), taxChargesWaived.capture(), taxChargesWrittenOff.capture(), penaltyChargesDue.capture(),
+                penaltyChargesWaived.capture(), penaltyChargesWrittenOff.capture());
 
         assertEquals(new BigDecimal(expectedFeeChargesDue).setScale(1, RoundingMode.UNNECESSARY),
                 feeChargesDue.getValue().getAmount().setScale(1, RoundingMode.UNNECESSARY));

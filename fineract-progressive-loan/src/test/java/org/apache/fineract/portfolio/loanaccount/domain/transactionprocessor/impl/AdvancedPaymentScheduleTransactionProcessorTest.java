@@ -139,9 +139,9 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
         Money zero = Money.zero(currency);
         Loan loan = mock(Loan.class);
         Money chargeAmountMoney = Money.of(currency, chargeAmount);
-        LoanRepaymentScheduleInstallment installment = spy(
-                new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate, disbursementDate.plusMonths(1), BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = spy(new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate,
+                disbursementDate.plusMonths(1), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
 
         when(loanTransaction.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_PAYMENT);
         when(chargePaidBy.getLoanCharge()).thenReturn(charge);
@@ -183,9 +183,9 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
         Money chargeAmountMoney = Money.of(currency, chargeAmount);
         BigDecimal transactionAmount = BigDecimal.valueOf(20.00);
         Money transactionAmountMoney = Money.of(currency, transactionAmount);
-        LoanRepaymentScheduleInstallment installment = spy(
-                new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate, disbursementDate.plusMonths(1), BigDecimal.valueOf(0L),
-                        BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = spy(new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate,
+                disbursementDate.plusMonths(1), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L),
+                BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
 
         when(loanTransaction.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_PAYMENT);
         when(chargePaidBy.getLoanCharge()).thenReturn(charge);
@@ -230,7 +230,8 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
         Money transactionAmountMoney = Money.of(currency, transactionAmount);
         LoanPaymentAllocationRule loanPaymentAllocationRule = mock(LoanPaymentAllocationRule.class);
         LoanRepaymentScheduleInstallment installment = spy(new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate, transactionDate,
-                BigDecimal.valueOf(100L), BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+                BigDecimal.valueOf(100L), BigDecimal.valueOf(0L), chargeAmount, BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null,
+                BigDecimal.ZERO));
 
         when(loanTransaction.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_PAYMENT);
         when(chargePaidBy.getLoanCharge()).thenReturn(charge);
@@ -299,7 +300,8 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
 
         ArgumentCaptor<Money> feeCaptor = ArgumentCaptor.forClass(Money.class);
         ArgumentCaptor<Money> penaltyCaptor = ArgumentCaptor.forClass(Money.class);
-        Mockito.verify(installment, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(), penaltyCaptor.capture(), any(), any());
+        Mockito.verify(installment, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(),
+                penaltyCaptor.capture(), any(), any());
         assertEquals(2, feeCaptor.getAllValues().size());
         assertEquals(2, penaltyCaptor.getAllValues().size());
 
@@ -348,7 +350,8 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
 
         ArgumentCaptor<Money> feeCaptor = ArgumentCaptor.forClass(Money.class);
         ArgumentCaptor<Money> penaltyCaptor = ArgumentCaptor.forClass(Money.class);
-        Mockito.verify(installment, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(), penaltyCaptor.capture(), any(), any());
+        Mockito.verify(installment, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(),
+                penaltyCaptor.capture(), any(), any());
         assertEquals(2, feeCaptor.getAllValues().size());
         assertEquals(2, penaltyCaptor.getAllValues().size());
 
@@ -408,7 +411,8 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
 
         ArgumentCaptor<Money> feeCaptor = ArgumentCaptor.forClass(Money.class);
         ArgumentCaptor<Money> penaltyCaptor = ArgumentCaptor.forClass(Money.class);
-        Mockito.verify(installment2, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(), penaltyCaptor.capture(), any(), any());
+        Mockito.verify(installment2, times(2)).addToChargePortion(feeCaptor.capture(), any(), any(), any(), any(), any(),
+                penaltyCaptor.capture(), any(), any());
         assertEquals(2, feeCaptor.getAllValues().size());
         assertEquals(2, penaltyCaptor.getAllValues().size());
 
@@ -465,9 +469,9 @@ class AdvancedPaymentScheduleTransactionProcessorTest {
                 .thenReturn(List.of(PaymentAllocationType.DUE_PRINCIPAL, PaymentAllocationType.DUE_INTEREST));
 
         // Create an installment that is due
-        LoanRepaymentScheduleInstallment installment = spy(
-                new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate, transactionDate, BigDecimal.valueOf(100L),
-                        BigDecimal.valueOf(0L), BigDecimal.valueOf(100L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L), false, null, BigDecimal.ZERO));
+        LoanRepaymentScheduleInstallment installment = spy(new LoanRepaymentScheduleInstallment(loan, 1, disbursementDate, transactionDate,
+                BigDecimal.valueOf(100L), BigDecimal.valueOf(0L), BigDecimal.valueOf(100L), BigDecimal.valueOf(0L), BigDecimal.valueOf(0L),
+                false, null, BigDecimal.ZERO));
 
         // Let's set up a credit transaction so that its transaction date coincides with the payment due date
         when(loanTransaction.getTransactionDate()).thenReturn(transactionDate);

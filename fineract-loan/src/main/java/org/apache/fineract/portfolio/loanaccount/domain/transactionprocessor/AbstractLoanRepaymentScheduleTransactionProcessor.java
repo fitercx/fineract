@@ -623,7 +623,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                     Loan loan = loanTransaction.getLoan();
                     LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, (installments.size() + 1),
                             pastDueDate, transactionDate, transactionAmount.getAmount(), zeroMoney.getAmount(), zeroMoney.getAmount(),
-                            zeroMoney.getAmount(), false, null);
+                            zeroMoney.getAmount(), zeroMoney.getAmount(), false, null);
                     installment.markAsAdditional();
                     installment.addToCreditedPrincipal(transactionAmount.getAmount());
                     loan.addLoanRepaymentScheduleInstallment(installment);

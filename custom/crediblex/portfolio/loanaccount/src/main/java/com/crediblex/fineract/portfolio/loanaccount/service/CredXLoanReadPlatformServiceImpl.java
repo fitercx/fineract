@@ -1498,22 +1498,25 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal penaltyChargesOutstanding = penaltyChargesActualDue.subtract(penaltyChargesPaid);
 
                 final BigDecimal totalExpectedCostOfLoanForPeriod = interestExpectedDue.add(feeChargesExpectedDue)
-                        .add(penaltyChargesExpectedDue);
+                        .add(taxChargesExpectedDue).add(penaltyChargesExpectedDue);
 
                 final BigDecimal totalDueForPeriod = isRLoc ? principalDue : principalDue.add(totalExpectedCostOfLoanForPeriod);
 
-                BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(penaltyChargesPaid);
+                BigDecimal totalPaidForPeriod = principalPaid.add(interestPaid).add(feeChargesPaid).add(taxChargesPaid)
+                        .add(penaltyChargesPaid);
                 if (isRLoc) {
                     totalPaidForPeriod = totalPaidForPeriod.subtract(interestPaid);
                 }
-                final BigDecimal totalWaivedForPeriod = interestWaived.add(feeChargesWaived).add(penaltyChargesWaived);
+                final BigDecimal totalWaivedForPeriod = interestWaived.add(feeChargesWaived).add(taxChargesWaived)
+                        .add(penaltyChargesWaived);
                 totalWaived = totalWaived.plus(totalWaivedForPeriod);
                 final BigDecimal totalWrittenOffForPeriod = principalWrittenOff.add(interestWrittenOff).add(feeChargesWrittenOff)
-                        .add(penaltyChargesWrittenOff);
+                        .add(taxChargesWrittenOff).add(penaltyChargesWrittenOff);
                 totalWrittenOff = totalWrittenOff.plus(totalWrittenOffForPeriod);
 
                 final BigDecimal totalOutstandingForPeriod = isRLoc && obligationsMetOnDate != null ? BigDecimal.ZERO
-                        : principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding).add(penaltyChargesOutstanding);
+                        : principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding).add(taxChargesOutstanding)
+                                .add(penaltyChargesOutstanding);
 
                 totalRepaymentExpected = totalRepaymentExpected.plus(totalDueForPeriod);
                 totalRepayment = totalRepayment.plus(totalPaidForPeriod);
@@ -1534,17 +1537,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
 
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
-
-                LoanSchedulePeriodData periodData;
-
-                periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate, obligationsMetOnDate, complete,
-                        principalDue, principalPaid, principalWrittenOff, principalOutstanding, outstandingPrincipalBalanceOfLoan,
-                        interestExpectedDue, interestPaid, interestWaived, interestWrittenOff, interestOutstanding, feeChargesExpectedDue,
-                        feeChargesPaid, feeChargesWaived, feeChargesWrittenOff, feeChargesOutstanding, taxChargesExpectedDue,
-                        taxChargesPaid, taxChargesWaived, taxChargesWrittenOff, taxChargesOutstanding, penaltyChargesExpectedDue,
-                        penaltyChargesPaid, penaltyChargesWaived, penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod,
-                        totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits,
-                        isDownPayment, accrualInterest, isRLoc);
+                final LoanSchedulePeriodData periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate,
+                        obligationsMetOnDate, complete, principalDue, principalPaid, principalWrittenOff, principalOutstanding,
+                        outstandingPrincipalBalanceOfLoan, interestExpectedDue, interestPaid, interestWaived, interestWrittenOff,
+                        interestOutstanding, feeChargesExpectedDue, feeChargesPaid, feeChargesWaived, feeChargesWrittenOff,
+                        feeChargesOutstanding, taxChargesExpectedDue, taxChargesPaid, taxChargesWaived, taxChargesWrittenOff,
+                        taxChargesOutstanding, penaltyChargesExpectedDue, penaltyChargesPaid, penaltyChargesWaived,
+                        penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod, totalPaidInAdvanceForPeriod,
+                        totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits, isDownPayment, accrualInterest,
+                        isRLoc);
 
                 periods.add(periodData);
             }

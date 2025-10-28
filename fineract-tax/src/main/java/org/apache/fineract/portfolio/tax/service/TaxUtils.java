@@ -151,8 +151,8 @@ public final class TaxUtils {
         return totalAmount;
     }
 
-
-    public static BigDecimal calculateSpecifiedDueDateTaxAmount(final BigDecimal amount, final LocalDate date, final Set<TaxGroupMappings> taxGroupMappings) {
+    public static BigDecimal calculateSpecifiedDueDateTaxAmount(final BigDecimal amount, final LocalDate date,
+            final Set<TaxGroupMappings> taxGroupMappings) {
         BigDecimal totalAmount = BigDecimal.ZERO;
         if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal percentageVal = BigDecimal.ZERO;
