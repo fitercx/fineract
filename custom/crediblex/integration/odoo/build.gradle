@@ -17,11 +17,16 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-charge'))
-    implementation(project(":custom:crediblex:portfolio:loanaccount"))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract Odoo Service'
+
+group = 'com.crediblex.fineract.odoo'
+
+base {
+    archivesName = 'crediblex-fineract-odoo-service'
+}
+
+apply from: 'dependencies.gradle'

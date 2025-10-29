@@ -17,11 +17,15 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-charge'))
-    implementation(project(":custom:crediblex:portfolio:loanaccount"))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract Integration Service'
+group = 'com.crediblex.fineract.integration'
+
+base {
+    archivesName = 'crediblex-fineract-integration-starter'
+}
+
+// apply from: 'dependencies.gradle'

@@ -16,12 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.integration.job;
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-charge'))
-    implementation(project(":custom:crediblex:portfolio:loanaccount"))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+public enum CrediblexJobName {
+
+    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job");
+
+    private final String name;
+
+    CrediblexJobName(final String name) {
+        this.name = name;
+    }
+
+    @Override
+    public String toString() {
+        return this.name;
+    }
 }

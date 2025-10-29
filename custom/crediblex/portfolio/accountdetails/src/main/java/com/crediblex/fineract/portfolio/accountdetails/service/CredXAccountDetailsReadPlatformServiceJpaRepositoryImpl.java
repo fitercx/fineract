@@ -130,6 +130,14 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
         return this.jdbcTemplate.query(savingsSql, savingsAccountSummaryDataMapper, inputs); // NOSONAR
     }
 
+    /**
+     * Public method to get savings account details with linked loan information Used by external services like
+     * JournalEntryOdooTrackingService
+     */
+    public List<SavingsAccountSummaryData> getSavingsAccountDetails(final String whereClause, final Object[] inputs) {
+        return retrieveAccountDetails(whereClause, inputs);
+    }
+
     private static final class CredXLoanAccountSummaryDataMapper implements RowMapper<LoanAccountSummaryData> {
 
         public String loanAccountSummarySchema() {
@@ -485,6 +493,13 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             return smd;
         }
 
+    }
+
+    /**
+     * Public method to expose JdbcTemplate for direct queries
+     */
+    public org.springframework.jdbc.core.JdbcTemplate getJdbcTemplate() {
+        return this.jdbcTemplate;
     }
 
 }

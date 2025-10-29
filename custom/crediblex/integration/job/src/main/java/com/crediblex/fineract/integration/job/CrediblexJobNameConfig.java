@@ -16,12 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.integration.job;
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-charge'))
-    implementation(project(":custom:crediblex:portfolio:loanaccount"))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+import java.util.List;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameData;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameProvider;
+import org.apache.fineract.infrastructure.jobs.service.jobname.SimpleJobNameProvider;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class CrediblexJobNameConfig {
+
+    @Bean
+    public JobNameProvider crediblexJobNameProvider() {
+        return new SimpleJobNameProvider(List.of(new JobNameData(CrediblexJobName.ODOO_JOURNAL_ENTRIES_SYNC_JOB.name(),
+                CrediblexJobName.ODOO_JOURNAL_ENTRIES_SYNC_JOB.toString())));
+    }
 }

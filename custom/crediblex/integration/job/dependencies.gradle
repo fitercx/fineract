@@ -18,10 +18,21 @@
  */
 
 dependencies {
+    implementation(project(':fineract-core'))
     implementation(project(':fineract-provider'))
     implementation(project(':fineract-accounting'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-charge'))
-    implementation(project(":custom:crediblex:portfolio:loanaccount"))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+    implementation(project(':custom:crediblex:integration:odoo'))
+    implementation(project(':custom:crediblex:portfolio:loanaccount'))
+
+    // Spring Batch for job framework
+    implementation('org.springframework.batch:spring-batch-core')
+    implementation('org.springframework.batch:spring-batch-infrastructure')
+
+    // Spring framework dependencies
+    implementation('org.springframework.boot:spring-boot-starter')
+    implementation('org.springframework:spring-context')
+    implementation('org.springframework:spring-tx')
+
+    // Logging
+    implementation('org.slf4j:slf4j-api')
 }
