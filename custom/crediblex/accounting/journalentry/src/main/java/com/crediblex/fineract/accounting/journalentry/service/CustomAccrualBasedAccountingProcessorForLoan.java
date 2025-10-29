@@ -273,3 +273,4 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement();
     }
 }
+
