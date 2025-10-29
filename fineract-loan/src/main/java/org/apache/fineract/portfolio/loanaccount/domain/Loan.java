@@ -592,10 +592,8 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
         // Add net get net disbursal amount from charges and principal
         // For line of credit receivable, we dont post the interest to the customer
-        this.netDisbursalAmount = loanApplicationTerms.getIsReceivableLineOfCredit()
-                ? this.approvedPrincipal.subtract(loanScheduleModel.getTotalInterestCharged())
-                        .subtract(deriveSumTotalOfChargesDueAtDisbursement())
-                : this.approvedPrincipal.subtract(deriveSumTotalOfChargesDueAtDisbursement());
+        this.netDisbursalAmount = this.approvedPrincipal.subtract(deriveSumTotalOfChargesDueAtDisbursement());
+
         this.loanStatus = LoanStatus.SUBMITTED_AND_PENDING_APPROVAL;
         this.externalId = externalId;
         this.termFrequency = loanApplicationTerms.getLoanTermFrequency();
@@ -2258,7 +2256,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 outstanding = outstanding.plus(loanTransaction.getAmount(getCurrency()))
                         .minus(loanTransaction.getOverPaymentPortion(getCurrency()));
                 if (this.isReceivableLocLoan && loanTransaction.isDisbursement()) {
-                    outstanding = outstanding.add(this.getTotalInterest()).add(this.summary.getTotalFeeChargesDueAtDisbursement());
+                    outstanding = outstanding.add(this.getTotalInterest()).add(this.summary.getTotalFeeChargesOutstanding());
                 }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             } else if (loanTransaction.isChargeback() || loanTransaction.isCreditBalanceRefund()) {

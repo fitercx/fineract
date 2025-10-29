@@ -1001,7 +1001,9 @@ public class LoanApplicationTerms {
         switch (this.interestMethod) {
             case FLAT:
                 final BigDecimal interestRateForLoanTerm = calculateFlatInterestRateForLoanTerm(calculator, mc);
-                totalInterestDue = this.disbursedPrincipal.minus(totalPrincipalAccountedForInterestCalcualtion)
+                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? approvedReceivableLineAmount
+                        : disbursedPrincipal.getAmount();
+                totalInterestDue = Money.of(currency, amountForInterestCalculation).minus(totalPrincipalAccountedForInterestCalcualtion)
                         .multiplyRetainScale(interestRateForLoanTerm, mc);
 
             break;
@@ -2192,4 +2194,7 @@ public class LoanApplicationTerms {
         this.variationDays += daysToAdd;
     }
 
+    public void setApprovedPrincipal(Money approvedPrincipal) {
+        this.approvedPrincipal = approvedPrincipal;
+    }
 }

@@ -150,11 +150,6 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
 
         Money principalForThisInstallment = fixedInstallmentAmount;
 
-        if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
-            // For receivable LOC, principal is adjusted by interest portion
-            principalForThisInstallment = fixedInstallmentAmount.minus(interestForThisInstallment);
-        }
-
         // Safety check: Principal cannot be negative
         if (principalForThisInstallment.isLessThanZero()) {
             // Interest exceeds fixed installment - set principal to zero
@@ -526,12 +521,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             LoanScheduleModelPeriod installment = periods.get(periods.size() - 1);
             installment.addInterestAmount(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
             // We want the total due to be the principal only for line of credit receivable
-            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-                installment.addTotalDue(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
-                installment.addInterestDueWithoutTotalUpdate(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace().negated());
-            } else {
-                scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
-            }
+            scheduleParams.addTotalRepaymentExpected(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
             scheduleParams.addTotalCumulativeInterest(scheduleParams.getTotalOutstandingInterestPaymentDueToGrace());
 
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(Money.zero(currency));

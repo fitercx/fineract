@@ -275,11 +275,6 @@ public class LoanSummary {
         final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipalDisbursed).plus(this.totalInterestCharged)
                 .plus(this.totalFeeChargesCharged).plus(this.totalPenaltyChargesCharged).plus(this.totalTaxChargesCharged);
         this.totalExpectedRepayment = totalExpectedRepayment.getAmount();
-        if (isReceivableLineOfCredit) {
-            this.totalExpectedRepayment = this.totalExpectedRepayment.subtract(this.totalInterestCharged)
-                    .subtract(calculateTotalChargesRepaidAtDisbursement(charges, currency).getAmount());
-        }
-
         final Money totalRepayment = Money.of(currency, this.totalPrincipalRepaid).plus(this.totalInterestRepaid)
                 .plus(this.totalFeeChargesRepaid).plus(this.totalPenaltyChargesRepaid).plus(this.totalTaxChargesRepaid);
         this.totalRepayment = totalRepayment.getAmount();

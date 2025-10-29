@@ -226,6 +226,7 @@ public class LoanAssemblerImpl implements LoanAssembler {
         }
 
         final Set<LoanCharge> loanCharges = this.loanChargeAssembler.fromParsedJson(element, disbursementDetails);
+
         BigDecimal fixedPrincipalPercentagePerInstallment = fromApiJsonHelper
                 .extractBigDecimalWithLocaleNamed(LoanApiConstants.fixedPrincipalPercentagePerInstallmentParamName, element);
 

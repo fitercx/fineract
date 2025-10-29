@@ -3,6 +3,7 @@ package com.crediblex.fineract.portfolio.loanaccount.mapper;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import java.util.Optional;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTermVariationsMapper;
 import org.springframework.context.annotation.Primary;
@@ -28,6 +29,13 @@ public class CustomLoanTermVariationMapper extends LoanTermVariationsMapper {
         terms.setIsLineOfCredit(params.isPresent());
         terms.setIsReceivableLineOfCredit(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
         loan.setReceivableLocLoan(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
+
+        if (terms.getIsReceivableLineOfCredit()) {
+            terms.setDisbursedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
+            terms.setPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
+            terms.setApprovedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
+            terms.setApprovedReceivableLineAmount(params.get().getApprovedReceivableAmount());
+        }
         return terms;
     }
 }
