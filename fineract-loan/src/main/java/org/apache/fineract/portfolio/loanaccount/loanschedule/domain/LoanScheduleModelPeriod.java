@@ -55,6 +55,8 @@ public interface LoanScheduleModelPeriod {
 
     void addPrincipalAmount(Money principalDue);
 
+    void minusPrincipalAmount(Money reduction);
+
     void addInterestAmount(Money interestDue);
 
     Set<LoanInterestRecalcualtionAdditionalDetails> getLoanCompoundingDetails();
@@ -66,8 +68,4 @@ public interface LoanScheduleModelPeriod {
     BigDecimal rescheduleInterestPortion();
 
     void setRescheduleInterestPortion(BigDecimal rescheduleInterestPortion);
-
-    void addTotalDue(Money amount);
-
-    void addInterestDueWithoutTotalUpdate(Money interestDue);
 }

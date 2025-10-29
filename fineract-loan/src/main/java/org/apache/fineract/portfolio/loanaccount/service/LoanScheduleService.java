@@ -35,11 +35,11 @@ import org.apache.fineract.portfolio.loanaccount.service.schedule.LoanScheduleCo
 @RequiredArgsConstructor
 public class LoanScheduleService {
 
-    private final LoanChargeService loanChargeService;
+    protected final LoanChargeService loanChargeService;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
-    private final LoanMapper loanMapper;
+    protected final LoanMapper loanMapper;
     private final LoanTransactionProcessingService loadTransactionProcessingService;
-    private final LoanScheduleComponent loanSchedule;
+    protected final LoanScheduleComponent loanSchedule;
 
     /**
      * Ability to regenerate the repayment schedule based on the loans current details/state.

@@ -365,8 +365,10 @@ final class LoanTransactionsApiResourceSwagger {
             public String locale;
             @Schema(example = "dd MMMM yyyy")
             public String dateFormat;
-            @Schema(example = "28 June 2022")
-            public String transactionDate;
+            // Commenting this out, different apis returning different formats, string vs array from vanilla fineract
+            // implementation
+            // @Schema(example = "[2022, 6, 28]")
+            // public Integer[] transactionDate;
             @Schema(example = "50,000.00")
             public String transactionAmount;
             @Schema(example = "An optional note about why your adjusting or changing the transaction.")

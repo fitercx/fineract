@@ -113,9 +113,11 @@ public class LineOfCreditBalanceUpdateService {
         if (type.isDecrementTransaction()) {
             // Disbursement reduces available balance and increases consumed amount
             BigDecimal newAvailableBalance = currentAvailableBalance.subtract(amount);
-            BigDecimal newConsumedAmount = currentConsumedAmount.add(amount);
+            if (!type.isBalanceDecrement()) {
+                BigDecimal newConsumedAmount = currentConsumedAmount.add(amount);
+                lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
+            }
 
-            lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
 
             BigDecimal totalIncrement = type.isDisbursement() ? BigDecimal.ONE : BigDecimal.ZERO;
@@ -127,9 +129,11 @@ public class LineOfCreditBalanceUpdateService {
         } else if (type.isIncrementTransaction()) {
             // Repayments, refunds, and foreclosures increase available balance and decrease consumed amount
             BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
-            BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
+            if (!type.isBalanceIncrement()) {
+                BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
+                lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
+            }
 
-            lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
         }
     }
@@ -217,7 +221,9 @@ public class LineOfCreditBalanceUpdateService {
                             "LOC history error: Insufficient balance during re-computation for Tx ID: " + tx.getId());
                 }
                 runningAvailableBalance = runningAvailableBalance.subtract(transactionAmount);
-                runningConsumedAmount = runningConsumedAmount.add(transactionAmount);
+                if (!tx.getTransactionType().isBalanceDecrement()) {
+                    runningConsumedAmount = runningConsumedAmount.add(transactionAmount);
+                }
 
                 // Only increment drawdown count for actual disbursements, not for other decrement types
                 if (tx.getTransactionType().isDisbursement()) {
@@ -225,7 +231,10 @@ public class LineOfCreditBalanceUpdateService {
                 }
             } else if (tx.getTransactionType().isIncrementTransaction()) {
                 runningAvailableBalance = runningAvailableBalance.add(transactionAmount);
-                runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
+
+                if (!tx.getTransactionType().isBalanceIncrement()) {
+                    runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
+                }
             }
 
             tx.setBalanceBefore(balanceBefore);

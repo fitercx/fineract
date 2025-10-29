@@ -99,15 +99,8 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         addChargeOnlyRepaymentInstallmentIfRequired(charges, installments);
 
         for (final LoanRepaymentScheduleInstallment currentInstallment : installments) {
-            if (currentInstallment.getLoan().isReceivableLocLoan()) {
-                Money interestPaid = currentInstallment.getInterestPaid(currency);
-                currentInstallment.resetDerivedComponents();
-                currentInstallment.updateObligationsMet(currency, disbursementDate);
-                currentInstallment.setInterestPaid(interestPaid.getAmount());
-            } else {
-                currentInstallment.resetDerivedComponents();
-                currentInstallment.updateObligationsMet(currency, disbursementDate);
-            }
+            currentInstallment.resetDerivedComponents();
+            currentInstallment.updateObligationsMet(currency, disbursementDate);
         }
 
         // re-process loan charges over repayment periods (picking up on waived

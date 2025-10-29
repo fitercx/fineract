@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDisbursementValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDisbursementService;
@@ -13,10 +12,8 @@ public class CredibleXCustomPortfolioBeanConfiguration {
 
     @Bean
     LoanDisbursementService loanDisbursementService(LoanChargeValidator loanChargeValidator,
-            LoanDisbursementValidator loanDisbursementValidator, ReprocessLoanTransactionsService reprocessLoanTransactionsService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
-        return new CustomLoanDisbursementService(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService,
-                loanLineOfCreditParamsRepository);
+            LoanDisbursementValidator loanDisbursementValidator, ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
+        return new CustomLoanDisbursementService(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
     }
 
 }

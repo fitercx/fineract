@@ -124,6 +124,11 @@ public final class LoanScheduleModelDownPaymentPeriod implements LoanScheduleMod
     }
 
     @Override
+    public void minusPrincipalAmount(Money reduction) {
+        this.principalDue.minus(reduction);
+    }
+
+    @Override
     public void addInterestAmount(Money interestDue) {
 
     }
@@ -150,16 +155,6 @@ public final class LoanScheduleModelDownPaymentPeriod implements LoanScheduleMod
 
     @Override
     public void setRescheduleInterestPortion(BigDecimal rescheduleInterestPortion) {
-
-    }
-
-    @Override
-    public void addTotalDue(Money amount) {
-
-    }
-
-    @Override
-    public void addInterestDueWithoutTotalUpdate(Money interestDue) {
 
     }
 }
