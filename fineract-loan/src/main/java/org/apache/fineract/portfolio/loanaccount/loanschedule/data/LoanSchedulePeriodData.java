@@ -167,16 +167,15 @@ public class LoanSchedulePeriodData {
             final BigDecimal penaltyChargesWaived, final BigDecimal penaltyChargesWrittenOff, final BigDecimal penaltyChargesOutstanding,
             final BigDecimal totalPaid, final BigDecimal totalPaidInAdvanceForPeriod, final BigDecimal totalPaidLateForPeriod,
             final BigDecimal totalWaived, final BigDecimal totalWrittenOff, final BigDecimal totalCredits, final boolean isDownPayment,
-            final BigDecimal totalAccruedInterest, boolean isRLOC) {
+            final BigDecimal totalAccruedInterest) {
 
         final MathContext mc = MoneyHelper.getMathContext();
 
-        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, isRLOC ? BigDecimal.ZERO : interestDue, feeChargesDue, taxChargesDue,
-                penaltyChargesDue);
-        BigDecimal totalOutstanding = MathUtil.add(mc, principalOutstanding, isRLOC ? BigDecimal.ZERO : interestOutstanding,
-                feeChargesOutstanding, taxChargesOutstanding, penaltyChargesOutstanding);
-        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, taxChargesDue, penaltyChargesDue);
-        BigDecimal totalInstallmentAmount = MathUtil.add(mc, principalOriginalDue, isRLOC ? BigDecimal.ZERO : interestDue);
+        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, interestDue, feeChargesDue, penaltyChargesDue, taxChargesDue);
+        BigDecimal totalOutstanding = MathUtil.add(mc, principalOutstanding, interestOutstanding, feeChargesOutstanding,
+                penaltyChargesOutstanding, taxChargesOutstanding);
+        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, penaltyChargesDue, taxChargesDue);
+        BigDecimal totalInstallmentAmount = MathUtil.add(mc, principalOriginalDue, interestDue);
 
         return builder().period(periodNumber) //
                 .fromDate(fromDate) //
