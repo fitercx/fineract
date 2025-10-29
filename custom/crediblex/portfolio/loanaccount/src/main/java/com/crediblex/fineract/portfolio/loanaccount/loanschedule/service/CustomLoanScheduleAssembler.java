@@ -7,21 +7,23 @@ import static org.apache.fineract.portfolio.loanaccount.domain.Loan.EXPECTED_DIS
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.LOCALE;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS;
 
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepository;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
+import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.apache.fineract.portfolio.calendar.domain.CalendarInstanceRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
@@ -29,15 +31,18 @@ import org.apache.fineract.portfolio.client.domain.ClientRepositoryWrapper;
 import org.apache.fineract.portfolio.floatingrates.service.FloatingRatesReadPlatformService;
 import org.apache.fineract.portfolio.group.domain.GroupRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanOfficerAssignmentHistory;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.AprCalculator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleGeneratorFactory;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.PaymentPeriodsInOneYearCalculator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleAssembler;
 import org.apache.fineract.portfolio.loanaccount.serialization.VariableLoanScheduleFromApiJsonValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
@@ -59,7 +64,7 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
-    private LoanLineOfCreditParamsRepository lineOfCreditParamsRepository;
+    private final PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator;
 
     public CustomLoanScheduleAssembler(FromJsonHelper fromApiJsonHelper, LoanProductRepository loanProductRepository,
             ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository, LoanChargeAssembler loanChargeAssembler,
@@ -72,26 +77,69 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanDisbursementDetailsAssembler loanDisbursementDetailsAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDisbursementService loanDisbursementService, LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
-            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil, LoanLineOfCreditParamsRepository lineOfCreditParamsRepository) {
+            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil,
+            PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator) {
         super(fromApiJsonHelper, loanProductRepository, applicationCurrencyRepository, loanChargeAssembler, loanScheduleFactory,
                 aprCalculator, calendarRepository, holidayRepository, configurationDomainService, clientRepository, groupRepository,
                 workingDaysRepository, floatingRatesReadPlatformService, variableLoanScheduleFromApiJsonValidator,
                 calendarInstanceRepository, loanUtilService, loanDisbursementDetailsAssembler, loanRepositoryWrapper,
                 defaultLoanLifecycleStateMachine, loanAccrualsProcessingService, loanDisbursementService, loanChargeService,
                 loanScheduleService, relatedDetailUpdateUtil);
-        this.lineOfCreditParamsRepository = lineOfCreditParamsRepository;
+        this.paymentPeriodsInOneYearCalculator = paymentPeriodsInOneYearCalculator;
     }
 
     @Override
     protected LoanApplicationTerms assembleLoanApplicationTermsFrom(JsonElement element, LoanProduct loanProduct) {
+
+        boolean isLineOfCredit = loanProduct.isLocEnabled() && element.getAsJsonObject().has("lineOfCreditId");
+        boolean isReceivableLOC = isLineOfCredit && loanProduct.isEnableLocReceivable();
+
+        if (isReceivableLOC) {
+            LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
+
+            BigDecimal approvedAmount = element.getAsJsonObject().get("approvedReceivableAmount").getAsBigDecimal();
+            term.setPrincipal(Money.of(term.getCurrency(), approvedAmount));
+            term.setDisbursedPrincipal(Money.of(term.getCurrency(), approvedAmount));
+
+            final DefaultScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
+            LocalDate loanEndDate = scheduledDateGenerator.getLastRepaymentDate(term, term.getHolidayDetailDTO());
+            LoanTermVariationsData lastDueDateVariation = term.getLoanTermVariations().fetchLoanTermDueDateVariationsData(loanEndDate);
+            if (lastDueDateVariation != null) {
+                loanEndDate = lastDueDateVariation.getDateValue();
+            }
+            term.updateLoanEndDate(loanEndDate);
+            MathContext mc = MoneyHelper.getMathContext();
+            Money totalInterestChargable = term.calculateTotalInterestCharged(paymentPeriodsInOneYearCalculator, mc);
+
+            BigDecimal chargesDueAtTimeOfDisbursement = BigDecimal.ZERO;
+
+            // There is no multidisursal here so multidisbursal detail will be empty list
+            final Set<LoanCharge> loanCharges = loanChargeAssembler.fromParsedJson(element, new ArrayList<>());
+            for (final LoanCharge loanCharge : loanCharges) {
+                if (loanCharge.isDueAtDisbursement() || loanCharge.isInstalmentFee()) {
+                    chargesDueAtTimeOfDisbursement = chargesDueAtTimeOfDisbursement.add(loanCharge.amount());
+
+                    if (loanCharge.hasTax()) {
+                        chargesDueAtTimeOfDisbursement = chargesDueAtTimeOfDisbursement.add(loanCharge.getTaxAmount());
+                    }
+                }
+            }
+
+            BigDecimal approvedReceivableAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("approvedReceivableAmount",
+                    element);
+
+            BigDecimal netDisbursalAmount = approvedReceivableAmount.subtract(totalInterestChargable.getAmount())
+                    .subtract(chargesDueAtTimeOfDisbursement);
+            element.getAsJsonObject().addProperty("principal", netDisbursalAmount);
+
+        }
+
         LoanApplicationTerms terms = super.assembleLoanApplicationTermsFrom(element, loanProduct);
 
-        if (loanProduct.isLocEnabled() && element.getAsJsonObject().has("lineOfCreditId")) {
-            terms.setIsLineOfCredit(true);
-
-            if (loanProduct.isEnableLocReceivable()) {
-                terms.setIsReceivableLineOfCredit(true);
-            }
+        terms.setIsLineOfCredit(true);
+        if (isReceivableLOC) {
+            terms.setIsReceivableLineOfCredit(true);
+            terms.setApprovedReceivableLineAmount(element.getAsJsonObject().get("approvedReceivableAmount").getAsBigDecimal());
         }
 
         return terms;
@@ -101,10 +149,6 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
     public Pair<Loan, Map<String, Object>> assembleLoanApproval(AppUser currentUser, JsonCommand command, Long loanId) {
         final JsonArray disbursementDataArray = command.arrayOfParameterNamed(LoanApiConstants.disbursementDataParameterName);
         final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-
-        Optional<LoanLineOfCreditParams> lineOfCreditParams = lineOfCreditParamsRepository.findByLoanId(loanId);
-        boolean isReceivableLOC = lineOfCreditParams.isPresent()
-                && lineOfCreditParams.get().getLineOfCredit().getProductType().isReceivable();
 
         final Map<String, Object> actualChanges = new HashMap<>();
         defaultLoanLifecycleStateMachine.transition(LoanEvent.LOAN_APPROVED, loan);
@@ -163,15 +207,6 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
                 loanAccrualsProcessingService.reprocessExistingAccruals(loan);
             }
         }
-
-        // For LOC, dont reset the amount with approved principal, use approved principal less the interest which will
-        // be paid early
-        loan.adjustNetDisbursalAmount(
-                isReceivableLOC
-                        ? loan.getApprovedPrincipal()
-                                .subtract(loan.getRepaymentScheduleInstallments().stream()
-                                        .map(LoanRepaymentScheduleInstallment::getInterestCharged).reduce(BigDecimal.ZERO, BigDecimal::add))
-                        : loan.getApprovedPrincipal());
 
         return Pair.of(loan, actualChanges);
     }

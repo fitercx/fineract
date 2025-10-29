@@ -30,7 +30,6 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuild
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
-import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -41,7 +40,6 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.transaction
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
-import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
@@ -126,7 +124,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
-    private final JdbcTemplate jdbcTemplate;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final StandingInstructionRepository standingInstructionRepository;
@@ -182,7 +179,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 loanScheduleService, loanChargeValidator, loanOfficerService, reprocessLoanTransactionsService, loanAccountService,
                 journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService,
                 fineractProperties);
-        this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
         this.standingInstructionRepository = standingInstructionRepository;
@@ -200,7 +196,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
         Loan loan = loanAssembler.assembleFrom(loanId);
-        final MonetaryCurrency currency = loan.getCurrency();
+
         if (loan.loanProduct().isDisallowExpectedDisbursements()) {
             List<LoanDisbursementDetails> filteredList = loan.getDisbursementDetails().stream()
                     .filter(disbursementDetails -> disbursementDetails.actualDisbursementDate() == null).toList();
@@ -268,48 +264,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             Money amountToDisburse = disburseAmount; // Use the calculated amount directly
 
-            // --- BEGIN Receivable LOC custom capping logic (replaces summary-based approach) ---
-            if (isReceivableLineOfCredit) {
-                LoanLineOfCreditParams locParams = lineOfCreditParams.get();
-                BigDecimal amountAfterAdvance = locParams.getAmountAfterAdvance();
-                if (amountAfterAdvance != null) {
-                    BigDecimal feesDueAtDisbursement = loan.getActiveCharges().stream().filter(LoanCharge::isDueAtDisbursement) // due
-                                                                                                                                // at
-                                                                                                                                // disbursement
-                            .filter(LoanCharge::isChargePending) // not yet paid
-                            .map(LoanCharge::amountOutstanding) // outstanding amount
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                    // Compute scheduled interest (pre-disbursement schedule already exists). If schedule empty,
-                    // interest=0.
-                    BigDecimal scheduledInterest = loan.getRepaymentScheduleInstallments().stream()
-                            .map(i -> i.getInterestCharged(currency).getAmount()).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-                    BigDecimal expectedDisbursementAmount = amountAfterAdvance.subtract(scheduledInterest).subtract(feesDueAtDisbursement);
-
-                    if (expectedDisbursementAmount.compareTo(BigDecimal.ZERO) < 0) {
-                        throw new PlatformDataIntegrityException("amount.after.advance.too.low",
-                                "The value of Amount After Advance (" + amountAfterAdvance
-                                        + ") is too low to cover the fees at disbursement (" + feesDueAtDisbursement
-                                        + ") and scheduled interest (" + scheduledInterest + "). Increase Amount After Advance value.",
-                                "amountAfterAdvance", amountAfterAdvance);
-                    }
-
-                    Money expectedMoney = Money.of(loan.getCurrency(), expectedDisbursementAmount);
-
-                    if (amountToDisburse.isGreaterThan(expectedMoney)) {
-                        amountToDisburse = expectedMoney;
-                    }
-                } else {
-                    log.debug("Receivable LOC has null amountAfterAdvance for loan {} – skipping capping logic", loan.getId());
-                }
-            }
-            // --- END Receivable LOC custom capping logic ---
-
             boolean recalculateSchedule = amountBeforeAdjust.isNotEqualTo(loan.getPrincipal());
             final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
-            if (loan.isTopup() && !isReceivableLineOfCredit && loan.getClientId() != null) {
+            if (loan.isTopup() && loan.getClientId() != null) {
                 final BigDecimal loanOutstanding = loanApplicationValidator.validateTopupLoan(loan, actualDisbursementDate);
 
                 amountToDisburse = disburseAmount.minus(loanOutstanding);
@@ -359,12 +317,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isInterestBearingAndInterestRecalculationEnabled() || downPaymentEnabled) {
                 createAndSaveLoanScheduleArchive(loan, scheduleGeneratorDTO);
             }
+            loan.getSummary().setReceivableLineOfCredit(isReceivableLineOfCredit);
             disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
                     scheduleGeneratorDTO);
-
-            if (!isReceivableLineOfCredit) {
-                loan.adjustNetDisbursalAmount(amountToDisburse.getAmount());
-            }
 
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
 
@@ -694,16 +649,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
-            final BigDecimal amount = result.getChanges().get("eventAmount") != null
-                    ? new BigDecimal(result.getChanges().get("eventAmount").toString())
-                    : BigDecimal.ZERO;
+            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+            BigDecimal amount = loan.getPrincipal().getAmount();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
+            loan.setIsRestructured(Boolean.TRUE.equals(isRestructured));
+            loan.setIsForcedClosure(Boolean.TRUE.equals(isForcedClosure));
 
-            // TODO Look at loc foreclosure
-            jdbcTemplate.update("UPDATE m_loan SET is_forced_closure = ?, is_restructured = ? WHERE id = ?",
-                    Boolean.TRUE.equals(isForcedClosure), Boolean.TRUE.equals(isRestructured), loanId);
+            loanRepositoryWrapper.save(loan);
         }
 
         return result;

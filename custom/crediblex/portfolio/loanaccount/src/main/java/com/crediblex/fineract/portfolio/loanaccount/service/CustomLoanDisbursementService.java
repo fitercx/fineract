@@ -1,9 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import java.time.LocalDate;
-import java.util.Optional;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -18,13 +15,9 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 
 public class CustomLoanDisbursementService extends LoanDisbursementService {
 
-    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
-
     public CustomLoanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator,
-            ReprocessLoanTransactionsService reprocessLoanTransactionsService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
         super(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
-        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
     }
 
     public void handleDisbursementTransaction(final Loan loan, final LocalDate disbursedOn, final PaymentDetail paymentDetail) {
@@ -34,7 +27,6 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
         final Money totalFeeChargesDueAtDisbursement = loan.getSummary().getTotalFeeChargesDueAtDisbursement(loan.getCurrency());
 
         Money feeAndPenaltyPortion = Money.zero(loan.getCurrency());
-        Money interestPortion = Money.zero(loan.getCurrency()); // upfront interest for receivable LOC
         Money taxesPaid = Money.zero(loan.getCurrency());
 
         final LoanTransaction chargesPayment = LoanTransaction.repaymentAtDisbursement(loan.getOffice(), feeAndPenaltyPortion,
@@ -70,19 +62,9 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
             }
         }
 
-        // Separate handling: if loan is linked to a Line of Credit with receivable product type, collect upfront
-        // interest
-        Optional<LoanLineOfCreditParams> params = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-        if (params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable()) {
-            // Upfront interest collection (discount) equals total interest over the schedule
-            interestPortion = Money.of(loan.getCurrency(), loan.getTotalInterest());
-            loan.getRepaymentScheduleInstallments()
-                    .forEach(t -> t.payInterestComponent(disbursedOn, Money.of(loan.getCurrency(), t.getInterestCharged())));
-        }
-
-        if (feeAndPenaltyPortion.isGreaterThanZero() || interestPortion.isGreaterThanZero()) {
+        if (feeAndPenaltyPortion.isGreaterThanZero()) {
             final Money zero = Money.zero(loan.getCurrency());
-            chargesPayment.updateComponentsAndTotal(zero, interestPortion, feeAndPenaltyPortion, zero);
+            chargesPayment.updateComponentsAndTotal(zero, zero, feeAndPenaltyPortion, zero);
             chargesPayment.updateLoan(loan);
             loan.addLoanTransaction(chargesPayment);
             loan.updateLoanOutstandingBalances();

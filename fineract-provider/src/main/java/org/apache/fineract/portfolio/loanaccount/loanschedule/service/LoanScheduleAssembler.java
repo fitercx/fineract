@@ -142,10 +142,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class LoanScheduleAssembler {
 
-    private final FromJsonHelper fromApiJsonHelper;
+    protected final FromJsonHelper fromApiJsonHelper;
     private final LoanProductRepository loanProductRepository;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
-    private final LoanChargeAssembler loanChargeAssembler;
+    protected final LoanChargeAssembler loanChargeAssembler;
     private final LoanScheduleGeneratorFactory loanScheduleFactory;
     private final AprCalculator aprCalculator;
     private final CalendarRepository calendarRepository;

@@ -17,10 +17,12 @@ import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.apache.fineract.accounting.journalentry.data.ChargePaymentDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
+import org.apache.fineract.infrastructure.event.business.domain.journalentry.LoanJournalEntryCreatedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepository;
@@ -35,6 +37,9 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 
 public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
 
+    private final JournalEntryRepository journalEntryRepository;
+    private final BusinessEventNotifierService businessEventNotifierService;
+
     public CustomAccountingProcessorHelper(JournalEntryRepository glJournalEntryRepository,
             ProductToGLAccountMappingRepository accountMappingRepository,
             FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository,
@@ -44,6 +49,8 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
         super(glJournalEntryRepository, accountMappingRepository, financialActivityAccountRepository, closureRepository,
                 glAccountRepository, officeRepository, accountTransfersReadPlatformService, chargeRepositoryWrapper,
                 businessEventNotifierService);
+        this.journalEntryRepository = glJournalEntryRepository;
+        this.businessEventNotifierService = businessEventNotifierService;
     }
 
     @Override
@@ -214,5 +221,19 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                     totalCreditedAmount, totalAmount);
         }
 
+    }
+
+    @Override
+    public JournalEntry persistJournalEntry(JournalEntry journalEntry) {
+        boolean isNew = journalEntry.isNew();
+        JournalEntry savedJournalEntry = this.journalEntryRepository.saveAndFlush(journalEntry);
+        if (isNew) {
+            if (journalEntry.getLoanTransactionId() != null) {
+                businessEventNotifierService.notifyPostBusinessEvent(new LoanJournalEntryCreatedBusinessEvent(savedJournalEntry));
+            } else if (journalEntry.getSavingsTransactionId() != null) {
+                businessEventNotifierService.notifyPostBusinessEvent(new SavingsJournalEntryCreatedBusinessEvent(savedJournalEntry));
+            }
+        }
+        return savedJournalEntry;
     }
 }
