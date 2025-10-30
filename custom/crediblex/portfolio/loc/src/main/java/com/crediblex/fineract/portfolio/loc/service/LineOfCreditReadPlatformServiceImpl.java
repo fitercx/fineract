@@ -259,26 +259,57 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
         public String schema() {
 
-            return "loc.id as locId,loc.external_id as locExternalId, "
-                    + "loc.maximum_amount as locCreditLimit, loc.available_balance as locBalance, "
-                    + "loc.consumed_amount as locUtilizationAmount, loc.product_type as locType, loc.va as accountNumber, "
-                    + "loc.activation_status as locActivationStatus, "
+            return """
+                    loc.id as locId,
+                    loc.external_id as locExternalId,
+                    loc.maximum_amount as locCreditLimit,
+                    loc.available_balance as locBalance,
+                    loc.consumed_amount as locUtilizationAmount,
+                    loc.product_type as locType,
+                    loc.va as accountNumber,
+                    loc.activation_status as locActivationStatus,
+                    l.id as loanId,
+                    l.account_no as loanAccountNo,
+                    lp.name as loanProductName,
+                    l.principal_disbursed_derived as loanAmount,
+                    l.total_outstanding_derived as loanOutstandingBalance,
+                    l.total_repayment_derived as loanAmountPaid,
+                    l.loan_status_id as loanStatusId,
+                    l.external_id as loanExternalId,
+                    l.currency_digits as loanCurrencyDigits,
+                    l.currency_multiplesof as loanInMultiplesOf,
+                    l.submittedon_date as loanSubmittedOnDate,
+                    l.approvedon_date as loanApprovedOnDate,
+                    l.expected_disbursedon_date as loanExpectedDisbursementDate,
+                    l.disbursedon_date as loanActualDisbursementDate,
+                    l.closedon_date as loanClosedOnDate,
+                    l.net_disbursal_amount as loanNetDisbursedAmount,
+                    l.fixed_emi_amount as loanInstallmentAmount,
+                    l.total_overpaid_derived as totalOverpaidDerived,
+                    mlcp.invoice_no as invoiceNumber,
+                    STRING_AGG(mlocab.name, ', ') as buyerSupplier
+                    FROM m_line_of_credit loc
+                    LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
+                    LEFT JOIN m_loan l ON l.id = mlcp.loan_id
+                    LEFT JOIN m_product_loan lp ON lp.id = l.product_id
+                    LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
+                    LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
 
-                    // Essential Loan fields
-                    + "l.id as loanId, l.account_no as loanAccountNo, lp.name as loanProductName, "
-                    + "l.principal_disbursed_derived as loanAmount, l.total_outstanding_derived as loanOutstandingBalance, "
-                    + "l.total_repayment_derived as loanAmountPaid, l.loan_status_id as loanStatusId, "
+                    """;
+        }
 
-                    // Loan fields
-                    + "l.external_id as loanExternalId, " + "l.loan_status_id as loanStatusId,  "
-                    + "l.currency_digits as loanCurrencyDigits, l.currency_multiplesof as loanInMultiplesOf, "
-                    + " l.submittedon_date as loanSubmittedOnDate, "
-                    + "l.approvedon_date as loanApprovedOnDate, l.expected_disbursedon_date as loanExpectedDisbursementDate, "
-                    + "l.disbursedon_date as loanActualDisbursementDate, l.closedon_date as loanClosedOnDate, "
-                    + "l.net_disbursal_amount as loanNetDisbursedAmount, l.fixed_emi_amount as loanInstallmentAmount "
-
-                    + "FROM m_line_of_credit loc " + "LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id "
-                    + "LEFT JOIN m_loan l ON l.id = mlcp.loan_id " + "LEFT JOIN m_product_loan lp ON lp.id = l.product_id ";
+        public String groupBy() {
+            return """
+                      GROUP BY
+                    loc.id, loc.external_id, loc.maximum_amount, loc.available_balance,
+                    loc.consumed_amount, loc.product_type, loc.va, loc.activation_status,
+                    l.id, l.account_no, lp.name, l.principal_disbursed_derived,
+                    l.total_outstanding_derived, l.total_repayment_derived, l.loan_status_id,
+                    l.external_id, l.currency_digits, l.currency_multiplesof,
+                    l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
+                    l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
+                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived
+                    """;
         }
 
         @Override
@@ -347,13 +378,21 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             // Create loan status enum
             final LoanStatusEnumData loanStatus = loanStatusId != null ? LoanEnumerations.status(loanStatusId) : null;
 
+            final String invoiceNumber = rs.getString("invoiceNumber");
+            final BigDecimal totalOverpaidDerived = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalOverpaidDerived");
+            final String buyerSupplierDetail = rs.getString("buyerSupplier");
+
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
                     null, null, null, closedOnDate, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
             // Create simplified loan summary data with essential fields only
-            return new LoanAccountSummaryData(id, accountNo, null, null, loanProductName, null, loanStatus, null, null, null, timeline,
-                    false, loanAmount, outstandingBalance, amountPaid);
+            LoanAccountSummaryData summaryData = new LoanAccountSummaryData(id, accountNo, null, null, loanProductName, null, loanStatus,
+                    null, null, null, timeline, false, loanAmount, outstandingBalance, amountPaid);
+            summaryData.setInvoiceNumber(invoiceNumber);
+            summaryData.setTotalOverPaidDerived(totalOverpaidDerived);
+            summaryData.setSupplierBuyerName(buyerSupplierDetail);
+            return summaryData;
         }
 
         private EnumOptionData getActivationStatusEnumOptionData(String status) {
@@ -436,7 +475,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     public List<LineOfCreditWithLoansData> retrieveLineOfCreditWithLoansForClient(Long clientId) {
 
         final LineOfCreditWithLoansMapper mapper = new LineOfCreditWithLoansMapper(); // Simple query for listing
-        final String sql = "SELECT " + mapper.schema() + " WHERE loc.client_id = ? ORDER BY loc.id, l.id";
+        final String sql = "SELECT " + mapper.schema() + " WHERE loc.client_id = ? " + mapper.groupBy() + " ORDER BY loc.id, l.id";
 
         return this.jdbcTemplate.query(sql, mapper, clientId);
     }
