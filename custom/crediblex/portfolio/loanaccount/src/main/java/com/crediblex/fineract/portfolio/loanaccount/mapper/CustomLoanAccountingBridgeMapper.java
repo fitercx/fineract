@@ -164,6 +164,24 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
                         loanChargePaidData.setTaxGroupId(loanCharge.getCharge().getTaxGroup().getId());
                         loanChargePaidData.setTaxGroupName(loanCharge.getCharge().getTaxGroup().getName());
                     }
+                } else if (loanCharge.hasTax() && loanCharge.isSpecifiedDueDate()) {
+                    final BigDecimal taxAmount = chargePaidBy.getTaxAmount();
+                    if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        final TaxGroupMappings taxGroupMappings = loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().stream()
+                                .findFirst()
+                                .orElseThrow(() -> new GeneralPlatformDomainRuleException(
+                                        "error.msg.loan.charge.paid.by.tax.group.mapping.not.found",
+                                        "Tax group mapping not found for tax group: " + loanCharge.getCharge().getTaxGroup().getName()));
+                        final TaxComponent taxComponent = taxGroupMappings.getTaxComponent();
+                        final Long creditGLAccountId = taxComponent.getCreditAccount().getId();
+                        final Long debitGLAccountId = taxComponent.getDebitAccount().getId();
+                        loanChargePaidData.markAsApplicableToSpecifiedDueDateTaxes();
+                        loanChargePaidData.setCreditGLAccountId(creditGLAccountId);
+                        loanChargePaidData.setDebitGLAccountId(debitGLAccountId);
+                        loanChargePaidData.setTaxAmount(taxAmount);
+                        loanChargePaidData.setTaxGroupId(loanCharge.getCharge().getTaxGroup().getId());
+                        loanChargePaidData.setTaxGroupName(loanCharge.getCharge().getTaxGroup().getName());
+                    }
                 }
                 loanChargesPaidData.add(loanChargePaidData);
             }

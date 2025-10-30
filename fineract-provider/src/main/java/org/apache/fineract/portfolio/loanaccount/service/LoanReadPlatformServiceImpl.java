@@ -497,8 +497,8 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
         return new LoanTransactionData(null, null, null, transactionType, null, currencyData, earliestUnpaidInstallmentDate, totalAdjusted,
                 loan.getNetDisbursalAmount(), outstandingAmounts.principal().getAmount(), outstandingAmounts.interest().getAmount(),
                 outstandingAmounts.feeCharges().getAmount().subtract(adjustedChargeAmount), outstandingAmounts.penaltyCharges().getAmount(),
-                BigDecimal.ZERO, null, unrecognizedIncomePortion, paymentOptions, ExternalId.empty(), null, null, outstandingLoanBalance,
-                false, loanId, loan.getExternalId());
+                outstandingAmounts.taxCharges().getAmount(), null, unrecognizedIncomePortion, paymentOptions, ExternalId.empty(), null,
+                null, outstandingLoanBalance, false, loanId, loan.getExternalId());
     }
 
     private BigDecimal adjustPrepayInstallmentCharge(Loan loan, final LocalDate onDate) {

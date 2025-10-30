@@ -21,6 +21,7 @@ public class CustomLoanChargePaidByDTO extends LoanChargePaidByDTO {
     private Long creditGLAccountId;
     private Long debitGLAccountId;
     private boolean applicableToFactoRateFeeTaxes;
+    private boolean applicableToSpecifiedDueDateTaxes;
 
     // Calculated VAT breakdown
     private BigDecimal baseAmount;
@@ -28,6 +29,10 @@ public class CustomLoanChargePaidByDTO extends LoanChargePaidByDTO {
 
     public void markAsApplicableToFactoRateFeeTaxes() {
         this.applicableToFactoRateFeeTaxes = true;
+    }
+
+    public void markAsApplicableToSpecifiedDueDateTaxes() {
+        this.applicableToSpecifiedDueDateTaxes = true;
     }
 
 }

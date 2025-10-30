@@ -1214,9 +1214,10 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
                 BigDecimal interest = BigDecimal.ZERO;
                 BigDecimal feeCharges = BigDecimal.ZERO;
                 BigDecimal penaltyCharges = BigDecimal.ONE;
+                BigDecimal taxCharges = BigDecimal.ZERO;
                 final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
                 LoanRepaymentScheduleInstallment newEntry = new LoanRepaymentScheduleInstallment(loan, installments.size() + 1,
-                        lastInstallment.getDueDate(), lastChargeDate, principal, interest, feeCharges, penaltyCharges,
+                        lastInstallment.getDueDate(), lastChargeDate, principal, interest, feeCharges, penaltyCharges, taxCharges,
                         recalculatedInterestComponent, compoundingDetails);
                 loan.addLoanRepaymentScheduleInstallment(newEntry);
             }

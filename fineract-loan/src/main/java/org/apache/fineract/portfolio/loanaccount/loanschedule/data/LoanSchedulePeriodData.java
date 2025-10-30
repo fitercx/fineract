@@ -171,10 +171,10 @@ public class LoanSchedulePeriodData {
 
         final MathContext mc = MoneyHelper.getMathContext();
 
-        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, interestDue, feeChargesDue, penaltyChargesDue);
+        BigDecimal totalDue = MathUtil.add(mc, principalOriginalDue, interestDue, feeChargesDue, penaltyChargesDue, taxChargesDue);
         BigDecimal totalOutstanding = MathUtil.add(mc, principalOutstanding, interestOutstanding, feeChargesOutstanding,
-                penaltyChargesOutstanding);
-        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, penaltyChargesDue);
+                penaltyChargesOutstanding, taxChargesOutstanding);
+        BigDecimal totalActualCostOfLoanForPeriod = MathUtil.add(mc, interestDue, feeChargesDue, penaltyChargesDue, taxChargesDue);
         BigDecimal totalInstallmentAmount = MathUtil.add(mc, principalOriginalDue, interestDue);
 
         return builder().period(periodNumber) //

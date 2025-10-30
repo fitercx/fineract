@@ -239,7 +239,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
     public LoanRepaymentScheduleInstallment(final Loan loan, final Integer installmentNumber, final LocalDate fromDate,
             final LocalDate dueDate, final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
-            final BigDecimal penaltyCharges, final boolean recalculatedInterestComponent,
+            final BigDecimal penaltyCharges, final BigDecimal taxCharges, final boolean recalculatedInterestComponent,
             final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails) {
         this.loan = loan;
         this.installmentNumber = installmentNumber;
@@ -249,6 +249,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         this.interestCharged = defaultToNullIfZero(interest);
         this.feeChargesCharged = defaultToNullIfZero(feeCharges);
         this.penaltyCharges = defaultToNullIfZero(penaltyCharges);
+        this.taxChargesCharged = defaultToNullIfZero(taxCharges);
         this.obligationsMet = false;
         this.recalculatedInterestComponent = recalculatedInterestComponent;
         if (compoundingDetails != null) {
@@ -840,11 +841,18 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
     }
 
     public void addToChargePortion(final Money feeChargesDue, final Money feeChargesWaived, final Money feeChargesWrittenOff,
-            final Money penaltyChargesDue, final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff) {
+            final Money taxChargesDue, final Money taxChargesWaived, final Money taxChargesWrittenOff, final Money penaltyChargesDue,
+            final Money penaltyChargesWaived, final Money penaltyChargesWrittenOff) {
         this.feeChargesCharged = MathUtil.zeroToNull(MathUtil.add(MathUtil.toBigDecimal(feeChargesDue), this.feeChargesCharged));
         this.feeChargesWaived = MathUtil.zeroToNull(MathUtil.add(MathUtil.toBigDecimal(feeChargesWaived), this.feeChargesWaived));
         this.feeChargesWrittenOff = MathUtil
                 .zeroToNull(MathUtil.add(MathUtil.toBigDecimal(feeChargesWrittenOff), this.feeChargesWrittenOff));
+
+        this.taxChargesCharged = MathUtil.zeroToNull(MathUtil.add(MathUtil.toBigDecimal(taxChargesDue), this.taxChargesCharged));
+        this.taxChargesWaived = MathUtil.zeroToNull(MathUtil.add(MathUtil.toBigDecimal(taxChargesWaived), this.taxChargesWaived));
+        this.taxChargesWrittenOff = MathUtil
+                .zeroToNull(MathUtil.add(MathUtil.toBigDecimal(taxChargesWrittenOff), this.taxChargesWrittenOff));
+
         this.penaltyCharges = MathUtil.zeroToNull(MathUtil.add(MathUtil.toBigDecimal(penaltyChargesDue), this.penaltyCharges));
         this.penaltyChargesWaived = MathUtil
                 .zeroToNull(MathUtil.add(MathUtil.toBigDecimal(penaltyChargesWaived), this.penaltyChargesWaived));

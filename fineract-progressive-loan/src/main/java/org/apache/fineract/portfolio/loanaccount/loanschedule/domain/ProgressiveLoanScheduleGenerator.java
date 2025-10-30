@@ -212,6 +212,7 @@ public class ProgressiveLoanScheduleGenerator implements LoanScheduleGenerator {
             }
             result //
                     .plusFeeCharges(installment.getFeeChargesOutstanding(currency))
+                    .plusTaxCharges(installment.getTaxChargesOutstanding(currency))
                     .plusPenaltyCharges(installment.getPenaltyChargesOutstanding(currency));
         });
 

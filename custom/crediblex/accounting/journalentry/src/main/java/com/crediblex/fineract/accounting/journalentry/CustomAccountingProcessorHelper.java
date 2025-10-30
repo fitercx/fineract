@@ -108,10 +108,12 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                         chargePaymentDTO.setDebitGLAccountId(loanChargePaidByDTO.getDebitGLAccountId());
                         chargePaymentDTO.setCreditGLAccountId(loanChargePaidByDTO.getCreditGLAccountId());
                         chargePaymentDTO.setApplicableToFactoRateFeeTaxes(loanChargePaidByDTO.isApplicableToFactoRateFeeTaxes());
+                        chargePaymentDTO.setApplicableToSpecifiedDueDateTaxes(loanChargePaidByDTO.isApplicableToSpecifiedDueDateTaxes());
                     }
                     if (isPenalty) {
                         penaltyPaymentDetails.add(chargePaymentDTO);
-                    } else if (chargePaymentDTO.isApplicableToFactoRateFeeTaxes()) {
+                    } else if (chargePaymentDTO.isApplicableToFactoRateFeeTaxes()
+                            || chargePaymentDTO.isApplicableToSpecifiedDueDateTaxes()) {
                         taxPaymentDetails.add(chargePaymentDTO);
                     } else {
                         feePaymentDetails.add(chargePaymentDTO);

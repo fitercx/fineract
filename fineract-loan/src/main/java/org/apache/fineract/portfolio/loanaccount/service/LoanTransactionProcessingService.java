@@ -140,14 +140,16 @@ public class LoanTransactionProcessingService {
         Money totalInterest = Money.zero(loan.getCurrency());
         Money feeCharges = Money.zero(loan.getCurrency());
         Money penaltyCharges = Money.zero(loan.getCurrency());
+        Money taxCharges = Money.zero(loan.getCurrency());
         List<LoanRepaymentScheduleInstallment> repaymentSchedule = loan.getRepaymentScheduleInstallments();
         for (final LoanRepaymentScheduleInstallment scheduledRepayment : repaymentSchedule) {
             totalPrincipal = totalPrincipal.plus(scheduledRepayment.getPrincipalOutstanding(loan.getCurrency()));
             totalInterest = totalInterest.plus(scheduledRepayment.getInterestOutstanding(loan.getCurrency()));
             feeCharges = feeCharges.plus(scheduledRepayment.getFeeChargesOutstanding(loan.getCurrency()));
             penaltyCharges = penaltyCharges.plus(scheduledRepayment.getPenaltyChargesOutstanding(loan.getCurrency()));
+            taxCharges = taxCharges.plus(scheduledRepayment.getTaxChargesOutstanding(loan.getCurrency()));
         }
         return new OutstandingAmountsDTO(totalPrincipal.getCurrency()).principal(totalPrincipal).interest(totalInterest)
-                .feeCharges(feeCharges).penaltyCharges(penaltyCharges);
+                .feeCharges(feeCharges).penaltyCharges(penaltyCharges).taxCharges(taxCharges);
     }
 }
