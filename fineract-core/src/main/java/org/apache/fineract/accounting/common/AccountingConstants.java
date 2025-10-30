@@ -110,7 +110,7 @@ public final class AccountingConstants {
         INCOME_FROM_GOODWILL_CREDIT_INTEREST(19), //
         INCOME_FROM_GOODWILL_CREDIT_FEES(20), //
         INCOME_FROM_GOODWILL_CREDIT_PENALTY(21), //
-        LIABILITY_FROM_TAXES(22); //
+        LIABILITY_FROM_TAXES(22), DEFERRED_INCOME(23); //
 
         private final Integer value;
 
@@ -176,7 +176,8 @@ public final class AccountingConstants {
         INCOME_FROM_GOODWILL_CREDIT_PENALTY("incomeFromGoodwillCreditPenaltyAccountId"), //
         CHARGE_OFF_REASON_TO_EXPENSE_ACCOUNT_MAPPINGS("chargeOffReasonToExpenseAccountMappings"), //
         EXPENSE_GL_ACCOUNT_ID("expenseAccountId"), //
-        CHARGE_OFF_REASON_CODE_VALUE_ID("chargeOffReasonCodeValueId"); //
+        CHARGE_OFF_REASON_CODE_VALUE_ID("chargeOffReasonCodeValueId"), //
+        DEFERRED_INCOME_ACCOUNT_ID("deferredIncomeAccountId");
 
         private final String value;
 
@@ -218,7 +219,8 @@ public final class AccountingConstants {
         INCOME_FROM_CHARGE_OFF_PENALTY("incomeFromChargeOffPenaltyAccount"), //
         INCOME_FROM_GOODWILL_CREDIT_INTEREST("incomeFromGoodwillCreditInterestAccount"), //
         INCOME_FROM_GOODWILL_CREDIT_FEES("incomeFromGoodwillCreditFeesAccount"), //
-        INCOME_FROM_GOODWILL_CREDIT_PENALTY("incomeFromGoodwillCreditPenaltyAccount"); //
+        INCOME_FROM_GOODWILL_CREDIT_PENALTY("incomeFromGoodwillCreditPenaltyAccount"), DEFERRED_INCOME_ACCOUNT_ID(
+                "deferredIncomeAccountId"); //
 
         private final String value;
 

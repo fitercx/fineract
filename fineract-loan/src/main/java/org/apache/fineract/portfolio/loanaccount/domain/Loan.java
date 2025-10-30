@@ -2256,7 +2256,8 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 outstanding = outstanding.plus(loanTransaction.getAmount(getCurrency()))
                         .minus(loanTransaction.getOverPaymentPortion(getCurrency()));
                 if (this.isReceivableLocLoan && loanTransaction.isDisbursement()) {
-                    outstanding = outstanding.add(this.getTotalInterest()).add(this.summary.getTotalFeeChargesOutstanding());
+                    outstanding = outstanding.add(this.getTotalInterestOutstandingOnLoan())
+                            .add(this.summary.getTotalFeeChargesOutstanding());
                 }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             } else if (loanTransaction.isChargeback() || loanTransaction.isCreditBalanceRefund()) {

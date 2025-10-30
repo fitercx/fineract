@@ -722,32 +722,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Override the parent's undoLoanDisbursal method to include LOC balance adjustments
-     */
-    @Override
-    @Transactional
-    public CommandProcessingResult undoLoanDisbursal(final Long loanId, final JsonCommand command) {
-        // Call the parent method to perform the standard undo disbursal
-        CommandProcessingResult result = super.undoLoanDisbursal(loanId, command);
-
-        if (result != null && result.hasChanges() && result.getResourceId() != null) {
-            // Fetch the loan to get disbursal amount
-            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-            BigDecimal disbursalAmount = loan.getNetDisbursalAmount();
-
-            // Get the transaction date from the command or use current date
-            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-            if (transactionDate == null) {
-                transactionDate = DateUtils.getBusinessLocalDate();
-            }
-
-            updateLocBalance(loanId, disbursalAmount, transactionDate, LineOfCreditTransactionType.UNDO_DISBURSEMENT, null);
-
-        }
-        return result;
-    }
-
-    /**
      * Override the parent's adjustLoanTransaction method to include LOC balance adjustments when undoing/reversing loan
      * transactions (especially repayments)
      */

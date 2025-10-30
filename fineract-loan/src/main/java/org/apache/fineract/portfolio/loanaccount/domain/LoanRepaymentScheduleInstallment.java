@@ -656,7 +656,7 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         return payPrincipalComponent(transactionDate, transactionAmount, false);
     }
 
-    public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount, boolean hasProRataInterest) {
+    public Money payPrincipalComponent(final LocalDate transactionDate, final Money transactionAmount, boolean proRataInterest) {
 
         final MonetaryCurrency currency = transactionAmount.getCurrency();
         Money principalPortionOfTransaction = Money.zero(currency);
@@ -673,19 +673,10 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
 
         this.principalCompleted = defaultToNullIfZero(this.principalCompleted);
-        if (isRecievableLineOfCreditInstallment() && transactionAmount.isGreaterThan(getPrincipalOutstanding(currency))) {
-            // If this is true, then its a full foreclosure, we need to find the exact principal paid for correct
-            // overpayment portion generation
-            Money excessPrincipalPaid = transactionAmount.minus(this.getPrincipalCompleted());
-            this.principalCompleted = getPrincipalCompleted(currency).minus(excessPrincipalPaid).getAmount();
 
-            markReceivableScheduleScheduleAsCompleted(transactionDate);
-            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency,
-                    principalPortionOfTransaction.minus(this.interestPaid).minus(excessPrincipalPaid));
-        } else {
-            checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, hasProRataInterest);
-            trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
-        }
+        checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency, proRataInterest);
+
+        trackAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, principalPortionOfTransaction);
 
         return principalPortionOfTransaction;
     }
