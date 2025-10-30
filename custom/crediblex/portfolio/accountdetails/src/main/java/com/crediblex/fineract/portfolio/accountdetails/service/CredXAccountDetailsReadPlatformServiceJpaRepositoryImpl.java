@@ -48,6 +48,7 @@ import org.apache.fineract.portfolio.savings.data.SavingsAccountApplicationTimel
 import org.apache.fineract.portfolio.savings.data.SavingsAccountStatusEnumData;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountSubStatusEnumData;
 import org.apache.fineract.portfolio.savings.service.SavingsEnumerations;
+import org.apache.logging.log4j.util.Strings;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -101,7 +102,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             }
         }
 
-        namedWhereClause = namedWhereClause + " and l.line_of_credit_id is null ";
+        namedWhereClause = namedWhereClause + " and mlcp.line_of_credit_id is null ";
         String currentDate = DateUtils.getLocalDateOfTenant().toString();
         params.addValue("currentDate", currentDate);
 
@@ -127,6 +128,14 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
         final String savingsSql = "select " + savingsAccountSummaryDataMapper.schema() + savingswhereClause;
         this.columnValidator.validateSqlInjection(savingsAccountSummaryDataMapper.schema(), savingswhereClause);
         return this.jdbcTemplate.query(savingsSql, savingsAccountSummaryDataMapper, inputs); // NOSONAR
+    }
+
+    /**
+     * Public method to get savings account details with linked loan information Used by external services like
+     * JournalEntryOdooTrackingService
+     */
+    public List<SavingsAccountSummaryData> getSavingsAccountDetails(final String whereClause, final Object[] inputs) {
+        return retrieveAccountDetails(whereClause, inputs);
     }
 
     private static final class CredXLoanAccountSummaryDataMapper implements RowMapper<LoanAccountSummaryData> {
@@ -178,7 +187,11 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" ELSE l.fixed_emi_amount END as calculatedInstallmentAmount, ")
                     .append(" (SELECT SUM(lc.amount_outstanding_derived) FROM m_loan_charge lc ")
                     .append("  WHERE lc.loan_id = l.id AND lc.is_penalty = true AND lc.is_active = true and due_for_collection_as_of_date < CAST(:currentDate AS DATE)) as totalLateFees,")
-                    .append(" dlad.remitter_name as remitterName,").append(" dlad.dp_name as dpName")
+                    .append(" dlad.remitter_name as remitterName,").append(" dlad.dp_name as dpName,")
+                    .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
+                    .append(" (SELECT MIN(rps.duedate) FROM m_loan_repayment_schedule rps ").append(" WHERE rps.loan_id = l.id ")
+                    .append(" AND (rps.completed_derived = false OR rps.completed_derived IS NULL)) ")
+                    .append(" ELSE NULL END as nextInstalmentDate")
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
@@ -191,7 +204,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" left join m_appuser cobu on cobu.id = l.charged_off_by_userid")
                     .append(" left join m_loan_arrears_aging la on la.loan_id = l.id")
                     .append(" left join glim_accounts glim on glim.id=l.glim_id")
-                    .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id");
+                    .append(" left join dt_loan_additional_data dlad on dlad.loan_id = l.id")
+                    .append(" left join m_loan_line_of_credit_params  mlcp on mlcp.loan_id = l.id");
 
             return accountsSummary.toString();
         }
@@ -279,6 +293,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final String dpName = rs.getString("dpName");
             final Boolean isForcedClosure = rs.getBoolean("isForcedClosure");
             final Boolean isRestructured = rs.getBoolean("isRestructured");
+            final LocalDate nextInstalmentDate = JdbcSupport.getLocalDate(rs, "nextInstalmentDate");
 
             // Use calculated installment amount if fixed EMI is not set
             final BigDecimal effectiveInstallmentAmount = (installmentAmount != null && installmentAmount.compareTo(BigDecimal.ZERO) > 0)
@@ -308,6 +323,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.DP_NAME, dpName);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_RESTRUCTURED, isRestructured);
+            extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NEXT_INSTALMENT_DATE, nextInstalmentDate);
 
             return extendedLoanAccountSummaryData;
         }
@@ -360,7 +376,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             accountsSummary.append("curr.name as currencyName, curr.internationalized_name_code as currencyNameCode, ");
             accountsSummary.append("curr.display_symbol as currencyDisplaySymbol, ");
             accountsSummary.append("sa.product_id as productId, p.name as productName, p.short_name as shortProductName, ");
-            accountsSummary.append("sa.deposit_type_enum as depositType, ");
+            accountsSummary.append("sa.deposit_type_enum as depositType, loc.external_id as locExternalId, ");
             accountsSummary.append("ml.id as fromLoanAccountId, ");
             accountsSummary.append("ml.account_no as fromLoanAccountNumber ");
             accountsSummary.append("from m_savings_account sa ");
@@ -385,6 +401,7 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                                             on sa.id = transfer_info.to_savings_account_id
                             """);
             accountsSummary.append(" left join m_loan ml on ml.id = transfer_info.from_loan_account_id ");
+            accountsSummary.append(" left join m_line_of_credit loc on sa.id = loc.settlement_savings_account_id ");
 
             this.schemaSql = accountsSummary.toString();
         }
@@ -454,7 +471,11 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final LocalDate lastActiveTransactionDate = JdbcSupport.getLocalDate(rs, "lastActiveTransactionDate");
 
             final Long fromLoanAccountId = JdbcSupport.getLong(rs, "fromLoanAccountId");
-            final String fromLoanAccountNumber = rs.getString("fromLoanAccountNumber");
+            String fromLoanAccountNumber = rs.getString("fromLoanAccountNumber");
+
+            if (Strings.isBlank(fromLoanAccountNumber)) {
+                fromLoanAccountNumber = rs.getString("locExternalId");
+            }
 
             final SavingsAccountApplicationTimelineData timeline = new SavingsAccountApplicationTimelineData(submittedOnDate,
                     submittedByUsername, submittedByFirstname, submittedByLastname, rejectedOnDate, rejectedByUsername, rejectedByFirstname,
@@ -472,6 +493,13 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             return smd;
         }
 
+    }
+
+    /**
+     * Public method to expose JdbcTemplate for direct queries
+     */
+    public org.springframework.jdbc.core.JdbcTemplate getJdbcTemplate() {
+        return this.jdbcTemplate;
     }
 
 }

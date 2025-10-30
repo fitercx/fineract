@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+    <changeSet author="CredibleX" id="1">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="factor_rate"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="factor_rate" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="2">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="is_factor_rate_enabled"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="is_factor_rate_enabled" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="3">
+        <sql>
+            UPDATE m_working_days
+            SET extend_term_daily_repayments = TRUE
+            WHERE extend_term_daily_repayments = FALSE;
+        </sql>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="factor_rate_loan_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="factor_rate_loan_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="5">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="accrual_tax_charges_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="accrual_tax_charges_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="6">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="tax_charges_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="tax_charges_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="7">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="tax_charges_completed_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="tax_charges_completed_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="8">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="tax_charges_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="tax_charges_waived_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="9">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="tax_charges_writtenoff_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="tax_charges_writtenoff_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="10">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="taxes_adjustments_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="taxes_adjustments_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="11">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="tax_charges_charged_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="tax_charges_charged_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="12">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="tax_charges_repaid_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="tax_charges_repaid_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="13">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="tax_charges_outstanding_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="tax_charges_outstanding_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="14">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="tax_charges_writtenoff_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="tax_charges_writtenoff_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="15">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan" columnName="tax_charges_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan">
+            <column name="tax_charges_waived_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="16">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule_history" columnName="tax_charges_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule_history">
+            <column name="tax_charges_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="17">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_arrears_aging" columnName="tax_charges_overdue_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_arrears_aging">
+            <column name="tax_charges_overdue_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+
+    <changeSet author="CredibleX" id="19">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_paid_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_paid_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="20">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_waived_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="21">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_writtenoff_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_writtenoff_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="22">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="tax_amount_outstanding_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="tax_amount_outstanding_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="23">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_transaction" columnName="tax_charges_portion_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_transaction">
+            <column name="tax_charges_portion_derived" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="24">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge_paid_by" columnName="tax_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge_paid_by">
+            <column name="tax_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="25">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="is_taxes_paid_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="is_taxes_paid_derived" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="26">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_charge" columnName="is_taxes_waived_derived"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_charge">
+            <column name="is_taxes_waived_derived" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="27">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="m_loan_repayment_schedule" columnName="credited_tax"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_repayment_schedule">
+            <column name="credited_tax" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>

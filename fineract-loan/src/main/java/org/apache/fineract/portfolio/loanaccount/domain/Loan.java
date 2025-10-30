@@ -69,6 +69,7 @@ import org.apache.fineract.organisation.holiday.domain.Holiday;
 import org.apache.fineract.organisation.holiday.service.HolidayUtil;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.staff.domain.Staff;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDays;
@@ -439,6 +440,30 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
+    @Setter()
+    @Column(name = "factor_rate")
+    private BigDecimal factorRate;
+
+    @Setter()
+    @Column(name = "is_factor_rate_enabled")
+    private boolean isFactorRateEnabled;
+
+    @Transient
+    @Setter
+    private boolean isReceivableLocLoan;
+
+    @Setter()
+    @Column(name = "factor_rate_loan_amount")
+    private BigDecimal factorRateLoanAmount;
+
+    @Setter()
+    @Column(name = "is_forced_closure")
+    private Boolean isForcedClosure = Boolean.FALSE;
+
+    @Setter()
+    @Column(name = "is_restructured")
+    private Boolean isRestructured = Boolean.FALSE;
+
     public static Loan newIndividualLoanApplication(final String accountNo, final Client client, final AccountType loanType,
             final LoanProduct loanProduct, final Fund fund, final Staff officer, final CodeValue loanPurpose,
             final LoanRepaymentScheduleTransactionProcessor transactionProcessingStrategy,
@@ -566,7 +591,9 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         this.fixedPrincipalPercentagePerInstallment = fixedPrincipalPercentagePerInstallment;
 
         // Add net get net disbursal amount from charges and principal
+        // For line of credit receivable, we dont post the interest to the customer
         this.netDisbursalAmount = this.approvedPrincipal.subtract(deriveSumTotalOfChargesDueAtDisbursement());
+
         this.loanStatus = LoanStatus.SUBMITTED_AND_PENDING_APPROVAL;
         this.externalId = externalId;
         this.termFrequency = loanApplicationTerms.getLoanTermFrequency();
@@ -1497,7 +1524,8 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         for (final LoanRepaymentScheduleInstallment scheduledRepayment : installments) {
             cumulativeTotalPaidOnInstallments = cumulativeTotalPaidOnInstallments
                     .plus(scheduledRepayment.getPrincipalCompleted(currency).plus(scheduledRepayment.getInterestPaid(currency)))
-                    .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getPenaltyChargesPaid(currency));
+                    .plus(scheduledRepayment.getFeeChargesPaid(currency)).plus(scheduledRepayment.getTaxChargesPaid())
+                    .plus(scheduledRepayment.getPenaltyChargesPaid(currency));
 
             cumulativeTotalWaivedOnInstallments = cumulativeTotalWaivedOnInstallments.plus(scheduledRepayment.getInterestWaived(currency));
         }
@@ -2073,11 +2101,16 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     continue;
                 }
                 BigDecimal amount;
-                if (loanCharge.getChargeCalculation().isFlat()) {
-                    amount = loanCharge.amountOrPercentage();
+                if (this.isFactorRateEnabled()) {
+                    final BigDecimal numberOfInstallments = BigDecimal.valueOf(installments.size());
+                    amount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
                 } else {
-                    amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(), installment)
-                            .getAmount();
+                    if (loanCharge.getChargeCalculation().isFlat()) {
+                        amount = loanCharge.amountOrPercentage();
+                    } else {
+                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
+                                installment).getAmount();
+                    }
                 }
                 final LoanInstallmentCharge loanInstallmentCharge = new LoanInstallmentCharge(amount, loanCharge, installment);
                 installment.getInstallmentCharges().add(loanInstallmentCharge);
@@ -2222,6 +2255,9 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             if (loanTransaction.isDisbursement() || loanTransaction.isIncomePosting()) {
                 outstanding = outstanding.plus(loanTransaction.getAmount(getCurrency()))
                         .minus(loanTransaction.getOverPaymentPortion(getCurrency()));
+                if (this.isReceivableLocLoan && loanTransaction.isDisbursement()) {
+                    outstanding = outstanding.add(this.getTotalInterest()).add(this.summary.getTotalFeeChargesOutstanding());
+                }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             } else if (loanTransaction.isChargeback() || loanTransaction.isCreditBalanceRefund()) {
                 Money transactionOutstanding = loanTransaction.getPrincipalPortion(getCurrency());

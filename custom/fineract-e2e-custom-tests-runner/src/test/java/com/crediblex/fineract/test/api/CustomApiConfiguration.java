@@ -18,6 +18,8 @@
  */
 package com.crediblex.fineract.test.api;
 
+import com.crediblex.client.services.LineOfCreditApi;
+import com.crediblex.client.services.LoanTransactionsApi;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;
@@ -41,4 +43,14 @@ public class CustomApiConfiguration {
         return fineractClient.createService(TaxComponentsApi.class);
     }
 
+    @Bean
+    LineOfCreditApi lineOfCreditApi() {
+        return fineractClient.createService(LineOfCreditApi.class);
+    }
+
+    @Bean
+    public LoanTransactionsApi loanTransactionsApi() {return fineractClient.createService(LoanTransactionsApi.class);}
+
 }
+
+

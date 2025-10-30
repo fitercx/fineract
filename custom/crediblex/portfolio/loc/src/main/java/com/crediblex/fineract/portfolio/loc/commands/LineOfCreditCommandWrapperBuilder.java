@@ -19,7 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loc.commands;
 
-import com.crediblex.fineract.portfolio.loc.api.LocApiConstants;
+import com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants;
 import org.apache.fineract.commands.domain.CommandWrapper;
 
 public class LineOfCreditCommandWrapperBuilder {
@@ -31,9 +31,10 @@ public class LineOfCreditCommandWrapperBuilder {
     private String json = "{}";
     private Long clientId;
 
-    public LineOfCreditCommandWrapperBuilder createLineOfCredit() {
+    public LineOfCreditCommandWrapperBuilder createLineOfCredit(Long clientId) {
         this.actionName = "CREATE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.clientId = clientId;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = null;
         this.href = "/v1/lineofcredit";
         return this;
@@ -41,7 +42,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder updateLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "UPDATE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -50,7 +51,7 @@ public class LineOfCreditCommandWrapperBuilder {
     public LineOfCreditCommandWrapperBuilder activateLineOfCredit(final Long lineOfCreditId, Long clientId) {
         this.clientId = clientId;
         this.actionName = "ACTIVATE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -59,7 +60,7 @@ public class LineOfCreditCommandWrapperBuilder {
     public LineOfCreditCommandWrapperBuilder deactivateLineOfCredit(final Long lineOfCreditId, final Long clientId) {
         this.clientId = clientId;
         this.actionName = "DEACTIVATE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -67,7 +68,7 @@ public class LineOfCreditCommandWrapperBuilder {
 
     public LineOfCreditCommandWrapperBuilder deleteLineOfCredit(final Long lineOfCreditId) {
         this.actionName = "DELETE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -76,7 +77,7 @@ public class LineOfCreditCommandWrapperBuilder {
     public LineOfCreditCommandWrapperBuilder approveLineOfCredit(final Long lineOfCreditId, final Long clientId) {
         this.clientId = clientId;
         this.actionName = "APPROVE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
         return this;
@@ -85,9 +86,49 @@ public class LineOfCreditCommandWrapperBuilder {
     public LineOfCreditCommandWrapperBuilder closeLineOfCredit(final Long lineOfCreditId, Long clientId) {
         this.clientId = clientId;
         this.actionName = "CLOSE";
-        this.entityName = LocApiConstants.LINE_OF_CREDIT;
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
         this.entityId = lineOfCreditId;
         this.href = "/v1/lineofcredit/" + lineOfCreditId;
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder increaseCreditLimit(Long lineOfCreditId, Long clientId) {
+
+        this.clientId = clientId;
+        this.actionName = "INCREASE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/increasecreditlimit";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder decreaseCreditLimit(Long lineOfCreditId, Long clientId) {
+
+        this.clientId = clientId;
+        this.actionName = "DECREASE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/decreasecreditlimit";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder undoCloseLineOfCredit(Long lineOfCreditId, Long clientId) {
+
+        this.clientId = clientId;
+        this.actionName = "UNDO_CLOSE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/undoclose";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder reactivateLineOfCredit(Long lineOfCreditId, Long clientId) {
+
+        this.clientId = clientId;
+        this.actionName = "REACTIVATE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/reactivate";
         return this;
     }
 

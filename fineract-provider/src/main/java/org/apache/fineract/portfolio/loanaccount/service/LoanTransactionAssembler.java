@@ -76,10 +76,11 @@ public class LoanTransactionAssembler {
         BigDecimal interestPortion = installment.getInterestCharged();
         BigDecimal feeChargesPortion = installment.getFeeChargesCharged();
         BigDecimal penaltyChargesPortion = installment.getPenaltyCharges();
-        BigDecimal transactionAmount = MathUtil.add(interestPortion, feeChargesPortion, penaltyChargesPortion);
+        BigDecimal taxChargesPortion = installment.getTaxChargesCharged();
+        BigDecimal transactionAmount = MathUtil.add(interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
         return MathUtil.isGreaterThanZero(transactionAmount)
                 ? new LoanTransaction(loan, loan.getOffice(), LoanTransactionType.ACCRUAL_ACTIVITY, transactionDate, transactionAmount,
-                        null, interestPortion, feeChargesPortion, penaltyChargesPortion, null, false, null, externalId)
+                        null, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, null, false, null, externalId)
                 : null;
     }
 }

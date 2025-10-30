@@ -138,7 +138,7 @@ public class CheckLoanRepaymentOverdueBusinessStepTest {
         List<LoanRepaymentScheduleInstallment> loanRepaymentScheduleInstallments = Arrays
                 .asList(new LoanRepaymentScheduleInstallment(loanForProcessing, 1, LocalDate.now(ZoneId.systemDefault()),
                         loanInstallmentRepaymentDueDateBefore5Days, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                        BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
+                        BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
         when(loanForProcessing.getLoanProduct()).thenReturn(loanProduct);
         when(loanForProcessing.getSummary()).thenReturn(loanSummary);
         when(loanForProcessing.getSummary().getTotalOutstanding()).thenReturn(BigDecimal.valueOf(100));
@@ -162,7 +162,7 @@ public class CheckLoanRepaymentOverdueBusinessStepTest {
         LoanSummary loanSummary = Mockito.mock(LoanSummary.class);
         LoanRepaymentScheduleInstallment repaymentInstallmentPaidOff = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), loanInstallmentRepaymentDueDate, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
 
         repaymentInstallmentPaidOff.updateObligationMet(true);
 
@@ -239,7 +239,7 @@ public class CheckLoanRepaymentOverdueBusinessStepTest {
         List<LoanRepaymentScheduleInstallment> loanRepaymentScheduleInstallments = Arrays
                 .asList(new LoanRepaymentScheduleInstallment(loanForProcessing, 1, LocalDate.now(ZoneId.systemDefault()),
                         loanInstallmentRepaymentDueDateBefore5Days, BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0),
-                        BigDecimal.valueOf(1.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
+                        BigDecimal.valueOf(1.0), BigDecimal.valueOf(0.0), BigDecimal.valueOf(0.0), false, new HashSet<>(), BigDecimal.valueOf(0.0)));
         when(loanForProcessing.getLoanProduct()).thenReturn(loanProduct);
         when(loanProduct.getOverDueDaysForRepaymentEvent()).thenReturn(1);
         when(loanForProcessing.getSummary()).thenReturn(loanSummary);

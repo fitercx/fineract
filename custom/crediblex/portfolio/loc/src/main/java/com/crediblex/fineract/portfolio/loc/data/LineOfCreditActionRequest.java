@@ -21,6 +21,7 @@ package com.crediblex.fineract.portfolio.loc.data;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -43,18 +44,13 @@ public class LineOfCreditActionRequest {
     @Schema(example = "Line of credit approved after review", description = "Optional note for the action")
     private String note;
 
+    @Schema(example = "50000", description = "New credit limit when performing increase/decrease action")
+    private BigDecimal amount;
+
     // Constructor with default dateFormat and locale for backward compatibility
     public LineOfCreditActionRequest(String dateFormat, String locale) {
         this.dateFormat = dateFormat;
         this.locale = locale;
-    }
-
-    // Constructor with all fields
-    public LineOfCreditActionRequest(String dateFormat, String locale, String actionDate, String note) {
-        this.dateFormat = dateFormat;
-        this.locale = locale;
-        this.actionDate = actionDate;
-        this.note = note;
     }
 
     public String toJson() {

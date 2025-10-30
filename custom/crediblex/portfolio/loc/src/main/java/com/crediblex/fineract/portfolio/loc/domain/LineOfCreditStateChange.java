@@ -40,4 +40,11 @@ public class LineOfCreditStateChange implements Serializable {
     @JoinColumn(name = "closed_by_user_id", referencedColumnName = "id")
     private AppUser closedBy;
 
+    @Column(name = "deativated_on_date")
+    private LocalDate deactivatedOnDate;
+
+    @ManyToOne
+    @JoinColumn(name = "deactivated_by_user_id", referencedColumnName = "id")
+    private AppUser deactivateBy;
+
 }

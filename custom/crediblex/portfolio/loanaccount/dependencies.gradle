@@ -40,5 +40,5 @@ dependencies {
     implementation "io.swagger.core.v3:swagger-annotations:2.2.12"
     implementation "org.springframework.security:spring-security-core:6.1.2"
 
-    testImplementation('org.springframework.security:spring-security-core:5.8.0')
+    implementation('org.springframework.security:spring-security-core:5.8.0')
 }

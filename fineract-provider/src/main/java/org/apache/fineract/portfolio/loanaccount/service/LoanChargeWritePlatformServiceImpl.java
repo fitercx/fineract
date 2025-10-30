@@ -200,6 +200,8 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         List<LoanDisbursementDetails> loanDisburseDetails = loan.getDisbursementDetails();
         final Long chargeDefinitionId = command.longValueOfParameterNamed("chargeId");
         final Charge chargeDefinition = this.chargeRepository.findOneWithNotFoundDetection(chargeDefinitionId);
+        final boolean factorRateEnabled = loan.isFactorRateEnabled();
+        final BigDecimal factorRate = loan.getFactorRate();
 
         /*
          * TODO: remove this check once handling for Installment fee charges is implemented for Advanced Payment
@@ -238,7 +240,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
                     }
                     LocalDate dueDate = disbursementDetail.expectedDisbursementDateAsLocalDate();
                     loanCharge = loanChargeAssembler.createNewWithoutLoan(chargeDefinition, disbursementDetail.principal(), null, null,
-                            null, dueDate, null, null, externalId);
+                            null, dueDate, null, null, externalId, factorRateEnabled, factorRate);
                     loanTrancheDisbursementCharge = new LoanTrancheDisbursementCharge(loanCharge, disbursementDetail);
                     loanCharge.updateLoanTrancheDisbursementCharge(loanTrancheDisbursementCharge);
                     businessEventNotifierService.notifyPreBusinessEvent(new LoanAddChargeBusinessEvent(loanCharge));

@@ -23,6 +23,9 @@ apply from: 'dependencies.gradle'
 
 // TODO: @vidakovic we should publish this lib to Maven Central; do in separate PR
 
+
+// Define custom swagger file path for builds that include custom APIs
+
 openApiMeta {
     generatorName = 'Fineract'
     packageName = 'org.apache.fineract.client'

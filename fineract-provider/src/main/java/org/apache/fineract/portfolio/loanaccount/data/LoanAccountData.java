@@ -279,6 +279,9 @@ public class LoanAccountData {
     private Boolean enableIncomeCapitalization;
     private StringEnumOptionData capitalizedIncomeCalculationType;
     private StringEnumOptionData capitalizedIncomeStrategy;
+    private boolean factorRateEnabled;
+    private BigDecimal factorRate;
+    private BigDecimal factorRateLoanAmount;
 
     public static LoanAccountData importInstanceIndividual(EnumOptionData loanTypeEnumOption, Long clientId, Long productId,
             Long loanOfficerId, LocalDate submittedOnDate, Long fundId, BigDecimal principal, Integer numberOfRepayments,

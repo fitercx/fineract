@@ -37,6 +37,7 @@ public final class DisbursementData implements Comparable<DisbursementData> {
     private final LocalDate actualDisbursementDate;
     private final BigDecimal principal;
     private final BigDecimal netDisbursalAmount;
+    private final BigDecimal factorRateLoanAmount;
     private final String loanChargeId;
     private final BigDecimal chargeAmount;
     private final BigDecimal waivedChargeAmount;
@@ -48,12 +49,14 @@ public final class DisbursementData implements Comparable<DisbursementData> {
     private String note;
     private transient String linkAccountId;
 
-    public static DisbursementData importInstance(LocalDate actualDisbursementDate, String linkAccountId, Integer rowIndex, String locale,
-            String dateFormat) {
-        return new DisbursementData(actualDisbursementDate, linkAccountId, rowIndex, locale, dateFormat);
+    public static DisbursementData importInstance(LocalDate actualDisbursementDate, final BigDecimal factorRateLoanAmount,
+            String linkAccountId, Integer rowIndex, String locale, String dateFormat) {
+        return new DisbursementData(actualDisbursementDate, factorRateLoanAmount, linkAccountId, rowIndex, locale, dateFormat);
     }
 
-    private DisbursementData(LocalDate actualDisbursementDate, String linkAccountId, Integer rowIndex, String locale, String dateFormat) {
+    private DisbursementData(LocalDate actualDisbursementDate, BigDecimal factorRateLoanAmount, String linkAccountId, Integer rowIndex,
+            String locale, String dateFormat) {
+        this.factorRateLoanAmount = factorRateLoanAmount;
         this.dateFormat = dateFormat;
         this.locale = locale;
         this.actualDisbursementDate = actualDisbursementDate;
@@ -90,7 +93,7 @@ public final class DisbursementData implements Comparable<DisbursementData> {
     public boolean isDueForDisbursement(LoanScheduleType loanScheduleType, final LocalDate fromDate, final LocalDate toDate) {
         final LocalDate dueDate = disbursementDate();
         return switch (loanScheduleType) {
-            case CUMULATIVE -> occursOnDayFromAndUpToAndIncluding(fromDate, toDate, dueDate);
+            case CUMULATIVE, FACTOR_RATE -> occursOnDayFromAndUpToAndIncluding(fromDate, toDate, dueDate);
             case PROGRESSIVE -> occursOnDayFromAndIncludingAndUpTo(fromDate, toDate, dueDate);
         };
     }

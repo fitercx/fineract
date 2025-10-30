@@ -35,7 +35,7 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     @SuppressWarnings("unused")
     private final Integer periodNumber;
     private final LocalDate disbursementDate;
-    private final Money principalDisbursed;
+    private Money principalDisbursed;
     private final BigDecimal chargesDueAtTimeOfDisbursement;
     private boolean isEMIFixedSpecificToInstallment = false;
 
@@ -99,12 +99,18 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     }
 
     @Override
+    public BigDecimal taxChargesDue() {
+        return null;
+    }
+
+    @Override
     public BigDecimal penaltyChargesDue() {
         return null;
     }
 
     @Override
-    public void addLoanCharges(@SuppressWarnings("unused") BigDecimal feeCharge, @SuppressWarnings("unused") BigDecimal penaltyCharge) {
+    public void addLoanCharges(@SuppressWarnings("unused") BigDecimal feeCharge, @SuppressWarnings("unused") BigDecimal taxCharge,
+            @SuppressWarnings("unused") BigDecimal penaltyCharge) {
         return;
     }
 
@@ -146,5 +152,10 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     @Override
     public void setRescheduleInterestPortion(BigDecimal rescheduleInterestPortion) {
         return;
+    }
+
+    @Override
+    public void minusPrincipalAmount(Money reduction) {
+        this.principalDisbursed = this.principalDisbursed.minus(reduction);
     }
 }

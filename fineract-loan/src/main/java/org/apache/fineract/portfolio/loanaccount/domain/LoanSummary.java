@@ -20,6 +20,7 @@ package org.apache.fineract.portfolio.loanaccount.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+import jakarta.persistence.Transient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
@@ -108,6 +109,24 @@ public class LoanSummary {
     @Column(name = "penalty_charges_outstanding_derived", scale = 6, precision = 19)
     private BigDecimal totalPenaltyChargesOutstanding;
 
+    @Column(name = "tax_charges_charged_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxChargesCharged;
+
+    @Column(name = "taxes_adjustments_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxAdjustments;
+
+    @Column(name = "tax_charges_repaid_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxChargesRepaid;
+
+    @Column(name = "tax_charges_waived_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxChargesWaived;
+
+    @Column(name = "tax_charges_writtenoff_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxChargesWrittenOff;
+
+    @Column(name = "tax_charges_outstanding_derived", scale = 6, precision = 19)
+    private BigDecimal totalTaxChargesOutstanding;
+
     @Column(name = "total_expected_repayment_derived", scale = 6, precision = 19)
     private BigDecimal totalExpectedRepayment;
 
@@ -131,6 +150,14 @@ public class LoanSummary {
 
     @Setter
     private transient BigDecimal totalChargesPayableByPrincipalDeduction;
+
+    @Transient
+    @Setter
+    boolean isReceivableLineOfCredit = false;
+
+    @Transient
+    @Setter
+    BigDecimal totalInterestPayableAtDisbursement = BigDecimal.ZERO;
 
     public static LoanSummary create(final BigDecimal totalFeeChargesDueAtDisbursement) {
         return new LoanSummary(totalFeeChargesDueAtDisbursement);
@@ -175,6 +202,12 @@ public class LoanSummary {
         this.totalPrincipalRepaid = BigDecimal.ZERO;
         this.totalPrincipalWrittenOff = BigDecimal.ZERO;
         this.totalRepayment = BigDecimal.ZERO;
+        this.totalTaxAdjustments = BigDecimal.ZERO;
+        this.totalTaxChargesCharged = BigDecimal.ZERO;
+        this.totalTaxChargesOutstanding = BigDecimal.ZERO;
+        this.totalTaxChargesRepaid = BigDecimal.ZERO;
+        this.totalTaxChargesWaived = BigDecimal.ZERO;
+        this.totalTaxChargesWrittenOff = BigDecimal.ZERO;
         this.totalWaived = BigDecimal.ZERO;
         this.totalWrittenOff = BigDecimal.ZERO;
     }
@@ -229,32 +262,41 @@ public class LoanSummary {
         this.totalPenaltyChargesOutstanding = totalPenaltyChargesCharged.minus(this.totalPenaltyChargesRepaid)
                 .minus(this.totalPenaltyChargesWaived).minus(this.totalPenaltyChargesWrittenOff).getAmount();
 
-        final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipalDisbursed).plus(this.totalInterestCharged)
-                .plus(this.totalFeeChargesCharged).plus(this.totalPenaltyChargesCharged);
-        this.totalExpectedRepayment = totalExpectedRepayment.getAmount();
+        this.totalTaxAdjustments = calculateTotalTaxAdjusted(repaymentScheduleInstallments, currency).getAmount();
+        final Money totalTaxChargesCharged = calculateTotalTaxChargesCharged(repaymentScheduleInstallments, currency);
+        this.totalTaxChargesCharged = totalTaxChargesCharged.getAmount();
+        this.totalTaxChargesRepaid = calculateTotalTaxChargesRepaid(repaymentScheduleInstallments, currency).getAmount();
+        this.totalTaxChargesWaived = calculateTotalTaxChargesWaived(repaymentScheduleInstallments, currency).getAmount();
+        this.totalTaxChargesWrittenOff = calculateTotalTaxChargesWrittenOff(repaymentScheduleInstallments, currency).getAmount();
 
+        this.totalTaxChargesOutstanding = totalTaxChargesCharged.minus(this.totalTaxChargesRepaid).minus(this.totalTaxChargesWaived)
+                .minus(this.totalTaxChargesWrittenOff).getAmount();
+
+        final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipalDisbursed).plus(this.totalInterestCharged)
+                .plus(this.totalFeeChargesCharged).plus(this.totalPenaltyChargesCharged).plus(this.totalTaxChargesCharged);
+        this.totalExpectedRepayment = totalExpectedRepayment.getAmount();
         final Money totalRepayment = Money.of(currency, this.totalPrincipalRepaid).plus(this.totalInterestRepaid)
-                .plus(this.totalFeeChargesRepaid).plus(this.totalPenaltyChargesRepaid);
+                .plus(this.totalFeeChargesRepaid).plus(this.totalPenaltyChargesRepaid).plus(this.totalTaxChargesRepaid);
         this.totalRepayment = totalRepayment.getAmount();
 
         final Money totalExpectedCostOfLoan = Money.of(currency, this.totalInterestCharged).plus(this.totalFeeChargesCharged)
-                .plus(this.totalPenaltyChargesCharged);
+                .plus(this.totalPenaltyChargesCharged).plus(this.totalTaxChargesCharged);
         this.totalExpectedCostOfLoan = totalExpectedCostOfLoan.getAmount();
 
         final Money totalCostOfLoan = Money.of(currency, this.totalInterestRepaid).plus(this.totalFeeChargesRepaid)
-                .plus(this.totalPenaltyChargesRepaid);
+                .plus(this.totalPenaltyChargesRepaid).plus(this.totalTaxChargesRepaid);
         this.totalCostOfLoan = totalCostOfLoan.getAmount();
 
         final Money totalWaived = Money.of(currency, this.totalInterestWaived).plus(this.totalFeeChargesWaived)
-                .plus(this.totalPenaltyChargesWaived);
+                .plus(this.totalPenaltyChargesWaived).plus(this.totalTaxChargesWaived);
         this.totalWaived = totalWaived.getAmount();
 
         final Money totalWrittenOff = Money.of(currency, this.totalPrincipalWrittenOff).plus(this.totalInterestWrittenOff)
-                .plus(this.totalFeeChargesWrittenOff).plus(this.totalPenaltyChargesWrittenOff);
+                .plus(this.totalFeeChargesWrittenOff).plus(this.totalPenaltyChargesWrittenOff).plus(this.totalTaxChargesWrittenOff);
         this.totalWrittenOff = totalWrittenOff.getAmount();
 
         final Money totalOutstanding = Money.of(currency, this.totalPrincipalOutstanding).plus(this.totalInterestOutstanding)
-                .plus(this.totalFeeChargesOutstanding).plus(this.totalPenaltyChargesOutstanding);
+                .plus(this.totalFeeChargesOutstanding).plus(this.totalPenaltyChargesOutstanding).plus(this.totalTaxChargesOutstanding);
         this.totalOutstanding = totalOutstanding.getAmount();
     }
 
@@ -448,6 +490,51 @@ public class LoanSummary {
         Money total = Money.zero(currency);
         for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
             total = total.plus(installment.getPenaltyChargesWrittenOff(currency));
+        }
+        return total;
+    }
+
+    protected Money calculateTotalTaxAdjusted(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
+            final MonetaryCurrency currency) {
+        Money total = Money.zero(currency);
+        for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
+            total = total.plus(installment.getCreditedTax(currency));
+        }
+        return total;
+    }
+
+    protected Money calculateTotalTaxChargesCharged(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
+            final MonetaryCurrency currency) {
+        Money total = Money.zero(currency);
+        for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
+            total = total.plus(installment.getTaxChargesCharged(currency));
+        }
+        return total;
+    }
+
+    protected Money calculateTotalTaxChargesRepaid(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
+            final MonetaryCurrency currency) {
+        Money total = Money.zero(currency);
+        for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
+            total = total.plus(installment.getTaxChargesPaid(currency));
+        }
+        return total;
+    }
+
+    protected Money calculateTotalTaxChargesWaived(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
+            final MonetaryCurrency currency) {
+        Money total = Money.zero(currency);
+        for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
+            total = total.plus(installment.getTaxChargesWaived(currency));
+        }
+        return total;
+    }
+
+    protected Money calculateTotalTaxChargesWrittenOff(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
+            final MonetaryCurrency currency) {
+        Money total = Money.zero(currency);
+        for (final LoanRepaymentScheduleInstallment installment : repaymentScheduleInstallments) {
+            total = total.plus(installment.getTaxChargesWrittenOff(currency));
         }
         return total;
     }

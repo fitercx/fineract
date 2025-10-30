@@ -18,7 +18,7 @@
  */
 
 plugins{
-    id 'io.github.kayr.gradle.ezyquery' version '0.0.23' apply false
+    id 'io.github.kayr.gradle.ezyquery' version "${ezyQueryVersion}" apply false
 }
 
 subprojects {
@@ -41,13 +41,18 @@ subprojects {
         // Common dependencies for all crediblex modules
         implementation(project(':fineract-core'))
         implementation(project(':fineract-provider'))
+        implementation(project(':fineract-accounting'))
+        implementation(project(':fineract-rates'))
+        implementation(project(':fineract-progressive-loan'))
         implementation("org.springframework.boot:spring-boot-starter:${springBootVersion}")
+        implementation("org.springframework.boot:spring-boot-starter-batch:${springBootVersion}")
         compileOnly("org.springframework.boot:spring-boot-autoconfigure:${springBootVersion}")
 
         // Add Spring Data JPA to all modules that need it
         implementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}") {
             exclude group: 'org.hibernate'
         }
+        implementation('org.apache.commons:commons-lang3:3.17.0')
 
         implementation("org.eclipse.persistence:org.eclipse.persistence.jpa:${eclipseLinkVersion}")
 
@@ -58,6 +63,7 @@ subprojects {
         testImplementation("org.springframework.boot:spring-boot-starter-jdbc:${springBootVersion}")
         testImplementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}")
         testImplementation ("org.jacoco:org.jacoco.agent:0.8.12:runtime")
+
 
     }
 

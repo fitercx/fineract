@@ -1567,6 +1567,7 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
     private void handleChargePayment(LoanTransaction loanTransaction, TransactionCtx transactionCtx) {
         Money zero = Money.zero(transactionCtx.getCurrency());
         Money feeChargesPortion = zero;
+        Money taxChargesPortion = zero;
         Money penaltyChargesPortion = zero;
         List<LoanTransactionToRepaymentScheduleMapping> transactionMappings = new ArrayList<>();
         LoanChargePaidBy loanChargePaidBy = loanTransaction.getLoanChargesPaid().stream().findFirst().get();
@@ -1598,12 +1599,16 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
                     addToTransactionMapping(loanTransactionToRepaymentScheduleMapping, zero, zero, zero, penaltyChargesPortion);
                 } else {
                     feeChargesPortion = installment.payFeeChargesComponent(loanTransaction.getTransactionDate(), paidAmount);
+                    if (paidAmount.minus(feeChargesPortion).isGreaterThanZero()) {
+                        taxChargesPortion = installment.payTaxChargesComponent(loanTransaction.getTransactionDate(),
+                                paidAmount.minus(feeChargesPortion));
+                    }
                     loanTransaction.setLoanChargesPaid(Collections
                             .singleton(new LoanChargePaidBy(loanTransaction, loanCharge, paidAmount.getAmount(), installmentNumber)));
                     addToTransactionMapping(loanTransactionToRepaymentScheduleMapping, zero, zero, feeChargesPortion, zero);
                 }
 
-                loanTransaction.updateComponents(zero, zero, feeChargesPortion, penaltyChargesPortion);
+                loanTransaction.updateComponents(zero, zero, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
                 unprocessed = loanTransaction.getAmount(transactionCtx.getCurrency()).minus(paidAmount);
                 loanTransaction.updateLoanTransactionToRepaymentScheduleMappings(transactionMappings);
             }
@@ -2540,10 +2545,10 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
 
         if (missingAccrualAmount.compareTo(BigDecimal.ZERO) > 0) {
             newAccrualTransaction = accrueTransaction(loan, loan.getOffice(), chargeOffDate, missingAccrualAmount, missingAccrualAmount,
-                    ZERO, ZERO, externalIdFactory.create());
+                    ZERO, ZERO, ZERO, externalIdFactory.create());
         } else {
             newAccrualTransaction = accrualAdjustment(loan, loan.getOffice(), chargeOffDate, missingAccrualAmount.abs(),
-                    missingAccrualAmount.abs(), ZERO, ZERO, externalIdFactory.create());
+                    missingAccrualAmount.abs(), ZERO, ZERO, ZERO, externalIdFactory.create());
         }
 
         ctx.getChangedTransactionDetail().addNewTransactionChangeBeforeExistingOne(new TransactionChangeData(null, newAccrualTransaction),

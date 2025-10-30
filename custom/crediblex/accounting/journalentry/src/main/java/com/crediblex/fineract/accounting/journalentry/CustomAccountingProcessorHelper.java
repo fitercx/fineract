@@ -17,10 +17,12 @@ import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.apache.fineract.accounting.journalentry.data.ChargePaymentDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
+import org.apache.fineract.infrastructure.event.business.domain.journalentry.LoanJournalEntryCreatedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepository;
@@ -35,6 +37,9 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 
 public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
 
+    private final JournalEntryRepository journalEntryRepository;
+    private final BusinessEventNotifierService businessEventNotifierService;
+
     public CustomAccountingProcessorHelper(JournalEntryRepository glJournalEntryRepository,
             ProductToGLAccountMappingRepository accountMappingRepository,
             FinancialActivityAccountRepositoryWrapper financialActivityAccountRepository, GLClosureRepository closureRepository,
@@ -44,6 +49,8 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
         super(glJournalEntryRepository, accountMappingRepository, financialActivityAccountRepository, closureRepository,
                 glAccountRepository, officeRepository, accountTransfersReadPlatformService, chargeRepositoryWrapper,
                 businessEventNotifierService);
+        this.journalEntryRepository = glJournalEntryRepository;
+        this.businessEventNotifierService = businessEventNotifierService;
     }
 
     @Override
@@ -72,6 +79,7 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             final BigDecimal principal = loanTxnDto.getPrincipalPortion();
             final BigDecimal interest = loanTxnDto.getInterestPortion();
             final BigDecimal fees = loanTxnDto.getFeeChargesPortion();
+            final BigDecimal taxes = loanTxnDto.getTaxChargesPortion();
             final BigDecimal penalties = loanTxnDto.getPenaltyChargesPortion();
             final BigDecimal overPayments = loanTxnDto.getOverPaymentPortion();
             final boolean reversed = loanTxnDto.isReversed();
@@ -81,28 +89,30 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
 
             final List<ChargePaymentDTO> feePaymentDetails = new ArrayList<>();
             final List<ChargePaymentDTO> penaltyPaymentDetails = new ArrayList<>();
+            final List<ChargePaymentDTO> taxPaymentDetails = new ArrayList<>();
             // extract charge payment details (if exists)
             if (loanTxnDto.getLoanChargesPaid() != null) {
-                List<LoanChargePaidByDTO> loanChargesPaidData = loanTxnDto.getLoanChargesPaid();
+                final List<LoanChargePaidByDTO> loanChargesPaidData = loanTxnDto.getLoanChargesPaid();
                 for (final LoanChargePaidByDTO loanChargePaid : loanChargesPaidData) {
-
                     final Long chargeId = loanChargePaid.getChargeId();
                     final Long loanChargeId = loanChargePaid.getLoanChargeId();
                     final boolean isPenalty = loanChargePaid.getIsPenalty();
                     final BigDecimal chargeAmountPaid = loanChargePaid.getAmount();
                     final CustomChargePaymentDTO chargePaymentDTO = new CustomChargePaymentDTO(chargeId, chargeAmountPaid, loanChargeId);
-
-                    if (loanChargePaid instanceof CustomLoanChargePaidByDTO) {
-                        CustomLoanChargePaidByDTO loanChargePaidByDTO = (CustomLoanChargePaidByDTO) loanChargePaid;
+                    if (loanChargePaid instanceof CustomLoanChargePaidByDTO loanChargePaidByDTO) {
                         chargePaymentDTO.setTaxGroupId(loanChargePaidByDTO.getTaxGroupId());
                         chargePaymentDTO.setIncomeGLAccountId(loanChargePaidByDTO.getIncomeGLAccountId());
                         chargePaymentDTO.setTaxGLAccountId(loanChargePaidByDTO.getTaxGLAccountId());
                         chargePaymentDTO.setTaxGroupName(loanChargePaidByDTO.getTaxGroupName());
                         chargePaymentDTO.setTaxAmount(loanChargePaidByDTO.getTaxAmount());
+                        chargePaymentDTO.setDebitGLAccountId(loanChargePaidByDTO.getDebitGLAccountId());
+                        chargePaymentDTO.setCreditGLAccountId(loanChargePaidByDTO.getCreditGLAccountId());
+                        chargePaymentDTO.setApplicableToFactoRateFeeTaxes(loanChargePaidByDTO.isApplicableToFactoRateFeeTaxes());
                     }
-
                     if (isPenalty) {
                         penaltyPaymentDetails.add(chargePaymentDTO);
+                    } else if (chargePaymentDTO.isApplicableToFactoRateFeeTaxes()) {
+                        taxPaymentDetails.add(chargePaymentDTO);
                     } else {
                         feePaymentDetails.add(chargePaymentDTO);
                     }
@@ -120,9 +130,9 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             BigDecimal penaltyPaid = loanTxnDto.getPenaltyPaid();
 
             final LoanTransactionDTO transaction = new LoanTransactionDTO(transactionOfficeId, paymentTypeId, transactionId,
-                    transactionDate, transactionType, amount, principal, interest, fees, penalties, overPayments, reversed,
-                    penaltyPaymentDetails, feePaymentDetails, localIsAccountTransfer, chargeRefundChargeType, loanChargeData, principalPaid,
-                    feePaid, penaltyPaid);
+                    transactionDate, transactionType, amount, principal, interest, fees, taxes, penalties, overPayments, reversed,
+                    penaltyPaymentDetails, feePaymentDetails, taxPaymentDetails, localIsAccountTransfer, chargeRefundChargeType,
+                    loanChargeData, principalPaid, feePaid, penaltyPaid);
 
             transaction.setLoanToLoanTransfer(loanTxnDto.isLoanToLoanTransfer());
             newLoanTransactions.add(transaction);
@@ -138,7 +148,7 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
 
     public void createCreditJournalEntryForLoanCharges(final Office office, final String currencyCode, final Long loanId,
             final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
-            final List<ChargePaymentDTO> chargePaymentDTOs, final boolean isTax) {
+            final List<ChargePaymentDTO> chargePaymentDTOs) {
         createJournalEntriesForTaxPaymentInternal(office, currencyCode, loanId, transactionId, transactionDate, totalAmount,
                 chargePaymentDTOs, true);
     }
@@ -181,5 +191,47 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                     totalCreditedAmount, totalAmount);
         }
 
+    }
+
+    public void createJournalEntriesForInstallmentChargeTaxes(final Office office, final String currencyCode, final Long loanId,
+            final String transactionId, final LocalDate transactionDate, final BigDecimal totalAmount,
+            final List<ChargePaymentDTO> chargePaymentDTOs) {
+        final Map<GLAccount, BigDecimal> creditDetailsMap = new LinkedHashMap<>();
+        for (final ChargePaymentDTO chargePaymentDTOSuper : chargePaymentDTOs) {
+            final CustomChargePaymentDTO chargePaymentDTO = (CustomChargePaymentDTO) chargePaymentDTOSuper;
+            final BigDecimal amount = chargePaymentDTO.getTaxAmount() != null ? chargePaymentDTO.getTaxAmount() : BigDecimal.ZERO;
+            final GLAccount creditAccount = glAccountRepository.findById(chargePaymentDTO.getCreditGLAccountId())
+                    .orElseThrow(() -> new PlatformDataIntegrityException("error.msg.gl.account.not.found",
+                            "GL Account not found for ID: " + chargePaymentDTO.getCreditGLAccountId()));
+            creditDetailsMap.merge(creditAccount, amount, BigDecimal::add);
+        }
+        BigDecimal totalCreditedAmount = BigDecimal.ZERO;
+        for (Map.Entry<GLAccount, BigDecimal> entry : creditDetailsMap.entrySet()) {
+            GLAccount account = entry.getKey();
+            BigDecimal amount = entry.getValue();
+            totalCreditedAmount = totalCreditedAmount.add(amount);
+            this.createCreditJournalEntryForLoan(office, currencyCode, account, loanId, transactionId, transactionDate, amount);
+        }
+        if (totalAmount.compareTo(totalCreditedAmount) != 0) {
+            throw new PlatformDataIntegrityException(
+                    "Meltdown in advanced accounting...sum of all tax charges is not equal to the tax charge for a transaction",
+                    "Meltdown in advanced accounting...sum of all tax charges is not equal to the tax charge for a transaction",
+                    totalCreditedAmount, totalAmount);
+        }
+
+    }
+
+    @Override
+    public JournalEntry persistJournalEntry(JournalEntry journalEntry) {
+        boolean isNew = journalEntry.isNew();
+        JournalEntry savedJournalEntry = this.journalEntryRepository.saveAndFlush(journalEntry);
+        if (isNew) {
+            if (journalEntry.getLoanTransactionId() != null) {
+                businessEventNotifierService.notifyPostBusinessEvent(new LoanJournalEntryCreatedBusinessEvent(savedJournalEntry));
+            } else if (journalEntry.getSavingsTransactionId() != null) {
+                businessEventNotifierService.notifyPostBusinessEvent(new SavingsJournalEntryCreatedBusinessEvent(savedJournalEntry));
+            }
+        }
+        return savedJournalEntry;
     }
 }

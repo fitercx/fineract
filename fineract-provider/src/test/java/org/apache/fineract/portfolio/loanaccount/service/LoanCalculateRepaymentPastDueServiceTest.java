@@ -87,25 +87,29 @@ public class LoanCalculateRepaymentPastDueServiceTest {
         LocalDate repayment1DueDate = businessDate.minusDays(5);
         LoanRepaymentScheduleInstallment repaymentInstallment_closed = new LoanRepaymentScheduleInstallment(loanForProcessing, 1,
                 LocalDate.now(ZoneId.systemDefault()), repayment1DueDate, BigDecimal.valueOf(100.0), BigDecimal.valueOf(10.0),
-                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(),
+                BigDecimal.valueOf(0.0));
         repaymentInstallment_closed.updateObligationMet(true);
 
         // past due repayments
         LocalDate repayment2DueDate = businessDate.minusDays(4);
         LoanRepaymentScheduleInstallment repaymentInstallment_1 = new LoanRepaymentScheduleInstallment(loanForProcessing, 2,
                 LocalDate.now(ZoneId.systemDefault()), repayment2DueDate, BigDecimal.valueOf(100.0), BigDecimal.valueOf(10.0),
-                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(),
+                BigDecimal.valueOf(0.0));
 
         LocalDate repayment3DueDate = DateUtils.getBusinessLocalDate().minusDays(3);
         LoanRepaymentScheduleInstallment repaymentInstallment_2 = new LoanRepaymentScheduleInstallment(loanForProcessing, 3,
                 LocalDate.now(ZoneId.systemDefault()), repayment3DueDate, BigDecimal.valueOf(100.0), BigDecimal.valueOf(10.0),
-                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(),
+                BigDecimal.valueOf(0.0));
 
         // upcoming repayment
         LocalDate repayment4DueDate = businessDate.plusDays(1);
         LoanRepaymentScheduleInstallment repaymentInstallment_upcoming = new LoanRepaymentScheduleInstallment(loanForProcessing, 4,
                 LocalDate.now(ZoneId.systemDefault()), repayment4DueDate, BigDecimal.valueOf(100.0), BigDecimal.valueOf(10.0),
-                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(), BigDecimal.valueOf(0.0));
+                BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), BigDecimal.valueOf(10.0), false, new HashSet<>(),
+                BigDecimal.valueOf(0.0));
 
         List<LoanRepaymentScheduleInstallment> loanRepayments = Arrays.asList(repaymentInstallment_closed, repaymentInstallment_1,
                 repaymentInstallment_2, repaymentInstallment_upcoming);

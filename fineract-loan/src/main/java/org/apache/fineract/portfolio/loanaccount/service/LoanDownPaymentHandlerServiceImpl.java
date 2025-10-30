@@ -199,7 +199,7 @@ public class LoanDownPaymentHandlerServiceImpl implements LoanDownPaymentHandler
             // 1. Whether the loan is still overpaid after the disbursement,
             // 2. if the loan is not overpaid anymore after the disbursement, but was it more overpaid than the
             // calculated down-payment amount?
-            case CUMULATIVE -> {
+            case CUMULATIVE, FACTOR_RATE -> {
                 if (loan.getTotalOverpaidAsMoney().isGreaterThanZero()) {
                     yield Money.zero(loan.getCurrency());
                 }

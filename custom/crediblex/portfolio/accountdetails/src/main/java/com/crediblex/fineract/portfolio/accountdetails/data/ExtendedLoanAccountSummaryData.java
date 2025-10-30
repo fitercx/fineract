@@ -45,4 +45,8 @@ public class ExtendedLoanAccountSummaryData extends LoanAccountSummaryData {
     public void addCustomParameter(String name, Object value) {
         additionalProperties.put(name, value);
     }
+
+    public Object getCustomParameter(String name) {
+        return additionalProperties.get(name);
+    }
 }

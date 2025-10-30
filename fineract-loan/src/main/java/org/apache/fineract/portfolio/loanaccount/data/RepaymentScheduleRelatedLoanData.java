@@ -78,6 +78,6 @@ public class RepaymentScheduleRelatedLoanData {
     public DisbursementData disbursementData() {
         BigDecimal waivedChargeAmount = null;
         return new DisbursementData(null, this.expectedDisbursementDate, this.actualDisbursementDate, this.principal,
-                this.netDisbursalAmount, null, null, waivedChargeAmount);
+                this.netDisbursalAmount, null, null, null, waivedChargeAmount);
     }
 }

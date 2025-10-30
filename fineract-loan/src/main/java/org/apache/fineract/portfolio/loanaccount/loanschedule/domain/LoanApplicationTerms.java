@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
@@ -62,7 +64,7 @@ import org.apache.fineract.portfolio.loanproduct.domain.LoanSupportedInterestRef
 import org.apache.fineract.portfolio.loanproduct.domain.RecalculationFrequencyType;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
 
-public final class LoanApplicationTerms {
+public class LoanApplicationTerms {
 
     private CurrencyData currency;
 
@@ -226,6 +228,7 @@ public final class LoanApplicationTerms {
 
     private RepaymentStartDateType repaymentStartDateType;
     private LocalDate submittedOnDate;
+    @Getter
     private Money disbursedPrincipal;
     private LoanScheduleType loanScheduleType;
     private LoanScheduleProcessingType loanScheduleProcessingType;
@@ -238,7 +241,24 @@ public final class LoanApplicationTerms {
     private LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType;
     private LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy;
 
-    private LoanApplicationTerms(Builder builder) {
+    @Getter
+    @Setter
+    private Boolean isLineOfCredit = Boolean.FALSE;
+    @Getter
+    @Setter
+    private Boolean isReceivableLineOfCredit = Boolean.FALSE;
+    @Setter
+    @Getter
+    private BigDecimal approvedReceivableLineAmount;
+
+    @Setter
+    @Getter
+    private boolean factorRateEnabled;
+    @Setter
+    @Getter
+    private BigDecimal factorRate;
+
+    public LoanApplicationTerms(Builder builder) {
         this.currency = builder.currency;
         this.loanTermFrequency = builder.loanTermFrequency;
         this.loanTermPeriodFrequencyType = builder.loanTermPeriodFrequencyType;
@@ -508,7 +528,7 @@ public final class LoanApplicationTerms {
             final LoanChargeOffBehaviour chargeOffBehaviour, final boolean interestRecognitionOnDisbursementDate,
             final DaysInYearCustomStrategyType daysInYearCustomStrategy, final boolean enableIncomeCapitalization,
             final LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType,
-            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy) {
+            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy, final boolean factorRateEnabled, final BigDecimal factorRate) {
 
         final LoanRescheduleStrategyMethod rescheduleStrategyMethod = null;
         final CalendarHistoryDataWrapper calendarHistoryDataWrapper = null;
@@ -529,7 +549,7 @@ public final class LoanApplicationTerms {
                 isAutoRepaymentForDownPaymentEnabled, repaymentStartDateType, submittedOnDate, loanScheduleType, loanScheduleProcessingType,
                 fixedLength, enableAccrualActivityPosting, supportedInterestRefundTypes, chargeOffBehaviour,
                 interestRecognitionOnDisbursementDate, daysInYearCustomStrategy, enableIncomeCapitalization,
-                capitalizedIncomeCalculationType, capitalizedIncomeStrategy);
+                capitalizedIncomeCalculationType, capitalizedIncomeStrategy, factorRateEnabled, factorRate);
 
     }
 
@@ -550,7 +570,8 @@ public final class LoanApplicationTerms {
             final boolean isSkipRepaymentOnFirstDayOfMonth, final HolidayDetailDTO holidayDetailDTO, final boolean allowCompoundingOnEod,
             final boolean isFirstRepaymentDateAllowedOnHoliday, final boolean isInterestToBeRecoveredFirstWhenGreaterThanEMI,
             final BigDecimal fixedPrincipalPercentagePerInstallment, final boolean isPrincipalCompoundingDisabledForOverdueLoans,
-            final RepaymentStartDateType repaymentStartDateType, final LocalDate submittedOnDate) {
+            final RepaymentStartDateType repaymentStartDateType, final LocalDate submittedOnDate, final boolean factorRateEnabled,
+            final BigDecimal factorRate) {
 
         final Integer numberOfRepayments = loanProductRelatedDetail.getNumberOfRepayments();
         final Integer repaymentEvery = loanProductRelatedDetail.getRepayEvery();
@@ -605,7 +626,7 @@ public final class LoanApplicationTerms {
                 loanProductRelatedDetail.getSupportedInterestRefundTypes(), loanProductRelatedDetail.getChargeOffBehaviour(),
                 loanProductRelatedDetail.isInterestRecognitionOnDisbursementDate(), loanProductRelatedDetail.getDaysInYearCustomStrategy(),
                 loanProductRelatedDetail.isEnableIncomeCapitalization(), loanProductRelatedDetail.getCapitalizedIncomeCalculationType(),
-                loanProductRelatedDetail.getCapitalizedIncomeStrategy());
+                loanProductRelatedDetail.getCapitalizedIncomeStrategy(), factorRateEnabled, factorRate);
     }
 
     private LoanApplicationTerms(final CurrencyData currency, final Integer loanTermFrequency,
@@ -638,7 +659,7 @@ public final class LoanApplicationTerms {
             final List<LoanSupportedInterestRefundTypes> supportedInterestRefundTypes, final LoanChargeOffBehaviour chargeOffBehaviour,
             final boolean interestRecognitionOnDisbursementDate, final DaysInYearCustomStrategyType daysInYearCustomStrategy,
             final boolean enableIncomeCapitalization, final LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType,
-            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy) {
+            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy, final boolean factorRateEnabled, final BigDecimal factorRate) {
 
         this.currency = currency;
         this.loanTermFrequency = loanTermFrequency;
@@ -743,6 +764,8 @@ public final class LoanApplicationTerms {
         this.enableIncomeCapitalization = enableIncomeCapitalization;
         this.capitalizedIncomeCalculationType = capitalizedIncomeCalculationType;
         this.capitalizedIncomeStrategy = capitalizedIncomeStrategy;
+        this.factorRateEnabled = factorRateEnabled;
+        this.factorRate = factorRate;
     }
 
     public Money adjustPrincipalIfLastRepaymentPeriod(final Money principalForPeriod, final Money totalCumulativePrincipalToDate,
@@ -978,7 +1001,9 @@ public final class LoanApplicationTerms {
         switch (this.interestMethod) {
             case FLAT:
                 final BigDecimal interestRateForLoanTerm = calculateFlatInterestRateForLoanTerm(calculator, mc);
-                totalInterestDue = this.disbursedPrincipal.minus(totalPrincipalAccountedForInterestCalcualtion)
+                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? approvedReceivableLineAmount
+                        : disbursedPrincipal.getAmount();
+                totalInterestDue = Money.of(currency, amountForInterestCalculation).minus(totalPrincipalAccountedForInterestCalcualtion)
                         .multiplyRetainScale(interestRateForLoanTerm, mc);
 
             break;
@@ -2169,4 +2194,7 @@ public final class LoanApplicationTerms {
         this.variationDays += daysToAdd;
     }
 
+    public void setApprovedPrincipal(Money approvedPrincipal) {
+        this.approvedPrincipal = approvedPrincipal;
+    }
 }

@@ -21,12 +21,14 @@ package com.crediblex.fineract.portfolio.loc.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
@@ -46,7 +48,8 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     private LineOfCredit lineOfCredit;
 
     @Column(name = "transaction_type", length = 50, nullable = false)
-    private String transactionType;
+    @Enumerated(value = EnumType.STRING)
+    private LineOfCreditTransactionType transactionType;
 
     @Column(name = "amount", precision = 19, scale = 6, nullable = false)
     private BigDecimal amount;
@@ -58,7 +61,7 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     private BigDecimal balanceAfter;
 
     @Column(name = "transaction_date", nullable = false)
-    private OffsetDateTime transactionDate;
+    private LocalDate transactionDate;
 
     @Column(name = "reference_number", length = 100)
     private String referenceNumber;
@@ -66,33 +69,16 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     @Column(name = "description", length = 500)
     private String description;
 
+    @Column(name = "is_backdated_entry", nullable = false)
+    private Boolean isBackdatedEntry = false;
+
     /**
      * Default constructor.
      */
     protected LineOfCreditTransaction() {}
 
-    /**
-     * Constructor for creating a new LOC transaction record.
-     *
-     * @param lineOfCredit
-     *            the line of credit
-     * @param transactionType
-     *            the type of transaction
-     * @param amount
-     *            the transaction amount
-     * @param balanceBefore
-     *            the balance before the transaction
-     * @param balanceAfter
-     *            the balance after the transaction
-     * @param transactionDate
-     *            the transaction date
-     * @param referenceNumber
-     *            the reference number
-     * @param description
-     *            the transaction description
-     */
-    public LineOfCreditTransaction(LineOfCredit lineOfCredit, String transactionType, BigDecimal amount, BigDecimal balanceBefore,
-            BigDecimal balanceAfter, OffsetDateTime transactionDate, String referenceNumber, String description) {
+    public LineOfCreditTransaction(LineOfCredit lineOfCredit, LineOfCreditTransactionType transactionType, BigDecimal amount,
+            BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate, String referenceNumber, String description) {
         this.lineOfCredit = lineOfCredit;
         this.transactionType = transactionType;
         this.amount = amount;
@@ -108,8 +94,8 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
      *
      * @param lineOfCredit
      *            the line of credit
-     * @param disbursementAmount
-     *            the disbursement amount
+     * @param transactionAmount
+     *            the transaction amount
      * @param balanceBefore
      *            the balance before disbursement
      * @param balanceAfter
@@ -120,9 +106,34 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
      *            the loan reference number
      * @return a new LOC transaction record
      */
-    public static LineOfCreditTransaction disbursement(LineOfCredit lineOfCredit, BigDecimal disbursementAmount, BigDecimal balanceBefore,
-            BigDecimal balanceAfter, OffsetDateTime transactionDate, String loanReference) {
-        return new LineOfCreditTransaction(lineOfCredit, "DISBURSEMENT", disbursementAmount, balanceBefore, balanceAfter, transactionDate,
-                loanReference, "Loan disbursement - LOC balance reduced");
+    private static LineOfCreditTransaction createTransaction(LineOfCredit lineOfCredit, BigDecimal transactionAmount,
+            BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate, String loanReference,
+            LineOfCreditTransactionType type, String description) {
+        return new LineOfCreditTransaction(lineOfCredit, type, transactionAmount, balanceBefore, balanceAfter, transactionDate,
+                loanReference, description);
+    }
+
+    private static String getTransactionDescription(LineOfCreditTransactionType type) {
+        return switch (type) {
+            case DISBURSEMENT -> "Loan disbursement - LOC balance reduced";
+            case REPAYMENT -> "Loan repayment - LOC balance increased";
+            case FORECLOSURE -> "Refund for early repayment";
+            case REFUND, REVERSAL -> "Loan repayment payment refund/reversal - LOC balance decreased";
+            case INCREMENT -> "Increment Line of Credit limit - LOC balance increased";
+            case DECREMENT -> "Decrease of Line of Credit limit - LOC balance decreased";
+            case UNDO_DISBURSEMENT -> "Increment after undo disbursement. LOC balance increased";
+            default -> throw new IllegalArgumentException("Unsupported transaction type: " + type);
+        };
+    }
+
+    public static LineOfCreditTransaction newTransactionInstance(LineOfCredit lineOfCredit, BigDecimal transactionAmount,
+            BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate, String loanReference,
+            LineOfCreditTransactionType type) {
+        return createTransaction(lineOfCredit, transactionAmount, balanceBefore, balanceAfter, transactionDate, loanReference, type,
+                getTransactionDescription(type));
+    }
+
+    public boolean isDisbursement() {
+        return this.transactionType == LineOfCreditTransactionType.DISBURSEMENT;
     }
 }
