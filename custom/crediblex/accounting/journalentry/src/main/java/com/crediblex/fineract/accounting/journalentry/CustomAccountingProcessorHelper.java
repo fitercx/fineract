@@ -138,12 +138,25 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             newLoanTransactions.add(transaction);
         }
 
-        return new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled,
+        CustomLoanDTO customLoanDTO = new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled,
                 upfrontAccrualBasedAccountingEnabled, periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff,
                 isLoanMarkedAsFraud, chargeOffReasonCodeValue,
                 (accountingBridgeData instanceof CustomAccountingBridgeDataDTO)
                         ? ((CustomAccountingBridgeDataDTO) accountingBridgeData).getNetDisbursalAmount()
                         : null);
+
+        // Populate LOC receivable fields if applicable
+        if (accountingBridgeData instanceof CustomAccountingBridgeDataDTO) {
+            CustomAccountingBridgeDataDTO customBridgeData = (CustomAccountingBridgeDataDTO) accountingBridgeData;
+            customLoanDTO.setLocReceivable(customBridgeData.isLocReceivable());
+            customLoanDTO.setTotalContractualInterest(customBridgeData.getTotalContractualInterest());
+            customLoanDTO.setTotalDisbursementFees(customBridgeData.getTotalDisbursementFees());
+            customLoanDTO.setTotalDisbursementFeesTax(customBridgeData.getTotalDisbursementFeesTax());
+            customLoanDTO.setTotalAccruedInterest(customBridgeData.getTotalAccruedInterest());
+            customLoanDTO.setTotalInterestCharged(customBridgeData.getTotalInterestCharged());
+        }
+
+        return customLoanDTO;
     }
 
     public void createCreditJournalEntryForLoanCharges(final Office office, final String currencyCode, final Long loanId,

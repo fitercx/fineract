@@ -3,8 +3,8 @@ package com.crediblex.fineract.accounting.productaccountmapping.exception;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 
 /**
- * Thrown when a loan product has line of credit receivable enabled under periodic accrual accounting
- * but the deferred income GL account mapping was not provided.
+ * Thrown when a loan product has line of credit receivable enabled under periodic accrual accounting but the deferred
+ * income GL account mapping was not provided.
  */
 public class MissingDeferredIncomeAccountMappingException extends AbstractPlatformDomainRuleException {
 
@@ -13,4 +13,3 @@ public class MissingDeferredIncomeAccountMappingException extends AbstractPlatfo
                 "Deferred income GL Account mapping is mandatory when line of credit receivable is enabled for periodic accrual accounting.");
     }
 }
-

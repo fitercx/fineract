@@ -74,11 +74,80 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
                         ? loan.getApprovedPrincipal().add(loan.getNetDisbursalAmount())
                         : loan.getApprovedPrincipal();
 
-        return new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(), currencyCode,
-                loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
+        CustomAccountingBridgeDataDTO accountingData = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(),
+                currencyCode, loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
                 loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
                 isAccountTransfer, loan.isChargedOff(), loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactions,
                 netAmountForLiabilityTransfer);
+
+        // Populate LOC receivable specific fields for upfront accrual accounting
+        boolean isLocReceivable = loan.getLoanProduct().isEnableLocReceivable() && loan.isPeriodicAccrualAccountingEnabledOnLoanProduct();
+
+        if (isLocReceivable) {
+            accountingData.setLocReceivable(true);
+
+            // Calculate total contractual interest from loan schedule installments (not summary)
+            // At disbursement time, loan.getSummary().getTotalInterestCharged() may be 0
+            BigDecimal totalContractualInterest = BigDecimal.ZERO;
+            if (loan.getRepaymentScheduleInstallments() != null) {
+                for (var installment : loan.getRepaymentScheduleInstallments()) {
+                    Money interestCharged = installment.getInterestCharged(loan.getCurrency());
+                    if (interestCharged != null) {
+                        totalContractualInterest = totalContractualInterest.add(interestCharged.getAmount());
+                    }
+                }
+            }
+            accountingData.setTotalContractualInterest(totalContractualInterest);
+
+            // Calculate total disbursement fees (net + tax)
+            BigDecimal totalDisbursementFees = BigDecimal.ZERO;
+            BigDecimal totalDisbursementFeesTax = BigDecimal.ZERO;
+
+            for (LoanCharge charge : loan.getCharges()) {
+                if ((charge.isDisbursementCharge() || charge.isInstalmentFee()) && !charge.isWaived()) {
+                    BigDecimal chargeAmount = charge.getAmount();
+                    if (chargeAmount != null) {
+                        totalDisbursementFees = totalDisbursementFees.add(chargeAmount);
+
+                        // Add tax amount if charge has tax
+                        if (charge.hasTax() && charge.getTaxAmount() != null) {
+                            BigDecimal taxAmount = Money.of(loan.getCurrency(), charge.getTaxAmount()).getAmount();
+                            totalDisbursementFees = totalDisbursementFees.add(taxAmount);
+                            totalDisbursementFeesTax = totalDisbursementFeesTax.add(taxAmount);
+                        }
+                    }
+                }
+            }
+
+            accountingData.setTotalDisbursementFees(totalDisbursementFees);
+            accountingData.setTotalDisbursementFeesTax(totalDisbursementFeesTax);
+
+            // Calculate total accrued interest from non-reversed accrual transactions
+            BigDecimal totalAccruedInterest = BigDecimal.ZERO;
+            for (LoanTransaction transaction : loan.getLoanTransactions()) {
+                if (transaction.isAccrual() && !transaction.isReversed()) {
+                    BigDecimal interestPortion = transaction.getInterestPortion();
+                    if (interestPortion != null) {
+                        totalAccruedInterest = totalAccruedInterest.add(interestPortion);
+                    }
+                }
+            }
+            accountingData.setTotalAccruedInterest(totalAccruedInterest);
+
+            // Calculate total interest charged from loan schedule installments
+            BigDecimal totalInterestCharged = BigDecimal.ZERO;
+            if (loan.getRepaymentScheduleInstallments() != null) {
+                for (var installment : loan.getRepaymentScheduleInstallments()) {
+                    Money interestCharged = installment.getInterestCharged(loan.getCurrency());
+                    if (interestCharged != null) {
+                        totalInterestCharged = totalInterestCharged.add(interestCharged.getAmount());
+                    }
+                }
+            }
+            accountingData.setTotalInterestCharged(totalInterestCharged);
+        }
+
+        return accountingData;
     }
 
     @Override

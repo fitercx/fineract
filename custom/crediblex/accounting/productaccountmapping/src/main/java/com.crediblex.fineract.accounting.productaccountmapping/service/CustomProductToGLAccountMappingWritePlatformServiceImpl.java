@@ -1,19 +1,19 @@
 package com.crediblex.fineract.accounting.productaccountmapping.service;
 
+import static org.apache.fineract.accounting.common.AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME;
+
+import com.crediblex.fineract.accounting.productaccountmapping.exception.MissingDeferredIncomeAccountMappingException;
+import com.crediblex.fineract.accounting.productaccountmapping.exception.ProductAccountMappingNotSupported;
+import com.google.gson.JsonElement;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-
-import com.crediblex.fineract.accounting.productaccountmapping.exception.ProductAccountMappingNotSupported;
-import com.crediblex.fineract.accounting.productaccountmapping.exception.MissingDeferredIncomeAccountMappingException; // added import
-import com.google.gson.JsonElement;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants.LoanProductAccountingParams;
 import org.apache.fineract.accounting.common.AccountingRuleType;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountType;
-
 import org.apache.fineract.accounting.productaccountmapping.service.LoanProductToGLAccountMappingHelper;
 import org.apache.fineract.accounting.productaccountmapping.service.ProductToGLAccountMappingWritePlatformServiceImpl;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMapping;
@@ -25,12 +25,10 @@ import org.apache.fineract.accounting.producttoaccountmapping.service.ShareProdu
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.portfolio.PortfolioProductType;
-import org.apache.fineract.portfolio.loanproduct.LoanProductConstants; // added import
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import static org.apache.fineract.accounting.common.AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME;
 
 /**
  * Custom extension to add deferredIncomeAccountId mapping for accrual periodic loan products.
@@ -49,12 +47,13 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
     private final ProductToGLAccountMappingRepository productToGLAccountMappingRepository;
 
     public CustomProductToGLAccountMappingWritePlatformServiceImpl(FromJsonHelper fromApiJsonHelper,
-                                                                   ProductToGLAccountMappingFromApiJsonDeserializer deserializer,
-                                                                   LoanProductToGLAccountMappingHelper loanProductToGLAccountMappingHelper,
-                                                                   SavingsProductToGLAccountMappingHelper savingsProductToGLAccountMappingHelper,
-                                                                   ShareProductToGLAccountMappingHelper shareProductToGLAccountMappingHelper,
-                                                                   GLAccountRepository glAccountRepository,ProductToGLAccountMappingRepository productToGLAccountMappingRepository) {
-        super(fromApiJsonHelper, deserializer, loanProductToGLAccountMappingHelper, savingsProductToGLAccountMappingHelper, shareProductToGLAccountMappingHelper);
+            ProductToGLAccountMappingFromApiJsonDeserializer deserializer,
+            LoanProductToGLAccountMappingHelper loanProductToGLAccountMappingHelper,
+            SavingsProductToGLAccountMappingHelper savingsProductToGLAccountMappingHelper,
+            ShareProductToGLAccountMappingHelper shareProductToGLAccountMappingHelper, GLAccountRepository glAccountRepository,
+            ProductToGLAccountMappingRepository productToGLAccountMappingRepository) {
+        super(fromApiJsonHelper, deserializer, loanProductToGLAccountMappingHelper, savingsProductToGLAccountMappingHelper,
+                shareProductToGLAccountMappingHelper);
 
         this.fromApiJsonHelper = fromApiJsonHelper;
         this.deserializer = deserializer;
@@ -73,16 +72,15 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
         handleDeferredIncomeMappingOnCreate(loanProductId, command);
     }
 
-
-
     private void handleDeferredIncomeMappingOnCreate(Long loanProductId, JsonCommand command) {
         final JsonElement element = this.fromApiJsonHelper.parse(command.json());
         final Integer accountingRuleTypeId = this.fromApiJsonHelper.extractIntegerNamed("accountingRule", element, Locale.getDefault());
         final AccountingRuleType accountingRuleType = AccountingRuleType.fromInt(accountingRuleTypeId);
         if (accountingRuleType == AccountingRuleType.ACCRUAL_PERIODIC) {
-            final Long deferredIncomeAccountId = fromApiJsonHelper.extractLongNamed(
-                    LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), element);
-            final Boolean enableLocReceivable = fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, element);
+            final Long deferredIncomeAccountId = fromApiJsonHelper
+                    .extractLongNamed(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), element);
+            final Boolean enableLocReceivable = fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME,
+                    element);
             if (Boolean.TRUE.equals(enableLocReceivable) && deferredIncomeAccountId == null) {
                 // LOC receivable requires deferred income account mapping
                 throw new MissingDeferredIncomeAccountMappingException();
@@ -106,16 +104,16 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
             throw new ProductAccountMappingNotSupported(glAccountId);
         }
         if (!Objects.equals(glAccount.getType(), GLAccountType.LIABILITY.getValue())) {
-            throw new ProductToGLAccountMappingInvalidException(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), glAccount.getName(),
-                    glAccountId, GLAccountType.fromInt(glAccount.getType()).toString(), GLAccountType.LIABILITY.toString());
+            throw new ProductToGLAccountMappingInvalidException(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(),
+                    glAccount.getName(), glAccountId, GLAccountType.fromInt(glAccount.getType()).toString(),
+                    GLAccountType.LIABILITY.toString());
         }
     }
-
 
     @Override
     @Transactional
     public Map<String, Object> updateLoanProductToGLAccountMapping(Long loanProductId, JsonCommand command, boolean accountingRuleChanged,
-                                                                   AccountingRuleType accountingRuleType) {
+            AccountingRuleType accountingRuleType) {
 
         Map<String, Object> changes = super.updateLoanProductToGLAccountMapping(loanProductId, command, accountingRuleChanged,
                 accountingRuleType);
@@ -125,9 +123,10 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
         if (accountingRuleChanged) {
             // After super call mappings were recreated if needed; re-add our mapping for periodic accrual
             if (accountingRuleType == AccountingRuleType.ACCRUAL_PERIODIC) {
-                Long deferredIncomeAccountId = fromApiJsonHelper.extractLongNamed(
-                        LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), element);
-                final Boolean enableLocReceivable = fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, element);
+                Long deferredIncomeAccountId = fromApiJsonHelper
+                        .extractLongNamed(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), element);
+                final Boolean enableLocReceivable = fromApiJsonHelper
+                        .extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, element);
                 if (Boolean.TRUE.equals(enableLocReceivable) && deferredIncomeAccountId == null) {
                     throw new MissingDeferredIncomeAccountMappingException();
                 }
@@ -135,8 +134,7 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
                     validateDeferredIncomeAccountIsLiability(deferredIncomeAccountId);
                     // ensure mapping exists after recreation
                     this.loanProductToGLAccountMappingHelper.saveLoanToLiabilityAccountMapping(element,
-                            LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), loanProductId,
-                            DEFERRED_INCOME.getValue());
+                            LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), loanProductId, DEFERRED_INCOME.getValue());
                     changes.put(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), deferredIncomeAccountId);
                 }
             } else {
@@ -145,10 +143,12 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
         } else {
             // selective update scenario
             if (accountingRuleType == AccountingRuleType.ACCRUAL_PERIODIC) {
-                Long paramValue = this.fromApiJsonHelper.extractLongNamed(
-                        LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), element);
-                final Boolean enableLocReceivable = fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, element);
-                if (Boolean.TRUE.equals(enableLocReceivable) && paramValue == null && command.parameterExists(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME)) {
+                Long paramValue = this.fromApiJsonHelper.extractLongNamed(LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(),
+                        element);
+                final Boolean enableLocReceivable = fromApiJsonHelper
+                        .extractBooleanNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, element);
+                if (Boolean.TRUE.equals(enableLocReceivable) && paramValue == null
+                        && command.parameterExists(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME)) {
                     // If explicitly enabling LOC receivable without providing deferred mapping
                     throw new MissingDeferredIncomeAccountMappingException();
                 }

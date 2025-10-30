@@ -11,6 +11,6 @@ public class ProductAccountMappingNotSupported extends AbstractPlatformDomainRul
 
     public ProductAccountMappingNotSupported(Long id) {
         super("error.msg.invalid.account.type",
-                "Passed in GLAccount (Deffered Income Account) with Id "+id+" is not a valid gl account");
+                "Passed in GLAccount (Deffered Income Account) with Id " + id + " is not a valid gl account");
     }
 }

@@ -22,5 +22,4 @@ dependencies {
     implementation(project(':fineract-accounting'))
     implementation(project(':fineract-loan'))
     implementation('com.google.code.gson:gson')
-
 }

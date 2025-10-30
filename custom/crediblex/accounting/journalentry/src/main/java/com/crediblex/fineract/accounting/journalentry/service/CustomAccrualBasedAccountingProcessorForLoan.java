@@ -61,6 +61,48 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.AccrualAccountsForLoan.OVERPAYMENT.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, overpaymentPortion);
         }
+
+        // LOC Receivable: Post upfront interest and fee receivables with deferred income
+        if (loanDTO.isLocReceivable() && loanDTO.isPeriodicAccrualBasedAccountingEnabled()) {
+            // 1. Upfront Interest Receivable -> Deferred Income
+            BigDecimal totalInterest = loanDTO.getTotalContractualInterest();
+            if (MathUtil.isGreaterThanZero(totalInterest)) {
+                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.AccrualAccountsForLoan.INTEREST_RECEIVABLE.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, totalInterest);
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, totalInterest);
+            }
+
+            // 2. Upfront Fee Receivable (gross) -> Fee Income (net) + Tax Liability (tax)
+            // Fees are recognized as income immediately at disbursement (NOT deferred)
+            BigDecimal totalFees = loanDTO.getTotalDisbursementFees();
+            BigDecimal totalFeesTax = loanDTO.getTotalDisbursementFeesTax();
+            BigDecimal netFees = totalFees.subtract(totalFeesTax);
+
+            if (MathUtil.isGreaterThanZero(totalFees)) {
+                // DR Fees Receivable (gross amount including tax)
+                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, totalFees);
+
+                // CR Income From Fees (net amount - recognized immediately)
+                if (MathUtil.isGreaterThanZero(netFees)) {
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, netFees);
+                }
+
+                // CR Tax Liability (tax portion)
+                if (MathUtil.isGreaterThanZero(totalFeesTax)) {
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue(), loanProductId, paymentTypeId,
+                            loanId, transactionId, transactionDate, totalFeesTax);
+                }
+            }
+        }
+
         if (loanTransactionDTO.isLoanToLoanTransfer()) {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
@@ -222,9 +264,42 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     entry.getKey());
         }
 
+        // LOC Receivable: Recognize deferred income when interest/fees are actually repaid
+        // Combine interest and fees to avoid multiple entries to the same Deferred Income account
+        if (loanDTO instanceof CustomLoanDTO) {
+            CustomLoanDTO customLoanDTO = (CustomLoanDTO) loanDTO;
+            if (customLoanDTO.isLocReceivable() && customLoanDTO.isPeriodicAccrualBasedAccountingEnabled() && !writeOff) {
+
+                // For LOC receivable: Only unwind deferred income for unaccrued interest (early payment scenario)
+                // Fees are NOT included in deferred income - they are installment fees handled through standard accrual
+                if (interestAmount != null && interestAmount.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal totalInterestCharged = customLoanDTO.getTotalInterestCharged() != null
+                            ? customLoanDTO.getTotalInterestCharged()
+                            : BigDecimal.ZERO;
+                    BigDecimal totalAccruedInterest = customLoanDTO.getTotalAccruedInterest() != null
+                            ? customLoanDTO.getTotalAccruedInterest()
+                            : BigDecimal.ZERO;
+                    BigDecimal unaccruedInterest = totalInterestCharged.subtract(totalAccruedInterest);
+
+                    // Only unwind if there's unaccrued interest (early payment scenario)
+                    if (unaccruedInterest.compareTo(BigDecimal.ZERO) > 0) {
+                        // DR Deferred Income
+                        this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                                AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME.getValue(), loanProductId, paymentTypeId, loanId,
+                                transactionId, transactionDate, unaccruedInterest);
+
+                        // CR Interest On Loans for unaccrued interest
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                                AccountingConstants.AccrualAccountsForLoan.INTEREST_ON_LOANS.getValue(), loanProductId, paymentTypeId,
+                                loanId, transactionId, transactionDate, unaccruedInterest);
+                    }
+                }
+            }
+        }
+
         /**
          * Exclude DEBIT entry for Repayments of Fees at Disbursement and VAT Deduction at Disbursement
-         ***/
+         **/
         if (totalDebitAmount.compareTo(BigDecimal.ZERO) > 0 && isDebitAccountEntryPermitted(loanTransactionDTO)) {
             if (writeOff) {
                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
@@ -272,5 +347,52 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         return !loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()
                 && !loanTransactionDTO.getTransactionType().isRepaymentAtDisbursement();
     }
-}
 
+    /**
+     * Override parent's protected method to handle journal entries for accruals. For LOC receivable with periodic
+     * accrual, this unwinds deferred income instead of creating new receivables. For non-LOC loans, this delegates to
+     * the parent class logic.
+     */
+    @Override
+    protected void createJournalEntriesForAccruals(final LoanDTO loanDTOSuper, final LoanTransactionDTO loanTransactionDTO,
+            final Office office) {
+        final CustomLoanDTO loanDTO = (loanDTOSuper instanceof CustomLoanDTO) ? (CustomLoanDTO) loanDTOSuper : null;
+
+        // For LOC receivable periodic loans, unwind deferred income instead of creating new receivables
+        if (loanDTO != null && loanDTO.isLocReceivable() && loanDTO.isPeriodicAccrualBasedAccountingEnabled()) {
+            unwindDeferredIncomeForAccrual(loanDTO, loanTransactionDTO, office);
+        } else {
+            // For non-LOC loans, delegate to parent's standard accrual logic
+            super.createJournalEntriesForAccruals(loanDTOSuper, loanTransactionDTO, office);
+        }
+    }
+
+    /**
+     * Unwinds deferred income for periodic accruals on LOC receivable loans. DR Deferred Income -> CR Interest On Loans
+     * (no new receivable created)
+     */
+    private void unwindDeferredIncomeForAccrual(final CustomLoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO,
+            final Office office) {
+        final Long loanProductId = loanDTO.getLoanProductId();
+        final Long loanId = loanDTO.getLoanId();
+        final String currencyCode = loanDTO.getCurrencyCode();
+        final String transactionId = loanTransactionDTO.getTransactionId();
+        final LocalDate transactionDate = loanTransactionDTO.getTransactionDate();
+        final Long paymentTypeId = loanTransactionDTO.getPaymentTypeId();
+
+        // Get period interest amount
+        BigDecimal periodInterest = loanTransactionDTO.getInterest();
+
+        if (MathUtil.isGreaterThanZero(periodInterest)) {
+            // DR Deferred Income (reduce liability)
+            this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME.getValue(), loanProductId, paymentTypeId, loanId,
+                    transactionId, transactionDate, periodInterest);
+
+            // CR Interest On Loans (recognize income)
+            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                    AccountingConstants.AccrualAccountsForLoan.INTEREST_ON_LOANS.getValue(), loanProductId, paymentTypeId, loanId,
+                    transactionId, transactionDate, periodInterest);
+        }
+    }
+}

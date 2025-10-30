@@ -167,9 +167,8 @@ public class ProductToGLAccountMappingReadPlatformServiceImpl implements Product
                 } else if (glAccountForLoan.equals(AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY)) {
                     accountMappingDetails.put(LoanProductAccountingDataParams.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
                             gLAccountData);
-                }else if (glAccountForLoan.equals(AccrualAccountsForLoan.DEFERRED_INCOME)) {
-                    accountMappingDetails.put(LoanProductAccountingDataParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(),
-                            gLAccountData);
+                } else if (glAccountForLoan.equals(AccrualAccountsForLoan.DEFERRED_INCOME)) {
+                    accountMappingDetails.put(LoanProductAccountingDataParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), gLAccountData);
                 }
             }
 
