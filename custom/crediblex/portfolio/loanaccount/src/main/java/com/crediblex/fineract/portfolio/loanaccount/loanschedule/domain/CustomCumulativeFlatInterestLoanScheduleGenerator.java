@@ -59,7 +59,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
 
         // As long as its a line of credit loan, deduct interest from principal
         // NEW: Check if interest should be deducted from principal
-        if (loanApplicationTerms.getIsLineOfCredit()) {
+        if (Boolean.TRUE.equals(loanApplicationTerms.getIsLineOfCredit())) {
             return calculateFlatInterestWithDeduction(calculator, interestCalculationGraceOnRepaymentPeriodFraction,
                     totalCumulativePrincipal, totalCumulativeInterest, totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace,
                     loanApplicationTerms, periodNumber, mc, periodStartDate, periodEndDate);
@@ -426,7 +426,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(principalInterestForThisPeriod.interestPaymentDueToGrace());
             currentPeriodParams.setPrincipalForThisPeriod(principalInterestForThisPeriod.principal());
 
-            if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            if (Boolean.TRUE.equals(loanApplicationTerms.getIsLineOfCredit())
+                    && Boolean.TRUE.equals(loanApplicationTerms.getIsReceivableLineOfCredit())) {
                 Money adjustedPrincipal = scheduleParams.getOutstandingBalance()
                         .minus(principalInterestForThisPeriod.interestPaymentDueToGrace().add(principalInterestForThisPeriod.interest()));
 
