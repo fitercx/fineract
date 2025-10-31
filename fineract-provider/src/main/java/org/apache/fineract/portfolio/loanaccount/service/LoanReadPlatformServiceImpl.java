@@ -178,7 +178,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     private final LoanTransactionRepository loanTransactionRepository;
     private final LoanChargePaidByReadService loanChargePaidByReadService;
     private final LoanTransactionRelationReadService loanTransactionRelationReadService;
-    private final LoanForeclosureValidator loanForeclosureValidator;
+    protected final LoanForeclosureValidator loanForeclosureValidator;
     private final LoanTransactionMapper loanTransactionMapper;
     protected final org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper;
     private final LoanTransactionProcessingService loadTransactionProcessingService;

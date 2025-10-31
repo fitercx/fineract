@@ -36,6 +36,7 @@ public interface LoanTransactionMapper {
     @Mapping(target = "taxChargesPortion", ignore = true)
     @Mapping(target = "transfer", ignore = true)
     @Mapping(target = "fixedEmiAmount", ignore = true)
+    @Mapping(target = "additionalAttributes", ignore = true)
     @Mapping(target = "date", source = "dateOf")
     @Mapping(target = "loanChargePaidByList", source = "loanChargesPaid")
     @Mapping(target = "manuallyReversed", source = "manuallyAdjustedOrReversed")

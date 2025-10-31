@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -26,7 +27,15 @@ import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDays;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
+import org.apache.fineract.portfolio.account.PortfolioAccountType;
+import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationType;
+import org.apache.fineract.portfolio.account.domain.AccountAssociations;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
+import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
+import org.apache.fineract.portfolio.account.domain.AccountTransferType;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionRepository;
+import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.delinquency.helper.DelinquencyEffectivePauseHelper;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyWritePlatformService;
@@ -66,6 +75,8 @@ import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +84,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Primary
 public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJpa {
+
+    private final AccountAssociationsRepository accountAssociationsRepository;
+    private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
 
     public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService,
@@ -91,7 +105,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
             LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanChargeValidator loanChargeValidator,
             LoanRefundService loanRefundService, LoanAccountService loanAccountService,
-            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper,
+            AccountAssociationsRepository accountAssociationsRepository,
+            @Lazy AccountTransfersWritePlatformService accountTransfersWritePlatformService) {
         super(loanAccountAssembler, loanRepositoryWrapper, loanTransactionRepository, configurationDomainService, holidayRepository,
                 workingDaysRepository, journalEntryWritePlatformService, noteRepository, businessEventNotifierService, loanUtilService,
                 standingInstructionRepository, postDatedChecksRepository, loanCollateralManagementRepository,
@@ -101,6 +117,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 loanForeclosureValidator, loanDownPaymentTransactionValidator, loanChargeService, loanScheduleService,
                 loanDownPaymentHandlerService, loanChargeValidator, loanRefundService, loanAccountService, reprocessLoanTransactionsService,
                 loanAccountingBridgeMapper);
+        this.accountAssociationsRepository = accountAssociationsRepository;
+        this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
     }
 
     @Override
@@ -206,26 +224,81 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         updateInstallmentsPostDate(loan, foreClosureDate);
 
         LoanTransaction payment = null;
-
-        if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).isGreaterThanZero()) {
-            final PaymentDetail paymentDetail = null;
-            payment = LoanTransaction.repayment(loan.getOffice(),
-                    payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
-                    foreClosureDate, externalId);
-            payment.updateLoan(loan);
-            newTransactions.add(payment);
-        }
-
         List<Long> transactionIds = new ArrayList<>();
-        if (payment != null) {
-            loanForeclosureValidator.validateForForeclosure(loan, payment.getTransactionDate());
-        }
+
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
+
+        loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
 
         if (loan.isReceivableLocLoan()) {
             loan.getLoanRepaymentScheduleDetail().setPrincipal(loan.getApprovedPrincipal().subtract(totalInterestChargedBeforeForClosure));
         }
-        handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
+
+        /// //This is where we should be doing the transfer from.
+
+        // Check if loan has a linked savings account for foreclosure transfer
+        AccountAssociations accountAssociation = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
+                AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION.getValue());
+
+        if (accountAssociation != null && accountAssociation.linkedSavingsAccount() != null) {
+            // Foreclosure via account transfer from linked savings account
+            SavingsAccount linkedSavingsAccount = accountAssociation.linkedSavingsAccount();
+
+            // Validate that the linked savings account is active
+            if (!linkedSavingsAccount.isActive()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.linked.savings.account.not.active",
+                        "The linked savings account is not active and cannot be used for foreclosure", linkedSavingsAccount.getId());
+            }
+
+            BigDecimal totalForeclosureAmount = payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable)
+                    .getAmount();
+
+            // Prepare transfer details
+            // NO need to validate balances, it will be validated in the withdraw process
+            final boolean isRegularTransaction = true;
+            final boolean isExceptionForBalanceCheck = false;
+
+            // Create AccountTransferDTO for savings to loan transfer
+            final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(foreClosureDate, totalForeclosureAmount,
+                    PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN, linkedSavingsAccount.getId(), loan.getId(),
+                    "Foreclosure payment from linked savings account " + linkedSavingsAccount.getAccountNumber(), null, null, null, // paymentDetail
+                    null, // fromTransferType
+                    LoanTransactionType.REPAYMENT.getValue(), // toTransferType
+                    null, // chargeId
+                    null, // loanInstallmentNumber
+                    AccountTransferType.LOAN_FORECLOSURE.getValue(), // transferType
+                    null, // accountTransferDetails
+                    noteText, externalId, loan, null, // toSavingsAccount
+                    linkedSavingsAccount, // fromSavingsAccount
+                    isRegularTransaction, isExceptionForBalanceCheck);
+
+            // Execute the account transfer - this will handle both withdrawal and repayment
+            Long transferTransactionId = accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+
+            Optional<AccountTransferTransaction> accountTransferTransaction = this.accountTransfersWritePlatformService
+                    .getToLoanTransactionFromAccountTransferId(transferTransactionId);
+
+            if (accountTransferTransaction.isEmpty()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.linked.savings.account.transfer.failed",
+                        "The transfer from linked savings account failed, loan foreclosure cannot be completed", loan.getId());
+            }
+
+            payment = accountTransferTransaction.get().getToLoanTransaction();
+            newTransactions.add(payment);
+
+        } else {
+
+            if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).isGreaterThanZero()) {
+                final PaymentDetail paymentDetail = null;
+                payment = LoanTransaction.repayment(loan.getOffice(),
+                        payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
+                        foreClosureDate, externalId);
+                payment.updateLoan(loan);
+                newTransactions.add(payment);
+            }
+
+            handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
+        }
 
         if (loan.isReceivableLocLoan()) {
             loan.getLoanRepaymentScheduleDetail().setPrincipal(totalPrincipalBeforeForClosure.getAmount());

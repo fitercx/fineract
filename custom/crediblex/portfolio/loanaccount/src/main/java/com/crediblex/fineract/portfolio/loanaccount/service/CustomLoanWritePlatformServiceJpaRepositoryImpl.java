@@ -114,7 +114,6 @@ import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -161,7 +160,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
-            JdbcTemplate jdbcTemplate, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
             LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
             StandingInstructionRepository standingInstructionRepository) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
