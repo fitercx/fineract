@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import static org.apache.fineract.portfolio.account.domain.AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION;
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
@@ -71,6 +72,8 @@ import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepos
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
+import org.apache.fineract.portfolio.account.domain.AccountAssociations;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.accountdetails.data.LoanAccountSummaryData;
 import org.apache.fineract.portfolio.accountdetails.domain.AccountType;
 import org.apache.fineract.portfolio.accountdetails.service.AccountDetailsReadPlatformService;
@@ -106,6 +109,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSubStatus;
@@ -130,6 +134,7 @@ import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.loanproduct.service.LoanProductReadPlatformService;
 import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
@@ -152,6 +157,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository;
+    private final AccountAssociationsRepository accountAssociationsRepository;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -171,7 +177,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper,
             LoanTransactionProcessingService loadTransactionProcessingService,
             CredXLoanTransactionRepository credXLoanTransactionRepository, LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
+            AccountAssociationsRepository accountAssociationsRepository) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -188,6 +195,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.loanRepositoryWrapper = loanRepositoryWrapper;
         this.applicationCurrencyRepository = applicationCurrencyRepository;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
+        this.accountAssociationsRepository = accountAssociationsRepository;
     }
 
     @Override
@@ -1564,6 +1572,55 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return (!excludePastUnDisbursed || data.isDisbursed() || !DateUtils.isBeforeBusinessDate(data.disbursementDate()))
                     && isDueForDisbursement;
         }
+    }
+
+    @Override
+    public LoanTransactionData retrieveLoanForeclosureTemplate(final Long loanId, final LocalDate transactionDate) {
+        this.context.authenticatedUser();
+
+        final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+        loanForeclosureValidator.validateForForeclosure(loan, transactionDate);
+        final MonetaryCurrency currency = loan.getCurrency();
+        final ApplicationCurrency applicationCurrency = this.applicationCurrencyRepository.findOneWithNotFoundDetection(currency);
+
+        final CurrencyData currencyData = applicationCurrency.toData();
+
+        final LocalDate earliestUnpaidInstallmentDate = DateUtils.getBusinessLocalDate();
+
+        final LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment = loan.fetchLoanForeclosureDetail(transactionDate);
+        BigDecimal unrecognizedIncomePortion = null;
+        final LoanTransactionEnumData transactionType = LoanEnumerations.transactionType(LoanTransactionType.REPAYMENT);
+        final Collection<PaymentTypeData> paymentTypeOptions = this.paymentTypeReadPlatformService.retrieveAllPaymentTypes();
+        final BigDecimal outstandingLoanBalance = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount();
+        final Boolean isReversed = false;
+
+        final Money outStandingAmount = loanRepaymentScheduleInstallment.getTotalOutstanding(currency);
+
+        LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
+                earliestUnpaidInstallmentDate, outStandingAmount.getAmount(), loan.getNetDisbursalAmount(),
+                loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount(),
+                loanRepaymentScheduleInstallment.getInterestOutstanding(currency).getAmount(),
+                loanRepaymentScheduleInstallment.getFeeChargesOutstanding(currency).getAmount(),
+                loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency).getAmount(),
+                loanRepaymentScheduleInstallment.getTaxChargesOutstanding(currency).getAmount(), null, unrecognizedIncomePortion,
+                paymentTypeOptions, ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
+
+        AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
+                LINKED_ACCOUNT_ASSOCIATION.getValue());
+
+        if (associations != null) {
+            SavingsAccount linkedSavingsAccount = associations.linkedSavingsAccount();
+
+            loanTransactionData.getAdditionalAttributes().put("linkedSavingsAccountId", linkedSavingsAccount.getId());
+            loanTransactionData.getAdditionalAttributes().put("linkedSavingsAccountAccountNo", linkedSavingsAccount.getAccountNumber());
+            loanTransactionData.getAdditionalAttributes().put("linkedSavingsAccountProductName",
+                    linkedSavingsAccount.savingsProduct().getName());
+            loanTransactionData.getAdditionalAttributes().put("linkedSavingsAccountAvailableBalance",
+                    linkedSavingsAccount.getWithdrawableBalance());
+
+        }
+
+        return loanTransactionData;
     }
 
 }

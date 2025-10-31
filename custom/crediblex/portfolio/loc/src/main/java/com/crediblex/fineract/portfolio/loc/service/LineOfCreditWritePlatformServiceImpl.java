@@ -485,46 +485,57 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // Validate payload (expects adjustedCreditLimit parameter)
         dataValidator.validateForIncreaseOrDecreaseOfCreditLimit(command);
-        BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
-        LocalDate transactionDate = command.dateValueOfParameterNamed("actionDate");
+        BigDecimal adjustmentAmount = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        // Use localDate extractor (consistent with increaseCreditLimit)
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
 
-        BigDecimal currentLimit = loc.getMaximumAmount();
-        if (currentLimit == null) {
-            currentLimit = BigDecimal.ZERO;
+        // Derive the balance (limit) at the given transaction date using LOC transaction history (supports backdated)
+        Optional<LineOfCreditTransaction> lastTransaction = lineOfCreditTransactionRepository
+                .findLastTransactionBeforeDate(lineOfCreditId, transactionDate.plusDays(1), PageRequest.of(0, 1)).stream().findFirst();
+
+        BigDecimal currentBalanceAtDate; // Balance (limit) effective at the transaction date
+        if (lastTransaction.isPresent()) {
+            currentBalanceAtDate = lastTransaction.get().getBalanceAfter();
+        } else {
+            // Fallback to current maximum amount if no historical transactions exist
+            currentBalanceAtDate = loc.getMaximumAmount() == null ? BigDecimal.ZERO : loc.getMaximumAmount();
         }
 
-        if (newLimit.compareTo(currentLimit) >= 0) {
+        // New limit must be strictly less than the effective limit at that date
+        if (adjustmentAmount.compareTo(currentBalanceAtDate) >= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.must.be.less",
-                    "New credit limit must be less than existing limit", ADJUSTED_CREDIT_LIMIT);
+                    "Adjustment amount must be less than existing limit for the given date", ADJUSTED_CREDIT_LIMIT);
         }
 
-        if (newLimit.compareTo(BigDecimal.ZERO) <= 0) {
+        if (adjustmentAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.amount.must.be.positive",
-                    "New credit limit must be greater than zero", ADJUSTED_CREDIT_LIMIT);
+                    "Adjustment amount limit must be greater than zero", ADJUSTED_CREDIT_LIMIT);
         }
 
+        // Update LOC balance history and summary (recomputation handled inside for backdated entries)
+        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, adjustmentAmount, loc, transactionDate,
+                LineOfCreditTransactionType.DECREMENT);
+
+        // Adjust current maximum limit (current state); even for backdated, we store present effective limit.
+        loc.setMaximumAmount(loc.getMaximumAmount().subtract(adjustmentAmount));
+
+        // Validate against consumed amount (current state). Defensive: cannot set limit below already consumed.
         BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
                 ? loc.getSummary().getConsumedAmount()
                 : BigDecimal.ZERO;
-        if (newLimit.compareTo(consumed) < 0) {
+        if (loc.getMaximumAmount().compareTo(consumed) < 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.consumed.exceeds.new.limit",
                     "Consumed amount exceeds the proposed new credit limit", ADJUSTED_CREDIT_LIMIT);
         }
 
-        BigDecimal delta = currentLimit.subtract(newLimit); // negative
-
-        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
-                LineOfCreditTransactionType.DECREMENT);
-        loc.setMaximumAmount(loc.getMaximumAmount().subtract(delta));
         this.lineOfCreditRepository.saveAndFlush(loc);
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.REDUCE_CREDIT_LIMIT);
 
         Map<String, Object> changes = new LinkedHashMap<>();
-        changes.put("previousLimit", currentLimit);
-        changes.put("newLimit", newLimit);
-        changes.put("delta", delta);
+        changes.put("previousLimit", currentBalanceAtDate);
+        changes.put("newLimit", loc.getMaximumAmount());
         if (loc.getSummary() != null) {
             changes.put("availableBalance", loc.getSummary().getAvailableBalance());
             changes.put("consumedAmount", loc.getSummary().getConsumedAmount());

@@ -128,7 +128,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
 
     private final LoanAssembler loanAccountAssembler;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final LoanTransactionRepository loanTransactionRepository;
+    protected final LoanTransactionRepository loanTransactionRepository;
     protected final ConfigurationDomainService configurationDomainService;
     protected final HolidayRepository holidayRepository;
     protected final WorkingDaysRepositoryWrapper workingDaysRepository;

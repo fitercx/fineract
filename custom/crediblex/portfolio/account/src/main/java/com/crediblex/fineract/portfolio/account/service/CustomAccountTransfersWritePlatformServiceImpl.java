@@ -3,27 +3,35 @@ package com.crediblex.fineract.portfolio.account.service;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.AccountTransfersDataValidator;
 import org.apache.fineract.portfolio.account.domain.AccountTransferAssembler;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
 import org.apache.fineract.portfolio.account.domain.AccountTransferRepository;
+import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
 import org.apache.fineract.portfolio.account.domain.AccountTransferType;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformServiceImpl;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
+import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSubStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanDownPaymentHandlerService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.savings.SavingsTransactionBooleanValues;
 import org.apache.fineract.portfolio.savings.domain.GSIMRepositoy;
 import org.apache.fineract.portfolio.savings.domain.GroupSavingsIndividualMonitoring;
@@ -40,6 +48,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTransfersWritePlatformServiceImpl {
 
+    private final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
+    private final LoanUtilService loanUtilService;
+    private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
+
     public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator,
             AccountTransferAssembler accountTransferAssembler, AccountTransferRepository accountTransferRepository,
             SavingsAccountAssembler savingsAccountAssembler, SavingsAccountDomainService savingsAccountDomainService,
@@ -47,11 +59,15 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             AccountTransferDetailRepository accountTransferDetailRepository, LoanReadPlatformService loanReadPlatformService,
             GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory,
-            FineractProperties fineractProperties) {
+            FineractProperties fineractProperties, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
+            LoanUtilService loanUtilService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine) {
         super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
                 savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
                 accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory,
                 fineractProperties);
+        this.loanDownPaymentHandlerService = loanDownPaymentHandlerService;
+        this.loanUtilService = loanUtilService;
+        this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine;
     }
 
     @Override
@@ -118,6 +134,23 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                         accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
                         accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,
                         isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
+                toLoanAccount = loanTransaction.getLoan();
+            } else if (AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
+                loanTransaction = LoanTransaction.repayment(toLoanAccount.getOffice(),
+                        Money.of(toLoanAccount.getCurrency(), accountTransferDTO.getTransactionAmount()),
+                        accountTransferDTO.getPaymentDetail(), accountTransferDTO.getTransactionDate(), externalId);
+
+                LocalDate recalculateFrom = null;
+                if (toLoanAccount.isInterestBearingAndInterestRecalculationEnabled()) {
+                    recalculateFrom = accountTransferDTO.getTransactionDate();
+                }
+                final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(toLoanAccount,
+                        recalculateFrom, null);
+
+                toLoanAccount.setLoanSubStatus(LoanSubStatus.FORECLOSED);
+
+                loanDownPaymentHandlerService.handleRepaymentOrRecoveryOrWaiverTransaction(toLoanAccount, loanTransaction,
+                        defaultLoanLifecycleStateMachine, null, scheduleGeneratorDTO);
                 toLoanAccount = loanTransaction.getLoan();
             } else {
                 final boolean isRecoveryRepayment = false;
@@ -248,5 +281,15 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         }
 
         return transferTransactionId;
+    }
+
+    @Override
+    public Optional<AccountTransferTransaction> getToLoanTransactionFromAccountTransferId(Long accountTransferId) {
+        AccountTransferDetails accountTransferDetails = this.accountTransferDetailRepository.findById(accountTransferId)
+                .orElseThrow(() -> new GeneralPlatformDomainRuleException("error.msg.accounttransfer.not.found",
+                        "Account transfer with id " + accountTransferId + " not found"));
+        return accountTransferDetails.getAccountTransferTransactions().stream()
+                .filter(t -> t.getToLoanTransaction() != null && !t.isReversed()).findFirst();
+
     }
 }

@@ -19,11 +19,13 @@
 package org.apache.fineract.portfolio.account.service;
 
 import java.util.Collection;
+import java.util.Optional;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
+import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
 
 public interface AccountTransfersWritePlatformService {
 
@@ -40,4 +42,6 @@ public interface AccountTransfersWritePlatformService {
     void reverseTransfersWithFromAccountTransactions(Collection<Long> fromTransactionIds, PortfolioAccountType accountTypeId);
 
     AccountTransferDetails repayLoanWithTopup(AccountTransferDTO accountTransferDTO);
+
+    Optional<AccountTransferTransaction> getToLoanTransactionFromAccountTransferId(Long accountTransferId);
 }

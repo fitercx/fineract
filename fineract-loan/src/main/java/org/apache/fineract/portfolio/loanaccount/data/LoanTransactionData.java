@@ -23,7 +23,9 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.Getter;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
@@ -104,6 +106,16 @@ public class LoanTransactionData implements Serializable {
     private List<LoanTransactionRelationData> transactionRelations;
 
     private Collection<CodeValueData> chargeOffReasonOptions = null;
+
+    private Map<String, Object> additionalAttributes;
+
+    public Map<String, Object> getAdditionalAttributes() {
+
+        if (additionalAttributes == null) {
+            additionalAttributes = new HashMap<>();
+        }
+        return additionalAttributes;
+    }
 
     public static LoanTransactionData importInstance(BigDecimal repaymentAmount, LocalDate lastRepaymentDate, Long repaymentTypeId,
             Integer rowIndex, String locale, String dateFormat) {
