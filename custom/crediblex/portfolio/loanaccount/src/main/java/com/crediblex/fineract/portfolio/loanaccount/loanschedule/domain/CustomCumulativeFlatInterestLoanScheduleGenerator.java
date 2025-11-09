@@ -93,7 +93,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         interestForThisInstallment = loanApplicationTerms.adjustInterestIfLastRepaymentPeriod(interestForThisInstallment,
                 totalCumulativeInterestToDate, totalInterestDueForLoan, periodNumber);
 
-        if (loanApplicationTerms.getIsLineOfCredit() && loanApplicationTerms.getIsReceivableLineOfCredit()) {
+        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
             principalForThisInstallment = principalForThisInstallment.minus(interestForThisInstallment);
         }
 
@@ -426,8 +426,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             scheduleParams.setTotalOutstandingInterestPaymentDueToGrace(principalInterestForThisPeriod.interestPaymentDueToGrace());
             currentPeriodParams.setPrincipalForThisPeriod(principalInterestForThisPeriod.principal());
 
-            if (Boolean.TRUE.equals(loanApplicationTerms.getIsLineOfCredit())
-                    && Boolean.TRUE.equals(loanApplicationTerms.getIsReceivableLineOfCredit())) {
+            if (Boolean.TRUE.equals(loanApplicationTerms.getIsReceivableLineOfCredit())) {
                 Money adjustedPrincipal = scheduleParams.getOutstandingBalance()
                         .minus(principalInterestForThisPeriod.interestPaymentDueToGrace().add(principalInterestForThisPeriod.interest()));
 

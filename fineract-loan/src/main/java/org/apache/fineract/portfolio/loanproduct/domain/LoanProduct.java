@@ -221,8 +221,8 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "enable_installment_level_delinquency", nullable = false)
     private boolean enableInstallmentLevelDelinquency = false;
 
-    @Column(name = "is_loc_enable", nullable = false)
-    private boolean isLocEnabled = false;
+    @Column(name = "enable_loc_payable", nullable = false)
+    private boolean enableLocPayable = false;
 
     @Column(name = "enable_loc_receivable", nullable = false)
     private boolean enableLocReceivable = false;
@@ -296,7 +296,8 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
             final LoanChargeOffBehaviour chargeOffBehaviour, final boolean isInterestRecognitionOnDisbursementDate,
             final DaysInYearCustomStrategyType daysInYearCustomStrategy, final boolean enableIncomeCapitalization,
             final LoanCapitalizedIncomeCalculationType capitalizedIncomeCalculationType,
-            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy, final boolean isLocEnabled, final boolean enableLocReceivable) {
+            final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy, final boolean enableLocPayable,
+            final boolean enableLocReceivable) {
         this.fund = fund;
         this.transactionProcessingStrategyCode = transactionProcessingStrategyCode;
 
@@ -398,7 +399,7 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
         this.repaymentStartDateType = repaymentStartDateType;
 
         this.enableInstallmentLevelDelinquency = enableInstallmentLevelDelinquency;
-        this.isLocEnabled = isLocEnabled;
+        this.enableLocPayable = enableLocPayable;
         this.enableLocReceivable = enableLocReceivable;
         validateLoanProductPreSave();
     }
@@ -633,8 +634,8 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
         return this.loanProductRelatedDetail.isInterestRecalculationEnabled();
     }
 
-    public boolean isLocEnabled() {
-        return this.isLocEnabled;
+    public boolean isEnableLocPayable() {
+        return this.enableLocPayable;
     }
 
     public Integer getMinimumDaysBetweenDisbursalAndFirstRepayment() {

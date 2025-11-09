@@ -26,7 +26,7 @@ public class CustomLoanTermVariationMapper extends LoanTermVariationsMapper {
         LoanApplicationTerms terms = super.constructLoanApplicationTerms(scheduleGeneratorDTO, loan);
 
         Optional<LoanLineOfCreditParams> params = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-        terms.setIsLineOfCredit(params.isPresent());
+        terms.setIsPayableLineOfCredit(params.isPresent() && params.get().getLineOfCredit().getProductType().isPayable());
         terms.setIsReceivableLineOfCredit(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
         loan.setReceivableLocLoan(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
 

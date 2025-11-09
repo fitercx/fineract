@@ -91,8 +91,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
     @Override
     protected LoanApplicationTerms assembleLoanApplicationTermsFrom(JsonElement element, LoanProduct loanProduct) {
 
-        boolean isLineOfCredit = loanProduct.isLocEnabled() && element.getAsJsonObject().has("lineOfCreditId");
-        boolean isReceivableLOC = isLineOfCredit && loanProduct.isEnableLocReceivable();
+        boolean isReceivableLOC = loanProduct.isEnableLocReceivable();
 
         if (isReceivableLOC) {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
@@ -136,7 +135,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
         LoanApplicationTerms terms = super.assembleLoanApplicationTermsFrom(element, loanProduct);
 
-        terms.setIsLineOfCredit(isLineOfCredit);
+        terms.setIsReceivableLineOfCredit(isReceivableLOC);
         if (isReceivableLOC) {
             terms.setIsReceivableLineOfCredit(true);
             terms.setApprovedReceivableLineAmount(element.getAsJsonObject().get("approvedReceivableAmount").getAsBigDecimal());

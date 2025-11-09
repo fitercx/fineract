@@ -243,7 +243,7 @@ public class LoanApplicationTerms {
 
     @Getter
     @Setter
-    private Boolean isLineOfCredit = Boolean.FALSE;
+    private Boolean isPayableLineOfCredit = Boolean.FALSE;
     @Getter
     @Setter
     private Boolean isReceivableLineOfCredit = Boolean.FALSE;
@@ -2196,5 +2196,9 @@ public class LoanApplicationTerms {
 
     public void setApprovedPrincipal(Money approvedPrincipal) {
         this.approvedPrincipal = approvedPrincipal;
+    }
+
+    public boolean getIsLineOfCredit() {
+        return this.isReceivableLineOfCredit || this.isPayableLineOfCredit;
     }
 }

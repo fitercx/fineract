@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
@@ -282,6 +283,9 @@ public class LoanAccountData {
     private boolean factorRateEnabled;
     private BigDecimal factorRate;
     private BigDecimal factorRateLoanAmount;
+
+    @Getter
+    protected final Map<String, Object> additionalProperties = new HashMap<>();
 
     public static LoanAccountData importInstanceIndividual(EnumOptionData loanTypeEnumOption, Long clientId, Long productId,
             Long loanOfficerId, LocalDate submittedOnDate, Long fundId, BigDecimal principal, Integer numberOfRepayments,

@@ -314,7 +314,7 @@ public class LoanProductAssembler {
         final LoanCapitalizedIncomeStrategy capitalizedIncomeStrategy = command.enumValueOfParameterNamed(
                 LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, LoanCapitalizedIncomeStrategy.class);
 
-        final boolean isLocEnabled = command.booleanPrimitiveValueOfParameterNamed(LoanProductConstants.IS_LOC_ENABLED_PARAM_NAME);
+        final boolean enableLocPayable = command.booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_LOC_PAYABLE_PARAM_NAME);
         final boolean enableLocReceivable = command
                 .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME);
 
@@ -339,7 +339,7 @@ public class LoanProductAssembler {
                 repaymentStartDateType, enableInstallmentLevelDelinquency, loanScheduleType, loanScheduleProcessingType, fixedLength,
                 enableAccrualActivityPosting, supportedInterestRefundTypes, chargeOffBehaviour, interestRecognitionOnDisbursementDate,
                 daysInYearCustomStrategy, enableIncomeCapitalization, capitalizedIncomeCalculationType, capitalizedIncomeStrategy,
-                isLocEnabled, enableLocReceivable);
+                enableLocPayable, enableLocReceivable);
 
     }
 
