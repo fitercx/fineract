@@ -182,8 +182,10 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             loanRepositoryWrapper.flush();
             // Check mandatory datatable entries were created
-            this.entityDatatableChecksWritePlatformService.runTheCheckForProduct(loan.getId(), EntityTables.LOAN.getName(),
-                    StatusEnum.CREATE.getValue(), EntityTables.LOAN.getForeignKeyColumnNameOnDatatable(), loan.productId());
+            if (!loan.getLoanProduct().isEnableLocPayable() && !loan.getLoanProduct().isEnableLocReceivable()) {
+                this.entityDatatableChecksWritePlatformService.runTheCheckForProduct(loan.getId(), EntityTables.LOAN.getName(),
+                        StatusEnum.CREATE.getValue(), EntityTables.LOAN.getForeignKeyColumnNameOnDatatable(), loan.productId());
+            }
             // Trigger business event
             businessEventNotifierService.notifyPostBusinessEvent(new LoanCreatedBusinessEvent(loan));
 

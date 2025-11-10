@@ -26,15 +26,15 @@ public class CustomLoanTermVariationMapper extends LoanTermVariationsMapper {
         LoanApplicationTerms terms = super.constructLoanApplicationTerms(scheduleGeneratorDTO, loan);
 
         Optional<LoanLineOfCreditParams> params = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-        terms.setIsLineOfCredit(params.isPresent());
+        terms.setIsPayableLineOfCredit(params.isPresent() && params.get().getLineOfCredit().getProductType().isPayable());
         terms.setIsReceivableLineOfCredit(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
         loan.setReceivableLocLoan(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
 
         if (terms.getIsReceivableLineOfCredit()) {
-            terms.setDisbursedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setApprovedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setApprovedReceivableLineAmount(params.get().getApprovedReceivableAmount());
+            terms.setDisbursedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setApprovedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setAmountAfterAdvance(params.get().getAmountAfterAdvance());
         }
         return terms;
     }

@@ -253,7 +253,7 @@ public class LoanProductData implements Serializable {
     @Setter
     private BigDecimal factorRate;
     @Setter
-    private Boolean isLocEnabled;
+    private Boolean enableLineOfCreditPayable;
     @Setter
     private Boolean enableLineOfCreditReceivable;
 
@@ -1188,7 +1188,7 @@ public class LoanProductData implements Serializable {
         this.capitalizedIncomeStrategyOptions = capitalizedIncomeStrategyOptions;
         this.factorRateProductEnabled = productData.factorRateProductEnabled;
         this.factorRate = productData.factorRate;
-        this.isLocEnabled = productData.isLocEnabled;
+        this.enableLineOfCreditPayable = productData.enableLineOfCreditPayable;
         this.enableLineOfCreditReceivable = productData.enableLineOfCreditReceivable;
     }
 

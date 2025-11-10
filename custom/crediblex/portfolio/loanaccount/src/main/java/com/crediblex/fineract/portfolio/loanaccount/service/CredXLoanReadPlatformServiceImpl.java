@@ -1172,11 +1172,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         List<LineOfCreditSummary> lineOfCreditSummaries = null;
-        Boolean isLocEnabled = false;
-        if (!loanProduct.getAdditionalProperties().isEmpty() && loanProduct.getAdditionalProperties().containsKey("isLocEnabled")
-                && (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled")) {
-            isLocEnabled = (Boolean) loanProduct.getAdditionalProperties().get("isLocEnabled");
-            lineOfCreditSummaries = this.lineOfCreditReadPlatformService.retrieveSummary(loanProduct.getCurrency().getCode(), clientId);
+        if (loanProduct.getEnableLineOfCreditPayable() || loanProduct.getEnableLineOfCreditReceivable()) {
+            lineOfCreditSummaries = this.lineOfCreditReadPlatformService.retrieveSummary(loanProduct.getCurrency().getCode(), clientId,
+                    loanProduct.getEnableLineOfCreditPayable() ? LocProductType.PAYABLE : LocProductType.RECEIVABLE);
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();
@@ -1201,7 +1199,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         if (lineOfCreditSummaries != null && !lineOfCreditSummaries.isEmpty()) {
             loanAccountData.getAdditionalProperties().put("lineOfCreditOptions", lineOfCreditSummaries);
-            loanAccountData.getAdditionalProperties().put("isLocEnabled", isLocEnabled);
+            loanAccountData.getAdditionalProperties().put("isLocEnabled", true);
+            loanAccountData.getAdditionalProperties().put("lineOfCreditProductType",
+                    loanProduct.getEnableLineOfCreditPayable() ? LocProductType.PAYABLE.getValue() : LocProductType.RECEIVABLE.getValue());
         }
 
         return loanAccountData;

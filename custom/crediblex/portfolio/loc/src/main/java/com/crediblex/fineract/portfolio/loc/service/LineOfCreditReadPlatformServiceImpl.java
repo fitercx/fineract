@@ -425,7 +425,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     }
 
     @Override
-    public LineOfCreditData retrieveTemplate() {
+    public LineOfCreditData retrieveTemplate(Long clientId) {
         final Collection<EnumOptionData> activationStatusOptions = Arrays.stream(LocStatus.values()).map(LocStatus::getEnumOptionData)
                 .toList();
 
@@ -445,9 +445,21 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             loanOfficers = this.staffReadPlatformService.retrieveAllLoanOfficersInOfficeById(officeId);
         }
 
+        String virtualAccountNumber = getVirtualAccountNumber(clientId);
+
         return LineOfCreditData.builder().statusOptions(activationStatusOptions).productTypeOptions(productTypeOptions)
                 .reviewPeriodsOptions(reviewPeriodsOptions).cashMarginTypeOptions(cashMarginTypeOptions).loanOfficers(loanOfficers)
-                .interestChargeTimeOptions(interestChargeTime).build();
+                .va(virtualAccountNumber).interestChargeTimeOptions(interestChargeTime).build();
+    }
+
+    private String getVirtualAccountNumber(Long clientId) {
+        String sql = "select virtual_account_number from dt_client_additional_data  where client_id = ?";
+
+        try {
+            return jdbcTemplate.queryForObject(sql, String.class, clientId);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
     }
 
     @Override
@@ -512,7 +524,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     }
 
     @Override
-    public List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId) {
+    public List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId, LocProductType locProductType) {
         final String sql = """
                 SELECT
                     l.id,
@@ -530,12 +542,14 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 WHERE l.activation_status = 'ACTIVE'
                   AND l.currency  = ?
                   AND l.client_id = ?
+                  AND l.product_type = ?
                 ORDER BY l.id
                 """;
 
         return this.jdbcTemplate.query(sql, ps -> {
             ps.setString(1, currencyCode);
             ps.setLong(2, clientId);
+            ps.setString(3, locProductType.name());
         }, rs -> {
             Map<Long, LineOfCreditSummary> map = new LinkedHashMap<>();
 

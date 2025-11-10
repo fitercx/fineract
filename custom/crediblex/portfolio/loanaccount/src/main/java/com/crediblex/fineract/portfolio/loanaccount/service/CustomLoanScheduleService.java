@@ -42,7 +42,7 @@ public class CustomLoanScheduleService extends LoanScheduleService {
             if (!loanCharge.isWaived()) {
                 if (loan.isReceivableLocLoan()) {
                     Optional<LoanLineOfCreditParams> lloc = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-                    lloc.ifPresent(t -> loan.getLoanRepaymentScheduleDetail().setPrincipal(t.getApprovedReceivableAmount()));
+                    lloc.ifPresent(t -> loan.getLoanRepaymentScheduleDetail().setPrincipal(t.getAmountAfterAdvance()));
                 }
 
                 loanChargeService.recalculateLoanCharge(loan, loanCharge, scheduleGeneratorDTO.getPenaltyWaitPeriod());

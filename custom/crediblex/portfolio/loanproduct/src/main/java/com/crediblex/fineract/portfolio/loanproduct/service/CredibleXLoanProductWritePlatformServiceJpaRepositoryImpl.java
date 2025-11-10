@@ -233,6 +233,21 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                     changes.remove("creditAllocation");
                 }
             }
+
+            if (command.isChangeInBooleanParameterNamed(LoanProductConstants.ENABLE_LOC_PAYABLE_PARAM_NAME, product.isEnableLocPayable())) {
+                final boolean newValue = command.booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_LOC_PAYABLE_PARAM_NAME);
+                changes.put(LoanProductConstants.ENABLE_LOC_PAYABLE_PARAM_NAME, newValue);
+                product.setEnableLocPayable(newValue);
+            }
+
+            if (command.isChangeInBooleanParameterNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME,
+                    product.isEnableLocReceivable())) {
+                final boolean newValue = command
+                        .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME);
+                changes.put(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, newValue);
+                product.setEnableLocReceivable(newValue);
+            }
+
             // accounting related changes
             final boolean accountingTypeChanged = changes.containsKey("accountingRule");
             final Map<String, Object> accountingMappingChanges = this.accountMappingWritePlatformService
