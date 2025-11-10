@@ -31,10 +31,10 @@ public class CustomLoanTermVariationMapper extends LoanTermVariationsMapper {
         loan.setReceivableLocLoan(params.isPresent() && params.get().getLineOfCredit().getProductType().isReceivable());
 
         if (terms.getIsReceivableLineOfCredit()) {
-            terms.setDisbursedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setApprovedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getProposedPrincipal()));
-            terms.setApprovedReceivableLineAmount(params.get().getApprovedReceivableAmount());
+            terms.setDisbursedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setApprovedPrincipal(Money.of(loan.getPrincipal().getCurrency(), loan.getApprovedPrincipal()));
+            terms.setAmountAfterAdvance(params.get().getAmountAfterAdvance());
         }
         return terms;
     }

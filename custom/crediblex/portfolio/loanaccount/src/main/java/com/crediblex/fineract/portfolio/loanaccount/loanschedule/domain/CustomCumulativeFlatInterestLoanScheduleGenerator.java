@@ -132,8 +132,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         }
 
         if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
-            loanApplicationTerms.setDisbursedPrincipal(
-                    Money.of(nominalPrincipal.getCurrency(), loanApplicationTerms.getApprovedReceivableLineAmount()));
+            loanApplicationTerms
+                    .setDisbursedPrincipal(Money.of(nominalPrincipal.getCurrency(), loanApplicationTerms.getAmountAfterAdvance()));
         }
 
         final PrincipalInterest result = loanApplicationTerms.calculateTotalInterestForPeriod(calculator,
@@ -459,7 +459,13 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             }
 
             // applies charges for the period
-            applyChargesForCurrentPeriod(loanCharges, monetaryCurrency, scheduleParams, scheduledDueDate, currentPeriodParams, mc);
+            if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+                applyChargesForCurrentPeriod(Money.of(currency, loanApplicationTerms.getAmountAfterAdvance()), loanCharges,
+                        monetaryCurrency, scheduleParams, scheduledDueDate, currentPeriodParams, mc);
+
+            } else {
+                applyChargesForCurrentPeriod(loanCharges, monetaryCurrency, scheduleParams, scheduledDueDate, currentPeriodParams, mc);
+            }
 
             // sum up real totalInstallmentDue from components
             final Money totalInstallmentDue = currentPeriodParams.fetchTotalAmountForPeriod();
@@ -557,6 +563,21 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 scheduleParams.getTotalFeeChargesCharged().getAmount(), scheduleParams.getTotalTaxChargesCharged().getAmount(),
                 scheduleParams.getTotalPenaltyChargesCharged().getAmount(), scheduleParams.getTotalRepaymentExpected().getAmount(),
                 totalOutstanding);
+    }
+
+    protected void applyChargesForCurrentPeriod(final Money originalPrincipalPortial, final Set<LoanCharge> loanCharges,
+            final MonetaryCurrency currency, LoanScheduleParams scheduleParams, LocalDate scheduledDueDate,
+            ScheduleCurrentPeriodParams currentPeriodParams, final MathContext mc) {
+        PrincipalInterest principalInterest = new PrincipalInterest(originalPrincipalPortial,
+                currentPeriodParams.getInterestForThisPeriod(), null);
+        currentPeriodParams.setFeeChargesForInstallment(cumulativeFeeChargesDueWithin(scheduleParams.getPeriodStartDate(), scheduledDueDate,
+                loanCharges, currency, principalInterest, scheduleParams.getPrincipalToBeScheduled(),
+                scheduleParams.getTotalCumulativeInterest(), true, scheduleParams.isFirstPeriod(), mc));
+        currentPeriodParams.setPenaltyChargesForInstallment(cumulativePenaltyChargesDueWithin(scheduleParams.getPeriodStartDate(),
+                scheduledDueDate, loanCharges, currency, principalInterest, scheduleParams.getPrincipalToBeScheduled(),
+                scheduleParams.getTotalCumulativeInterest(), true, scheduleParams.isFirstPeriod(), mc));
+        scheduleParams.addTotalFeeChargesCharged(currentPeriodParams.getFeeChargesForInstallment());
+        scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
     }
 
 }

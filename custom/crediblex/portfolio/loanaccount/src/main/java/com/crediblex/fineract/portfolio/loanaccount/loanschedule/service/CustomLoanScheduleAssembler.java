@@ -11,14 +11,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepository;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
@@ -95,10 +98,12 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
         if (isReceivableLOC) {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
+            term.setIsReceivableLineOfCredit(true);
+            BigDecimal proposedPrincipal = getProposedPrincipal(element);
 
-            BigDecimal approvedAmount = element.getAsJsonObject().get("approvedReceivableAmount").getAsBigDecimal();
-            term.setPrincipal(Money.of(term.getCurrency(), approvedAmount));
-            term.setDisbursedPrincipal(Money.of(term.getCurrency(), approvedAmount));
+            term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
+            term.setDisbursedPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
+            term.setAmountAfterAdvance(proposedPrincipal);
 
             final DefaultScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
             LocalDate loanEndDate = scheduledDateGenerator.getLastRepaymentDate(term, term.getHolidayDetailDTO());
@@ -124,10 +129,9 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
                 }
             }
 
-            BigDecimal approvedReceivableAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("approvedReceivableAmount",
-                    element);
+            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
 
-            BigDecimal netDisbursalAmount = approvedReceivableAmount.subtract(totalInterestChargable.getAmount())
+            BigDecimal netDisbursalAmount = amountAfterAdvance.subtract(totalInterestChargable.getAmount())
                     .subtract(chargesDueAtTimeOfDisbursement);
             element.getAsJsonObject().addProperty("principal", netDisbursalAmount);
 
@@ -138,7 +142,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         terms.setIsReceivableLineOfCredit(isReceivableLOC);
         if (isReceivableLOC) {
             terms.setIsReceivableLineOfCredit(true);
-            terms.setApprovedReceivableLineAmount(element.getAsJsonObject().get("approvedReceivableAmount").getAsBigDecimal());
+            terms.setAmountAfterAdvance(element.getAsJsonObject().get("amountAfterAdvance").getAsBigDecimal());
         }
 
         return terms;
@@ -208,5 +212,22 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         }
 
         return Pair.of(loan, actualChanges);
+    }
+
+    private BigDecimal getProposedPrincipal(JsonElement element) {
+        BigDecimal invoiceAmount = element.getAsJsonObject().get("invoiceAmount").getAsBigDecimal();
+        BigDecimal disapprovedAmount = element.getAsJsonObject().get("disapprovedAmount").getAsBigDecimal();
+        BigDecimal advancePercentage = element.getAsJsonObject().get("advancePercentage").getAsBigDecimal();
+        BigDecimal amountForCalculation = invoiceAmount.subtract(disapprovedAmount);
+
+        BigDecimal proposedPrincipal = (advancePercentage.multiply(amountForCalculation)).divide(BigDecimal.valueOf(100),
+                RoundingMode.HALF_UP);
+
+        if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PlatformApiDataValidationException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
+                    "Proposed principal amount must be greater than zero for receivable line of credit.", List.of());
+        }
+
+        return proposedPrincipal;
     }
 }

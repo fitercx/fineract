@@ -249,7 +249,7 @@ public class LoanApplicationTerms {
     private Boolean isReceivableLineOfCredit = Boolean.FALSE;
     @Setter
     @Getter
-    private BigDecimal approvedReceivableLineAmount;
+    private BigDecimal amountAfterAdvance;
 
     @Setter
     @Getter
@@ -1001,8 +1001,7 @@ public class LoanApplicationTerms {
         switch (this.interestMethod) {
             case FLAT:
                 final BigDecimal interestRateForLoanTerm = calculateFlatInterestRateForLoanTerm(calculator, mc);
-                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? approvedReceivableLineAmount
-                        : disbursedPrincipal.getAmount();
+                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? amountAfterAdvance : disbursedPrincipal.getAmount();
                 totalInterestDue = Money.of(currency, amountForInterestCalculation).minus(totalPrincipalAccountedForInterestCalcualtion)
                         .multiplyRetainScale(interestRateForLoanTerm, mc);
 

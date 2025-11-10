@@ -1770,6 +1770,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.loanRepaymentScheduleDetail.getPrincipal();
     }
 
+    public void setPrincipal(BigDecimal principal) {
+        this.loanRepaymentScheduleDetail.setPrincipal(principal);
+    }
+
     public boolean hasCurrencyCodeOf(final String matchingCurrencyCode) {
         return getCurrencyCode().equalsIgnoreCase(matchingCurrencyCode);
     }
