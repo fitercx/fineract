@@ -116,6 +116,8 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                             maximumProductFactorRate);
                 }
             }
+            final Integer penaltyGracePeriod = command.integerValueOfParameterNamed(LoanProductConstants.PENALTY_GRACE_PERIOD_PARAM_NAME);
+            loanProduct.setPenaltyGracePeriod(penaltyGracePeriod != null ? penaltyGracePeriod : 15);
             loanProduct.updateLoanProductInRelatedClasses();
             loanProduct.setTransactionProcessingStrategyName(
                     loanRepaymentScheduleTransactionProcessorFactory.determineProcessor(loanTransactionProcessingStrategyCode).getName());
@@ -187,6 +189,8 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                             maximumProductFactorRate);
                 }
             }
+            final Integer penaltyGracePeriod = command.integerValueOfParameterNamed(LoanProductConstants.PENALTY_GRACE_PERIOD_PARAM_NAME);
+            product.setPenaltyGracePeriod(penaltyGracePeriod != null ? penaltyGracePeriod : 15);
 
             if (changes.containsKey("fundId")) {
                 final Long fundId = (Long) changes.get("fundId");

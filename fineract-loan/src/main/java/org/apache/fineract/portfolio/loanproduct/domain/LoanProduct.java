@@ -242,6 +242,9 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "factor_rate")
     private BigDecimal factorRate;
 
+    @Column(name = "penalty_grace_period")
+    private Integer penaltyGracePeriod;
+
     public void updateLoanProductInRelatedClasses() {
         if (this.isInterestRecalculationEnabled()) {
             this.productInterestRecalculationDetails.updateProduct(this);

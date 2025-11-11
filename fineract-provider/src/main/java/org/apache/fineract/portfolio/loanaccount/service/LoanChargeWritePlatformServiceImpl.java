@@ -839,6 +839,10 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             log.warn("Adding charge to Loan: {} is not allowed. Loan Account is Charged-off", loanId);
             return;
         }
+        if (!isPenaltyChargeApplicableForLoan(loan)) {
+            log.warn("Adding overdue charge to Loan: {} is not allowed. Factor rate penalty grace period not yet passed.", loanId);
+            return;
+        }
         Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
                 .filter((e) -> ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(e.getChargeTimeType()) && e.isLoanCharge()).findFirst();
         if (optPenaltyCharge.isEmpty()) {
@@ -901,6 +905,20 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
         }
+    }
+
+    private boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
+        final boolean factorRateEnabled = loan.isFactorRateEnabled();
+        if (!factorRateEnabled) {
+            return true;
+        }
+        Integer factorRatePenaltyGracePeriod = loan.getLoanProduct().getPenaltyGracePeriod();
+        if (factorRatePenaltyGracePeriod == null) {
+            factorRatePenaltyGracePeriod = 15;
+        }
+        final LocalDate maturityDate = loan.getMaturityDate();
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        return DateUtils.isAfter(businessDate, maturityDate.plusDays(factorRatePenaltyGracePeriod));
     }
 
     protected LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,
