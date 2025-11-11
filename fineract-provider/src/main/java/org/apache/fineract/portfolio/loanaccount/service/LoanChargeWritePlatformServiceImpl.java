@@ -135,6 +135,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidat
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentParameter;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.loanproduct.data.LoanOverdueDTO;
 import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequiredException;
 import org.apache.fineract.portfolio.note.domain.Note;
@@ -914,7 +915,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         }
         Integer factorRatePenaltyGracePeriod = loan.getLoanProduct().getPenaltyGracePeriod();
         if (factorRatePenaltyGracePeriod == null) {
-            factorRatePenaltyGracePeriod = 15;
+            factorRatePenaltyGracePeriod = LoanProductConstants.DEFAULT_PENALTY_GRACE_PERIOD;
         }
         final LocalDate maturityDate = loan.getMaturityDate();
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();

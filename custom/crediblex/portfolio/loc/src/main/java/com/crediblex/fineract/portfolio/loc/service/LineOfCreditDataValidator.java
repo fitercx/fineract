@@ -118,7 +118,7 @@ public class LineOfCreditDataValidator {
      */
     private void validateRequiredFields(LineOfCreditRequest request, DataValidatorBuilder baseDataValidator) {
 
-        baseDataValidator.reset().parameter("maximumCreditLimit").value(request.getMaxCreditLimit()).notNull().integerGreaterThanZero();
+        baseDataValidator.reset().parameter("maximumCreditLimit").value(request.getMaxCreditLimit()).notNull().longGreaterThanNumber(0L);
         // Validate annual interest rate is always provided
         baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().integerGreaterThanZero();
 

@@ -257,6 +257,8 @@ public class LoanProductData implements Serializable {
     @Setter
     private Boolean isLocEnabled;
     @Setter
+    private Boolean enableLineOfCreditPayable;
+    @Setter
     private Boolean enableLineOfCreditReceivable;
 
     /**
@@ -1193,6 +1195,7 @@ public class LoanProductData implements Serializable {
         this.penaltyGracePeriod = productData.penaltyGracePeriod;
         this.isLocEnabled = productData.isLocEnabled;
         this.enableLineOfCreditReceivable = productData.enableLineOfCreditReceivable;
+        this.enableLineOfCreditPayable = productData.enableLineOfCreditPayable;
     }
 
     private Collection<ChargeData> nullIfEmpty(final Collection<ChargeData> charges) {

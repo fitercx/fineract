@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.service.schedule;
 
-import java.math.BigDecimal;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -25,9 +24,9 @@ public class CustomLoanScheduleComponent extends LoanScheduleComponent {
                     final LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan,
                             scheduledLoanInstallment.periodNumber(), scheduledLoanInstallment.periodFromDate(),
                             scheduledLoanInstallment.periodDueDate(), scheduledLoanInstallment.principalDue(),
-                            loan.isReceivableLocLoan() ? BigDecimal.ZERO : scheduledLoanInstallment.interestDue(),
-                            scheduledLoanInstallment.feeChargesDue(), scheduledLoanInstallment.taxChargesDue(),
-                            scheduledLoanInstallment.penaltyChargesDue(), scheduledLoanInstallment.isRecalculatedInterestComponent(),
+                            scheduledLoanInstallment.interestDue(), scheduledLoanInstallment.feeChargesDue(),
+                            scheduledLoanInstallment.taxChargesDue(), scheduledLoanInstallment.penaltyChargesDue(),
+                            scheduledLoanInstallment.isRecalculatedInterestComponent(),
                             scheduledLoanInstallment.getLoanCompoundingDetails(), scheduledLoanInstallment.rescheduleInterestPortion(),
                             scheduledLoanInstallment.isDownPaymentPeriod());
                     loan.addLoanRepaymentScheduleInstallment(installment);

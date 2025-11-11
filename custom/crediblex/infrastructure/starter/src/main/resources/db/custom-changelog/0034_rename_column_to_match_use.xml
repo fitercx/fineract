@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+    <changeSet author="crediblex" id="50">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_product_loan"/>
+            <columnExists tableName="m_product_loan" columnName="is_loc_enable"/>
+        </preConditions>
+        <renameColumn tableName="m_product_loan"
+                      oldColumnName="is_loc_enable"
+                      newColumnName="enable_loc_payable"
+                      columnDataType="boolean"/>
+    </changeSet>
+</databaseChangeLog>

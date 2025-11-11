@@ -243,13 +243,13 @@ public class LoanApplicationTerms {
 
     @Getter
     @Setter
-    private Boolean isLineOfCredit = Boolean.FALSE;
+    private Boolean isPayableLineOfCredit = Boolean.FALSE;
     @Getter
     @Setter
     private Boolean isReceivableLineOfCredit = Boolean.FALSE;
     @Setter
     @Getter
-    private BigDecimal approvedReceivableLineAmount;
+    private BigDecimal amountAfterAdvance;
 
     @Setter
     @Getter
@@ -1001,8 +1001,7 @@ public class LoanApplicationTerms {
         switch (this.interestMethod) {
             case FLAT:
                 final BigDecimal interestRateForLoanTerm = calculateFlatInterestRateForLoanTerm(calculator, mc);
-                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? approvedReceivableLineAmount
-                        : disbursedPrincipal.getAmount();
+                BigDecimal amountForInterestCalculation = isReceivableLineOfCredit ? amountAfterAdvance : disbursedPrincipal.getAmount();
                 totalInterestDue = Money.of(currency, amountForInterestCalculation).minus(totalPrincipalAccountedForInterestCalcualtion)
                         .multiplyRetainScale(interestRateForLoanTerm, mc);
 
@@ -2196,5 +2195,9 @@ public class LoanApplicationTerms {
 
     public void setApprovedPrincipal(Money approvedPrincipal) {
         this.approvedPrincipal = approvedPrincipal;
+    }
+
+    public boolean getIsLineOfCredit() {
+        return this.isReceivableLineOfCredit || this.isPayableLineOfCredit;
     }
 }

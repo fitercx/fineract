@@ -39,7 +39,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidat
 @RequiredArgsConstructor
 public class LoanChargeService {
 
-    private final LoanChargeValidator loanChargeValidator;
+    protected final LoanChargeValidator loanChargeValidator;
     private final LoanTransactionProcessingService loanTransactionProcessingService;
 
     public void recalculateAllCharges(final Loan loan) {

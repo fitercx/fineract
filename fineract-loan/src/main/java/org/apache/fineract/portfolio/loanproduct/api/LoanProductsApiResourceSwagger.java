@@ -347,7 +347,7 @@ public final class LoanProductsApiResourceSwagger {
         @Schema(example = "REGULAR")
         public String chargeOffBehaviour;
         @Schema(example = "false")
-        public Boolean isLocEnabled;
+        public Boolean enableLineOfCreditPayable;
         @Schema(example = "false")
         public Boolean enableLineOfCreditReceivable;
 

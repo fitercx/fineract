@@ -556,7 +556,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
                     .dueDaysForRepaymentEvent(1)
                     .overDueDaysForRepaymentEvent(2)
                     .loanScheduleType("CUMULATIVE")
-                    .isLocEnabled(true)
+                    .enableLineOfCreditPayable(true)
                     .enableLineOfCreditReceivable(isReceivable)
                     .accountingRule(1) // None
                     .allowPartialPeriodInterestCalcualtion(false)
