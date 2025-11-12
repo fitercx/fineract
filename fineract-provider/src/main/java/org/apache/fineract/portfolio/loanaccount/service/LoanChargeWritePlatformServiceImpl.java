@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -831,8 +832,10 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
 
     @Transactional
     @Override
-    public void applyOverdueChargesForLoan(final Long loanId, Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
-        if (overdueLoanScheduleDataList.isEmpty()) {
+    public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
+        final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
+                .sorted(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).toList();
+        if (overdueLoanScheduleDataOrderedList.isEmpty()) {
             return;
         }
         Loan loan = this.loanAssembler.assembleFrom(loanId);
@@ -854,7 +857,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         boolean runInterestRecalculation = false;
         LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
         LocalDate lastChargeDate = null;
-        for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduleDataList) {
+        for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduleDataOrderedList) {
 
             final JsonElement parsedCommand = this.fromApiJsonHelper.parse(overdueInstallment.toString());
             final JsonCommand command = JsonCommand.from(overdueInstallment.toString(), parsedCommand, this.fromApiJsonHelper, null, null,
@@ -919,7 +922,8 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         }
         final LocalDate maturityDate = loan.getMaturityDate();
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        return DateUtils.isAfter(businessDate, maturityDate.plusDays(factorRatePenaltyGracePeriod));
+        final LocalDate penaltyStartOnDate = maturityDate.plusDays(factorRatePenaltyGracePeriod);
+        return DateUtils.isAfter(businessDate, penaltyStartOnDate);
     }
 
     protected LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,
