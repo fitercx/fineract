@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -135,6 +136,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidat
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentParameter;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.loanproduct.data.LoanOverdueDTO;
 import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequiredException;
 import org.apache.fineract.portfolio.note.domain.Note;
@@ -830,13 +832,19 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
 
     @Transactional
     @Override
-    public void applyOverdueChargesForLoan(final Long loanId, Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
-        if (overdueLoanScheduleDataList.isEmpty()) {
+    public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
+        final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
+                .sorted(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).toList();
+        if (overdueLoanScheduleDataOrderedList.isEmpty()) {
             return;
         }
         Loan loan = this.loanAssembler.assembleFrom(loanId);
         if (loan.isChargedOff()) {
             log.warn("Adding charge to Loan: {} is not allowed. Loan Account is Charged-off", loanId);
+            return;
+        }
+        if (!isPenaltyChargeApplicableForLoan(loan)) {
+            log.warn("Adding overdue charge to Loan: {} is not allowed. Factor rate penalty grace period not yet passed.", loanId);
             return;
         }
         Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
@@ -849,7 +857,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         boolean runInterestRecalculation = false;
         LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
         LocalDate lastChargeDate = null;
-        for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduleDataList) {
+        for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduleDataOrderedList) {
 
             final JsonElement parsedCommand = this.fromApiJsonHelper.parse(overdueInstallment.toString());
             final JsonCommand command = JsonCommand.from(overdueInstallment.toString(), parsedCommand, this.fromApiJsonHelper, null, null,
@@ -901,6 +909,21 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
         }
+    }
+
+    private boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
+        final boolean factorRateEnabled = loan.isFactorRateEnabled();
+        if (!factorRateEnabled) {
+            return true;
+        }
+        Integer factorRatePenaltyGracePeriod = loan.getLoanProduct().getPenaltyGracePeriod();
+        if (factorRatePenaltyGracePeriod == null) {
+            factorRatePenaltyGracePeriod = LoanProductConstants.DEFAULT_PENALTY_GRACE_PERIOD;
+        }
+        final LocalDate maturityDate = loan.getMaturityDate();
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final LocalDate penaltyStartOnDate = maturityDate.plusDays(factorRatePenaltyGracePeriod);
+        return DateUtils.isAfter(businessDate, penaltyStartOnDate);
     }
 
     protected LoanTransaction applyChargeAdjustment(final Loan loan, final LoanCharge loanCharge, final BigDecimal transactionAmount,

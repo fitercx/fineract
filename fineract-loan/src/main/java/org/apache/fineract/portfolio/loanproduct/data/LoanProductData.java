@@ -253,6 +253,10 @@ public class LoanProductData implements Serializable {
     @Setter
     private BigDecimal factorRate;
     @Setter
+    private Integer penaltyGracePeriod;
+    @Setter
+    private Boolean isLocEnabled;
+    @Setter
     private Boolean enableLineOfCreditPayable;
     @Setter
     private Boolean enableLineOfCreditReceivable;
@@ -1188,8 +1192,10 @@ public class LoanProductData implements Serializable {
         this.capitalizedIncomeStrategyOptions = capitalizedIncomeStrategyOptions;
         this.factorRateProductEnabled = productData.factorRateProductEnabled;
         this.factorRate = productData.factorRate;
-        this.enableLineOfCreditPayable = productData.enableLineOfCreditPayable;
+        this.penaltyGracePeriod = productData.penaltyGracePeriod;
+        this.isLocEnabled = productData.isLocEnabled;
         this.enableLineOfCreditReceivable = productData.enableLineOfCreditReceivable;
+        this.enableLineOfCreditPayable = productData.enableLineOfCreditPayable;
     }
 
     private Collection<ChargeData> nullIfEmpty(final Collection<ChargeData> charges) {
