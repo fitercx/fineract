@@ -51,7 +51,7 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
                     .retrieveAllDelinquencyBuckets();
             final CustomLoanProductMapper rm = new CustomLoanProductMapper(charges, borrowerCycleVariationDatas, rates,
                     delinquencyBucketOptions, advancedPaymentData, creditAllocationData);
-            final String sql = "SELECT lp.enable_loc_payable as enableLocPayable,lp.enable_loc_receivable as enableLocReceivable, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.enable_loc_receivable as enableLocReceivable, "
+            final String sql = "SELECT lp.enable_loc_payable as enableLocPayable,lp.enable_loc_receivable as enableLocReceivable, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.penalty_grace_period AS penaltyGracePeriod, lp.enable_loc_receivable as enableLocReceivable, "
                     + rm.getSchema() + " where lp.id = ?";
 
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
@@ -86,6 +86,7 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
             ExtendedLoanProductData extendedData = ExtendedLoanProductData.fromLoanProductData(data);
             extendedData.setFactorRateProductEnabled(rs.getBoolean("factorRateProductEnabled"));
             extendedData.setFactorRate(rs.getBigDecimal("factorRate"));
+            extendedData.setPenaltyGracePeriod(rs.getInt("penaltyGracePeriod"));
             extendedData.setEnableLineOfCreditReceivable(rs.getBoolean("enableLocReceivable"));
             extendedData.setEnableLineOfCreditPayable(rs.getBoolean("enableLocPayable"));
             return extendedData;

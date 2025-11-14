@@ -193,7 +193,8 @@ public final class LoanProductDataValidator {
             LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME,
             LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, LoanProductConstants.ENABLE_LOC_PAYABLE_PARAM_NAME,
             LoanProductConstants.FACTOR_RATE_PRODUCT_ENABLED_PARAM_NAME, LoanProductConstants.FACTOR_RATE_PARAM_NAME,
-            LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue()));
+            LoanProductConstants.PENALTY_GRACE_PERIOD_PARAM_NAME, LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME,
+            LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue()));
 
     private static final String[] SUPPORTED_LOAN_CONFIGURABLE_ATTRIBUTES = { LoanProductConstants.amortizationTypeParamName,
             LoanProductConstants.interestTypeParamName, LoanProductConstants.transactionProcessingStrategyCodeParamName,
