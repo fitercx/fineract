@@ -27,7 +27,11 @@ Feature: Line Of Credit Operations
 
   @LOC6
   Scenario: Create payable LOC with foreign currency invoice in pending state
-    Given A Custom EUR product with line of credit "payable" loan product name "LOC Payable Pdt" with 30 days tenor exists
+    Given A Custom EUR product with line of credit enabled exists
+      | locType          | payable         |
+      | productName      | LOC Payable Pdt |
+      | tenorDays        | 30              |
+      | hasOverdueCharge | false           |
     When Admin sets the business date to "30 April 2024"
     When Admin creates a client with random data
     And Client creates a new EUR savings account with "30 April 2024" submitted on date
@@ -55,7 +59,11 @@ Feature: Line Of Credit Operations
 
   @LOC7
   Scenario: Create payable LOC with foreign currency invoice and complete disbursal
-    Given A Custom EUR product with line of credit "payable" loan product name "LOC Payable Pdt" with 30 days tenor exists
+    Given A Custom EUR product with line of credit enabled exists
+      | locType          | payable         |
+      | productName      | LOC Payable Pdt |
+      | tenorDays        | 30              |
+      | hasOverdueCharge | false           |
     When Admin sets the business date to "30 April 2024"
     When Admin creates a client with random data
     And Client creates a new EUR savings account with "30 April 2024" submitted on date

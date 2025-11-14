@@ -66,7 +66,7 @@ public class LoanArrearsAgingServiceImpl implements LoanArrearsAgingService {
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    private final JdbcTemplate jdbcTemplate;
+    protected final JdbcTemplate jdbcTemplate;
     private final BusinessEventNotifierService businessEventNotifierService;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
 
@@ -138,7 +138,7 @@ public class LoanArrearsAgingServiceImpl implements LoanArrearsAgingService {
         }
     }
 
-    private String constructUpdateStatement(final Loan loan, boolean isInsertStatement) {
+    protected String constructUpdateStatement(final Loan loan, boolean isInsertStatement) {
         String updateSql = null;
         List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
         BigDecimal principalOverdue = BigDecimal.ZERO;

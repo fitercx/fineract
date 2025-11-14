@@ -57,9 +57,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
             @SuppressWarnings("unused") Map<LocalDate, Money> compoundingMap, LocalDate periodStartDate, LocalDate periodEndDate,
             @SuppressWarnings("unused") Collection<LoanTermVariationsData> termVariations) {
 
-        // As long as its a line of credit loan, deduct interest from principal
-        // NEW: Check if interest should be deducted from principal
-        if (Boolean.TRUE.equals(loanApplicationTerms.getIsLineOfCredit())) {
+        if (Boolean.TRUE.equals(loanApplicationTerms.getIsReceivableLineOfCredit())) {
             return calculateFlatInterestWithDeduction(calculator, interestCalculationGraceOnRepaymentPeriodFraction,
                     totalCumulativePrincipal, totalCumulativeInterest, totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace,
                     loanApplicationTerms, periodNumber, mc, periodStartDate, periodEndDate);

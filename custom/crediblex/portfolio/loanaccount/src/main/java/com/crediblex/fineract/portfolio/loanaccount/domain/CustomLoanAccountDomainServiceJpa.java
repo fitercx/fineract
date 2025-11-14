@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -44,10 +43,7 @@ import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainServiceJpa;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCollateralManagementRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -200,7 +196,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                     loan.getId());
         }
 
-        BigDecimal totalInterestChargedBeforeForClosure = loan.getSummary().getTotalInterestCharged();
         Money totalPrincipalBeforeForClosure = loan.getLoanRepaymentScheduleDetail().getPrincipal();
 
         businessEventNotifierService.notifyPreBusinessEvent(new LoanForeClosurePreBusinessEvent(loan));
@@ -229,10 +224,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
 
         loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
-
-        if (loan.isReceivableLocLoan()) {
-            loan.getLoanRepaymentScheduleDetail().setPrincipal(loan.getApprovedPrincipal().subtract(totalInterestChargedBeforeForClosure));
-        }
 
         /// //This is where we should be doing the transfer from.
 
@@ -331,77 +322,4 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         return payment;
     }
 
-    @Override
-    protected void updateInstallmentsPostDate(final Loan loan, final LocalDate transactionDate) {
-        final List<LoanRepaymentScheduleInstallment> newInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
-        final MonetaryCurrency currency = loan.getCurrency();
-        Money totalPrincipal = Money.zero(currency);
-        final Money[] balances = loan.retrieveIncomeForOverlappingPeriod(transactionDate);
-        boolean isInterestComponent = true;
-        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
-            if (!DateUtils.isAfter(transactionDate, installment.getDueDate())) {
-                totalPrincipal = totalPrincipal.plus(installment.getPrincipal(currency));
-                if (loan.isReceivableLocLoan()) {
-                    totalPrincipal = totalPrincipal.minus((installment.getInterestCharged()));
-                }
-                newInstallments.remove(installment);
-                if (DateUtils.isEqual(transactionDate, installment.getDueDate())) {
-                    isInterestComponent = false;
-                }
-            }
-
-        }
-
-        for (LoanDisbursementDetails loanDisbursementDetails : loan.getDisbursementDetails()) {
-            if (loanDisbursementDetails.actualDisbursementDate() == null) {
-                totalPrincipal = Money.of(currency, totalPrincipal.getAmount().subtract(loanDisbursementDetails.principal()));
-            }
-        }
-
-        LocalDate installmentStartDate = loan.getDisbursementDate();
-
-        if (!newInstallments.isEmpty()) {
-            installmentStartDate = newInstallments.get(newInstallments.size() - 1).getDueDate();
-        }
-
-        int installmentNumber = newInstallments.size();
-
-        if (!isInterestComponent) {
-            installmentNumber++;
-        }
-
-        final LoanRepaymentScheduleInstallment newInstallment = new LoanRepaymentScheduleInstallment(null, newInstallments.size() + 1,
-                installmentStartDate, transactionDate, totalPrincipal.getAmount(), balances[0].getAmount(), balances[1].getAmount(),
-                balances[2].getAmount(), balances[3].getAmount(), isInterestComponent, null);
-        newInstallment.updateInstallmentNumber(newInstallments.size() + 1);
-        newInstallments.add(newInstallment);
-        loan.updateLoanScheduleOnForeclosure(newInstallments);
-
-        final Set<LoanCharge> charges = loan.getActiveCharges();
-        final int penaltyWaitPeriod = 0;
-        for (LoanCharge loanCharge : charges) {
-            if (DateUtils.isAfter(loanCharge.getDueLocalDate(), transactionDate)) {
-                loanCharge.setActive(false);
-            } else if (loanCharge.getDueLocalDate() == null) {
-                loanChargeService.recalculateLoanCharge(loan, loanCharge, penaltyWaitPeriod);
-                loanCharge.updateWaivedAmount(currency);
-            }
-        }
-
-        for (LoanTransaction loanTransaction : loan.getLoanTransactions()) {
-            if (loanTransaction.isChargesWaiver()) {
-                for (LoanChargePaidBy chargePaidBy : loanTransaction.getLoanChargesPaid()) {
-                    if ((chargePaidBy.getLoanCharge().isDueDateCharge()
-                            && DateUtils.isBefore(transactionDate, chargePaidBy.getLoanCharge().getDueLocalDate()))
-                            || (chargePaidBy.getLoanCharge().isInstalmentFee() && chargePaidBy.getInstallmentNumber() != null
-                                    && chargePaidBy.getInstallmentNumber() > installmentNumber)) {
-                        loanChargeValidator.validateRepaymentTypeTransactionNotBeforeAChargeRefund(loanTransaction.getLoan(),
-                                loanTransaction, "reversed");
-                        loanTransaction.reverse();
-                    }
-                }
-
-            }
-        }
-    }
 }

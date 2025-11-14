@@ -20,31 +20,36 @@ package com.crediblex.fineract.test.stepdef;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
+import org.apache.fineract.client.models.AccountTransferRequest;
 import org.apache.fineract.client.models.ChargeData;
 import org.apache.fineract.client.models.ChargeRequest;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
+import org.apache.fineract.client.models.PostAccountTransfersResponse;
 import org.apache.fineract.client.models.PostChargesResponse;
-import org.apache.fineract.client.models.PostLoansLoanIdRequest;
-import org.apache.fineract.client.models.PostLoansLoanIdResponse;
+import org.apache.fineract.client.models.PostLoansLoanIdChargesRequest;
+import org.apache.fineract.client.models.PostLoansLoanIdChargesResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsResponse;
 import org.apache.fineract.client.models.PostLoansResponse;
+import org.apache.fineract.client.models.PostSavingsAccountsResponse;
+import org.apache.fineract.client.services.AccountTransfersApi;
 import org.apache.fineract.client.services.ChargesApi;
 import org.apache.fineract.client.services.LoanTransactionsApi;
 import org.apache.fineract.client.services.LoansApi;
+import org.apache.fineract.client.services.LoanChargesApi;
 import org.apache.fineract.test.data.ChargeCalculationType;
 import org.apache.fineract.test.data.ChargeTimeType;
-import java.util.List;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
+import org.junit.jupiter.api.Assertions;
 import org.springframework.beans.factory.annotation.Autowired;
 import retrofit2.Response;
 import lombok.extern.slf4j.Slf4j;
@@ -63,24 +68,44 @@ public class LoanRepaymentAndValidationStepDef extends AbstractStepDef {
     private LoanTransactionsApi loanTransactionsApi;
 
     @Autowired
+    private AccountTransfersApi accountTransfersApi;
+
+    @Autowired
     private LoansApi loansApi;
 
     @Autowired
     private ChargesApi chargesApi;
 
+    @Autowired
+    private LoanChargesApi loanChargesApi;
+
     @When("Client makes a repayment of {double} EUR on {string} date")
     public void clientMakesRepayment(Double amount, String repaymentDate) throws IOException {
         Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
         Long loanId = loanResponse.body().getLoanId();
+        Long clientId = loanResponse.body().getClientId();
+        Long officeId = loanResponse.body().getOfficeId();
+
+        Response<PostSavingsAccountsResponse> savingsResponse = testContext().get(TestContextKey.EUR_SAVINGS_ACCOUNT_CREATE_RESPONSE);
+        Long savingsAccountId = savingsResponse != null && savingsResponse.body() != null ? savingsResponse.body().getResourceId() : null;
+
+        AccountTransferRequest repaymentRequest = new AccountTransferRequest()
+                .transferDate(repaymentDate)
+                .dateFormat(DATE_FORMAT)
+                .locale(DEFAULT_LOCALE)
+                .transferAmount(String.valueOf(amount))
+                .fromAccountType("2") // Savings
+                .fromAccountId(String.valueOf(savingsAccountId))
+                .toAccountType("1") // Loan
+                .toAccountId(String.valueOf(loanId))
+                .toClientId(String.valueOf(clientId))
+                .toOfficeId(String.valueOf(officeId))
+                .fromOfficeId(String.valueOf(officeId))
+                .fromClientId(String.valueOf(clientId))
+                .transferDescription("Loan repayment");
         
-        PostLoansLoanIdTransactionsRequest repaymentRequest = new PostLoansLoanIdTransactionsRequest()
-            .transactionDate(repaymentDate)
-            .transactionAmount(amount)  // Double, not BigDecimal
-            .dateFormat(DATE_FORMAT)
-            .locale(DEFAULT_LOCALE);
-        
-        Response<PostLoansLoanIdTransactionsResponse> response = loanTransactionsApi
-            .executeLoanTransaction(loanId, repaymentRequest, "repayment").execute();
+        Response<PostAccountTransfersResponse> response = accountTransfersApi
+                .create4(repaymentRequest).execute();
         
         if (!response.isSuccessful()) {
             String errorBody = response.errorBody() != null ? response.errorBody().string() : "Unknown error";
@@ -366,7 +391,7 @@ public class LoanRepaymentAndValidationStepDef extends AbstractStepDef {
         // Overpaid amount = Total overpaid (difference between interest charged and interest consumed)
         Double actualOverpaid = loanDetails.body().getTotalOverpaid();
         
-        assertThat(actualOverpaid)
+        assertThat(actualOverpaid == null ? 0.0 : actualOverpaid)
             .as("Overpaid amount (Interest charged - Interest consumed)")
             .isEqualTo(expectedOverpaid);
         
@@ -412,11 +437,12 @@ public class LoanRepaymentAndValidationStepDef extends AbstractStepDef {
                 .name(chargeName)
                 .chargeAppliesTo(1) // Loan
                 .chargeTimeType(ChargeTimeType.OVERDUE_FEES.value)
-                .chargeCalculationType(ChargeCalculationType.PERCENTAGE_AMOUNT.ordinal())
+                .chargeCalculationType(ChargeCalculationType.PERCENTAGE_AMOUNT.value)
                 .chargePaymentMode(0) // Regular
                 .amount(percentage)
                 .active(true)
                 .currencyCode("EUR")
+                    .penalty(true)
                 .locale(DEFAULT_LOCALE);
             
             Response<PostChargesResponse> response = chargesApi.createCharge(chargeRequest).execute();
@@ -433,6 +459,78 @@ public class LoanRepaymentAndValidationStepDef extends AbstractStepDef {
         }
         
         testContext().set(TestContextKey.CHARGE_FOR_LOAN_PERCENT_LATE_CREATE_RESPONSE, chargeId);
+    }
+
+    @Given("An installment charge {string} with percentage {double} is added to the loan")
+    public void overduePenaltyChargeIsAddedToLoan(String chargeName, double percentage) throws IOException {
+        // Ensure the overdue penalty charge exists (creates if missing)
+        ensureOverduePenaltyChargeExists(chargeName, percentage);
+
+        // Retrieve loan from context
+        Response<PostLoansResponse> loanCreateResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        if (loanCreateResponse == null || loanCreateResponse.body() == null) {
+            throw new IllegalStateException("Loan create response not found in test context");
+        }
+        Long loanId = loanCreateResponse.body().getLoanId();
+
+        // Retrieve chargeId from context
+        Long chargeId = testContext().get(TestContextKey.CHARGE_FOR_LOAN_PERCENT_LATE_CREATE_RESPONSE);
+        if (chargeId == null) {
+            throw new IllegalStateException("Overdue penalty charge ID not found in test context");
+        }
+
+        // Optionally check if charge already applied to loan
+        Response<GetLoansLoanIdResponse> loanDetailsResponse = loansApi.retrieveLoan(loanId, false, "all", "", "").execute();
+        if (!loanDetailsResponse.isSuccessful()) {
+            String errorBody = loanDetailsResponse.errorBody() != null ? loanDetailsResponse.errorBody().string() : "Unknown error";
+            throw new RuntimeException("Failed to retrieve loan details before adding charge: " + errorBody);
+        }
+        boolean alreadyAdded = false;
+        if (loanDetailsResponse.body() != null && loanDetailsResponse.body().getCharges() != null) {
+            alreadyAdded = loanDetailsResponse.body().getCharges().stream().anyMatch(c -> c.getChargeId() != null && c.getChargeId().equals(chargeId));
+        }
+        if (alreadyAdded) {
+            log.info("Overdue penalty charge '{}' (ID: {}) already added to loan {}. Skipping re-add.", chargeName, chargeId, loanId);
+            return;
+        }
+
+        // Build request. For percentage overdue fee we pass the percentage as amount; dueDate optional -> omit to let system handle overdue logic.
+        PostLoansLoanIdChargesRequest request = new PostLoansLoanIdChargesRequest()
+                .chargeId(chargeId)
+                .amount(percentage)
+                .dateFormat(DATE_FORMAT)
+                .locale(DEFAULT_LOCALE);
+
+        Response<PostLoansLoanIdChargesResponse> addChargeResponse = loanChargesApi.executeLoanCharge(loanId, request, "").execute();
+        if (!addChargeResponse.isSuccessful()) {
+            String errorBody = addChargeResponse.errorBody() != null ? addChargeResponse.errorBody().string() : "Unknown error";
+            throw new RuntimeException("Failed to add overdue penalty charge to loan: " + errorBody);
+        }
+
+
+        log.info("Added overdue penalty charge '{}' (ID: {}) to loan {}. Loan charge resource ID: {}", chargeName, chargeId, loanId,
+                addChargeResponse.body() != null ? addChargeResponse.body().getResourceId() : null);
+    }
+
+    @Then("Loan is in arrears")
+    public void verifyThatLoanIsInArrears() throws IOException {
+        Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        Long loanId = loanResponse.body().getLoanId();
+
+        Response<GetLoansLoanIdResponse> loanDetails = loansApi
+                .retrieveLoan(loanId, false, "all", "", "")
+                .execute();
+
+        if (!loanDetails.isSuccessful()) {
+            String errorBody = loanDetails.errorBody() != null ? loanDetails.errorBody().string() : "Unknown error";
+            throw new RuntimeException("Failed to retrieve loan: " + errorBody);
+        }
+
+        // Check delinquency status or schedule status
+        assert loanDetails.body() != null;
+        assert loanDetails.body().getSummary() != null;
+        Boolean actualStatus = loanDetails.body().getInArrears();
+        Assertions.assertEquals(Boolean.TRUE, actualStatus);
     }
 
     @Then("Loan schedule status is {string}")

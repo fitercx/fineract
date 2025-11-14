@@ -286,11 +286,13 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.net_disbursal_amount as loanNetDisbursedAmount,
                     l.fixed_emi_amount as loanInstallmentAmount,
                     l.total_overpaid_derived as totalOverpaidDerived,
+                    la.overdue_since_date_derived as overdueSinceDate,
                     mlcp.invoice_no as invoiceNumber,
                     STRING_AGG(mlocab.name, ', ') as buyerSupplier
                     FROM m_line_of_credit loc
                     LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
                     LEFT JOIN m_loan l ON l.id = mlcp.loan_id
+                    LEFT JOIN m_loan_arrears_aging la on la.loan_id = l.id
                     LEFT JOIN m_product_loan lp ON lp.id = l.product_id
                     LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
@@ -308,7 +310,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.external_id, l.currency_digits, l.currency_multiplesof,
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
-                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived
+                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived,la.overdue_since_date_derived
                     """;
         }
 
@@ -382,13 +384,16 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal totalOverpaidDerived = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalOverpaidDerived");
             final String buyerSupplierDetail = rs.getString("buyerSupplier");
 
+            final LocalDate overdueSinceDate = JdbcSupport.getLocalDate(rs, "overdueSinceDate");
+            Boolean inArrears = (overdueSinceDate != null);
+
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
                     null, null, null, closedOnDate, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
             // Create simplified loan summary data with essential fields only
             LoanAccountSummaryData summaryData = new LoanAccountSummaryData(id, accountNo, null, null, loanProductName, null, loanStatus,
-                    null, null, null, timeline, false, loanAmount, outstandingBalance, amountPaid);
+                    null, null, null, timeline, inArrears, loanAmount, outstandingBalance, amountPaid);
             summaryData.setInvoiceNumber(invoiceNumber);
             summaryData.setTotalOverPaidDerived(totalOverpaidDerived);
             summaryData.setSupplierBuyerName(buyerSupplierDetail);

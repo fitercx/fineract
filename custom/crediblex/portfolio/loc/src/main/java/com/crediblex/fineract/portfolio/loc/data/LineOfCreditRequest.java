@@ -118,7 +118,7 @@ public class LineOfCreditRequest {
     private Integer cashMarginType;
 
     @Schema(example = "23", description = "Cash margin value")
-    private Integer cashMarginValue;
+    private Float cashMarginValue;
 
     @Schema(example = "1", description = "Interest charge time")
     private Integer interestChargeTime;
