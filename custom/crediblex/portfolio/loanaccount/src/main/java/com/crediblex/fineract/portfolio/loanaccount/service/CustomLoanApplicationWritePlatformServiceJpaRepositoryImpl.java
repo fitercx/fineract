@@ -465,7 +465,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             }
 
-            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+            boolean isReceivable = lineOfCredit.getProductType() == LocProductType.RECEIVABLE;
+            if (isReceivable) {
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
@@ -479,7 +480,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             loanLocParamsRepository.save(loanLocParams);
 
-            final Money amount = loan.getPrincipal();
+            final Money amount = isReceivable ? Money.of(loan.getCurrency(), loan.getProposedPrincipal()) : loan.getPrincipal();
             if (amount.isGreaterThanZero()) {
                 // For repayments, we reduce the LOC balance (i.e. free up credit)
                 lineOfCreditBalanceUpdateService.computeLocBalance(loan.getId(), amount.getAmount(), lineOfCredit,

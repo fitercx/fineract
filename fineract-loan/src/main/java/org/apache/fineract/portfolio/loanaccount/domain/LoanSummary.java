@@ -298,6 +298,20 @@ public class LoanSummary {
         final Money totalOutstanding = Money.of(currency, this.totalPrincipalOutstanding).plus(this.totalInterestOutstanding)
                 .plus(this.totalFeeChargesOutstanding).plus(this.totalPenaltyChargesOutstanding).plus(this.totalTaxChargesOutstanding);
         this.totalOutstanding = totalOutstanding.getAmount();
+
+        if (isReceivableLineOfCredit) {
+            // for receivable line of credit, total outstanding should not consider interest portion if there is no
+            // remaining principal
+            if (this.totalPrincipalOutstanding.compareTo(BigDecimal.ZERO) == 0
+                    && this.totalFeeChargesOutstanding.compareTo(BigDecimal.ZERO) == 0
+                    && this.totalPenaltyChargesOutstanding.compareTo(BigDecimal.ZERO) == 0
+                    && this.totalTaxChargesOutstanding.compareTo(BigDecimal.ZERO) == 0
+                    && this.totalOutstanding.compareTo(totalInterestOutstanding) == 0) {
+                this.totalOutstanding = this.totalOutstanding.subtract(this.totalInterestOutstanding);
+                this.totalExpectedCostOfLoan = this.totalExpectedCostOfLoan.subtract(this.totalInterestOutstanding);
+                this.totalInterestOutstanding = BigDecimal.ZERO;
+            }
+        }
     }
 
     public void updateTotalFeeChargesDueAtDisbursement(final BigDecimal totalFeeChargesDueAtDisbursement) {

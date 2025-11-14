@@ -84,6 +84,8 @@ public class CustomLoanAssemblerImpl extends LoanAssemblerImpl {
         Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loanAccount.getId());
         loanAccount.setReceivableLocLoan(
                 lineOfCreditParams.isPresent() && lineOfCreditParams.get().getLineOfCredit().getProductType().isReceivable());
+        loanAccount.getSummary().setReceivableLineOfCredit(
+                lineOfCreditParams.isPresent() && lineOfCreditParams.get().getLineOfCredit().getProductType().isReceivable());
         return loanAccount;
     }
 

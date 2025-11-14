@@ -123,7 +123,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .tenorDays(tenorDays) // Updated to match payload example
                 .advancePercentage("100") // Updated to match payload example
                 .cashMarginType(1)
-                .cashMarginValue(10)
+                .cashMarginValue(10.5f)
                 .interestChargeTime(1)
                 .loanOfficerId(null) // optional
                 .distributionPartner("Partner X")
@@ -413,11 +413,13 @@ public class LineOfCreditStepDef extends AbstractStepDef {
             BigDecimal advancePercentage = advancePercentageStr != null && !advancePercentageStr.isEmpty() ? new BigDecimal(advancePercentageStr) : new BigDecimal(90);
             // Set advance percentage
             loanRequest.setAdvancePercentage(advancePercentage);
+            BigDecimal amountAfterAdvance = approvedReceivableAmount
+                    .multiply(advancePercentage)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             loanRequest.setPrincipal(
-                    approvedReceivableAmount
-                            .multiply(advancePercentage)
-                            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    amountAfterAdvance
             );
+            loanRequest.setAmountAfterAdvance(amountAfterAdvance);
 
             loanRequest.setBuyerDetails(List.of(supplierOrBuyerId));
 
@@ -446,17 +448,6 @@ public class LineOfCreditStepDef extends AbstractStepDef {
             loanRequest.setSupplierDetails(List.of(supplierOrBuyerId));
         }
 
-
-
-        if(drawdownDetails.containsKey("hasDisburseCharge")){
-            // Add disbursement charge if specified
-            assert testContext().get(TestContextKey.CHARGE_FOR_LOAN_DISBURSEMENT_CHARGE_CREATE_RESPONSE) != null : "Charge for loan disbursement should exist in context";
-
-            Long disbursementChargeId = testContext().get(TestContextKey.CHARGE_FOR_LOAN_DISBURSEMENT_CHARGE_CREATE_RESPONSE);
-            loanRequest.charges(List.of(new PostLoansRequestChargeData()
-                    .chargeId(disbursementChargeId)
-                    .amount(new BigDecimal(10))));
-        }
 
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
 

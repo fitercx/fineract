@@ -20,6 +20,7 @@ package com.crediblex.fineract.test.stepdef;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import com.crediblex.fineract.test.factory.CustomLoanProductsRequestFactory;
+import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
@@ -40,6 +41,7 @@ import org.apache.fineract.client.models.GetLoanProductsResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactions;
 import org.apache.fineract.client.models.GetTaxesGroupResponse;
+import org.apache.fineract.client.models.LoanProductChargeData;
 import org.apache.fineract.client.models.PostChargesResponse;
 import org.apache.fineract.client.models.PostClientsResponse;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
@@ -265,8 +267,8 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         return additionalData;
     }
     
-    @And("Admin approves the loan on {string} date and principal amount of {int}")
-    public void adminApprovesLoan(String approvalDate, int principal) throws IOException {
+    @And("Admin approves the loan on {string} date and principal amount of {double}")
+    public void adminApprovesLoan(String approvalDate, double principal) throws IOException {
         Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
         Long loanId = loanResponse.body().getLoanId();
 
@@ -289,8 +291,8 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         log.info("Approved loan ID: {}", loanId);
     }
     
-    @And("Admin disburses the loan on {string} date and principal of {int} to savings account")
-    public void adminDisbursesLoanToSavings(String disbursalDate,int principal) throws IOException {
+    @And("Admin disburses the loan on {string} date and principal of {double} to savings account")
+    public void adminDisbursesLoanToSavings(String disbursalDate,double principal) throws IOException {
         Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
         Response<PostSavingsAccountsResponse> savingsResponse = testContext().get(TestContextKey.EUR_SAVINGS_ACCOUNT_CREATE_RESPONSE);
         
@@ -415,7 +417,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         }
         
         for (GetLoanProductsResponse product : products) {
-            if ((product.getName() != null && product.getName().equalsIgnoreCase(productName)) ||
+            if ((product.getName() != null && product.getName().equalsIgnoreCase(productName)) &&
                 (product.getShortName() != null && product.getShortName().equalsIgnoreCase(shortName))) {
                 log.info("Found existing loan product: {} (ID: {})", product.getName(), product.getId());
                 return product.getId();
@@ -506,10 +508,18 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
     }
     
 
-    @Given("A Custom EUR product with line of credit {string} loan product name {string} with {int} days tenor exists")
-    public void ensureCustomEURLineOfCreditLoanProductWithTenorExists(String locTypeLabel, String productName, int tenorDays) throws IOException {
+    @Given("A Custom EUR product with line of credit enabled exists")
+    public void ensureCustomEURLineOfCreditLoanProductWithTenorExists(DataTable dataTable) throws IOException {
+
+        Map<String, String> drawdownDetails = dataTable.asMap(String.class, String.class);
+        String locTypeLabel = drawdownDetails.get("locType");
+        String productName = drawdownDetails.get("productName");
+        int tenorDays = Integer.parseInt(drawdownDetails.get("tenorDays"));
+        String shortNameCustom = drawdownDetails.get("shortName");
+        boolean hasOverdueCharge = Boolean.parseBoolean(drawdownDetails.getOrDefault("hasOverdueCharge","false"));
+
         boolean isReceivable = locTypeLabel.equals("receivable");
-        String shortName = (isReceivable ? "R" : "P") + tenorDays; // Custom EUR Loan Product + tenor (max 4 chars)
+        String shortName = shortNameCustom != null ? shortNameCustom : ((isReceivable ? "R" : "P") + tenorDays); // Custom EUR Loan Product + tenor (max 4 chars)
         String currencyCode = "EUR";
         
         // First, check if product already exists
@@ -556,12 +566,21 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
                     .dueDaysForRepaymentEvent(1)
                     .overDueDaysForRepaymentEvent(2)
                     .loanScheduleType("CUMULATIVE")
-                    .enableLineOfCreditPayable(true)
+                    .enableLineOfCreditPayable(!isReceivable)
                     .enableLineOfCreditReceivable(isReceivable)
                     .accountingRule(1) // None
                     .allowPartialPeriodInterestCalcualtion(false)
                     .multiDisburseLoan(false)
                     .description("Custom EUR loan product for Line of Credit drawdowns with " + tenorDays + " days tenor");
+
+            if(hasOverdueCharge){
+                assert testContext().get(TestContextKey.CHARGE_FOR_LOAN_PERCENT_LATE_CREATE_RESPONSE) != null : "Charge for overdue loan should exist in context";
+
+                Long overdueChargeId = testContext().get(TestContextKey.CHARGE_FOR_LOAN_PERCENT_LATE_CREATE_RESPONSE);
+                LoanProductChargeData t = new LoanProductChargeData();
+                t.setId(overdueChargeId);
+                request.addChargesItem(t);
+            }
 
             Response<PostLoanProductsResponse> response = loanProductsApi.createLoanProduct(request).execute();
             

@@ -99,7 +99,9 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         if (isReceivableLOC) {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
             term.setIsReceivableLineOfCredit(true);
-            BigDecimal proposedPrincipal = getProposedPrincipal(element);
+
+            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+            BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance);
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
             term.setDisbursedPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -128,8 +130,6 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
                     }
                 }
             }
-
-            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
 
             BigDecimal netDisbursalAmount = amountAfterAdvance.subtract(totalInterestChargable.getAmount())
                     .subtract(chargesDueAtTimeOfDisbursement);
@@ -214,7 +214,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         return Pair.of(loan, actualChanges);
     }
 
-    private BigDecimal getProposedPrincipal(JsonElement element) {
+    private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance) {
         BigDecimal invoiceAmount = element.getAsJsonObject().get("invoiceAmount").getAsBigDecimal();
         BigDecimal disapprovedAmount = element.getAsJsonObject().get("disapprovedAmount").getAsBigDecimal();
         BigDecimal advancePercentage = element.getAsJsonObject().get("advancePercentage").getAsBigDecimal();
@@ -226,6 +226,11 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new PlatformApiDataValidationException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
                     "Proposed principal amount must be greater than zero for receivable line of credit.", List.of());
+        }
+
+        if (proposedPrincipal.compareTo(amountAfterAdvance) != 0) {
+            throw new PlatformApiDataValidationException("loan.proposed.principal.calculated.must.be.equal.to.amount.after.advance",
+                    "Proposed principal amount must be equal to amount after advance for receivable line of credit.", List.of());
         }
 
         return proposedPrincipal;

@@ -75,8 +75,7 @@ public class LineOfCreditAssembler {
         final LocCashMarginType cashMarginType = request.getCashMarginType() != null
                 ? LocCashMarginType.fromInt(request.getCashMarginType())
                 : null;
-        final BigDecimal cashMarginValue = request.getCashMarginValue() != null ? new BigDecimal(request.getCashMarginValue().toString())
-                : null;
+        final BigDecimal cashMarginValue = request.getCashMarginValue() != null ? BigDecimal.valueOf(request.getCashMarginValue()) : null;
 
         // Parse interim review date if provided
         LocalDate interimReviewDate = null;

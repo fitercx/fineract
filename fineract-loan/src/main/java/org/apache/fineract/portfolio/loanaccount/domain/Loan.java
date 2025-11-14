@@ -2260,8 +2260,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 outstanding = outstanding.plus(loanTransaction.getAmount(getCurrency()))
                         .minus(loanTransaction.getOverPaymentPortion(getCurrency()));
                 if (this.isReceivableLocLoan && loanTransaction.isDisbursement()) {
-                    outstanding = outstanding.add(this.getTotalInterestOutstandingOnLoan())
-                            .add(this.summary.getTotalFeeChargesOutstanding());
+                    outstanding = Money.of(this.getCurrency(), this.proposedPrincipal);
                 }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             } else if (loanTransaction.isChargeback() || loanTransaction.isCreditBalanceRefund()) {
@@ -2291,6 +2290,16 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     outstanding = outstanding.minus(loanTransaction.getAmount(getCurrency()));
                 } else {
                     outstanding = outstanding.minus(loanTransaction.getPrincipalPortion(getCurrency()));
+
+                    if (this.isReceivableLocLoan) {
+                        outstanding = outstanding.minus(loanTransaction.getInterestPortion());
+                    }
+
+                    // This is because im not resetting principal
+                    if (loanTransaction.isOverPaid() && this.isReceivableLocLoan
+                            && outstanding.isEqualTo(loanTransaction.getOverPaymentPortion(outstanding.getCurrency()))) {
+                        outstanding = outstanding.minus(loanTransaction.getOverPaymentPortion());
+                    }
                 }
                 loanTransaction.updateOutstandingLoanBalance(MathUtil.negativeToZero(outstanding.getAmount()));
             }
