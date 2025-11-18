@@ -35,6 +35,7 @@ import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -135,6 +136,8 @@ import org.apache.fineract.portfolio.loanproduct.domain.RecalculationFrequencyTy
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
 import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundException;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.stereotype.Service;
 
@@ -529,8 +532,20 @@ public class LoanScheduleAssembler {
         final BigDecimal factorRate = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME,
                 element);
         if (factorRateEnabled) {
-            final Money totalFactorRateFee = principalMoney.multipliedBy(factorRate).minus(principalMoney);
-            principalMoney = principalMoney.minus(totalFactorRateFee);
+            final Money totalLoanAmount = principalMoney;
+            final List<LoanDisbursementDetails> loanDisbursementDetails = this.loanDisbursementDetailsAssembler
+                    .fetchDisbursementData(element.getAsJsonObject());
+            final Set<LoanCharge> loanCharges = this.loanChargeAssembler.fromParsedJson(element, loanDisbursementDetails);
+            final LoanCharge factorRateInstallmentFee = loanCharges.stream().filter(LoanCharge::isInstalmentFee).findFirst().orElse(null);
+            final LocalDate chargeDate = factorRateInstallmentFee.getDueDate() != null ? factorRateInstallmentFee.getDueDate()
+                    : DateUtils.getBusinessLocalDate();
+            final Money totalFactorRateFee = totalLoanAmount.multipliedBy(factorRate).minus(totalLoanAmount);
+            final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
+                    ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
+                    : new HashSet<>();
+            final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(totalLoanAmount.getAmount(), chargeDate, factorRate,
+                    taxGroupMappings);
+            principalMoney = totalLoanAmount.minus(totalFactorRateFee).minus(taxAmount);
             loanScheduleType = LoanScheduleType.FACTOR_RATE;
         }
 
