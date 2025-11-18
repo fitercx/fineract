@@ -23,6 +23,7 @@ import java.math.MathContext;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,7 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDa
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementEmiAmountException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
 import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.springframework.stereotype.Component;
 
@@ -79,21 +81,22 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
         // Adjust principal based on factor rate
         final BigDecimal factorRate = loanApplicationTerms.getFactorRate();
         final Money principalMoney = loanApplicationTerms.getPrincipal();
-        final Money totalFactorRateFeeAmount = determineFactorRateFee(factorRate, principalMoney, mc);
         final LoanCharge factorRateInstallmentFee = loanCharges.stream().filter(LoanCharge::isInstalmentFee).findFirst().orElse(null);
+
         Money factorRateTaxAmount = Money.zero(loanApplicationTerms.getCurrency());
-        Money factorRateNetFeeAmount = totalFactorRateFeeAmount;
+        Money factorRateFeeAmount = Money.zero(loanApplicationTerms.getCurrency());
         if (factorRateInstallmentFee != null && factorRateInstallmentFee.isActive()) {
             final LocalDate chargeDate = factorRateInstallmentFee.getDueDate() != null ? factorRateInstallmentFee.getDueDate()
                     : DateUtils.getBusinessLocalDate();
-            final BigDecimal loanAmount = principalMoney.add(totalFactorRateFeeAmount).getAmount();
-            final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
-                    factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings());
-            factorRateTaxAmount = Money.of(loanApplicationTerms.getCurrency(), taxAmount);
-            factorRateNetFeeAmount = totalFactorRateFeeAmount.minus(factorRateTaxAmount);
+            final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
+                    ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
+                    : Collections.emptySet();
+            final BigDecimal taxPercentage = TaxUtils.determineTaxPercentageValue(chargeDate, taxGroupMappings);
+            factorRateFeeAmount = determineFactorRateFee(factorRate, principalMoney, taxPercentage, mc);
+            factorRateTaxAmount = factorRateFeeAmount.multipliedBy(taxPercentage).dividedBy(100, mc);
         }
 
-        final Money factorRateFeePerInstallment = factorRateNetFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
+        final Money factorRateFeePerInstallment = factorRateFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
         final Money factorRateTaxPerInstallment = factorRateTaxAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
 
         // generate list of proposed schedule due dates
@@ -462,13 +465,23 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
                 totalOutstanding);
     }
 
-    private Money determineFactorRateFee(final BigDecimal factorRate, final Money principal, final MathContext mc) {
-        if (!MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE)) {
+    private Money determineFactorRateFee(final BigDecimal factorRate, final Money principal, final BigDecimal taxPercentage,
+            final MathContext mc) {
+        if (!MathUtil.isGreaterThan(factorRate, BigDecimal.ONE)) {
             throw new GeneralPlatformDomainRuleException("error.msg.loan.factor.rate.must.be.greater.than.or.equal.to.one",
-                    "Factor rate must be greater than or equal to 1");
+                    "Factor rate must be greater than 1");
         }
-        final BigDecimal divisor = BigDecimal.ONE.divide(factorRate.subtract(BigDecimal.ONE), mc).subtract(BigDecimal.ONE);
-        return principal.multipliedBy(BigDecimal.ONE.divide(divisor, mc));
+        final BigDecimal hundred = new BigDecimal("100");
+        final BigDecimal twoHundred = new BigDecimal("200");
+        final BigDecimal numerator = hundred.multiply(principal.getAmount(), mc).multiply(factorRate.subtract(BigDecimal.ONE, mc), mc);
+        final BigDecimal denominator = twoHundred.add(taxPercentage, mc).subtract(factorRate.multiply(hundred.add(taxPercentage, mc), mc),
+                mc);
+        if (denominator.compareTo(BigDecimal.ZERO) == 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.factor.rate.invalid.denominator",
+                    "The calculation for factor rate fee results in a division by zero due to invalid denominator.");
+        }
+        final BigDecimal result = numerator.divide(denominator, mc);
+        return Money.of(principal.getCurrency(), result);
     }
 
     @Override

@@ -61,6 +61,7 @@ import org.apache.fineract.portfolio.charge.exception.LoanChargeWithoutMandatory
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidDetail;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
 import org.apache.fineract.portfolio.tax.service.TaxUtils;
 
 @Getter
@@ -1208,25 +1209,27 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public void updateTaxAmount(final boolean factorRateEnabled, final BigDecimal factorRate, final BigDecimal loanAmount) {
         if (this.hasTax() && this.amount != null && this.amount.compareTo(BigDecimal.ZERO) > 0) {
             LocalDate chargeDate = this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate();
+            final Set<TaxGroupMappings> taxGroupMappings = this.charge.getTaxGroup() != null
+                    ? this.charge.getTaxGroup().getTaxGroupMappings()
+                    : Collections.emptySet();
             if (isTaxAppliedToFactorRateCharge(factorRateEnabled, factorRate)) {
-                this.taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
-                        this.charge.getTaxGroup().getTaxGroupMappings());
-                this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate,
-                        this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale());
+                this.taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate, taxGroupMappings);
+                this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount, chargeDate, factorRate, taxGroupMappings,
+                        this.amount.scale());
             } else if (isTaxAppliedToSpecifiedDueDateCharge()) {
-                this.taxAmount = TaxUtils.calculateSpecifiedDueDateTaxAmount(this.amount, chargeDate,
-                        this.charge.getTaxGroup().getTaxGroupMappings());
+                this.taxAmount = TaxUtils.calculateSpecifiedDueDateTaxAmount(this.amount, chargeDate, taxGroupMappings);
             } else {
-                this.taxAmount = TaxUtils
-                        .addTaxToAmount(this.amount, chargeDate, this.charge.getTaxGroup().getTaxGroupMappings(), this.amount.scale())
+                this.taxAmount = TaxUtils.addTaxToAmount(this.amount, chargeDate, taxGroupMappings, this.amount.scale())
                         .subtract(this.amount);
             }
         } else {
             this.taxAmount = BigDecimal.ZERO;
             if (factorRateEnabled && MathUtil.isGreaterThanOrEqualTo(factorRate, BigDecimal.ONE) && isInstalmentFee()) {
+                final Set<TaxGroupMappings> taxGroupMappings = this.charge.getTaxGroup() != null
+                        ? this.charge.getTaxGroup().getTaxGroupMappings()
+                        : Collections.emptySet();
                 this.amount = TaxUtils.calculateFactorRateNetFeeAmount(loanAmount,
-                        this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate(), factorRate,
-                        this.charge.getTaxGroup() != null ? this.charge.getTaxGroup().getTaxGroupMappings() : Collections.emptySet(),
+                        this.dueDate != null ? this.dueDate : DateUtils.getBusinessLocalDate(), factorRate, taxGroupMappings,
                         this.amount.scale());
             }
         }

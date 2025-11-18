@@ -177,6 +177,27 @@ public final class TaxUtils {
         BigDecimal totalFactorRateTaxAmount = BigDecimal.ZERO;
         if (loanAmount != null && loanAmount.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal percentageVal = BigDecimal.ZERO;
+            if (taxGroupMappings != null) {
+                for (final TaxGroupMappings groupMappings : taxGroupMappings) {
+                    if (groupMappings.occursOnDayFromAndUpToAndIncluding(chargeDate)) {
+                        TaxComponent component = groupMappings.getTaxComponent();
+                        BigDecimal percentage = component.getApplicablePercentage(chargeDate);
+                        if (percentage != null) {
+                            percentageVal = percentageVal.add(percentage);
+                        }
+                    }
+                }
+            }
+            final BigDecimal totalFactorRateFeeAmount = loanAmount.multiply(factorRate).subtract(loanAmount);
+            totalFactorRateTaxAmount = totalFactorRateFeeAmount
+                    .multiply(percentageVal.divide(BigDecimal.valueOf(100), MoneyHelper.getRoundingMode()));
+        }
+        return totalFactorRateTaxAmount;
+    }
+
+    public static BigDecimal determineTaxPercentageValue(final LocalDate chargeDate, final Set<TaxGroupMappings> taxGroupMappings) {
+        BigDecimal percentageVal = BigDecimal.ZERO;
+        if (taxGroupMappings != null) {
             for (final TaxGroupMappings groupMappings : taxGroupMappings) {
                 if (groupMappings.occursOnDayFromAndUpToAndIncluding(chargeDate)) {
                     TaxComponent component = groupMappings.getTaxComponent();
@@ -186,11 +207,8 @@ public final class TaxUtils {
                     }
                 }
             }
-            final BigDecimal totalFactorRateFeeAmount = loanAmount.multiply(factorRate).subtract(loanAmount);
-            totalFactorRateTaxAmount = totalFactorRateFeeAmount
-                    .multiply(percentageVal.divide(BigDecimal.valueOf(100), MoneyHelper.getRoundingMode()));
         }
-        return totalFactorRateTaxAmount;
+        return percentageVal;
     }
 
     public static BigDecimal calculateFactorRateNetFeeAmount(final BigDecimal loanAmount, final LocalDate chargeDate,

@@ -20,6 +20,7 @@ package org.apache.fineract.portfolio.loanaccount.domain;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import java.util.function.Predicate;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
 import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -113,8 +115,10 @@ public class LoanRepaymentScheduleProcessingWrapper {
                 final BigDecimal loanAmount = factorRateInstallmentFee.getLoan().getFactorRateLoanAmount();
                 final BigDecimal factorRate = factorRateInstallmentFee.getLoan().getFactorRate();
                 final Integer numberOfRepayments = factorRateInstallmentFee.getLoan().getNumberOfRepayments();
-                final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
-                        factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings());
+                final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
+                        ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
+                        : Collections.emptySet();
+                final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate, taxGroupMappings);
                 final BigDecimal principalAmount = factorRateInstallmentFee.getLoan().getPrincipal().getAmount();
                 final BigDecimal totalFactorRateFeeAmount = loanAmount.subtract(principalAmount);
                 final BigDecimal factorRateNetFeeAmount = totalFactorRateFeeAmount.subtract(taxAmount);
