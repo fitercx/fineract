@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Insert Savings Accounts Transactions Report -->
+    <changeSet author="CredibleX" id="0037-insert-savings-accounts-transactions-report">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Savings Accounts Transactions Report'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="stretchy_report">
+            <column name="report_name" value="Savings Accounts Transactions Report"/>
+            <column name="report_type" value="Table"/>
+            <column name="report_subtype" value="NULL"/>
+            <column name="report_category" value="Savings"/>
+            <column name="report_sql"><![CDATA[
+SELECT
+    c.id AS "Client Id",
+    CONCAT(c.firstname, ' ', COALESCE(c.middlename,''), ' ', COALESCE(c.lastname,'')) AS "Client Name",
+    sa.id AS "Saving Account Id",
+    sa.account_no AS "Savings account no.",
+    t.id AS "Transaction Id",
+    to_char(COALESCE(t.submitted_on_date, t.created_date::date, t.transaction_date), 'DD Month YYYY') AS "Value Date",
+    to_char(t.transaction_date, 'DD Month YYYY') AS "Transaction Date",
+    sa.external_id AS "External Id",
+    CASE t.transaction_type_enum
+        WHEN 1 THEN 'Deposit'
+        WHEN 2 THEN 'Withdrawal'
+        WHEN 3 THEN 'Interest Posting'
+        WHEN 4 THEN 'Withdrawal Fee'
+        WHEN 5 THEN 'Annual Fee'
+        WHEN 12 THEN 'Dividend Payout'
+        WHEN 13 THEN 'Overdraft Interest'
+        WHEN 21 THEN 'Withhold Tax'
+        ELSE 'Other'
+    END AS "Transaction Type",
+    CASE WHEN t.transaction_type_enum IN (2,4,5,13,21) THEN t.amount ELSE NULL END AS "Debit",
+    CASE WHEN t.transaction_type_enum IN (1,3,12) THEN t.amount ELSE NULL END AS "Credit",
+    t.running_balance_derived AS "Balance"
+FROM m_savings_account_transaction t
+JOIN m_savings_account sa ON sa.id = t.savings_account_id
+JOIN m_client c ON c.id = sa.client_id
+WHERE t.is_reversed = FALSE
+  AND (${clientId} = -1 OR c.id = ${clientId})
+  AND (${savingsId} = -1 OR sa.id = ${savingsId})
+ORDER BY c.id ASC, sa.id ASC, t.transaction_date DESC, t.id DESC
+            ]]></column>
+            <column name="description" value=""/>
+            <column name="core_report" valueBoolean="false"/>
+            <column name="use_report" valueBoolean="false"/>
+            <column name="self_service_user_report" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <!-- Map Client & Savings parameters to the report -->
+    <changeSet author="CredibleX" id="0037-map-client-savings-params-by-name-to-report">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Savings Accounts Transactions Report'
+            </sqlCheck>
+            <sqlCheck expectedResult="2">
+                SELECT COUNT(*) FROM stretchy_parameter WHERE parameter_name IN ('Client','Savings')
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+INSERT INTO stretchy_report_parameter (report_id, parameter_id, report_parameter_name)
+SELECT r.id, p.id, p.parameter_name
+FROM stretchy_report r
+JOIN stretchy_parameter p ON p.parameter_name IN ('Client','Savings')
+WHERE r.report_name = 'Savings Accounts Transactions Report'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM stretchy_report_parameter srp
+      WHERE srp.report_id = r.id
+        AND srp.parameter_id = p.id
+  );
+        ]]></sql>
+    </changeSet>
+
+</databaseChangeLog>
