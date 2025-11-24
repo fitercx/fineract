@@ -24,6 +24,8 @@ import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncReposi
 import com.crediblex.fineract.portfolio.accountdetails.service.CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
+import java.util.Map;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
@@ -208,6 +210,12 @@ public class JournalEntryOdooTrackingService {
             if (!transactionTypes.isEmpty()) {
                 Integer transactionTypeEnum = transactionTypes.get(0);
 
+                // Check for early closure/foreclosure only
+                String earlyClosureCheck = checkForEarlyClosureTransaction(loanTransactionId);
+                if (earlyClosureCheck != null) {
+                    return earlyClosureCheck;
+                }
+
                 // Static mapping based on transaction_type_enum values
                 // transaction_type_enum IN (1, 5, 35) maps to "DISBURSEMENT"
                 if (transactionTypeEnum != null && (transactionTypeEnum == 1 || transactionTypeEnum == 5 || transactionTypeEnum == 35)) {
@@ -221,7 +229,11 @@ public class JournalEntryOdooTrackingService {
                 if (transactionTypeEnum == 2) {
                     return "REPAYMENT";
                 }
-                // if (transactionTypeEnum == 3) return "WAIVE_INTEREST";
+
+                if (transactionTypeEnum == 10) {
+                    return "ACCRUAL";
+                }
+
 
                 log.debug("Loan transaction {} with type {} has no specific business event mapping", loanTransactionId,
                         transactionTypeEnum);
@@ -235,6 +247,51 @@ public class JournalEntryOdooTrackingService {
             log.warn("Failed to get business event type for loan transaction ID: {}", loanTransactionId, e);
             return null;
         }
+    }
+
+    /**
+     * Separate method to check if a loan transaction is an early closure/foreclosure
+     * This method is only called when the transaction doesn't match standard business event types
+     */
+    private String checkForEarlyClosureTransaction(Long loanTransactionId) {
+        try {
+            List<Map<String, Object>> results = getForeclosureTransactionDetails(loanTransactionId);
+            
+            if (!results.isEmpty()) {
+                Map<String, Object> result = results.get(0);
+                Integer isForeclosure = ((Number) result.get("is_foreclosure")).intValue();
+                Integer transactionTypeEnum = (Integer) result.get("transaction_type_enum");
+
+                if (isForeclosure == 1) {
+                    log.debug("Loan transaction {} with type {} identified as EARLY_CLOSURE business event", loanTransactionId,
+                            transactionTypeEnum);
+                    return "EARLY_CLOSURE";
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to check for early closure for loan transaction ID: {}", loanTransactionId, e);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Query to get foreclosure/early closure transaction details
+     * Separated into its own method for better maintainability
+     */
+    private List<Map<String, Object>> getForeclosureTransactionDetails(Long loanTransactionId) {
+        String sql = "SELECT mlt.transaction_type_enum, " +
+                     "CASE WHEN matd.transfer_type = 6 THEN 1 " +
+                     "     WHEN ml.closedon_date IS NOT NULL AND mlt.transaction_date = ml.closedon_date " +
+                     "          AND ml.loan_status_id = 600 AND mlt.transaction_type_enum = 2 THEN 1 " +
+                     "     ELSE 0 END as is_foreclosure " +
+                     "FROM m_loan_transaction mlt " +
+                     "LEFT JOIN m_account_transfer_transaction matt ON matt.to_loan_transaction_id = mlt.id " +
+                     "LEFT JOIN m_account_transfer_details matd ON matd.id = matt.account_transfer_details_id " +
+                     "LEFT JOIN m_loan ml ON ml.id = mlt.loan_id " +
+                     "WHERE mlt.id = ?";
+        
+        return accountDetailsService.getJdbcTemplate().queryForList(sql, loanTransactionId);
     }
 
     /**

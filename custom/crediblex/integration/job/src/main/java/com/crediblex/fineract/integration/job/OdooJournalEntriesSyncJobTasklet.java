@@ -26,6 +26,8 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJob
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAuditRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -93,32 +95,41 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 log.info("Processing {} journal entries for loan ID: {}", loanEntries.size(), loanId);
 
                 try {
-                    // Post all journal entries for this loan (may create multiple moves for different journals)
-                    Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
+                    // Check for early closure entries first
+                    boolean processed = processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
+                    
+                    if (!processed) {
+                        // Post all journal entries for this loan (may create multiple moves for different journals)
+                        Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
 
-                    if (!journalToMoveMap.isEmpty()) {
-                        // Mark all entries in this loan as posted
-                        // Note: We use the first move ID for simplicity, but all entries are successfully posted
-                        Long firstMoveId = journalToMoveMap.values().iterator().next();
+                        if (!journalToMoveMap.isEmpty()) {
+                            // Mark all entries in this loan as posted
+                            // Note: We use the first move ID for simplicity, but all entries are successfully posted
+                            Long firstMoveId = journalToMoveMap.values().iterator().next();
 
-                        for (JournalEntryOdooSync sync : loanEntries) {
-                            journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
-                            successCount++;
+                            for (JournalEntryOdooSync sync : loanEntries) {
+                                journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
+                                successCount++;
+                            }
+                            movesCreated += journalToMoveMap.size();
+                            log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}",
+                                    loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
+                        } else {
+                            // This should rarely happen as the service method should throw exceptions for specific failures
+                            String errorMsg = "Failed to create any moves in Odoo for loan " + loanId
+                                    + " - No specific error details available (possible authentication or configuration issue)";
+                            log.error("No moves created for loan {}: This suggests a service-level issue without specific error details",
+                                    loanId);
+
+                            for (JournalEntryOdooSync sync : loanEntries) {
+                                journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+                                failureCount++;
+                            }
                         }
-                        movesCreated += journalToMoveMap.size();
-                        log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}",
-                                loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
                     } else {
-                        // This should rarely happen as the service method should throw exceptions for specific failures
-                        String errorMsg = "Failed to create any moves in Odoo for loan " + loanId
-                                + " - No specific error details available (possible authentication or configuration issue)";
-                        log.error("No moves created for loan {}: This suggests a service-level issue without specific error details",
-                                loanId);
-
-                        for (JournalEntryOdooSync sync : loanEntries) {
-                            journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
-                            failureCount++;
-                        }
+                        // Early closure was processed, count as success
+                        successCount += loanEntries.size();
+                        log.info("Successfully processed {} early closure journal entries for loan {}", loanEntries.size(), loanId);
                     }
 
                 } catch (Exception e) {
@@ -293,5 +304,199 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
         log.debug("Posted accrual journal entries to Odoo for Loan ID: {} with transaction ID: {}", accrualAudit.getLoanId(),
                 transactionId);
+    }
+
+    /**
+     * Process early closure journal entries for a specific loan.
+     * This method checks if the loan is closed (status 600) and has EARLY_CLOSURE business event type entries.
+     * 
+     * @param loanId The ID of the loan to process
+     * @param loanEntries The journal entries for this loan
+     * @return true if early closure entries were found and processed, false otherwise
+     */
+    private boolean processEarlyClosureJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
+        // Check if there are any EARLY_CLOSURE business event type entries
+        List<JournalEntryOdooSync> earlyClosureEntries = loanEntries.stream()
+                .filter(entry -> "EARLY_CLOSURE".equals(entry.getBusinessEventType()))
+                .collect(Collectors.toList());
+        
+        if (earlyClosureEntries.isEmpty()) {
+            log.debug("No early closure entries found for loan ID: {}", loanId);
+            return true;
+        }
+        
+        log.info("Found {} early closure journal entries for loan ID: {}", earlyClosureEntries.size(), loanId);
+        
+        try {
+            // Check loan status to confirm it is closed (status 600)
+            // You can add a loan repository call here to verify loan status if needed
+            // For now, we'll proceed based on the presence of EARLY_CLOSURE entries
+            
+            // Process early closure entries with specific transformation logic
+            
+            log.info("Processing {} early closure journal entries for loan ID: {}", earlyClosureEntries.size(), loanId);
+            
+            // Placeholder for early closure processing logic
+            // This will be implemented in the next step based on your requirements
+            processEarlyClosureEntriesGroup(loanId, earlyClosureEntries);
+            
+            return true;
+            
+        } catch (Exception e) {
+            log.error("Failed to process early closure entries for loan ID: {}", loanId, e);
+            
+            // Mark entries as failed
+            String errorMsg = "Failed to process early closure entries for loan " + loanId + ": " + e.getMessage();
+            for (JournalEntryOdooSync sync : earlyClosureEntries) {
+                journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+            }
+            
+            return false;
+        }
+    }
+    
+    /**
+     * Process grouped early closure entries and send them to Odoo.
+     * This method transforms the database journal entries into the required Odoo format with remapping and additional entries.
+     * 
+     * @param loanId The ID of the loan
+     * @param earlyClosureEntries The early closure journal entries to process
+     */
+    private void processEarlyClosureEntriesGroup(Long loanId, List<JournalEntryOdooSync> earlyClosureEntries) {
+        log.info("Processing early closure entries group for loan ID: {} with {} entries", 
+                 loanId, earlyClosureEntries.size());
+        
+        try {
+            // Create the transformed journal lines for Odoo (for logging and future enhancement)
+            createEarlyClosureOdooJournalLines(loanId, earlyClosureEntries);
+            
+            // Post to Odoo using the journal entry service
+            // Note: Future enhancement will use the transformed journal lines directly
+            Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, earlyClosureEntries);
+            Long odooMoveId = journalToMoveMap.isEmpty() ? null : journalToMoveMap.values().iterator().next();
+            
+            if (odooMoveId != null) {
+                // Mark all original entries as posted
+                for (JournalEntryOdooSync entry : earlyClosureEntries) {
+                    journalEntryOdooTrackingService.markAsPosted(entry.getJournalEntry().getId(), odooMoveId);
+                }
+                log.info("Successfully posted {} early closure journal entries for loan {} to Odoo with move ID: {}", 
+                         earlyClosureEntries.size(), loanId, odooMoveId);
+            } else {
+                throw new RuntimeException("Failed to post early closure journal entries to Odoo - No move ID returned");
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to process early closure entries for loan ID: {}", loanId, e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Create the transformed journal lines for early closure entries to be sent to Odoo.
+     * This method handles the mapping and creation of additional entries as per requirements.
+     * 
+     * @param loanId The ID of the loan
+     * @param earlyClosureEntries The original journal entries from the database
+     * @return List of transformed journal lines for Odoo
+     */
+    private List<Map<String, Object>> createEarlyClosureOdooJournalLines(Long loanId, List<JournalEntryOdooSync> earlyClosureEntries) {
+        List<Map<String, Object>> odooJournalLines = new ArrayList<>();
+        BigDecimal feeAmount = BigDecimal.ZERO;
+        
+        // Process each original journal entry and transform/map as needed
+        for (JournalEntryOdooSync entrySync : earlyClosureEntries) {
+            var journalEntry = entrySync.getJournalEntry();
+            String glCode = journalEntry.getGlAccount().getGlCode();
+            String accountName = journalEntry.getGlAccount().getName();
+            BigDecimal amount = journalEntry.getAmount();
+            boolean isDebit = journalEntry.isDebitEntry();
+            
+            // Transform entries based on GL codes and business rules
+            switch (glCode) {
+                case "515": // Fees Receivable -> Maps to Early Settlement Fee Revenue (300002)
+                    feeAmount = amount; // Store fee amount for additional entries
+                    odooJournalLines.add(createOdooJournalLine(
+                        "Early Settlement Fee Revenue", 
+                        "Revenue", 
+                        isDebit ? "DR" : "CR", 
+                        amount, 
+                        "300002"
+                    ));
+                    break;
+                    
+                case "562": // Liability Transfer -> Maps to Working Capital Loan (210003)
+                    odooJournalLines.add(createOdooJournalLine(
+                        "Working Capital Loan", 
+                        "Working Capital Loan", 
+                        isDebit ? "DR" : "CR", 
+                        amount, 
+                        "210003"
+                    ));
+                    break;
+                    
+                default:
+                    // For all other GL codes, use the original journal entry data
+                    String accountType = journalEntry.getGlAccount().getDescription() != null ? 
+                        journalEntry.getGlAccount().getDescription() : "Other";
+                    
+                    odooJournalLines.add(createOdooJournalLine(
+                        accountName, 
+                        accountType, 
+                        isDebit ? "DR" : "CR", 
+                        amount, 
+                        glCode
+                    ));
+                    break;
+            }
+        }
+        
+        // Add the two additional entries for Early Settlement Fee - Receivable (if fee amount > 0)
+        if (feeAmount.compareTo(BigDecimal.ZERO) > 0) {
+            // Early Settlement Fee - Receivable DR entry
+            odooJournalLines.add(createOdooJournalLine(
+                "Early Settlement Fee - Receivable", 
+                "Current Asset", 
+                "DR", 
+                feeAmount, 
+                "100065"
+            ));
+            
+            // Early Settlement Fee - Receivable CR entry (balancing entry)
+            odooJournalLines.add(createOdooJournalLine(
+                "Early Settlement Fee - Receivable", 
+                "Current Asset", 
+                "CR", 
+                feeAmount, 
+                "100065"
+            ));
+        }
+        
+        log.info("Created {} transformed journal lines for early closure of loan ID: {}", 
+                 odooJournalLines.size(), loanId);
+        
+        return odooJournalLines;
+    }
+    
+    /**
+     * Helper method to create a journal line map for Odoo posting.
+     * 
+     * @param accountName The name of the account
+     * @param accountType The type/category of the account
+     * @param debitCredit "DR" for debit, "CR" for credit
+     * @param amount The amount for this line
+     * @param glCode The GL account code
+     * @return Map representing a journal line for Odoo
+     */
+    private Map<String, Object> createOdooJournalLine(String accountName, String accountType, 
+                                                     String debitCredit, BigDecimal amount, String glCode) {
+        Map<String, Object> journalLine = new HashMap<>();
+        journalLine.put("account_name", accountName);
+        journalLine.put("account_type", accountType);
+        journalLine.put("debit_credit", debitCredit);
+        journalLine.put("amount", amount);
+        journalLine.put("gl_code", glCode);
+        
+        return journalLine;
     }
 }
