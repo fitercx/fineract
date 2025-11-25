@@ -810,6 +810,13 @@ public class OdooJournalEntryService {
             Long moveId = odooApiClient.create(uid, "account.move", moveValues);
 
             if (moveId != null) {
+                // Post the move (from draft to posted state)
+                Boolean posted = odooApiClient.postAccountMove(uid, moveId);
+                if (!posted) {
+                    log.warn("Created move {} in Odoo but failed to post it - move remains in draft state", moveId);
+                    // Still return the ID as the move was created successfully
+                }
+                
                 log.info("Successfully created early closure move in Odoo with ID: {} for loan {}", moveId, loanId);
             } else {
                 log.error("Failed to create early closure move in Odoo for loan {}", loanId);
@@ -834,6 +841,13 @@ public class OdooJournalEntryService {
         moveValues.put("date", transactionDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
         moveValues.put("ref", "Early Closure - Loan ID: " + loanId);
         moveValues.put("narration", "Early closure journal entries for loan " + loanId);
+        
+        // Add loan-specific fields like in regular loan journal entries
+        moveValues.put("x_studio_lms_loan_id", loanId);
+        String clientName = getClientNameFromLoanId(loanId);
+        if (clientName != null) {
+            moveValues.put("x_studio_lms_customer_name", clientName);
+        }
 
         // Convert transformed journal lines to Odoo move line format
         List<Object> moveLines = new ArrayList<>();
