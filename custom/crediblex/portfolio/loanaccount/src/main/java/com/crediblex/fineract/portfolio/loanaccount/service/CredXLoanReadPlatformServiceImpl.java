@@ -1581,6 +1581,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.context.authenticatedUser();
 
         final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+        final Optional<LoanLineOfCreditParams> lineOfCreditOptions = this.loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
         loanForeclosureValidator.validateForForeclosure(loan, transactionDate);
         final MonetaryCurrency currency = loan.getCurrency();
         final ApplicationCurrency applicationCurrency = this.applicationCurrencyRepository.findOneWithNotFoundDetection(currency);
@@ -1619,6 +1620,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     linkedSavingsAccount.savingsProduct().getName());
             loanTransactionData.getAdditionalAttributes().put("linkedSavingsAccountAvailableBalance",
                     linkedSavingsAccount.getWithdrawableBalance());
+            loanTransactionData.getAdditionalAttributes().put("isReceivableLineOfCredit", lineOfCreditOptions.isPresent()
+                    && lineOfCreditOptions.get().getLineOfCredit().getProductType() == LocProductType.RECEIVABLE);
 
         }
 
