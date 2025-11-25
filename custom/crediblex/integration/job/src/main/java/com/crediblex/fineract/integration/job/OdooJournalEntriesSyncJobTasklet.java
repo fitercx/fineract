@@ -62,6 +62,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private static final String INTEREST_INCOME_GL_CODE = "300000";
     private static final String INTEREST_RECEIVABLE_GL_CODE = "100034";
     private static final String ODOO_ACCRUAL_JOURNAL_CODE = "ACCR";
+    private static final String ODOO_EARLY_CLOSURE_JOURNAL_CODE = "BNK8";
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
@@ -367,13 +368,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                  loanId, earlyClosureEntries.size());
         
         try {
-            // Create the transformed journal lines for Odoo (for logging and future enhancement)
-            createEarlyClosureOdooJournalLines(loanId, earlyClosureEntries);
+            // Create the transformed journal lines for Odoo
+            List<Map<String, Object>> odooJournalLines = createEarlyClosureOdooJournalLines(loanId, earlyClosureEntries);
             
-            // Post to Odoo using the journal entry service
-            // Note: Future enhancement will use the transformed journal lines directly
-            Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, earlyClosureEntries);
-            Long odooMoveId = journalToMoveMap.isEmpty() ? null : journalToMoveMap.values().iterator().next();
+            // Get transaction date from the first entry (they should all be from the same transaction)
+            LocalDate transactionDate = earlyClosureEntries.get(0).getJournalEntry().getTransactionDate();
+            
+            // Post to Odoo using the transformed journal lines and reusing existing service methods
+            Long odooMoveId = odooJournalEntryService.postEarlyClosureJournalEntriesToOdoo(loanId, odooJournalLines, transactionDate, ODOO_EARLY_CLOSURE_JOURNAL_CODE);
             
             if (odooMoveId != null) {
                 // Mark all original entries as posted
@@ -412,9 +414,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             BigDecimal amount = journalEntry.getAmount();
             boolean isDebit = journalEntry.isDebitEntry();
             
-            // Transform entries based on GL codes and business rules
+            // Transform entries based on account names and business rules
             switch (glCode) {
-                case "515": // Fees Receivable -> Maps to Early Settlement Fee Revenue (300002)
+                case "Fees Receivable": // Maps to Early Settlement Fee Revenue (300002)
                     feeAmount = amount; // Store fee amount for additional entries
                     odooJournalLines.add(createOdooJournalLine(
                         "Early Settlement Fee Revenue", 
@@ -425,7 +427,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     ));
                     break;
                     
-                case "562": // Liability Transfer -> Maps to Working Capital Loan (210003)
+                case "Liability Transfer": // Maps to Working Capital Loan (210003)
                     odooJournalLines.add(createOdooJournalLine(
                         "Working Capital Loan", 
                         "Working Capital Loan", 
