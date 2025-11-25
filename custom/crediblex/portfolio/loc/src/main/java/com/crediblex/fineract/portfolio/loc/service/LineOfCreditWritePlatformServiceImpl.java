@@ -37,6 +37,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.exception.ActivationInsufficientBalanceException;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -68,6 +69,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
+import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -737,8 +739,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
 
         // Execute savings withdrawal
-        CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(),
-                withdrawalCommand);
+        CommandProcessingResult withdrawalResult;
+        try {
+            withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
+        } catch (InsufficientAccountBalanceException ex) {
+            throw new ActivationInsufficientBalanceException(total);
+        }
 
         // Get the created transaction for linking to charges
         SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
