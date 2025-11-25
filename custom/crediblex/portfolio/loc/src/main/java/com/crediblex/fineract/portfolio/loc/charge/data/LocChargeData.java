@@ -12,6 +12,7 @@ public class LocChargeData {
     Long id;
     Long chargeDefinitionId;
     boolean penalty;
+    String chargeName;
     Integer chargeTime;
     Integer chargeCalculation;
     LocalDate dueDate;
