@@ -383,4 +383,15 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public boolean isEditable() {
         return this.status == LocStatus.SUBMITTED || this.status == LocStatus.APPROVED;
     }
+
+    public void resetStateChangeFields() {
+        if (this.lineOfCreditStateChange != null) {
+            this.lineOfCreditStateChange.setActivateOnDate(null);
+            this.lineOfCreditStateChange.setApprovedBy(null);
+            this.lineOfCreditStateChange.setClosedBy(null);
+            this.lineOfCreditStateChange.setApprovedOnDate(null);
+            this.lineOfCreditStateChange.setClosedOnDate(null);
+        }
+
+    }
 }

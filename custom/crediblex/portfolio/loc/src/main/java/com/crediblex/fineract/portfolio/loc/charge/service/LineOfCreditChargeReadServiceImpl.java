@@ -31,7 +31,8 @@ public class LineOfCreditChargeReadServiceImpl implements LineOfCreditChargeRead
                     .feeInterval(getInteger(rs, "feeInterval")).amount(rs.getBigDecimal("amount"))
                     .amountOutstanding(rs.getBigDecimal("amountOutstanding")).amountPaid(rs.getBigDecimal("amountPaid"))
                     .amountWaived(rs.getBigDecimal("amountWaived")).paid(rs.getBoolean("isPaid")).waived(rs.getBoolean("waived"))
-                    .chargeName(rs.getString("chargeName")).active(rs.getBoolean("active")).build();
+                    .chargeName(rs.getString("chargeName")).active(rs.getBoolean("active"))
+                    .percentageAmount(rs.getBigDecimal("percentageAmount")).build();
         }
 
         private Integer getInteger(ResultSet rs, String column) throws SQLException {
@@ -40,7 +41,7 @@ public class LineOfCreditChargeReadServiceImpl implements LineOfCreditChargeRead
         }
     }
 
-    private static final String BASE_SELECT = "SELECT c.name as chargeName,locc.id as id, locc.charge_id as chargeDefinitionId, locc.is_penalty as penalty, "
+    private static final String BASE_SELECT = "SELECT locc.calculation_percentage as percentageAmount, c.name as chargeName,locc.id as id, locc.charge_id as chargeDefinitionId, locc.is_penalty as penalty, "
             + "locc.charge_time_enum as chargeTime, locc.charge_calculation_enum as chargeCalculation, locc.charge_due_date as dueDate, "
             + "locc.fee_on_month as feeOnMonth, locc.fee_on_day as feeOnDay, locc.fee_interval as feeInterval, locc.amount as amount, "
             + "locc.amount_outstanding_derived as amountOutstanding, locc.amount_paid_derived as amountPaid, locc.amount_waived_derived as amountWaived, "

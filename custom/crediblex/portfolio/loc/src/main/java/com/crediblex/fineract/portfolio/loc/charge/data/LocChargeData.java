@@ -19,6 +19,7 @@ public class LocChargeData {
     Integer feeOnMonth;
     Integer feeOnDay;
     Integer feeInterval;
+    BigDecimal percentageAmount;
     BigDecimal amount;
     BigDecimal amountOutstanding;
     BigDecimal amountPaid;

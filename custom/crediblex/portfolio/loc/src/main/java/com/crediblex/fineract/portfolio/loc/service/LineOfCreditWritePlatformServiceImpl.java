@@ -233,7 +233,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         idx++;
                         continue;
                     }
-                    Long chargeId = chargeElem.getAsJsonObject().get("id").getAsLong();
+                    Long chargeId = chargeElem.getAsJsonObject().get("chargeDefinitionId").getAsLong();
 
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
@@ -247,9 +247,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                                 "Only flat or percentage calculation allowed for LOC charges", "chargeId");
                     }
                     BigDecimal overrideAmount = null;
-                    if (fromJsonHelper.parameterExists("overrideAmount", chargeElem)
-                            && fromJsonHelper.parameterHasValue("overrideAmount", chargeElem)) {
-                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed("overrideAmount", chargeElem));
+                    String editableAmount = "editableAmount";
+                    if (fromJsonHelper.parameterExists(editableAmount, chargeElem)
+                            && fromJsonHelper.parameterHasValue(editableAmount, chargeElem)) {
+                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed(editableAmount, chargeElem));
                     }
 
                     LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
@@ -283,6 +284,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (!changes.isEmpty()) {
+            lineOfCredit.setStatus(LocStatus.SUBMITTED);
+            lineOfCredit.resetStateChangeFields();
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
         }
 
