@@ -37,6 +37,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.exception.ActivationInsufficientBalanceException;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -68,6 +69,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
+import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -231,7 +233,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         idx++;
                         continue;
                     }
-                    Long chargeId = chargeElem.getAsJsonObject().get("id").getAsLong();
+                    Long chargeId = chargeElem.getAsJsonObject().get("chargeDefinitionId").getAsLong();
 
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
@@ -245,9 +247,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                                 "Only flat or percentage calculation allowed for LOC charges", "chargeId");
                     }
                     BigDecimal overrideAmount = null;
-                    if (fromJsonHelper.parameterExists("overrideAmount", chargeElem)
-                            && fromJsonHelper.parameterHasValue("overrideAmount", chargeElem)) {
-                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed("overrideAmount", chargeElem));
+                    String editableAmount = "editableAmount";
+                    if (fromJsonHelper.parameterExists(editableAmount, chargeElem)
+                            && fromJsonHelper.parameterHasValue(editableAmount, chargeElem)) {
+                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed(editableAmount, chargeElem));
                     }
 
                     LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
@@ -281,6 +284,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (!changes.isEmpty()) {
+            lineOfCredit.setStatus(LocStatus.SUBMITTED);
+            lineOfCredit.resetStateChangeFields();
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
         }
 
@@ -737,8 +742,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
 
         // Execute savings withdrawal
-        CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(),
-                withdrawalCommand);
+        CommandProcessingResult withdrawalResult;
+        try {
+            withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
+        } catch (InsufficientAccountBalanceException ex) {
+            throw new ActivationInsufficientBalanceException(total, ex);
+        }
 
         // Get the created transaction for linking to charges
         SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())

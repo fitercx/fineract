@@ -3,6 +3,7 @@ package com.crediblex.fineract.portfolio.loc.charge.service;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
@@ -23,7 +24,7 @@ public class LineOfCreditChargeDomainService {
         BigDecimal chargeAmount = baseAmount;
 
         if (calcType.isPercentageOfAmount()) {
-            chargeAmount = loc.getMaximumAmount().multiply(baseAmount).divide(BigDecimal.valueOf(100), 6, BigDecimal.ROUND_HALF_UP);
+            chargeAmount = loc.getMaximumAmount().multiply(baseAmount).divide(BigDecimal.valueOf(100), 3, RoundingMode.HALF_UP);
         }
 
         LineOfCreditCharge c = new LineOfCreditCharge();

@@ -74,12 +74,12 @@ import org.springframework.jdbc.core.RowMapper;
 @RequiredArgsConstructor
 public class LoanProductReadPlatformServiceImpl implements LoanProductReadPlatformService {
 
-    private final PlatformSecurityContext context;
+    protected final PlatformSecurityContext context;
     protected final JdbcTemplate jdbcTemplate;
     protected final ChargeReadPlatformService chargeReadPlatformService;
     protected final RateReadService rateReadService;
-    private final DatabaseSpecificSQLGenerator sqlGenerator;
-    private final FineractEntityAccessUtil fineractEntityAccessUtil;
+    protected final DatabaseSpecificSQLGenerator sqlGenerator;
+    protected final FineractEntityAccessUtil fineractEntityAccessUtil;
     protected final DelinquencyReadPlatformService delinquencyReadPlatformService;
     private final LoanProductRepository loanProductRepository;
 

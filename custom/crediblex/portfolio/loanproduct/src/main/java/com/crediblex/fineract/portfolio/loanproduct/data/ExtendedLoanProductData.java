@@ -128,4 +128,13 @@ public class ExtendedLoanProductData extends LoanProductData {
                 data.getDaysInYearCustomStrategy(), Boolean.TRUE.equals(data.getEnableIncomeCapitalization()),
                 data.getCapitalizedIncomeCalculationType(), data.getCapitalizedIncomeStrategy());
     }
+
+    public static LoanProductData lookup(final Long id, final String name, final Boolean multiDisburseLoan,
+            Boolean enableLineOfCreditPayable, Boolean enableLineOfCreditReceivable) {
+        LoanProductData loanProductData = lookup(id, name, multiDisburseLoan);
+        loanProductData.setEnableLineOfCreditPayable(enableLineOfCreditPayable);
+        loanProductData.setEnableLineOfCreditReceivable(enableLineOfCreditReceivable);
+        return loanProductData;
+    }
+
 }
