@@ -21,7 +21,7 @@ import java.util.Set;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
-import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepository;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
@@ -101,7 +101,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             term.setIsReceivableLineOfCredit(true);
 
             BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
-            BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance);
+            BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
             term.setDisbursedPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -214,22 +214,22 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         return Pair.of(loan, actualChanges);
     }
 
-    private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance) {
+    private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance, MathContext mc) {
         BigDecimal invoiceAmount = element.getAsJsonObject().get("invoiceAmount").getAsBigDecimal();
         BigDecimal disapprovedAmount = element.getAsJsonObject().get("disapprovedAmount").getAsBigDecimal();
         BigDecimal advancePercentage = element.getAsJsonObject().get("advancePercentage").getAsBigDecimal();
         BigDecimal amountForCalculation = invoiceAmount.subtract(disapprovedAmount);
 
-        BigDecimal proposedPrincipal = (advancePercentage.multiply(amountForCalculation)).divide(BigDecimal.valueOf(100),
+        BigDecimal proposedPrincipal = (advancePercentage.multiply(amountForCalculation)).divide(BigDecimal.valueOf(100), mc.getPrecision(),
                 RoundingMode.HALF_UP);
 
         if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new PlatformApiDataValidationException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
+            throw new GeneralPlatformDomainRuleException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
                     "Proposed principal amount must be greater than zero for receivable line of credit.", List.of());
         }
 
         if (proposedPrincipal.compareTo(amountAfterAdvance) != 0) {
-            throw new PlatformApiDataValidationException("loan.proposed.principal.calculated.must.be.equal.to.amount.after.advance",
+            throw new GeneralPlatformDomainRuleException("loan.proposed.principal.calculated.must.be.equal.to.amount.after.advance",
                     "Proposed principal amount must be equal to amount after advance for receivable line of credit.", List.of());
         }
 
