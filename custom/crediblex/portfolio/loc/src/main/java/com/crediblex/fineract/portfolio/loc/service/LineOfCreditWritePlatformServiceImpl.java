@@ -746,7 +746,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         try {
             withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
         } catch (InsufficientAccountBalanceException ex) {
-            throw new ActivationInsufficientBalanceException(total);
+            throw new ActivationInsufficientBalanceException(total, ex);
         }
 
         // Get the created transaction for linking to charges

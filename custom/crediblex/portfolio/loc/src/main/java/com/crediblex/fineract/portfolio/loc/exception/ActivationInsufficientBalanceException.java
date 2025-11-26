@@ -5,8 +5,8 @@ import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainR
 
 public class ActivationInsufficientBalanceException extends AbstractPlatformDomainRuleException {
 
-    public ActivationInsufficientBalanceException(final BigDecimal transactionAmount) {
+    public ActivationInsufficientBalanceException(final BigDecimal transactionAmount, final Throwable cause) {
         super("error.msg.loc.insufficient.settlement.savings.balance",
-                "Complete the LOC Activation Fee payment to enable your credit facility.", "charge", transactionAmount);
+                "Complete the LOC Activation Fee payment to enable your credit facility.", "charge", transactionAmount, cause);
     }
 }
