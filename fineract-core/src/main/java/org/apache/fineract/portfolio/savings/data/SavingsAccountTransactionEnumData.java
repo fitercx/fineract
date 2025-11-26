@@ -46,6 +46,7 @@ public class SavingsAccountTransactionEnumData implements Serializable {
     private final boolean writtenoff;
     private final boolean overdraftFee;
     private final boolean withholdTax;
+    private final boolean payTax;
     private final boolean escheat;
     private final boolean amountHold;
     private final boolean amountRelease;
@@ -72,6 +73,7 @@ public class SavingsAccountTransactionEnumData implements Serializable {
         this.overdraftFee = false;
         this.overdraftInterest = transactionType == SavingsAccountTransactionType.OVERDRAFT_INTEREST;
         this.withholdTax = transactionType == SavingsAccountTransactionType.WITHHOLD_TAX;
+        this.payTax = transactionType == SavingsAccountTransactionType.PAY_TAX;
         this.escheat = transactionType == SavingsAccountTransactionType.ESCHEAT;
         this.amountHold = transactionType == SavingsAccountTransactionType.AMOUNT_HOLD;
         this.amountRelease = transactionType == SavingsAccountTransactionType.AMOUNT_RELEASE;
@@ -83,6 +85,14 @@ public class SavingsAccountTransactionEnumData implements Serializable {
 
     public boolean isOverDraftInterestPosting() {
         return this.overdraftInterest;
+    }
+
+    public boolean isWithholdTax() {
+        return this.withholdTax;
+    }
+
+    public boolean isPayTax() {
+        return this.payTax;
     }
 
     public boolean isDepositOrWithdrawal() {

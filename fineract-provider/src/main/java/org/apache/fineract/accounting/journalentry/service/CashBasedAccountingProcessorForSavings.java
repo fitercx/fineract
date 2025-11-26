@@ -180,6 +180,12 @@ public class CashBasedAccountingProcessorForSavings implements AccountingProcess
                         savingsId, transactionId, transactionDate, amount, isReversal, savingsTransactionDTO.getTaxPayments());
             }
 
+            else if (savingsTransactionDTO.getTransactionType().isPayTax()) {
+                this.helper.createCashBasedJournalEntriesAndReversalsForSavingsTax(office, currencyCode,
+                        CashAccountsForSavings.SAVINGS_CONTROL, CashAccountsForSavings.SAVINGS_REFERENCE, savingsProductId, paymentTypeId,
+                        savingsId, transactionId, transactionDate, amount, isReversal, savingsTransactionDTO.getTaxPayments());
+            }
+
             /** Handle Fees Deductions and reversals of Fees Deductions **/
             else if (savingsTransactionDTO.getTransactionType().isFeeDeduction() && savingsTransactionDTO.isOverdraftTransaction()) {
                 boolean isPositive = amount.subtract(overdraftAmount).compareTo(BigDecimal.ZERO) > 0;

@@ -122,6 +122,7 @@ public class SavingsApiConstants {
     public static final String feeAmountParamName = "feeAmount";// to be deleted
     public static final String feeOnMonthDayParamName = "feeOnMonthDay";
     public static final String feeIntervalParamName = "feeInterval";
+    public static final String loanAccountIdParamName = "loanAccountId";
     public static final String accountingRuleParamName = "accountingRule";
     public static final String paymentTypeIdParamName = "paymentTypeId";
     public static final String transactionAccountNumberParamName = "accountNumber";
