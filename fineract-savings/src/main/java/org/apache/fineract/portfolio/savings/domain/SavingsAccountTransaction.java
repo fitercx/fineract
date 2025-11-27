@@ -304,6 +304,18 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         return accountTransaction;
     }
 
+    public static SavingsAccountTransaction payTax(final SavingsAccount savingsAccount, final Office office, final LocalDate date,
+            final Money amount, final Map<TaxComponent, BigDecimal> taxDetails) {
+        final boolean isReversed = false;
+        final boolean isManualTransaction = false;
+        final Boolean lienTransaction = false;
+        final String refNo = null;
+        SavingsAccountTransaction accountTransaction = new SavingsAccountTransaction(savingsAccount, office,
+                SavingsAccountTransactionType.PAY_TAX.getValue(), date, amount, isReversed, isManualTransaction, lienTransaction, refNo);
+        updateTaxDetails(taxDetails, accountTransaction);
+        return accountTransaction;
+    }
+
     public static SavingsAccountTransaction escheat(final SavingsAccount savingsAccount, final LocalDate date,
             final boolean accountTransaction) {
         final boolean isReversed = false;
@@ -781,6 +793,10 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
 
     public boolean isWithHoldTaxAndNotReversed() {
         return getTransactionType().isWithHoldTax() && isNotReversed();
+    }
+
+    public boolean isPayTaxAndNotReversed() {
+        return getTransactionType().isPayTax() && isNotReversed();
     }
 
     public boolean isOverdraftInterestAndNotReversed() {

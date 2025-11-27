@@ -133,6 +133,9 @@ public class SavingsAccountCharge extends AbstractAuditableWithUTCDateTimeCustom
     @Column(name = "inactivated_on_date")
     private LocalDate inactivationDate;
 
+    @Column(name = "loan_account_id", nullable = true)
+    private Long loanAccountId;
+
     public static SavingsAccountCharge createNewFromJson(final SavingsAccount savingsAccount, final Charge chargeDefinition,
             final JsonCommand command) {
 
@@ -698,12 +701,24 @@ public class SavingsAccountCharge extends AbstractAuditableWithUTCDateTimeCustom
         this.chargeResetDate = date;
     }
 
+    public Long getLoanAccountId() {
+        return this.loanAccountId;
+    }
+
+    public void setLoanAccountId(Long loanAccountId) {
+        this.loanAccountId = loanAccountId;
+    }
+
     public SavingsAccount savingsAccount() {
         return this.savingsAccount;
     }
 
     public boolean isOnSpecifiedDueDate() {
         return ChargeTimeType.fromInt(this.chargeTime).isOnSpecifiedDueDate();
+    }
+
+    public boolean isSpecifiedDueDate() {
+        return isOnSpecifiedDueDate();
     }
 
     public boolean isSavingsActivation() {

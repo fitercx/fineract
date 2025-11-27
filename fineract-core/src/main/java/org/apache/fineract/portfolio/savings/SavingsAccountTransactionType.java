@@ -50,7 +50,8 @@ public enum SavingsAccountTransactionType {
     WITHHOLD_TAX(18, "savingsAccountTransactionType.withholdTax", TransactionEntryType.DEBIT), //
     ESCHEAT(19, "savingsAccountTransactionType.escheat", TransactionEntryType.DEBIT), //
     AMOUNT_HOLD(20, "savingsAccountTransactionType.onHold", TransactionEntryType.DEBIT), //
-    AMOUNT_RELEASE(21, "savingsAccountTransactionType.release", TransactionEntryType.CREDIT); //
+    AMOUNT_RELEASE(21, "savingsAccountTransactionType.release", TransactionEntryType.CREDIT), //
+    PAY_TAX(22, "savingsAccountTransactionType.payTax", TransactionEntryType.DEBIT); //
 
     private static final Map<Integer, SavingsAccountTransactionType> BY_ID = Arrays.stream(values())
             .collect(Collectors.toMap(SavingsAccountTransactionType::getValue, v -> v));
@@ -120,6 +121,10 @@ public enum SavingsAccountTransactionType {
 
     public boolean isWithHoldTax() {
         return this == WITHHOLD_TAX;
+    }
+
+    public boolean isPayTax() {
+        return this == PAY_TAX;
     }
 
     public boolean isWithdrawalFee() {

@@ -725,6 +725,34 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         return isTaxAdded;
     }
 
+    protected boolean createPayTaxTransaction(final BigDecimal amount, final LocalDate date, final TaxGroup taxGroup,
+            final boolean backdatedTxnsAllowedTill, final SavingsAccountCharge savingsAccountCharge) {
+        boolean isTaxAdded = false;
+        if (taxGroup != null && amount.compareTo(BigDecimal.ZERO) > 0) {
+            Map<TaxComponent, BigDecimal> taxSplit = TaxUtils.splitTax(amount, date, taxGroup.getTaxGroupMappings(), amount.scale());
+            BigDecimal totalTax = TaxUtils.totalTaxAmount(taxSplit);
+            if (totalTax.compareTo(BigDecimal.ZERO) > 0) {
+                SavingsAccountTransaction payTaxTransaction = SavingsAccountTransaction.payTax(this, office(), date,
+                        Money.of(currency, totalTax), taxSplit);
+
+                // Link PAY_TAX transaction to the charge (similar to PAY_CHARGE)
+                if (savingsAccountCharge != null) {
+                    final SavingsAccountChargePaidBy chargePaidBy = SavingsAccountChargePaidBy.instance(payTaxTransaction,
+                            savingsAccountCharge, totalTax);
+                    payTaxTransaction.getSavingsAccountChargesPaid().add(chargePaidBy);
+                }
+
+                if (backdatedTxnsAllowedTill) {
+                    addTransactionToExisting(payTaxTransaction);
+                } else {
+                    addTransaction(payTaxTransaction);
+                }
+                isTaxAdded = true;
+            }
+        }
+        return isTaxAdded;
+    }
+
     protected boolean updateWithHoldTransaction(final BigDecimal amount, final SavingsAccountTransaction withholdTransaction) {
         boolean isTaxAdded = false;
         if (this.taxGroup != null && amount.compareTo(BigDecimal.ZERO) > 0) {
@@ -3181,6 +3209,13 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         }
 
         handleChargeTransactions(savingsAccountCharge, chargeTransaction, backdatedTxnsAllowedTill);
+
+        // Create PAY_TAX transaction if charge has tax group and is SPECIFIED_DUE_DATE
+        if (savingsAccountCharge.isSpecifiedDueDate() && savingsAccountCharge.getCharge().getTaxGroup() != null) {
+            createPayTaxTransaction(transactionAmount.getAmount(), transactionDate, savingsAccountCharge.getCharge().getTaxGroup(),
+                    backdatedTxnsAllowedTill, savingsAccountCharge);
+        }
+
         return chargeTransaction;
     }
 

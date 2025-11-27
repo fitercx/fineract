@@ -56,6 +56,7 @@ import org.apache.fineract.portfolio.savings.SavingsInterestCalculationDaysInYea
 import org.apache.fineract.portfolio.savings.SavingsInterestCalculationType;
 import org.apache.fineract.portfolio.savings.SavingsPeriodFrequencyType;
 import org.apache.fineract.portfolio.savings.SavingsPostingInterestPeriodType;
+import org.apache.fineract.portfolio.savings.data.LinkedLoanData;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountApplicationTimelineData;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountChargeData;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountData;
@@ -1095,7 +1096,9 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     + "pd.receipt_number as receiptNumber, pd.bank_number as bankNumber,pd.routing_code as routingCode, "
                     + "sa.currency_code as currencyCode, sa.currency_digits as currencyDigits, sa.currency_multiplesof as inMultiplesOf, "
                     + "curr.name as currencyName, curr.internationalized_name_code as currencyNameCode, "
-                    + "curr.display_symbol as currencyDisplaySymbol, pt.value as paymentTypeName, " + "tr.is_manual as postInterestAsOn ";
+                    + "curr.display_symbol as currencyDisplaySymbol, pt.value as paymentTypeName, tr.is_manual as postInterestAsOn, "
+                    + "loan.id as linkedLoanId, loan.account_no as linkedLoanAccountNumber, "
+                    + "loan.principal_disbursed_derived as linkedLoanOriginalPrincipal, " + "loanProduct.name as linkedLoanProductName ";
         }
 
         private static String buildFrom() {
@@ -1105,7 +1108,11 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     + "left join m_account_transfer_transaction totran on totran.to_savings_transaction_id = tr.id "
                     + "left join m_payment_detail pd on tr.payment_detail_id = pd.id "
                     + "left join m_payment_type pt on pd.payment_type_id = pt.id left join m_appuser au on au.id= tr." + CREATED_BY_DB_FIELD
-                    + " left join m_note nt ON nt.savings_account_transaction_id=tr.id ";
+                    + " left join m_note nt ON nt.savings_account_transaction_id=tr.id "
+                    + "left join m_savings_account_charge_paid_by chargePaidBy on chargePaidBy.savings_account_transaction_id = tr.id "
+                    + "left join m_savings_account_charge savingsCharge on savingsCharge.id = chargePaidBy.savings_account_charge_id "
+                    + "left join m_loan loan on loan.id = savingsCharge.loan_account_id "
+                    + "left join m_product_loan loanProduct on loanProduct.id = loan.product_id ";
         }
 
         public String schema() {
@@ -1189,9 +1196,29 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             }
             final String submittedByUsername = rs.getString("submittedByUsername");
             final String note = rs.getString("transactionNote");
-            return SavingsAccountTransactionData.create(id, transactionType, paymentDetailData, savingsId, accountNo, date, currency,
-                    amount, outstandingChargeAmount, runningBalance, reversed, transfer, submittedOnDate, postInterestAsOn,
-                    submittedByUsername, note, isReversal, originalTransactionId, lienTransaction, releaseTransactionId, reasonForBlock);
+
+            // Extract linked loan data if available
+            final Long linkedLoanId = JdbcSupport.getLong(rs, "linkedLoanId");
+            LinkedLoanData linkedLoanData = null;
+            if (linkedLoanId != null) {
+                final String linkedLoanAccountNumber = rs.getString("linkedLoanAccountNumber");
+                final BigDecimal linkedLoanOriginalPrincipal = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs,
+                        "linkedLoanOriginalPrincipal");
+                final String linkedLoanProductName = rs.getString("linkedLoanProductName");
+                linkedLoanData = LinkedLoanData.instance(linkedLoanId, linkedLoanAccountNumber, linkedLoanOriginalPrincipal,
+                        linkedLoanProductName);
+            }
+
+            SavingsAccountTransactionData transactionData = SavingsAccountTransactionData.create(id, transactionType, paymentDetailData,
+                    savingsId, accountNo, date, currency, amount, outstandingChargeAmount, runningBalance, reversed, transfer,
+                    submittedOnDate, postInterestAsOn, submittedByUsername, note, isReversal, originalTransactionId, lienTransaction,
+                    releaseTransactionId, reasonForBlock);
+
+            if (linkedLoanData != null) {
+                transactionData.setLinkedLoanData(linkedLoanData);
+            }
+
+            return transactionData;
         }
     }
 
