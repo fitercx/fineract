@@ -830,7 +830,7 @@ public class OdooJournalEntryService {
             return moveId;
 
         } catch (Exception e) {
-            log.error("Error posting early closure journal entries to Odoo for loan {}: {}", loanId, e.getMessage(), e);
+            log.error("Error posting early closure journal entries to Odoo for loan {}", loanId, e);
             return null;
         }
     }
