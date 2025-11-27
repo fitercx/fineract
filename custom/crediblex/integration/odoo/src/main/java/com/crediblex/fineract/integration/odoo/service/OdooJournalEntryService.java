@@ -465,7 +465,7 @@ public class OdooJournalEntryService {
         // Check if we have overdue interest charges (GL code 100030) to add additional LPI entries
         BigDecimal totalOverdueAmount = BigDecimal.ZERO;
         boolean hasOverdueCharges = false;
-        
+
         for (JournalEntry entry : journalEntries) {
             if ("100030".equals(entry.getGlAccount().getGlCode())) {
                 totalOverdueAmount = totalOverdueAmount.add(entry.getAmount());
@@ -506,7 +506,7 @@ public class OdooJournalEntryService {
         // Add additional entries for overdue interest charges (GL code 100030)
         if (hasOverdueCharges && totalOverdueAmount.compareTo(BigDecimal.ZERO) > 0) {
             log.info("Adding LPI entries for overdue interest charges totaling: {}", totalOverdueAmount);
-            
+
             // 1. Over Due Interest Charge Receivable (Current Asset, DR, 100030)
             Integer overdueReceivableAccountId = odooIntegrationService.getOdooAccountId("100030");
             if (overdueReceivableAccountId != null) {
@@ -519,8 +519,8 @@ public class OdooJournalEntryService {
             } else {
                 log.warn("Could not find Odoo account mapping for GL code 100030 (Over Due Interest Charge Receivable)");
             }
-            
-            // 2. Over Due Interest - LPI - RBF (Revenue, CR, 300015)  
+
+            // 2. Over Due Interest - LPI - RBF (Revenue, CR, 300015)
             Integer lpiRevenueAccountId = odooIntegrationService.getOdooAccountId("300015");
             if (lpiRevenueAccountId != null) {
                 Map<String, Object> creditLine = new HashMap<>();
@@ -948,6 +948,5 @@ public class OdooJournalEntryService {
             return null;
         }
     }
-
 
 }
