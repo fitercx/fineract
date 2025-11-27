@@ -97,9 +97,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                 try {
                     // Check for early closure entries first
-                    boolean processed = processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
+                    processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
                     
-                    if (!processed) {
+
                         // Post all journal entries for this loan (may create multiple moves for different journals)
                         Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
 
@@ -127,11 +127,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                                 failureCount++;
                             }
                         }
-                    } else {
-                        // Early closure was processed, count as success
-                        successCount += loanEntries.size();
-                        log.info("Successfully processed {} early closure journal entries for loan {}", loanEntries.size(), loanId);
-                    }
+
 
                 } catch (Exception e) {
                     // Capture the specific error details for better debugging
@@ -315,7 +311,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
      * @param loanEntries The journal entries for this loan
      * @return true if early closure entries were found and processed, false otherwise
      */
-    private boolean processEarlyClosureJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
+    private void processEarlyClosureJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
         // Check if there are any EARLY_CLOSURE business event type entries
         List<JournalEntryOdooSync> earlyClosureEntries = loanEntries.stream()
                 .filter(entry -> "EARLY_CLOSURE".equals(entry.getBusinessEventType()))
@@ -323,7 +319,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         
         if (earlyClosureEntries.isEmpty()) {
             log.debug("No early closure entries found for loan ID: {}", loanId);
-            return true;
         }
         
         log.info("Found {} early closure journal entries for loan ID: {}", earlyClosureEntries.size(), loanId);
@@ -341,8 +336,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             // This will be implemented in the next step based on your requirements
             processEarlyClosureEntriesGroup(loanId, earlyClosureEntries);
             
-            return true;
-            
         } catch (Exception e) {
             log.error("Failed to process early closure entries for loan ID: {}", loanId, e);
             
@@ -351,8 +344,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             for (JournalEntryOdooSync sync : earlyClosureEntries) {
                 journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
             }
-            
-            return false;
         }
     }
     
