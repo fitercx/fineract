@@ -25,7 +25,6 @@ import com.crediblex.fineract.portfolio.accountdetails.service.CredXAccountDetai
 import jakarta.annotation.PostConstruct;
 import java.util.List;
 import java.util.Map;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
@@ -234,7 +233,6 @@ public class JournalEntryOdooTrackingService {
                     return "ACCRUAL";
                 }
 
-
                 log.debug("Loan transaction {} with type {} has no specific business event mapping", loanTransactionId,
                         transactionTypeEnum);
                 return null;
@@ -250,13 +248,13 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Separate method to check if a loan transaction is an early closure/foreclosure
-     * This method is only called when the transaction doesn't match standard business event types
+     * Separate method to check if a loan transaction is an early closure/foreclosure This method is only called when
+     * the transaction doesn't match standard business event types
      */
     private String checkForEarlyClosureTransaction(Long loanTransactionId) {
         try {
             List<Map<String, Object>> results = getForeclosureTransactionDetails(loanTransactionId);
-            
+
             if (!results.isEmpty()) {
                 Map<String, Object> result = results.get(0);
                 Integer isForeclosure = ((Number) result.get("is_foreclosure")).intValue();
@@ -271,26 +269,22 @@ public class JournalEntryOdooTrackingService {
         } catch (Exception e) {
             log.warn("Failed to check for early closure for loan transaction ID: {}", loanTransactionId, e);
         }
-        
+
         return null;
     }
 
     /**
-     * Query to get foreclosure/early closure transaction details
-     * Separated into its own method for better maintainability
+     * Query to get foreclosure/early closure transaction details Separated into its own method for better
+     * maintainability
      */
     private List<Map<String, Object>> getForeclosureTransactionDetails(Long loanTransactionId) {
-        String sql = "SELECT mlt.transaction_type_enum, " +
-                     "CASE WHEN matd.transfer_type = 6 THEN 1 " +
-                     "     WHEN ml.closedon_date IS NOT NULL AND mlt.transaction_date = ml.closedon_date " +
-                     "          AND ml.loan_status_id = 600 AND mlt.transaction_type_enum = 2 THEN 1 " +
-                     "     ELSE 0 END as is_foreclosure " +
-                     "FROM m_loan_transaction mlt " +
-                     "LEFT JOIN m_account_transfer_transaction matt ON matt.to_loan_transaction_id = mlt.id " +
-                     "LEFT JOIN m_account_transfer_details matd ON matd.id = matt.account_transfer_details_id " +
-                     "LEFT JOIN m_loan ml ON ml.id = mlt.loan_id " +
-                     "WHERE mlt.id = ?";
-        
+        String sql = "SELECT mlt.transaction_type_enum, " + "CASE WHEN matd.transfer_type = 6 THEN 1 "
+                + "     WHEN ml.closedon_date IS NOT NULL AND mlt.transaction_date = ml.closedon_date "
+                + "          AND ml.loan_status_id = 600 AND mlt.transaction_type_enum = 2 THEN 1 " + "     ELSE 0 END as is_foreclosure "
+                + "FROM m_loan_transaction mlt " + "LEFT JOIN m_account_transfer_transaction matt ON matt.to_loan_transaction_id = mlt.id "
+                + "LEFT JOIN m_account_transfer_details matd ON matd.id = matt.account_transfer_details_id "
+                + "LEFT JOIN m_loan ml ON ml.id = mlt.loan_id " + "WHERE mlt.id = ?";
+
         return accountDetailsService.getJdbcTemplate().queryForList(sql, loanTransactionId);
     }
 
