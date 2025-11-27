@@ -778,13 +778,17 @@ public class OdooJournalEntryService {
 
     /**
      * Posts early closure journal entries to Odoo with transformed account mappings.
-     * 
-     * @param loanId The loan ID for reference
-     * @param transformedJournalLines The transformed journal lines for early closure
-     * @param transactionDate The transaction date to use for the move
+     *
+     * @param loanId
+     *            The loan ID for reference
+     * @param transformedJournalLines
+     *            The transformed journal lines for early closure
+     * @param transactionDate
+     *            The transaction date to use for the move
      * @return The Odoo move ID if successful, null otherwise
      */
-    public Long postEarlyClosureJournalEntriesToOdoo(Long loanId, List<Map<String, Object>> transformedJournalLines, LocalDate transactionDate, String odooJournalCode) {
+    public Long postEarlyClosureJournalEntriesToOdoo(Long loanId, List<Map<String, Object>> transformedJournalLines,
+            LocalDate transactionDate, String odooJournalCode) {
         try {
             log.info("Posting {} transformed early closure journal lines for loan {} to Odoo", transformedJournalLines.size(), loanId);
 
@@ -804,7 +808,8 @@ public class OdooJournalEntryService {
             Integer journalId = odooIntegrationService.getJournalIdByOdooCode(odooJournalCode);
 
             // Build account move values using the transformed lines
-            Map<String, Object> moveValues = buildAccountMoveValuesForEarlyClosure(loanId, transformedJournalLines, journalId, transactionDate);
+            Map<String, Object> moveValues = buildAccountMoveValuesForEarlyClosure(loanId, transformedJournalLines, journalId,
+                    transactionDate);
 
             // Create the move in Odoo
             Long moveId = odooApiClient.create(uid, "account.move", moveValues);
@@ -816,7 +821,7 @@ public class OdooJournalEntryService {
                     log.warn("Created move {} in Odoo but failed to post it - move remains in draft state", moveId);
                     // Still return the ID as the move was created successfully
                 }
-                
+
                 log.info("Successfully created early closure move in Odoo with ID: {} for loan {}", moveId, loanId);
             } else {
                 log.error("Failed to create early closure move in Odoo for loan {}", loanId);
@@ -833,15 +838,16 @@ public class OdooJournalEntryService {
     /**
      * Build account move values for early closure with transformed journal lines
      */
-    private Map<String, Object> buildAccountMoveValuesForEarlyClosure(Long loanId, List<Map<String, Object>> transformedJournalLines, Integer journalId, LocalDate transactionDate) {
+    private Map<String, Object> buildAccountMoveValuesForEarlyClosure(Long loanId, List<Map<String, Object>> transformedJournalLines,
+            Integer journalId, LocalDate transactionDate) {
         Map<String, Object> moveValues = new HashMap<>();
-        
+
         // Set basic move properties
         moveValues.put("journal_id", journalId);
         moveValues.put("date", transactionDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
         moveValues.put("ref", "Early Closure - Loan ID: " + loanId);
         moveValues.put("narration", "Early closure journal entries for loan " + loanId);
-        
+
         // Add loan-specific fields like in regular loan journal entries
         moveValues.put("x_studio_lms_loan_id", loanId);
         String clientName = getClientNameFromLoanId(loanId);
@@ -851,21 +857,21 @@ public class OdooJournalEntryService {
 
         // Convert transformed journal lines to Odoo move line format
         List<Object> moveLines = new ArrayList<>();
-        
+
         for (Map<String, Object> journalLine : transformedJournalLines) {
             Map<String, Object> moveLine = new HashMap<>();
-            
+
             // Get account ID from GL code - you might need to implement account lookup
             String glCode = (String) journalLine.get("gl_code");
             Integer accountId = getAccountIdByGlCode(glCode);
-            
+
             if (accountId != null) {
                 moveLine.put("account_id", accountId);
                 moveLine.put("name", journalLine.get("account_name"));
-                
+
                 BigDecimal amount = (BigDecimal) journalLine.get("amount");
                 String debitCredit = (String) journalLine.get("debit_credit");
-                
+
                 if ("DR".equals(debitCredit)) {
                     moveLine.put("debit", amount);
                     moveLine.put("credit", BigDecimal.ZERO);
@@ -873,7 +879,7 @@ public class OdooJournalEntryService {
                     moveLine.put("debit", BigDecimal.ZERO);
                     moveLine.put("credit", amount);
                 }
-                
+
                 // Add the line as a "create" command for Odoo
                 moveLines.add(Arrays.asList(0, 0, moveLine));
             } else {
@@ -887,8 +893,9 @@ public class OdooJournalEntryService {
 
     /**
      * Get Odoo account ID by GL code using the existing integration service
-     * 
-     * @param glCode The GL code to look up
+     *
+     * @param glCode
+     *            The GL code to look up
      * @return The Odoo account ID, or null if not found
      */
     private Integer getAccountIdByGlCode(String glCode) {
