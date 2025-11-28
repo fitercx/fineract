@@ -21,6 +21,7 @@ public class LocChargeData {
     Integer feeInterval;
     BigDecimal percentageAmount;
     BigDecimal amount;
+    BigDecimal taxAmount;
     BigDecimal amountOutstanding;
     BigDecimal amountPaid;
     BigDecimal amountWaived;
