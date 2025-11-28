@@ -89,6 +89,10 @@ final class TaxComponentApiResourceSwagger {
         public Integer creditAccountType;
         @Schema(example = "4")
         public Long creditAcountId;
+        @Schema(example = "2")
+        public Integer debitAccountType;
+        @Schema(example = "4")
+        public Long debitAcountId;
         @Schema(example = "en")
         public String locale;
         @Schema(example = "dd MMMM yyyy")

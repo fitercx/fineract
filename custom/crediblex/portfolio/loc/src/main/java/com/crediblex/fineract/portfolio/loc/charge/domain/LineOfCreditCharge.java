@@ -82,5 +82,12 @@ public class LineOfCreditCharge extends AbstractAuditableWithUTCDateTimeCustom<L
     @Column(name = "inactivated_on_date")
     private LocalDate inactivationDate;
 
+    @Column(name = "tax_amount", precision = 19, scale = 6)
+    private BigDecimal taxAmount;
+
     public LineOfCreditCharge() {}
+
+    public BigDecimal getTaxAmountDefaulted() {
+        return this.taxAmount == null ? BigDecimal.ZERO : this.taxAmount;
+    }
 }

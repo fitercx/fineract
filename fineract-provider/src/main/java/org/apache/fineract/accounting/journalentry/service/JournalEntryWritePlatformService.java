@@ -50,4 +50,6 @@ public interface JournalEntryWritePlatformService {
 
     void revertShareAccountJournalEntries(ArrayList<Long> transactionId, LocalDate transactionDate);
 
+    void createJournalEntriesForLineOfCredit(Map<String, Object> accountingBridgeData);
+
 }
