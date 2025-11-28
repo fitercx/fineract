@@ -97,41 +97,35 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                 try {
                     // Check for early closure entries first
-                    boolean processed = processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
+                    processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
 
-                    if (!processed) {
-                        // Post all journal entries for this loan (may create multiple moves for different journals)
-                        Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
+                    // Post all journal entries for this loan (may create multiple moves for different journals)
+                    Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
 
-                        if (!journalToMoveMap.isEmpty()) {
-                            // Mark all entries in this loan as posted
-                            // Note: We use the first move ID for simplicity, but all entries are successfully posted
-                            Long firstMoveId = journalToMoveMap.values().iterator().next();
+                    if (!journalToMoveMap.isEmpty()) {
+                        // Mark all entries in this loan as posted
+                        // Note: We use the first move ID for simplicity, but all entries are successfully posted
+                        Long firstMoveId = journalToMoveMap.values().iterator().next();
 
-                            for (JournalEntryOdooSync sync : loanEntries) {
-                                journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
-                                successCount++;
-                            }
-                            movesCreated += journalToMoveMap.size();
-                            log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}",
-                                    loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
-                        } else {
-                            // This should rarely happen as the service method should throw exceptions for specific
-                            // failures
-                            String errorMsg = "Failed to create any moves in Odoo for loan " + loanId
-                                    + " - No specific error details available (possible authentication or configuration issue)";
-                            log.error("No moves created for loan {}: This suggests a service-level issue without specific error details",
-                                    loanId);
-
-                            for (JournalEntryOdooSync sync : loanEntries) {
-                                journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
-                                failureCount++;
-                            }
+                        for (JournalEntryOdooSync sync : loanEntries) {
+                            journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
+                            successCount++;
                         }
+                        movesCreated += journalToMoveMap.size();
+                        log.info("Successfully posted {} journal entries for loan {} to Odoo across {} moves. Journals: {}",
+                                loanEntries.size(), loanId, journalToMoveMap.size(), journalToMoveMap.keySet());
                     } else {
-                        // Early closure was processed, count as success
-                        successCount += loanEntries.size();
-                        log.info("Successfully processed {} early closure journal entries for loan {}", loanEntries.size(), loanId);
+                        // This should rarely happen as the service method should throw exceptions for specific
+                        // failures
+                        String errorMsg = "Failed to create any moves in Odoo for loan " + loanId
+                                + " - No specific error details available (possible authentication or configuration issue)";
+                        log.error("No moves created for loan {}: This suggests a service-level issue without specific error details",
+                                loanId);
+
+                        for (JournalEntryOdooSync sync : loanEntries) {
+                            journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
+                            failureCount++;
+                        }
                     }
 
                 } catch (Exception e) {
@@ -318,14 +312,13 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
      *            The journal entries for this loan
      * @return true if early closure entries were found and processed, false otherwise
      */
-    private boolean processEarlyClosureJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
+    private void processEarlyClosureJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
         // Check if there are any EARLY_CLOSURE business event type entries
         List<JournalEntryOdooSync> earlyClosureEntries = loanEntries.stream()
                 .filter(entry -> "EARLY_CLOSURE".equals(entry.getBusinessEventType())).collect(Collectors.toList());
 
         if (earlyClosureEntries.isEmpty()) {
             log.debug("No early closure entries found for loan ID: {}", loanId);
-            return true;
         }
 
         log.info("Found {} early closure journal entries for loan ID: {}", earlyClosureEntries.size(), loanId);
@@ -343,8 +336,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             // This will be implemented in the next step based on your requirements
             processEarlyClosureEntriesGroup(loanId, earlyClosureEntries);
 
-            return true;
-
         } catch (Exception e) {
             log.error("Failed to process early closure entries for loan ID: {}", loanId, e);
 
@@ -353,8 +344,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             for (JournalEntryOdooSync sync : earlyClosureEntries) {
                 journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
             }
-
-            return false;
         }
     }
 

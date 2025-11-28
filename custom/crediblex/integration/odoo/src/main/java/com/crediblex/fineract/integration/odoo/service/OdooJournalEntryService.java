@@ -462,6 +462,17 @@ public class OdooJournalEntryService {
             }
         }
 
+        // Check if we have overdue interest charges (GL code 100030) to add additional LPI entries
+        BigDecimal totalOverdueAmount = BigDecimal.ZERO;
+        boolean hasOverdueCharges = false;
+
+        for (JournalEntry entry : journalEntries) {
+            if ("100030".equals(entry.getGlAccount().getGlCode())) {
+                totalOverdueAmount = totalOverdueAmount.add(entry.getAmount());
+                hasOverdueCharges = true;
+            }
+        }
+
         // Create move lines from consolidated amounts
         for (Map.Entry<String, Map<String, BigDecimal>> accountEntry : accountAmounts.entrySet()) {
             Integer accountId = Integer.valueOf(accountEntry.getKey());
@@ -489,6 +500,37 @@ public class OdooJournalEntryService {
 
                 // Add line using Odoo's line creation format: (0, 0, values)
                 lines.add(Arrays.asList(0, 0, line));
+            }
+        }
+
+        // Add additional entries for overdue interest charges (GL code 100030)
+        if (hasOverdueCharges && totalOverdueAmount.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("Adding LPI entries for overdue interest charges totaling: {}", totalOverdueAmount);
+
+            // 1. Over Due Interest Charge Receivable (Current Asset, DR, 100030)
+            Integer overdueReceivableAccountId = odooIntegrationService.getOdooAccountId("100030");
+            if (overdueReceivableAccountId != null) {
+                Map<String, Object> debitLine = new HashMap<>();
+                debitLine.put("account_id", overdueReceivableAccountId);
+                debitLine.put("debit", totalOverdueAmount);
+                debitLine.put("credit", BigDecimal.ZERO);
+                debitLine.put("name", "Over Due Interest Charge Receivable");
+                lines.add(Arrays.asList(0, 0, debitLine));
+            } else {
+                log.warn("Could not find Odoo account mapping for GL code 100030 (Over Due Interest Charge Receivable)");
+            }
+
+            // 2. Over Due Interest - LPI - RBF (Revenue, CR, 300015)
+            Integer lpiRevenueAccountId = odooIntegrationService.getOdooAccountId("300015");
+            if (lpiRevenueAccountId != null) {
+                Map<String, Object> creditLine = new HashMap<>();
+                creditLine.put("account_id", lpiRevenueAccountId);
+                creditLine.put("debit", BigDecimal.ZERO);
+                creditLine.put("credit", totalOverdueAmount);
+                creditLine.put("name", "Over Due Interest - LPI - RBF");
+                lines.add(Arrays.asList(0, 0, creditLine));
+            } else {
+                log.warn("Could not find Odoo account mapping for GL code 300015 (Over Due Interest - LPI - RBF)");
             }
         }
 
@@ -906,4 +948,5 @@ public class OdooJournalEntryService {
             return null;
         }
     }
+
 }
