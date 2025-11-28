@@ -37,7 +37,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
 
     public void reprocess(final MonetaryCurrency currency, final LocalDate disbursementDate,
             final List<LoanRepaymentScheduleInstallment> installments, LoanCharge loanCharge) {
-        Loan loan = loanCharge.getLoan();
+        final Loan loan = loanCharge.getLoan();
+        final boolean isFactorRateEnabled = loan != null && loan.isFactorRateEnabled();
         Money zero = Money.zero(currency);
         Money totalInterest = zero;
         Money totalPrincipal = zero;
@@ -55,7 +56,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
                     && (e.getLoanTransaction().isAccrual() || e.getLoanTransaction().isAccrualAdjustment())).toList();
         }
         LocalDate startDate = disbursementDate;
-        int firstNormalInstallmentNumber = LoanRepaymentScheduleProcessingWrapper.fetchFirstNormalInstallmentNumber(installments);
+        final int firstNormalInstallmentNumber = LoanRepaymentScheduleProcessingWrapper.fetchFirstNormalInstallmentNumber(installments);
+        final int lastNormalInstallmentNumber = LoanRepaymentScheduleProcessingWrapper.fetchLastNormalInstallmentNumber(installments);
         for (final LoanRepaymentScheduleInstallment installment : installments) {
             if (installment.isDownPayment()) {
                 continue;
@@ -63,10 +65,11 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
             boolean installmentChargeApplicable = !installment.isRecalculatedInterestComponent();
             Integer installmentNumber = installment.getInstallmentNumber();
             boolean isFirstPeriod = installmentNumber.equals(firstNormalInstallmentNumber);
+            boolean isLastPeriod = installmentNumber.equals(lastNormalInstallmentNumber);
             Predicate<LoanCharge> feePredicate = e -> e.isFeeCharge() && !e.isDueAtDisbursement();
             LocalDate dueDate = installment.getDueDate();
             final Money feeChargesDue = calcChargeDue(startDate, dueDate, loanCharge, currency, installment, totalPrincipal, totalInterest,
-                    installmentChargeApplicable, isFirstPeriod, feePredicate);
+                    installmentChargeApplicable, isFirstPeriod, isLastPeriod, isFactorRateEnabled, feePredicate);
             final Money feeChargesWaived = calcChargeWaived(startDate, dueDate, loanCharge, currency, installmentChargeApplicable,
                     isFirstPeriod, feePredicate);
             final Money feeChargesWrittenOff = calcChargeWrittenOff(startDate, dueDate, loanCharge, currency, installmentChargeApplicable,
@@ -78,7 +81,7 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
 
             Predicate<LoanCharge> penaltyPredicate = LoanCharge::isPenaltyCharge;
             final Money penaltyChargesDue = calcChargeDue(startDate, dueDate, loanCharge, currency, installment, totalPrincipal,
-                    totalInterest, installmentChargeApplicable, isFirstPeriod, penaltyPredicate);
+                    totalInterest, installmentChargeApplicable, isFirstPeriod, isLastPeriod, isFactorRateEnabled, penaltyPredicate);
             final Money penaltyChargesWaived = calcChargeWaived(startDate, dueDate, loanCharge, currency, installmentChargeApplicable,
                     isFirstPeriod, penaltyPredicate);
             final Money penaltyChargesWrittenOff = calcChargeWrittenOff(startDate, dueDate, loanCharge, currency,
@@ -108,7 +111,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
     @NotNull
     private Money calcChargeDue(final LocalDate periodStart, final LocalDate periodEnd, final LoanCharge loanCharge,
             final MonetaryCurrency currency, LoanRepaymentScheduleInstallment period, final Money totalPrincipal, final Money totalInterest,
-            boolean isInstallmentChargeApplicable, boolean isFirstPeriod, Predicate<LoanCharge> predicate) {
+            boolean isInstallmentChargeApplicable, boolean isFirstPeriod, final boolean isLastPeriod, final boolean isFactorRateEnabled,
+            Predicate<LoanCharge> predicate) {
         Money zero = Money.zero(currency);
         if (!predicate.test(loanCharge)) {
             return zero;
@@ -119,7 +123,10 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
         if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
             return Money.of(currency, getInstallmentFee(currency, period, loanCharge));
         }
-        if (!loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod)) {
+
+        final boolean isPenaltyApplicableToFactorRateLoan = loanCharge.isPenaltyCharge() && isLastPeriod && isFactorRateEnabled
+                && DateUtils.isAfter(loanCharge.getDueDate(), periodStart);
+        if (!loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) && !isPenaltyApplicableToFactorRateLoan) {
             return zero;
         }
         ChargeCalculationType calculationType = loanCharge.getChargeCalculation();

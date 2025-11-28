@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -833,12 +834,13 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     @Transactional
     @Override
     public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
-        final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
+        Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
                 .sorted(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).toList();
         if (overdueLoanScheduleDataOrderedList.isEmpty()) {
             return;
         }
         Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
         if (loan.isChargedOff()) {
             log.warn("Adding charge to Loan: {} is not allowed. Loan Account is Charged-off", loanId);
             return;
@@ -846,6 +848,18 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         if (!isPenaltyChargeApplicableForLoan(loan)) {
             log.warn("Adding overdue charge to Loan: {} is not allowed. Factor rate penalty grace period not yet passed.", loanId);
             return;
+        }
+        if(isFactorRateEnabled){
+            log.info("Adding overdue charge to the last installment for factor rate loan: {}", loanId);
+            final OverdueLoanScheduleData lastInstallmentOverdueLoanScheduleData = overdueLoanScheduleDataOrderedList.stream()
+                    .max(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).orElseThrow();
+            final BigDecimal principalOverdue = loan.getSummary().getTotalPrincipalOutstanding();
+            if(principalOverdue.compareTo(BigDecimal.ZERO) <= 0){
+                log.info("No principal outstanding for factor rate loan: {}. Hence not adding overdue charge.", loanId);
+                return;
+            }
+            lastInstallmentOverdueLoanScheduleData.setPrincipalOverdue(principalOverdue);
+            overdueLoanScheduleDataOrderedList = Collections.singletonList(lastInstallmentOverdueLoanScheduleData);
         }
         Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
                 .filter((e) -> ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(e.getChargeTimeType()) && e.isLoanCharge()).findFirst();
@@ -1227,7 +1241,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         if (lastChargeDate != null) {
             List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
             LoanRepaymentScheduleInstallment lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
-            if (DateUtils.isAfter(lastChargeDate, lastInstallment.getDueDate())) {
+            if (DateUtils.isAfter(lastChargeDate, lastInstallment.getDueDate()) && !loan.isFactorRateEnabled()) {
                 if (lastInstallment.isRecalculatedInterestComponent()) {
                     installments.remove(lastInstallment);
                     lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
