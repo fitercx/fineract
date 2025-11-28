@@ -829,7 +829,7 @@ public class AccountingProcessorHelper {
         persistJournalEntry(journalEntry);
     }
 
-    private void createCreditJournalEntryForSavings(final Office office, final String currencyCode, final GLAccount account,
+    public void createCreditJournalEntryForSavings(final Office office, final String currencyCode, final GLAccount account,
             final Long savingsId, final String transactionId, final LocalDate transactionDate, final BigDecimal amount)
             throws DataAccessException {
         final boolean manualEntry = false;
@@ -896,7 +896,7 @@ public class AccountingProcessorHelper {
         persistJournalEntry(journalEntry);
     }
 
-    private void createDebitJournalEntryForSavings(final Office office, final String currencyCode, final GLAccount account,
+    public void createDebitJournalEntryForSavings(final Office office, final String currencyCode, final GLAccount account,
             final Long savingsId, final String transactionId, final LocalDate transactionDate, final BigDecimal amount) {
         final boolean manualEntry = false;
         Long savingsAccountTransactionId = null;
@@ -912,7 +912,7 @@ public class AccountingProcessorHelper {
         persistJournalEntry(journalEntry);
     }
 
-    private void createDebitJournalEntryForClientPayments(final Office office, final String currencyCode, final GLAccount account,
+    protected void createDebitJournalEntryForClientPayments(final Office office, final String currencyCode, final GLAccount account,
             final Long clientId, final Long transactionId, final LocalDate transactionDate, final BigDecimal amount) {
         final boolean manualEntry = false;
         String modifiedTransactionId = CLIENT_TRANSACTION_IDENTIFIER + transactionId;

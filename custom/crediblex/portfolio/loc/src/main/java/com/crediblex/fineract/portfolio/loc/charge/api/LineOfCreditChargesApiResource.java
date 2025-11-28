@@ -5,10 +5,8 @@ import com.crediblex.fineract.portfolio.loc.charge.data.LocChargeData;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeReadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -68,24 +66,6 @@ public class LineOfCreditChargesApiResource {
         securityContext.authenticatedUser().validateHasReadPermission("LOC_CHARGE");
         LocChargeData data = readService.getOne(locId, chargeId);
         return Response.ok(data).build();
-    }
-
-    @POST
-    @Path("{chargeId}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response postCommand(@PathParam("locId") Long locId, @PathParam("chargeId") Long chargeId,
-            @QueryParam("command") String command) {
-        if (StringUtils.equalsIgnoreCase(command, "waive")) {
-            ObjectNode node = objectMapper.createObjectNode();
-            node.put("locId", locId);
-            node.put("chargeId", chargeId);
-            String json = node.toString();
-            CommandWrapper commandRequest = new LocChargeCommandWrapperBuilder().waiveLocCharge(locId, chargeId).withJson(json).build();
-            var result = commandsSourceWritePlatformService.logCommandSource(commandRequest);
-            return Response.ok(result).build();
-        }
-        return Response.status(Response.Status.BAD_REQUEST).entity("{\"message\":\"Unsupported command\"}").build();
     }
 
     @DELETE

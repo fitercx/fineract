@@ -94,5 +94,20 @@
 
     </changeSet>
 
+    <changeSet id="9" author="crediblex" context="postgresql">
+        <preConditions onFail="MARK_RAN">
+            <and>
+                <tableExists tableName="m_line_of_credit_charge"/>
+                <not>
+                    <columnExists tableName="m_line_of_credit_charge" columnName="tax_amount"/>
+                </not>
+            </and>
+        </preConditions>
+
+        <addColumn tableName="m_line_of_credit_charge">
+            <column name="tax_amount" type="NUMERIC(19,6)" />
+        </addColumn>
+
+    </changeSet>
 
 </databaseChangeLog>

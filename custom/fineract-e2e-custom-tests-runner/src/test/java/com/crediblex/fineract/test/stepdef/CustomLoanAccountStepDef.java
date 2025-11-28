@@ -18,6 +18,10 @@
  */
 package com.crediblex.fineract.test.stepdef;
 
+import static org.apache.fineract.test.initializer.global.GLGlobalInitializerStep.GLA_NAME_10;
+import static org.apache.fineract.test.initializer.global.GLGlobalInitializerStep.GLA_NAME_17;
+import static org.apache.fineract.test.initializer.global.GLGlobalInitializerStep.GLA_TYPE_INCOME;
+import static org.apache.fineract.test.initializer.global.GLGlobalInitializerStep.GLA_TYPE_LIABILITY;
 import static org.assertj.core.api.Assertions.assertThat;
 import com.crediblex.fineract.test.factory.CustomLoanProductsRequestFactory;
 import io.cucumber.datatable.DataTable;
@@ -37,6 +41,7 @@ import java.util.Set;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.fineract.client.models.ChargeData;
 import org.apache.fineract.client.models.ChargeRequest;
+import org.apache.fineract.client.models.GetGLAccountsResponse;
 import org.apache.fineract.client.models.GetLoanProductsResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactions;
@@ -59,13 +64,13 @@ import org.apache.fineract.client.models.PostTaxesGroupResponse;
 import org.apache.fineract.client.models.PostTaxesGroupTaxComponents;
 import org.apache.fineract.client.models.TableData;
 import org.apache.fineract.client.services.ChargesApi;
+import org.apache.fineract.client.services.GeneralLedgerAccountApi;
 import org.apache.fineract.client.services.LoanProductsApi;
 import org.apache.fineract.client.services.LoansApi;
 import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;
 import org.apache.fineract.test.data.ChargeCalculationType;
 import org.apache.fineract.test.data.ChargeTimeType;
-import org.apache.fineract.test.data.LoanTermFrequencyType;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +101,9 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
 
     @Autowired
     private TaxComponentsApi taxComponentsApi;
+
+    @Autowired
+    private GeneralLedgerAccountApi glAccountApi;
     
     private Long eurLoanProductId = null;
     private Long eurFactorRateLoanProductId = null;
@@ -134,7 +142,7 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
             testContext().set(TestContextKey.DEFAULT_LOAN_PRODUCT_CREATE_RESPONSE_LP1, eurLoanProductId);
         }
     }
-    
+
     @Given("A disbursement charge {string} of type {int} with amount {int} and VAT {int} percent exists")
     public void ensureDisbursementChargeWithVATExists(String chargeName, int type, double chargeAmount, int vatPercent) throws IOException {
         // First ensure VAT tax group exists
@@ -499,6 +507,74 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         
         Response<PostTaxesGroupResponse> createResponse = taxGroupApi.createTaxGroup(taxGroupRequest).execute();
         
+        if (createResponse.isSuccessful()) {
+            vatTaxGroupId = createResponse.body().getResourceId();
+            log.info("Created VAT tax group with ID: {}", vatTaxGroupId);
+        } else {
+            throw new RuntimeException("Failed to create VAT tax group: " + createResponse.errorBody().string());
+        }
+    }
+
+    private void ensureVATTaxGroupExistsWithAccounting(int vatPercent) throws IOException {
+        String taxGroupName = "VAT " + vatPercent + "% with accounting";
+
+        // Check if tax group already exists
+        Response<List<GetTaxesGroupResponse>> response = taxGroupApi.retrieveAllTaxGroups().execute();
+
+        if (response.isSuccessful() && response.body() != null) {
+            for (GetTaxesGroupResponse taxGroup : response.body()) {
+                if (taxGroup.getName() != null && taxGroup.getName().equalsIgnoreCase(taxGroupName)) {
+                    vatTaxGroupId = taxGroup.getId();
+                    return;
+                }
+            }
+        }
+
+        // Retrieve all GL accounts
+        Response<List<GetGLAccountsResponse>> glResponse = glAccountApi.retrieveAllAccounts(null, null, null, null, null, null).execute();
+
+        // Find the specific account you need, for example by name
+        GetGLAccountsResponse creditIncomeAccount = glResponse.body().stream()
+                .filter(acc -> GLA_NAME_10.equals(acc.getName()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("GL Account not found: " + GLA_NAME_10));
+
+
+        GetGLAccountsResponse liabilityAcount = glResponse.body().stream()
+                .filter(acc -> GLA_NAME_17.equals(acc.getName()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("GL Account not found: " + GLA_NAME_17));
+
+        // Create new tax group
+        PostTaxesComponentsRequest componentRequest = new PostTaxesComponentsRequest()
+                .name(taxGroupName)
+                .locale(DEFAULT_LOCALE)
+                .dateFormat(DATE_FORMAT)
+                .percentage((float) vatPercent)
+                .creditAccountType(GLA_TYPE_INCOME)
+                .creditAcountId(creditIncomeAccount.getId())
+                .debitAccountType(GLA_TYPE_LIABILITY)
+                .debitAcountId(liabilityAcount.getId())
+                .startDate("01 January 2020");
+
+        Response<PostTaxesComponentsResponse> componentResponse = taxComponentsApi.createTaxComponent(componentRequest).execute();
+
+        if(!componentResponse.isSuccessful()){
+            throw new RuntimeException("Failed to create VAT tax component: " + componentResponse.errorBody().string());
+        }
+
+        PostTaxesGroupRequest taxGroupRequest = new PostTaxesGroupRequest()
+                .name(taxGroupName)
+                .locale(DEFAULT_LOCALE)
+                .dateFormat(DATE_FORMAT)
+                .taxComponents(Set.of(
+                        new PostTaxesGroupTaxComponents()
+                                .taxComponentId(componentResponse.body().getResourceId())
+                                .startDate("01 January 2020"))
+                );
+
+        Response<PostTaxesGroupResponse> createResponse = taxGroupApi.createTaxGroup(taxGroupRequest).execute();
+
         if (createResponse.isSuccessful()) {
             vatTaxGroupId = createResponse.body().getResourceId();
             log.info("Created VAT tax group with ID: {}", vatTaxGroupId);
@@ -901,6 +977,80 @@ public class CustomLoanAccountStepDef extends AbstractStepDef {
         }
         
         log.info("Verified factor rate fee per installment equals {}", expectedFeePerInstallment);
+    }
+
+    @Given("LOC activation charge {string} of with amount {double} and VAT {int} percent exists")
+    public void ensureLOCChargeWithVATExists(String chargeName, double chargeAmount, int vatPercent) throws IOException {
+        // First ensure VAT tax group exists
+        ensureVATTaxGroupExists(vatPercent);
+
+        // Check if charge already exists
+        Long locActivationId = findExistingCharge(chargeName);
+
+        if (locActivationId == null) {
+
+            ChargeRequest chargeRequest = new ChargeRequest()
+                    .name(chargeName)
+                    .chargeAppliesTo(5)
+                    .chargeTimeType(17)
+                    .chargeCalculationType(ChargeCalculationType.PERCENTAGE_AMOUNT.ordinal()) // Flat
+                    .chargePaymentMode(0) // Regular
+                    .amount(chargeAmount)
+                    .active(true)
+                    .currencyCode("EUR")
+                    .locale(DEFAULT_LOCALE)
+                    .taxGroupId(vatTaxGroupId);
+
+            Response<PostChargesResponse> response = chargesApi.createCharge(chargeRequest).execute();
+
+            if (response.isSuccessful()) {
+                locActivationId = response.body().getResourceId();
+            } else {
+                throw new RuntimeException("Failed to create disbursement charge: " + response.errorBody().string());
+            }
+        } else {
+            log.info("Using existing activation charge with ID: {}", locActivationId);
+        }
+
+        // Store in context
+        testContext().set(TestContextKey.LINE_OF_CREDIT_ACTIVATION_CHARGE_RESPONSE, locActivationId);
+    }
+
+    @Given("LOC activation charge {string} of with amount {double} and VAT {int} percent exists with accounting")
+    public void ensureLOCChargeWithVATExistsWithAccounting(String chargeName, double chargeAmount, int vatPercent) throws IOException {
+        // First ensure VAT tax group exists
+        ensureVATTaxGroupExistsWithAccounting(vatPercent);
+
+        // Check if charge already exists
+        Long locActivationId = findExistingCharge(chargeName);
+
+        if (locActivationId == null) {
+
+            ChargeRequest chargeRequest = new ChargeRequest()
+                    .name(chargeName)
+                    .chargeAppliesTo(5)
+                    .chargeTimeType(17)
+                    .chargeCalculationType(ChargeCalculationType.PERCENTAGE_AMOUNT.ordinal()) // Flat
+                    .chargePaymentMode(0) // Regular
+                    .amount(chargeAmount)
+                    .active(true)
+                    .currencyCode("EUR")
+                    .locale(DEFAULT_LOCALE)
+                    .taxGroupId(vatTaxGroupId);
+
+            Response<PostChargesResponse> response = chargesApi.createCharge(chargeRequest).execute();
+
+            if (response.isSuccessful()) {
+                locActivationId = response.body().getResourceId();
+            } else {
+                throw new RuntimeException("Failed to create disbursement charge: " + response.errorBody().string());
+            }
+        } else {
+            log.info("Using existing activation charge with ID: {}", locActivationId);
+        }
+
+        // Store in context
+        testContext().set(TestContextKey.LINE_OF_CREDIT_ACTIVATION_CHARGE_RESPONSE, locActivationId);
     }
 
 }
