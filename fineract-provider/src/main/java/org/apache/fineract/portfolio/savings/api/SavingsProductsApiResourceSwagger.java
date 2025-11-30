@@ -72,6 +72,34 @@ final class SavingsProductsApiResourceSwagger {
         public Set<PostSavingsCharges> charges;
         @Schema(example = "accountMappingForPayment")
         public String accountMappingForPayment;
+        @Schema(example = "1")
+        public Long savingsReferenceAccountId;
+        @Schema(example = "6")
+        public Long savingsControlAccountId;
+        @Schema(example = "5")
+        public Long transfersInSuspenseAccountId;
+        @Schema(example = "19")
+        public Long interestOnSavingsAccountId;
+        @Schema(example = "12")
+        public Long writeOffAccountId;
+        @Schema(example = "9")
+        public Long incomeFromFeeAccountId;
+        @Schema(example = "8")
+        public Long incomeFromPenaltyAccountId;
+        @Schema(example = "2")
+        public Long overdraftPortfolioControlId;
+        @Schema(example = "20")
+        public Long incomeFromInterestId;
+        @Schema(example = "false")
+        public Boolean withdrawalFeeForTransfers;
+        @Schema(example = "false")
+        public Boolean enforceMinRequiredBalance;
+        @Schema(example = "false")
+        public Boolean allowOverdraft;
+        @Schema(example = "false")
+        public Boolean withHoldTax;
+        @Schema(example = "false")
+        public Boolean isDormancyTrackingActive;
     }
 
     @Schema(description = "PostSavingsProductsResponse")

@@ -22,6 +22,7 @@ import com.crediblex.client.services.LineOfCreditApi;
 import com.crediblex.client.services.LoanTransactionsApi;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.client.services.AccountTransfersApi;
+import org.apache.fineract.client.services.GeneralLedgerAccountApi;
 import org.apache.fineract.client.services.SchedulerJobApi;
 import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;

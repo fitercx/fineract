@@ -198,4 +198,5 @@ public abstract class TestContextKey {
     public static final String LINE_OF_CREDIT_CREATE_RESPONSE = "lineOfCreditCreateResponse";
     public static final String LINE_OF_CREDIT_APPROVAL_RESPONSE = "lineOfCreditApprovalResponse";
     public static final String LINE_OF_CREDIT_ACTIVATION_RESPONSE = "lineOfCreditActivationResponse";
+    public static final String LINE_OF_CREDIT_ACTIVATION_CHARGE_RESPONSE = "lineOfCreditActivationChargeResponse";
 }

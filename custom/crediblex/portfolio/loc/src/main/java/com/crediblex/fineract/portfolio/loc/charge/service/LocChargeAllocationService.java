@@ -100,7 +100,7 @@ public class LocChargeAllocationService {
         }
         for (LineOfCreditChargePaidBy paid : paidList) {
             LineOfCreditCharge charge = paid.getLineOfCreditCharge();
-            domainService.unpay(charge, paid.getAmount());
+            domainService.unpay(charge, paid.getAmount(), reversalTxn);
             chargeRepository.save(charge);
             paidByRepository.delete(paid);
         }

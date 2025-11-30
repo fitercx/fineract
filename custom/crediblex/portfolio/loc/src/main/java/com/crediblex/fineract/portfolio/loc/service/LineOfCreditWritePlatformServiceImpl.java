@@ -49,7 +49,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -694,44 +693,31 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // First compute amounts (and update percent-of-amount charges if needed) to know total
         BigDecimal total = BigDecimal.ZERO;
-        List<LineOfCreditCharge> chargesToUpdate = new ArrayList<>();
+        BigDecimal totalTaxes = BigDecimal.ZERO;
 
         for (LineOfCreditCharge charge : charges) {
             if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
                 continue;
             }
 
-            // Handle percentage-based charges
-            if (charge.getChargeCalculation() != null
-                    && Objects.equals(charge.getChargeCalculation(), ChargeCalculationType.PERCENT_OF_AMOUNT.getValue())
-                    && (charge.getAmount() == null || charge.getAmount().compareTo(BigDecimal.ZERO) == 0)) {
-                BigDecimal base = loc.getMaximumAmount();
-
-                log.debug("Applying percentage base {} to charge {}", base, charge.getId());
-                locChargeDomainService.applyPercentBase(charge, base);
-                chargesToUpdate.add(charge); // Collect for batch save
-            }
-
             BigDecimal outstanding = charge.getAmountOutstanding();
             if (outstanding != null && outstanding.compareTo(BigDecimal.ZERO) > 0) {
                 total = total.add(outstanding);
+                totalTaxes = totalTaxes.add(charge.getTaxAmountDefaulted());
                 log.debug("Added charge {} outstanding amount {} to total", charge.getId(), outstanding);
             }
-        }
 
-        // Batch save percentage-updated charges to avoid duplicate saves
-        if (!chargesToUpdate.isEmpty()) {
-            locChargeRepository.saveAll(chargesToUpdate);
-            log.debug("Batch saved {} percentage-updated charges", chargesToUpdate.size());
         }
 
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
 
+        BigDecimal totalWithdraw = total.add(totalTaxes);
+
         // Generate JSON command for savings account withdrawal
         JsonObject object = new JsonObject();
-        object.addProperty("transactionAmount", total);
+        object.addProperty("transactionAmount", totalWithdraw);
         object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
         object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
         object.addProperty("locale", "en");
@@ -763,7 +749,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 continue;
             }
 
-            locChargeDomainService.pay(charge, outstanding, false);
+            locChargeDomainService.pay(charge, outstanding, false, aggregateTxn);
             locChargeRepository.save(charge);
 
             LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
@@ -772,4 +758,5 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
     }
+
 }

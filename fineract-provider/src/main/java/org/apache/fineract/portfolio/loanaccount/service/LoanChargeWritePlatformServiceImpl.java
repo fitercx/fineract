@@ -849,12 +849,12 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             log.warn("Adding overdue charge to Loan: {} is not allowed. Factor rate penalty grace period not yet passed.", loanId);
             return;
         }
-        if(isFactorRateEnabled){
+        if (isFactorRateEnabled) {
             log.info("Adding overdue charge to the last installment for factor rate loan: {}", loanId);
             final OverdueLoanScheduleData lastInstallmentOverdueLoanScheduleData = overdueLoanScheduleDataOrderedList.stream()
                     .max(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).orElseThrow();
             final BigDecimal principalOverdue = loan.getSummary().getTotalPrincipalOutstanding();
-            if(principalOverdue.compareTo(BigDecimal.ZERO) <= 0){
+            if (principalOverdue.compareTo(BigDecimal.ZERO) <= 0) {
                 log.info("No principal outstanding for factor rate loan: {}. Hence not adding overdue charge.", loanId);
                 return;
             }

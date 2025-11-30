@@ -95,8 +95,8 @@ public class JournalEntryWritePlatformServiceJpaRepositoryImpl implements Journa
     private final OfficeRepositoryWrapper officeRepositoryWrapper;
     private final AccountingProcessorForLoanFactory accountingProcessorForLoanFactory;
     private final AccountingProcessorForSavingsFactory accountingProcessorForSavingsFactory;
-    private final AccountingProcessorForSharesFactory accountingProcessorForSharesFactory;
-    private final AccountingProcessorHelper helper;
+    protected final AccountingProcessorForSharesFactory accountingProcessorForSharesFactory;
+    protected final AccountingProcessorHelper helper;
     private final JournalEntryCommandFromApiJsonDeserializer fromApiJsonDeserializer;
     private final AccountingRuleRepository accountingRuleRepository;
     private final GLAccountReadPlatformService glAccountReadPlatformService;
@@ -565,6 +565,11 @@ public class JournalEntryWritePlatformServiceJpaRepositoryImpl implements Journa
                 helper.persistJournalEntry(journalEntry);
             }
         }
+    }
+
+    @Override
+    public void createJournalEntriesForLineOfCredit(Map<String, Object> accountingBridgeData) {
+
     }
 
     private void validateBusinessRulesForJournalEntries(final JournalEntryCommand command) {

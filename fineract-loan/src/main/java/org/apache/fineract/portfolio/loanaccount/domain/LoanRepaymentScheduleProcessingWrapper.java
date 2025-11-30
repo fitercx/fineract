@@ -235,9 +235,9 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
         for (final LoanCharge loanCharge : loanCharges) {
             if (loanCharge.isPenaltyCharge()) {
-                final boolean isFactorRateLoanDue = loanCharge.isPenaltyCharge() && isLastPeriod && isFactorRateEnabled
+                final boolean isPenaltyDueForFactorRateLoan = isLastPeriod && isFactorRateEnabled
                         && DateUtils.isAfter(loanCharge.getDueDate(), periodStart);
-                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) || isFactorRateLoanDue;
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) || isPenaltyDueForFactorRateLoan;
                 if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
                     cumulative = cumulative.plus(getInstallmentFee(currency, period, loanCharge));
                 } else if (loanCharge.isOverdueInstallmentCharge() && isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
