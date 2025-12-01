@@ -28,7 +28,7 @@ public class OverdueLoanScheduleData {
     private final BigDecimal amount;
     private final String dateFormat;
     private final String dueDate;
-    private final BigDecimal principalOverdue;
+    private BigDecimal principalOverdue;
     private final BigDecimal interestOverdue;
     private final Integer periodNumber;
 
@@ -72,6 +72,10 @@ public class OverdueLoanScheduleData {
 
     public Integer getPeriodNumber() {
         return this.periodNumber;
+    }
+
+    public void setPrincipalOverdue(final BigDecimal principalOverdue) {
+        this.principalOverdue = principalOverdue;
     }
 
     @Override
