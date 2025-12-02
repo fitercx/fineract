@@ -657,8 +657,15 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         final LocalDate dueDate = installment.getDueDate();
         final LocalDate toDate = DateUtils.isBefore(dueDate, tillDate) ? dueDate : tillDate;
         chargeOnDueDate = chargeOnDueDate || loanCharge.getDueLocalDate().isBefore(loanCharge.getSubmittedOnDate());
-        return chargeOnDueDate ? loanCharge.isDueInPeriod(fromDate, toDate, isFirstPeriod)
+        final boolean isChargeDue = chargeOnDueDate ? loanCharge.isDueInPeriod(fromDate, toDate, isFirstPeriod)
                 : isInPeriod(loanCharge.getSubmittedOnDate(), fromDate, toDate, isFirstPeriod);
+        final Loan loan = installment.getLoan();
+        final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
+        final boolean isLastPeriod = installment.getInstallmentNumber() != null
+                && installment.getInstallmentNumber().equals(loan.getLastLoanRepaymentScheduleInstallment().getInstallmentNumber());
+        final boolean isPenaltyApplicableToFactorRateLoan = loanCharge.isPenaltyCharge() && isLastPeriod && isFactorRateEnabled
+                && DateUtils.isAfter(loanCharge.getDueDate(), fromDate);
+        return isChargeDue || isPenaltyApplicableToFactorRateLoan;
     }
 
     protected LoanTransaction createOrMergeAccrualTransaction(@NotNull final Loan loan, LoanTransaction transaction,

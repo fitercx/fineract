@@ -70,7 +70,8 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
         final LocalDate lastDueDate = loan.getLastLoanRepaymentScheduleInstallment().getDueDate();
         reverseTransactionsAfter(existingAccruals, lastDueDate, addJournal);
         ensureAccrualTransactionMappings(loan, existingAccruals, chargeOnDueDate);
-        if (DateUtils.isAfter(tillDate, lastDueDate)) {
+        final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
+        if (DateUtils.isAfter(tillDate, lastDueDate) && !isFactorRateEnabled) {
             tillDate = lastDueDate;
         }
 
