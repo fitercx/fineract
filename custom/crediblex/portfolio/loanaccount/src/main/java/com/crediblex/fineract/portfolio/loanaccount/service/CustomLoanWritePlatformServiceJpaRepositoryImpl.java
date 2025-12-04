@@ -786,9 +786,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
                 isRecoveryRepayment, chargeRefundChargeType);
 
-        if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
-            this.applyOverdueChargesForSingleLoan(loanId);
-        }
+        /**
+         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application is not working as intended
+         */
+        // if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
+        //   this.applyOverdueChargesForSingleLoan(loanId);
+        //}
         return result;
     }
 
