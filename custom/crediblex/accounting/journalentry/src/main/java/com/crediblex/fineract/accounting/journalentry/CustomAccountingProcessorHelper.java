@@ -1,6 +1,8 @@
 package com.crediblex.fineract.accounting.journalentry;
 
 import com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDTO;
+import com.crediblex.fineract.accounting.journalentry.data.LineOfCreditDTO;
+import com.crediblex.fineract.accounting.journalentry.data.TaxPaymentDTO;
 import com.crediblex.fineract.accounting.journalentry.journalentry.CustomLoanDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeDataDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomLoanChargePaidByDTO;
@@ -108,10 +110,12 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                         chargePaymentDTO.setDebitGLAccountId(loanChargePaidByDTO.getDebitGLAccountId());
                         chargePaymentDTO.setCreditGLAccountId(loanChargePaidByDTO.getCreditGLAccountId());
                         chargePaymentDTO.setApplicableToFactoRateFeeTaxes(loanChargePaidByDTO.isApplicableToFactoRateFeeTaxes());
+                        chargePaymentDTO.setApplicableToSpecifiedDueDateTaxes(loanChargePaidByDTO.isApplicableToSpecifiedDueDateTaxes());
                     }
                     if (isPenalty) {
                         penaltyPaymentDetails.add(chargePaymentDTO);
-                    } else if (chargePaymentDTO.isApplicableToFactoRateFeeTaxes()) {
+                    } else if (chargePaymentDTO.isApplicableToFactoRateFeeTaxes()
+                            || chargePaymentDTO.isApplicableToSpecifiedDueDateTaxes()) {
                         taxPaymentDetails.add(chargePaymentDTO);
                     } else {
                         feePaymentDetails.add(chargePaymentDTO);
@@ -138,12 +142,25 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             newLoanTransactions.add(transaction);
         }
 
-        return new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled,
+        CustomLoanDTO customLoanDTO = new CustomLoanDTO(loanId, loanProductId, officeId, currencyCode, cashBasedAccountingEnabled,
                 upfrontAccrualBasedAccountingEnabled, periodicAccrualBasedAccountingEnabled, newLoanTransactions, isLoanMarkedAsChargeOff,
                 isLoanMarkedAsFraud, chargeOffReasonCodeValue,
                 (accountingBridgeData instanceof CustomAccountingBridgeDataDTO)
                         ? ((CustomAccountingBridgeDataDTO) accountingBridgeData).getNetDisbursalAmount()
                         : null);
+
+        // Populate LOC receivable fields if applicable
+        if (accountingBridgeData instanceof CustomAccountingBridgeDataDTO) {
+            CustomAccountingBridgeDataDTO customBridgeData = (CustomAccountingBridgeDataDTO) accountingBridgeData;
+            customLoanDTO.setLocReceivable(customBridgeData.isLocReceivable());
+            customLoanDTO.setTotalContractualInterest(customBridgeData.getTotalContractualInterest());
+            customLoanDTO.setTotalDisbursementFees(customBridgeData.getTotalDisbursementFees());
+            customLoanDTO.setTotalDisbursementFeesTax(customBridgeData.getTotalDisbursementFeesTax());
+            customLoanDTO.setTotalAccruedInterest(customBridgeData.getTotalAccruedInterest());
+            customLoanDTO.setTotalInterestCharged(customBridgeData.getTotalInterestCharged());
+        }
+
+        return customLoanDTO;
     }
 
     public void createCreditJournalEntryForLoanCharges(final Office office, final String currencyCode, final Long loanId,
@@ -234,4 +251,33 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
         }
         return savedJournalEntry;
     }
+
+    public LineOfCreditDTO populateLineOfCreditDtoFromMap(final Map<String, Object> accountingBridgeData,
+            final boolean cashBasedAccountingEnabled, final boolean accrualBasedAccountingEnabled) {
+
+        // For now we are only doing this for the activation charge, we dont require line of credit Id
+        final Long savingsId = (Long) accountingBridgeData.get("savingsId");
+        final Long savingsTransactionId = (Long) accountingBridgeData.get("savingsTransactionId");
+        final Long officeId = (Long) accountingBridgeData.get("officeId");
+        final String currencyCode = (String) accountingBridgeData.get("currencyCode");
+        final LocalDate transactionDate = ((LocalDate) accountingBridgeData.get("date"));
+        final boolean reversed = accountingBridgeData.get("reversed") != null ? (Boolean) accountingBridgeData.get("reversed") : false;
+        final List<TaxPaymentDTO> taxPayments = new ArrayList<>();
+
+        @SuppressWarnings("unchecked")
+        final List<Map<String, Object>> taxMappings = (List<Map<String, Object>>) accountingBridgeData.get("taxMappings");
+
+        for (final Map<String, Object> map : taxMappings) {
+            final Long creditAccountId = ((Long) map.get("creditAccountId"));
+            final Long debitAccountId = ((Long) map.get("debitAccountId"));
+            final BigDecimal amount = (BigDecimal) map.get("amount");
+
+            final TaxPaymentDTO taxPaymentDTO = new TaxPaymentDTO(amount, creditAccountId, debitAccountId);
+            taxPayments.add(taxPaymentDTO);
+
+        }
+
+        return new LineOfCreditDTO(savingsId, savingsTransactionId, taxPayments, transactionDate, officeId, currencyCode, reversed);
+    }
+
 }

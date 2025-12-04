@@ -21,6 +21,7 @@ dependencies {
     implementation(project(':fineract-provider'))
     implementation(project(':fineract-loan'))
     implementation(project(':fineract-savings'))
+    implementation(project(':fineract-core'))
     implementation(project(":custom:crediblex:infrastructure:commands"))
     implementation('org.springframework.batch:spring-batch-integration')
     implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement

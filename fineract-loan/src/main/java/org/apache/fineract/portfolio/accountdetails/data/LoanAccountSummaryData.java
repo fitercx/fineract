@@ -19,8 +19,10 @@
 package org.apache.fineract.portfolio.accountdetails.data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
@@ -49,6 +51,32 @@ public class LoanAccountSummaryData {
     private final BigDecimal originalLoan;
     private final BigDecimal loanBalance;
     private final BigDecimal amountPaid;
+    @Setter
+    private String invoiceNumber;
+    @Setter
+    private BigDecimal totalOverPaidDerived;
+    @Setter
+    private String supplierBuyerName;
+    @Setter
+    private boolean isFactorRateEnabled;
+    @Setter
+    private BigDecimal factorRate;
+    @Setter
+    private BigDecimal factorRateLoanAmount;
+    @Setter
+    private BigDecimal totalFeeChargesCharged;
+    @Setter
+    private BigDecimal totalTaxChargesCharged;
+    @Setter
+    private LocalDate actualMaturityDate;
+    @Setter
+    private Integer penaltyGracePeriod;
+    @Setter
+    private Integer termFrequency;
+    @Setter
+    private EnumOptionData termPeriodFrequencyType;
+    @Setter
+    BigDecimal netDisbursalAmount;
 
     public LoanAccountSummaryData(final Long id, final String accountNo, final String externalId, final Long productId,
             final String loanProductName, final String shortLoanProductName, final LoanStatusEnumData loanStatus,

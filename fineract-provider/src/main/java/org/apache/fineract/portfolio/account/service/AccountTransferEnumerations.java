@@ -111,6 +111,12 @@ public final class AccountTransferEnumerations {
                     optionData = new EnumOptionData(AccountTransferType.LOAN_DOWN_PAYMENT.getValue().longValue(),
                             AccountTransferType.LOAN_DOWN_PAYMENT.getCode(), "Loan Down Payment");
                 break;
+                case LOAN_FORECLOSURE:
+                    optionData = new EnumOptionData(AccountTransferType.LOAN_FORECLOSURE.getValue().longValue(),
+                            AccountTransferType.LOAN_FORECLOSURE.getCode(), "Loan Down Payment");
+                break;
+                default:
+                break;
 
             }
         }

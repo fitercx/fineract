@@ -217,8 +217,10 @@ public class LineOfCreditBalanceUpdateService {
 
             if (tx.getTransactionType().isDecrementTransaction()) {
                 if (runningAvailableBalance.compareTo(transactionAmount) < 0) {
-                    throw new IllegalStateException(
-                            "LOC history error: Insufficient balance during re-computation for Tx ID: " + tx.getId());
+
+                    throw new PlatformApiDataValidationException("error.msg.loc.insufficient.balance",
+                            "LOC transaction history error: Insufficient balance during re-computation for Tx ID:" + tx.getId(), List.of());
+
                 }
                 runningAvailableBalance = runningAvailableBalance.subtract(transactionAmount);
                 if (!tx.getTransactionType().isBalanceDecrement()) {

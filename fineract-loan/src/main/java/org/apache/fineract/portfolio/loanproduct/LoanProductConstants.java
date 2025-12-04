@@ -178,10 +178,14 @@ public interface LoanProductConstants {
     String CAPITALIZED_INCOME_STRATEGY_PARAM_NAME = "capitalizedIncomeStrategy";
 
     // Line of Credit
-    String IS_LOC_ENABLED_PARAM_NAME = "isLocEnabled";
+    String ENABLE_LOC_PAYABLE_PARAM_NAME = "enableLineOfCreditPayable";
     String ENABLE_LOC_RECEIVABLE_PARAM_NAME = "enableLineOfCreditReceivable";
 
     // Factor Rate Product
     String FACTOR_RATE_PRODUCT_ENABLED_PARAM_NAME = "factorRateProductEnabled";
     String FACTOR_RATE_PARAM_NAME = "factorRate";
+
+    // Penalty Grace Period
+    String PENALTY_GRACE_PERIOD_PARAM_NAME = "penaltyGracePeriod";
+    Integer DEFAULT_PENALTY_GRACE_PERIOD = 15;
 }

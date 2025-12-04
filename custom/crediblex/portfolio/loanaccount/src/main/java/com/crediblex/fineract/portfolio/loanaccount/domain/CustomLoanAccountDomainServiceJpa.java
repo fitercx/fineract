@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -26,7 +26,15 @@ import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDays;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
+import org.apache.fineract.portfolio.account.PortfolioAccountType;
+import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationType;
+import org.apache.fineract.portfolio.account.domain.AccountAssociations;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
+import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
+import org.apache.fineract.portfolio.account.domain.AccountTransferType;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionRepository;
+import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.delinquency.helper.DelinquencyEffectivePauseHelper;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyWritePlatformService;
@@ -35,10 +43,7 @@ import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainServiceJpa;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCollateralManagementRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -66,6 +71,8 @@ import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +80,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Primary
 public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJpa {
+
+    private final AccountAssociationsRepository accountAssociationsRepository;
+    private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
 
     public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService,
@@ -91,7 +101,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
             LoanDownPaymentHandlerService loanDownPaymentHandlerService, LoanChargeValidator loanChargeValidator,
             LoanRefundService loanRefundService, LoanAccountService loanAccountService,
-            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper) {
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper,
+            AccountAssociationsRepository accountAssociationsRepository,
+            @Lazy AccountTransfersWritePlatformService accountTransfersWritePlatformService) {
         super(loanAccountAssembler, loanRepositoryWrapper, loanTransactionRepository, configurationDomainService, holidayRepository,
                 workingDaysRepository, journalEntryWritePlatformService, noteRepository, businessEventNotifierService, loanUtilService,
                 standingInstructionRepository, postDatedChecksRepository, loanCollateralManagementRepository,
@@ -101,6 +113,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 loanForeclosureValidator, loanDownPaymentTransactionValidator, loanChargeService, loanScheduleService,
                 loanDownPaymentHandlerService, loanChargeValidator, loanRefundService, loanAccountService, reprocessLoanTransactionsService,
                 loanAccountingBridgeMapper);
+        this.accountAssociationsRepository = accountAssociationsRepository;
+        this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
     }
 
     @Override
@@ -182,7 +196,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                     loan.getId());
         }
 
-        BigDecimal totalInterestChargedBeforeForClosure = loan.getSummary().getTotalInterestCharged();
         Money totalPrincipalBeforeForClosure = loan.getLoanRepaymentScheduleDetail().getPrincipal();
 
         businessEventNotifierService.notifyPreBusinessEvent(new LoanForeClosurePreBusinessEvent(loan));
@@ -201,29 +214,82 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money interestPayable = foreCloseDetail.getInterestCharged(currency);
         Money feePayable = foreCloseDetail.getFeeChargesCharged(currency);
         Money penaltyPayable = foreCloseDetail.getPenaltyChargesCharged(currency);
+        Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
         updateInstallmentsPostDate(loan, foreClosureDate);
 
         LoanTransaction payment = null;
-
-        if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).isGreaterThanZero()) {
-            final PaymentDetail paymentDetail = null;
-            payment = LoanTransaction.repayment(loan.getOffice(), payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable),
-                    paymentDetail, foreClosureDate, externalId);
-            payment.updateLoan(loan);
-            newTransactions.add(payment);
-        }
-
         List<Long> transactionIds = new ArrayList<>();
-        if (payment != null) {
-            loanForeclosureValidator.validateForForeclosure(loan, payment.getTransactionDate());
-        }
+
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
 
-        if (loan.isReceivableLocLoan()) {
-            loan.getLoanRepaymentScheduleDetail().setPrincipal(loan.getApprovedPrincipal().subtract(totalInterestChargedBeforeForClosure));
+        loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
+
+        /// //This is where we should be doing the transfer from.
+
+        // Check if loan has a linked savings account for foreclosure transfer
+        AccountAssociations accountAssociation = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
+                AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION.getValue());
+
+        if (accountAssociation != null && accountAssociation.linkedSavingsAccount() != null) {
+            // Foreclosure via account transfer from linked savings account
+            SavingsAccount linkedSavingsAccount = accountAssociation.linkedSavingsAccount();
+
+            // Validate that the linked savings account is active
+            if (!linkedSavingsAccount.isActive()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.linked.savings.account.not.active",
+                        "The linked savings account is not active and cannot be used for foreclosure", linkedSavingsAccount.getId());
+            }
+
+            BigDecimal totalForeclosureAmount = payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable)
+                    .getAmount();
+
+            // Prepare transfer details
+            // NO need to validate balances, it will be validated in the withdraw process
+            final boolean isRegularTransaction = true;
+            final boolean isExceptionForBalanceCheck = false;
+
+            // Create AccountTransferDTO for savings to loan transfer
+            final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(foreClosureDate, totalForeclosureAmount,
+                    PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN, linkedSavingsAccount.getId(), loan.getId(),
+                    "Foreclosure payment from linked savings account " + linkedSavingsAccount.getAccountNumber(), null, null, null, // paymentDetail
+                    null, // fromTransferType
+                    LoanTransactionType.REPAYMENT.getValue(), // toTransferType
+                    null, // chargeId
+                    null, // loanInstallmentNumber
+                    AccountTransferType.LOAN_FORECLOSURE.getValue(), // transferType
+                    null, // accountTransferDetails
+                    noteText, externalId, loan, null, // toSavingsAccount
+                    linkedSavingsAccount, // fromSavingsAccount
+                    isRegularTransaction, isExceptionForBalanceCheck);
+
+            // Execute the account transfer - this will handle both withdrawal and repayment
+            Long transferTransactionId = accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+
+            Optional<AccountTransferTransaction> accountTransferTransaction = this.accountTransfersWritePlatformService
+                    .getToLoanTransactionFromAccountTransferId(transferTransactionId);
+
+            if (accountTransferTransaction.isEmpty()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.linked.savings.account.transfer.failed",
+                        "The transfer from linked savings account failed, loan foreclosure cannot be completed", loan.getId());
+            }
+
+            payment = accountTransferTransaction.get().getToLoanTransaction();
+            newTransactions.add(payment);
+
+        } else {
+
+            if (payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).isGreaterThanZero()) {
+                final PaymentDetail paymentDetail = null;
+                payment = LoanTransaction.repayment(loan.getOffice(),
+                        payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
+                        foreClosureDate, externalId);
+                payment.updateLoan(loan);
+                newTransactions.add(payment);
+            }
+
+            handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
         }
-        handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
 
         if (loan.isReceivableLocLoan()) {
             loan.getLoanRepaymentScheduleDetail().setPrincipal(totalPrincipalBeforeForClosure.getAmount());
@@ -256,77 +322,4 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         return payment;
     }
 
-    @Override
-    protected void updateInstallmentsPostDate(final Loan loan, final LocalDate transactionDate) {
-        final List<LoanRepaymentScheduleInstallment> newInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
-        final MonetaryCurrency currency = loan.getCurrency();
-        Money totalPrincipal = Money.zero(currency);
-        final Money[] balances = loan.retrieveIncomeForOverlappingPeriod(transactionDate);
-        boolean isInterestComponent = true;
-        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
-            if (!DateUtils.isAfter(transactionDate, installment.getDueDate())) {
-                totalPrincipal = totalPrincipal.plus(installment.getPrincipal(currency));
-                if (loan.isReceivableLocLoan()) {
-                    totalPrincipal = totalPrincipal.minus((installment.getInterestCharged()));
-                }
-                newInstallments.remove(installment);
-                if (DateUtils.isEqual(transactionDate, installment.getDueDate())) {
-                    isInterestComponent = false;
-                }
-            }
-
-        }
-
-        for (LoanDisbursementDetails loanDisbursementDetails : loan.getDisbursementDetails()) {
-            if (loanDisbursementDetails.actualDisbursementDate() == null) {
-                totalPrincipal = Money.of(currency, totalPrincipal.getAmount().subtract(loanDisbursementDetails.principal()));
-            }
-        }
-
-        LocalDate installmentStartDate = loan.getDisbursementDate();
-
-        if (!newInstallments.isEmpty()) {
-            installmentStartDate = newInstallments.get(newInstallments.size() - 1).getDueDate();
-        }
-
-        int installmentNumber = newInstallments.size();
-
-        if (!isInterestComponent) {
-            installmentNumber++;
-        }
-
-        final LoanRepaymentScheduleInstallment newInstallment = new LoanRepaymentScheduleInstallment(null, newInstallments.size() + 1,
-                installmentStartDate, transactionDate, totalPrincipal.getAmount(), balances[0].getAmount(), balances[1].getAmount(),
-                balances[2].getAmount(), isInterestComponent, null);
-        newInstallment.updateInstallmentNumber(newInstallments.size() + 1);
-        newInstallments.add(newInstallment);
-        loan.updateLoanScheduleOnForeclosure(newInstallments);
-
-        final Set<LoanCharge> charges = loan.getActiveCharges();
-        final int penaltyWaitPeriod = 0;
-        for (LoanCharge loanCharge : charges) {
-            if (DateUtils.isAfter(loanCharge.getDueLocalDate(), transactionDate)) {
-                loanCharge.setActive(false);
-            } else if (loanCharge.getDueLocalDate() == null) {
-                loanChargeService.recalculateLoanCharge(loan, loanCharge, penaltyWaitPeriod);
-                loanCharge.updateWaivedAmount(currency);
-            }
-        }
-
-        for (LoanTransaction loanTransaction : loan.getLoanTransactions()) {
-            if (loanTransaction.isChargesWaiver()) {
-                for (LoanChargePaidBy chargePaidBy : loanTransaction.getLoanChargesPaid()) {
-                    if ((chargePaidBy.getLoanCharge().isDueDateCharge()
-                            && DateUtils.isBefore(transactionDate, chargePaidBy.getLoanCharge().getDueLocalDate()))
-                            || (chargePaidBy.getLoanCharge().isInstalmentFee() && chargePaidBy.getInstallmentNumber() != null
-                                    && chargePaidBy.getInstallmentNumber() > installmentNumber)) {
-                        loanChargeValidator.validateRepaymentTypeTransactionNotBeforeAChargeRefund(loanTransaction.getLoan(),
-                                loanTransaction, "reversed");
-                        loanTransaction.reverse();
-                    }
-                }
-
-            }
-        }
-    }
 }

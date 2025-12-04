@@ -177,6 +177,10 @@ public final class SavingsEnumerations {
                 optionData = new SavingsAccountTransactionEnumData(SavingsAccountTransactionType.PAY_CHARGE.getValue().longValue(),
                         SavingsAccountTransactionType.PAY_CHARGE.getCode(), "Pay Charge");
             break;
+            case PAY_TAX:
+                optionData = new SavingsAccountTransactionEnumData(SavingsAccountTransactionType.PAY_TAX.getValue().longValue(),
+                        SavingsAccountTransactionType.PAY_TAX.getCode(), "Pay Tax");
+            break;
             case WAIVE_CHARGES:
                 optionData = new SavingsAccountTransactionEnumData(SavingsAccountTransactionType.WAIVE_CHARGES.getValue().longValue(),
                         SavingsAccountTransactionType.WAIVE_CHARGES.getCode(), "Waive Charge");

@@ -178,7 +178,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     private final LoanTransactionRepository loanTransactionRepository;
     private final LoanChargePaidByReadService loanChargePaidByReadService;
     private final LoanTransactionRelationReadService loanTransactionRelationReadService;
-    private final LoanForeclosureValidator loanForeclosureValidator;
+    protected final LoanForeclosureValidator loanForeclosureValidator;
     private final LoanTransactionMapper loanTransactionMapper;
     protected final org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper loanMapper;
     private final LoanTransactionProcessingService loadTransactionProcessingService;
@@ -497,8 +497,8 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
         return new LoanTransactionData(null, null, null, transactionType, null, currencyData, earliestUnpaidInstallmentDate, totalAdjusted,
                 loan.getNetDisbursalAmount(), outstandingAmounts.principal().getAmount(), outstandingAmounts.interest().getAmount(),
                 outstandingAmounts.feeCharges().getAmount().subtract(adjustedChargeAmount), outstandingAmounts.penaltyCharges().getAmount(),
-                BigDecimal.ZERO, null, unrecognizedIncomePortion, paymentOptions, ExternalId.empty(), null, null, outstandingLoanBalance,
-                false, loanId, loan.getExternalId());
+                outstandingAmounts.taxCharges().getAmount(), null, unrecognizedIncomePortion, paymentOptions, ExternalId.empty(), null,
+                null, outstandingLoanBalance, false, loanId, loan.getExternalId());
     }
 
     private BigDecimal adjustPrepayInstallmentCharge(Loan loan, final LocalDate onDate) {
@@ -746,7 +746,8 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                     + " topup.topup_amount as topupAmount, l.last_closed_business_date as lastClosedBusinessDate,l.overpaidon_date as overpaidOnDate, "
                     + " l.is_charged_off as isChargedOff, l.charge_off_reason_cv_id as chargeOffReasonId, codec.code_value as chargeOffReason, l.charged_off_on_date as chargedOffOnDate, l.enable_down_payment as enableDownPayment, l.disbursed_amount_percentage_for_down_payment as disbursedAmountPercentageForDownPayment, l.enable_auto_repayment_for_down_payment as enableAutoRepaymentForDownPayment,"
                     + " cobu.username as chargedOffByUsername, cobu.firstname as chargedOffByFirstname, cobu.lastname as chargedOffByLastname, l.loan_schedule_type as loanScheduleType, l.loan_schedule_processing_type as loanScheduleProcessingType, "
-                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate " //
+                    + " l.charge_off_behaviour as chargeOffBehaviour, l.interest_recognition_on_disbursement_date as interestRecognitionOnDisbursementDate, "
+                    + " lp.penalty_grace_period as penaltyGracePeriod " //
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
                     + " left join m_loan_recalculation_details lir on lir.loan_id = l.id join m_currency rc on rc."
@@ -901,6 +902,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
             final Integer graceOnInterestPayment = JdbcSupport.getIntegerDefaultToNullIfZero(rs, "graceOnInterestPayment");
             final Integer graceOnInterestCharged = JdbcSupport.getIntegerDefaultToNullIfZero(rs, "graceOnInterestCharged");
             final Integer graceOnArrearsAgeing = JdbcSupport.getIntegerDefaultToNullIfZero(rs, "graceOnArrearsAgeing");
+            final Integer penaltyGracePeriod = JdbcSupport.getInteger(rs, "penaltyGracePeriod");
 
             final Integer termFrequency = JdbcSupport.getInteger(rs, "termFrequency");
             final Integer termPeriodFrequencyTypeInt = JdbcSupport.getInteger(rs, "termPeriodFrequencyType");
@@ -1142,7 +1144,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                     recurringMoratoriumOnPrincipalPeriods, graceOnInterestPayment, graceOnInterestCharged, interestChargedFromDate,
                     timeline, loanSummary, feeChargesDueAtDisbursementCharged, syncDisbursementWithMeeting, loanCounter, loanProductCounter,
                     multiDisburseLoan, canDefineInstallmentAmount, fixedEmiAmount, outstandingLoanBalance, inArrears, graceOnArrearsAgeing,
-                    isNPA, daysInMonthType, daysInYearType, isInterestRecalculationEnabled, interestRecalculationData,
+                    penaltyGracePeriod, isNPA, daysInMonthType, daysInYearType, isInterestRecalculationEnabled, interestRecalculationData,
                     createStandingInstructionAtDisbursement, isvariableInstallmentsAllowed, minimumGap, maximumGap, loanSubStatus,
                     canUseForTopup, isTopup, closureLoanId, closureLoanAccountNo, topupAmount, isEqualAmortization,
                     fixedPrincipalPercentagePerInstallment, delinquencyRange, disallowExpectedDisbursements, isFraud,

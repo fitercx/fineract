@@ -37,6 +37,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.exception.ActivationInsufficientBalanceException;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -48,7 +49,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +68,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
+import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -231,7 +232,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         idx++;
                         continue;
                     }
-                    Long chargeId = chargeElem.getAsJsonObject().get("id").getAsLong();
+                    Long chargeId = chargeElem.getAsJsonObject().get("chargeDefinitionId").getAsLong();
 
                     Charge chargeDefinition = chargeRepository.findOneWithNotFoundDetection(chargeId);
                     if (!chargeDefinition.isLineOfCreditCharge()) {
@@ -245,9 +246,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                                 "Only flat or percentage calculation allowed for LOC charges", "chargeId");
                     }
                     BigDecimal overrideAmount = null;
-                    if (fromJsonHelper.parameterExists("overrideAmount", chargeElem)
-                            && fromJsonHelper.parameterHasValue("overrideAmount", chargeElem)) {
-                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed("overrideAmount", chargeElem));
+                    String editableAmount = "editableAmount";
+                    if (fromJsonHelper.parameterExists(editableAmount, chargeElem)
+                            && fromJsonHelper.parameterHasValue(editableAmount, chargeElem)) {
+                        overrideAmount = new BigDecimal(fromJsonHelper.extractStringNamed(editableAmount, chargeElem));
                     }
 
                     LineOfCreditCharge newCharge = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);
@@ -281,6 +283,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         if (!changes.isEmpty()) {
+            lineOfCredit.setStatus(LocStatus.SUBMITTED);
+            lineOfCredit.resetStateChangeFields();
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
         }
 
@@ -485,46 +489,57 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // Validate payload (expects adjustedCreditLimit parameter)
         dataValidator.validateForIncreaseOrDecreaseOfCreditLimit(command);
-        BigDecimal newLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
-        LocalDate transactionDate = command.dateValueOfParameterNamed("actionDate");
+        BigDecimal adjustmentAmount = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        // Use localDate extractor (consistent with increaseCreditLimit)
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
 
-        BigDecimal currentLimit = loc.getMaximumAmount();
-        if (currentLimit == null) {
-            currentLimit = BigDecimal.ZERO;
+        // Derive the balance (limit) at the given transaction date using LOC transaction history (supports backdated)
+        Optional<LineOfCreditTransaction> lastTransaction = lineOfCreditTransactionRepository
+                .findLastTransactionBeforeDate(lineOfCreditId, transactionDate.plusDays(1), PageRequest.of(0, 1)).stream().findFirst();
+
+        BigDecimal currentBalanceAtDate; // Balance (limit) effective at the transaction date
+        if (lastTransaction.isPresent()) {
+            currentBalanceAtDate = lastTransaction.get().getBalanceAfter();
+        } else {
+            // Fallback to current maximum amount if no historical transactions exist
+            currentBalanceAtDate = loc.getMaximumAmount() == null ? BigDecimal.ZERO : loc.getMaximumAmount();
         }
 
-        if (newLimit.compareTo(currentLimit) >= 0) {
+        // New limit must be strictly less than the effective limit at that date
+        if (adjustmentAmount.compareTo(currentBalanceAtDate) >= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.must.be.less",
-                    "New credit limit must be less than existing limit", ADJUSTED_CREDIT_LIMIT);
+                    "Adjustment amount must be less than existing limit for the given date", ADJUSTED_CREDIT_LIMIT);
         }
 
-        if (newLimit.compareTo(BigDecimal.ZERO) <= 0) {
+        if (adjustmentAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.amount.must.be.positive",
-                    "New credit limit must be greater than zero", ADJUSTED_CREDIT_LIMIT);
+                    "Adjustment amount limit must be greater than zero", ADJUSTED_CREDIT_LIMIT);
         }
 
+        // Update LOC balance history and summary (recomputation handled inside for backdated entries)
+        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, adjustmentAmount, loc, transactionDate,
+                LineOfCreditTransactionType.DECREMENT);
+
+        // Adjust current maximum limit (current state); even for backdated, we store present effective limit.
+        loc.setMaximumAmount(loc.getMaximumAmount().subtract(adjustmentAmount));
+
+        // Validate against consumed amount (current state). Defensive: cannot set limit below already consumed.
         BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
                 ? loc.getSummary().getConsumedAmount()
                 : BigDecimal.ZERO;
-        if (newLimit.compareTo(consumed) < 0) {
+        if (loc.getMaximumAmount().compareTo(consumed) < 0) {
             throw new PlatformApiDataValidationException("error.msg.loc.reduce.limit.consumed.exceeds.new.limit",
                     "Consumed amount exceeds the proposed new credit limit", ADJUSTED_CREDIT_LIMIT);
         }
 
-        BigDecimal delta = currentLimit.subtract(newLimit); // negative
-
-        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
-                LineOfCreditTransactionType.DECREMENT);
-        loc.setMaximumAmount(loc.getMaximumAmount().subtract(delta));
         this.lineOfCreditRepository.saveAndFlush(loc);
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.REDUCE_CREDIT_LIMIT);
 
         Map<String, Object> changes = new LinkedHashMap<>();
-        changes.put("previousLimit", currentLimit);
-        changes.put("newLimit", newLimit);
-        changes.put("delta", delta);
+        changes.put("previousLimit", currentBalanceAtDate);
+        changes.put("newLimit", loc.getMaximumAmount());
         if (loc.getSummary() != null) {
             changes.put("availableBalance", loc.getSummary().getAvailableBalance());
             changes.put("consumedAmount", loc.getSummary().getConsumedAmount());
@@ -678,44 +693,31 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // First compute amounts (and update percent-of-amount charges if needed) to know total
         BigDecimal total = BigDecimal.ZERO;
-        List<LineOfCreditCharge> chargesToUpdate = new ArrayList<>();
+        BigDecimal totalTaxes = BigDecimal.ZERO;
 
         for (LineOfCreditCharge charge : charges) {
             if (!charge.isActive() || charge.isPaid() || charge.isWaived()) {
                 continue;
             }
 
-            // Handle percentage-based charges
-            if (charge.getChargeCalculation() != null
-                    && Objects.equals(charge.getChargeCalculation(), ChargeCalculationType.PERCENT_OF_AMOUNT.getValue())
-                    && (charge.getAmount() == null || charge.getAmount().compareTo(BigDecimal.ZERO) == 0)) {
-                BigDecimal base = loc.getMaximumAmount();
-
-                log.debug("Applying percentage base {} to charge {}", base, charge.getId());
-                locChargeDomainService.applyPercentBase(charge, base);
-                chargesToUpdate.add(charge); // Collect for batch save
-            }
-
             BigDecimal outstanding = charge.getAmountOutstanding();
             if (outstanding != null && outstanding.compareTo(BigDecimal.ZERO) > 0) {
                 total = total.add(outstanding);
+                totalTaxes = totalTaxes.add(charge.getTaxAmountDefaulted());
                 log.debug("Added charge {} outstanding amount {} to total", charge.getId(), outstanding);
             }
-        }
 
-        // Batch save percentage-updated charges to avoid duplicate saves
-        if (!chargesToUpdate.isEmpty()) {
-            locChargeRepository.saveAll(chargesToUpdate);
-            log.debug("Batch saved {} percentage-updated charges", chargesToUpdate.size());
         }
 
         if (total.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
 
+        BigDecimal totalWithdraw = total.add(totalTaxes);
+
         // Generate JSON command for savings account withdrawal
         JsonObject object = new JsonObject();
-        object.addProperty("transactionAmount", total);
+        object.addProperty("transactionAmount", totalWithdraw);
         object.addProperty("transactionDate", DateUtils.format(DateUtils.getBusinessLocalDate(), DateUtils.DEFAULT_DATE_FORMAT));
         object.addProperty("dateFormat", DateUtils.DEFAULT_DATE_FORMAT);
         object.addProperty("locale", "en");
@@ -726,8 +728,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 loc.getSettlementSavingsAccount().getId(), null, null, null, null, null, null, null);
 
         // Execute savings withdrawal
-        CommandProcessingResult withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(),
-                withdrawalCommand);
+        CommandProcessingResult withdrawalResult;
+        try {
+            withdrawalResult = savingsAccountWritePlatformService.withdrawal(loc.getSettlementSavingsAccount().getId(), withdrawalCommand);
+        } catch (InsufficientAccountBalanceException ex) {
+            throw new ActivationInsufficientBalanceException(total, ex);
+        }
 
         // Get the created transaction for linking to charges
         SavingsAccountTransaction aggregateTxn = savingsAccountTransactionRepository.findById(withdrawalResult.getResourceId())
@@ -743,7 +749,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 continue;
             }
 
-            locChargeDomainService.pay(charge, outstanding, false);
+            locChargeDomainService.pay(charge, outstanding, false, aggregateTxn);
             locChargeRepository.save(charge);
 
             LineOfCreditChargePaidBy paidBy = LineOfCreditChargePaidBy.of(aggregateTxn, charge, outstanding);
@@ -752,4 +758,5 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
     }
+
 }

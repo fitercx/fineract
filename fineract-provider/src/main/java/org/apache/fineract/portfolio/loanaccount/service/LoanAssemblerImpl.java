@@ -297,6 +297,11 @@ public class LoanAssemblerImpl implements LoanAssembler {
 
         loanSchedule.updateLoanSchedule(loanApplication, loanScheduleModel);
 
+        if (loanApplicationTerms.getIsReceivableLineOfCredit()) {
+            loanApplication.setNetDisbursalAmount(loanApplicationTerms.getDisbursedPrincipal().getAmount());
+            loanApplication.setProposedPrincipal(loanApplicationTerms.getAmountAfterAdvance());
+            loanApplication.setReceivableLocLoan(true);
+        }
         copyAdvancedPaymentRulesIfApplicable(transactionProcessingStrategyCode, loanProduct, loanApplication);
         loanApplication.setHelpers(defaultLoanLifecycleStateMachine);
         handleFactorRateProduct(loanApplication, command);

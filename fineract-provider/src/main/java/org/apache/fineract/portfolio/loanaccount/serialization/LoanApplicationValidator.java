@@ -1479,7 +1479,10 @@ public class LoanApplicationValidator {
                     graceOnInterestPayment, graceOnInterestCharged, recurringMoratoriumOnPrincipalPeriods, baseDataValidator);
 
             if (this.fromApiJsonHelper.parameterExists(LoanApiConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE, element)) {
-                if (!LoanScheduleType.PROGRESSIVE.equals(loanProduct.getLoanProductRelatedDetail().getLoanScheduleType())) {
+                final boolean interestRecognitionOnDisbursementDate = this.fromApiJsonHelper
+                        .extractPrimitiveBooleanNamed(LoanApiConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE, element);
+                if (!LoanScheduleType.PROGRESSIVE.equals(loanProduct.getLoanProductRelatedDetail().getLoanScheduleType())
+                        && interestRecognitionOnDisbursementDate) {
                     List<String> unsupportedParameterList = new ArrayList<>();
                     unsupportedParameterList.add(LoanApiConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE);
                     throw new UnsupportedParameterException(unsupportedParameterList);

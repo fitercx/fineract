@@ -20,6 +20,7 @@ package org.apache.fineract.portfolio.loanaccount.domain;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import java.util.function.Predicate;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
 import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.jetbrains.annotations.NotNull;
 
@@ -65,7 +67,10 @@ public class LoanRepaymentScheduleProcessingWrapper {
             if (!period.isDownPayment()) {
 
                 boolean isFirstNonDownPaymentPeriod = period.equals(firstNormalPeriod);
-
+                final int lastNormalInstallmentNumber = LoanRepaymentScheduleProcessingWrapper
+                        .fetchLastNormalInstallmentNumber(repaymentPeriods);
+                boolean isLastNonDownPaymentPeriod = period.getInstallmentNumber() != null
+                        && period.getInstallmentNumber().equals(lastNormalInstallmentNumber);
                 final Money taxesWaivedForRepaymentPeriod = Money.zero(currency);
                 final Money taxesWrittenOffForRepaymentPeriod = Money.zero(currency);
                 Money taxesDueForRepaymentPeriod = Money.zero(currency);
@@ -80,10 +85,9 @@ public class LoanRepaymentScheduleProcessingWrapper {
                         currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge());
                 final Money feeChargesWrittenOffForRepaymentPeriod = cumulativeChargesWrittenOffWithin(startDate, period.getDueDate(),
                         loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge());
-
                 final Money penaltyChargesDueForRepaymentPeriod = cumulativePenaltyChargesDueWithin(startDate, period.getDueDate(),
                         loanCharges, currency, period, totalPrincipal, totalInterest, !period.isRecalculatedInterestComponent(),
-                        isFirstNonDownPaymentPeriod);
+                        isFirstNonDownPaymentPeriod, isLastNonDownPaymentPeriod, isFactorRateEnabled);
                 final Money penaltyChargesWaivedForRepaymentPeriod = cumulativeChargesWaivedWithin(startDate, period.getDueDate(),
                         loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod,
                         LoanCharge::isPenaltyCharge);
@@ -113,8 +117,10 @@ public class LoanRepaymentScheduleProcessingWrapper {
                 final BigDecimal loanAmount = factorRateInstallmentFee.getLoan().getFactorRateLoanAmount();
                 final BigDecimal factorRate = factorRateInstallmentFee.getLoan().getFactorRate();
                 final Integer numberOfRepayments = factorRateInstallmentFee.getLoan().getNumberOfRepayments();
-                final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate,
-                        factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings());
+                final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
+                        ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
+                        : Collections.emptySet();
+                final BigDecimal taxAmount = TaxUtils.calculateFactorRateTaxAmount(loanAmount, chargeDate, factorRate, taxGroupMappings);
                 final BigDecimal principalAmount = factorRateInstallmentFee.getLoan().getPrincipal().getAmount();
                 final BigDecimal totalFactorRateFeeAmount = loanAmount.subtract(principalAmount);
                 final BigDecimal factorRateNetFeeAmount = totalFactorRateFeeAmount.subtract(taxAmount);
@@ -222,13 +228,16 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
     private Money cumulativePenaltyChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd,
             final Set<LoanCharge> loanCharges, final MonetaryCurrency currency, LoanRepaymentScheduleInstallment period,
-            final Money totalPrincipal, final Money totalInterest, boolean isInstallmentChargeApplicable, boolean isFirstPeriod) {
+            final Money totalPrincipal, final Money totalInterest, boolean isInstallmentChargeApplicable, boolean isFirstPeriod,
+            boolean isLastPeriod, boolean isFactorRateEnabled) {
 
         Money cumulative = Money.zero(currency);
 
         for (final LoanCharge loanCharge : loanCharges) {
             if (loanCharge.isPenaltyCharge()) {
-                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod);
+                final boolean isPenaltyDueForFactorRateLoan = isLastPeriod && isFactorRateEnabled
+                        && DateUtils.isAfter(loanCharge.getDueDate(), periodStart);
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) || isPenaltyDueForFactorRateLoan;
                 if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
                     cumulative = cumulative.plus(getInstallmentFee(currency, period, loanCharge));
                 } else if (loanCharge.isOverdueInstallmentCharge() && isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
@@ -279,6 +288,11 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
     public static int fetchFirstNormalInstallmentNumber(List<LoanRepaymentScheduleInstallment> installments) {
         return installments.stream().sorted(Comparator.comparing(LoanRepaymentScheduleInstallment::getInstallmentNumber))
+                .filter(repaymentPeriod -> !repaymentPeriod.isDownPayment()).findFirst().orElseThrow().getInstallmentNumber();
+    }
+
+    public static int fetchLastNormalInstallmentNumber(List<LoanRepaymentScheduleInstallment> installments) {
+        return installments.stream().sorted(Comparator.comparing(LoanRepaymentScheduleInstallment::getInstallmentNumber).reversed())
                 .filter(repaymentPeriod -> !repaymentPeriod.isDownPayment()).findFirst().orElseThrow().getInstallmentNumber();
     }
 

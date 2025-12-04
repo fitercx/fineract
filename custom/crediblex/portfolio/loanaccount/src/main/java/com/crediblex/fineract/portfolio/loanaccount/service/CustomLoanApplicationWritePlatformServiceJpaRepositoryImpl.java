@@ -19,9 +19,11 @@ import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -31,6 +33,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuild
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.data.EntityTables;
 import org.apache.fineract.infrastructure.dataqueries.data.StatusEnum;
@@ -39,6 +42,7 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.LoanCreated
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarInstanceRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
@@ -46,6 +50,7 @@ import org.apache.fineract.portfolio.calendar.service.CalendarReadPlatformServic
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
@@ -63,6 +68,8 @@ import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.portfolio.savings.service.GSIMReadPlatformService;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.jpa.JpaSystemException;
@@ -124,8 +131,21 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
         if (factorRateProductEnabled) {
             this.validateFactorRate(factorRate);
             final BigDecimal factorRateLoanAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.principalParameterName);
-            final BigDecimal totalFactorRateFeeAmount = factorRateLoanAmount.multiply(factorRate).subtract(factorRateLoanAmount);
-            final BigDecimal totalPrincipalAmount = factorRateLoanAmount.subtract(totalFactorRateFeeAmount);
+            final BigDecimal factorRateFeeAmount = factorRateLoanAmount.multiply(factorRate).subtract(factorRateLoanAmount);
+            final LoanCharge factorRateInstallmentFee = loan.getCharges().stream().filter(LoanCharge::isInstalmentFee).findFirst()
+                    .orElse(null);
+            BigDecimal factorRateTaxAmount = BigDecimal.ZERO;
+            if (factorRateInstallmentFee != null && factorRateInstallmentFee.isActive()) {
+                final LocalDate chargeDate = factorRateInstallmentFee.getDueDate() != null ? factorRateInstallmentFee.getDueDate()
+                        : DateUtils.getBusinessLocalDate();
+                final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
+                        ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
+                        : Collections.emptySet();
+                final BigDecimal taxPercentage = TaxUtils.determineTaxPercentageValue(chargeDate, taxGroupMappings);
+                factorRateTaxAmount = factorRateFeeAmount.multiply(taxPercentage).divide(BigDecimal.valueOf(100L),
+                        MoneyHelper.getMathContext());
+            }
+            final BigDecimal totalPrincipalAmount = factorRateLoanAmount.subtract(factorRateFeeAmount).subtract(factorRateTaxAmount);
             loan.setFactorRate(factorRate);
             loan.setFactorRateEnabled(true);
             loan.setProposedPrincipal(totalPrincipalAmount);
@@ -150,7 +170,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             // Handle Factor Rate product
             final BigDecimal factorRate = command.bigDecimalValueOfParameterNamed(LoanApiConstants.FACTOR_RATE_PARAM_NAME);
             final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
-            if (factorRateProductEnabled && !MathUtil.isLessThanZero(factorRate)) {
+            if (factorRateProductEnabled && MathUtil.isGreaterThan(factorRate, BigDecimal.ONE)) {
                 this.handleFactorRateProduct(loan, command);
             }
 
@@ -182,8 +202,10 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             loanRepositoryWrapper.flush();
             // Check mandatory datatable entries were created
-            this.entityDatatableChecksWritePlatformService.runTheCheckForProduct(loan.getId(), EntityTables.LOAN.getName(),
-                    StatusEnum.CREATE.getValue(), EntityTables.LOAN.getForeignKeyColumnNameOnDatatable(), loan.productId());
+            if (!loan.getLoanProduct().isEnableLocPayable() && !loan.getLoanProduct().isEnableLocReceivable()) {
+                this.entityDatatableChecksWritePlatformService.runTheCheckForProduct(loan.getId(), EntityTables.LOAN.getName(),
+                        StatusEnum.CREATE.getValue(), EntityTables.LOAN.getForeignKeyColumnNameOnDatatable(), loan.productId());
+            }
             // Trigger business event
             businessEventNotifierService.notifyPostBusinessEvent(new LoanCreatedBusinessEvent(loan));
 
@@ -463,7 +485,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             }
 
-            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+            boolean isReceivable = lineOfCredit.getProductType() == LocProductType.RECEIVABLE;
+            if (isReceivable) {
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
@@ -477,7 +500,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             loanLocParamsRepository.save(loanLocParams);
 
-            final Money amount = loan.getPrincipal();
+            final Money amount = isReceivable ? Money.of(loan.getCurrency(), loan.getProposedPrincipal()) : loan.getPrincipal();
             if (amount.isGreaterThanZero()) {
                 // For repayments, we reduce the LOC balance (i.e. free up credit)
                 lineOfCreditBalanceUpdateService.computeLocBalance(loan.getId(), amount.getAmount(), lineOfCredit,

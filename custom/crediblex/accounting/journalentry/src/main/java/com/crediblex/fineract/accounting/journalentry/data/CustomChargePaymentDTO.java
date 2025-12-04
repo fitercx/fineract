@@ -18,6 +18,7 @@ public class CustomChargePaymentDTO extends ChargePaymentDTO {
     private Long creditGLAccountId;
     private Long debitGLAccountId;
     private boolean applicableToFactoRateFeeTaxes;
+    private boolean applicableToSpecifiedDueDateTaxes;
 
     // Calculated fields
     private BigDecimal baseAmount;

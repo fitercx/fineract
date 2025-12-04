@@ -91,8 +91,8 @@ public class LoanChargeAssembler {
 
         final Set<LoanCharge> loanCharges = new HashSet<>();
         BigDecimal principal = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("principal", element);
-        if (this.fromApiJsonHelper.parameterExists("approvedReceivableAmount", element)) {
-            principal = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("approvedReceivableAmount", element);
+        if (this.fromApiJsonHelper.parameterExists("amountAfterAdvance", element)) {
+            principal = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
         }
 
         final Integer numberOfRepayments = this.fromApiJsonHelper.extractIntegerWithLocaleNamed("numberOfRepayments", element);

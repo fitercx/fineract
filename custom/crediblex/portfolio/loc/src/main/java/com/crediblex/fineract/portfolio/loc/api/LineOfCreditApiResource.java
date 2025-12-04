@@ -94,7 +94,7 @@ public class LineOfCreditApiResource {
 
         this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        final LineOfCreditData template = this.readPlatformService.retrieveTemplate();
+        final LineOfCreditData template = this.readPlatformService.retrieveTemplate(clientId);
 
         return this.toApiJsonSerializer.serialize(settings, template);
     }

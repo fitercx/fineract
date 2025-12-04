@@ -105,6 +105,7 @@ public final class SavingsAccountTransactionData implements Serializable {
     private BigDecimal overdraftAmount;
     private transient Long modifiedId;
     private transient String refNo;
+    private LinkedLoanData linkedLoanData;
 
     private SavingsAccountTransactionData(final Long id, final SavingsAccountTransactionEnumData transactionType,
             final PaymentDetailData paymentDetailData, final Long savingsId, final String savingsAccountNo, final LocalDate transactionDate,
@@ -512,6 +513,10 @@ public final class SavingsAccountTransactionData implements Serializable {
 
     public void setOverdraftAmount(final BigDecimal overdraftAmount) {
         this.overdraftAmount = overdraftAmount;
+    }
+
+    public void setLinkedLoanData(final LinkedLoanData linkedLoanData) {
+        this.linkedLoanData = linkedLoanData;
     }
 
     public boolean isPenaltyChargeAndNotReversed() {

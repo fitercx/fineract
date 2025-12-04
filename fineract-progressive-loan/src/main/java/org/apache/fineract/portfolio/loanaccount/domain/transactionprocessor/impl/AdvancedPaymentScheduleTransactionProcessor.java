@@ -565,7 +565,7 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
     private LoanRepaymentScheduleInstallment createAdditionalInstalment(LoanTransaction loanTransaction, ProgressiveTransactionCtx ctx) {
         LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loanTransaction.getLoan(),
                 (ctx.getInstallments().size() + 1), ctx.getModel().getMaturityDate(), loanTransaction.getTransactionDate(), ZERO, ZERO,
-                ZERO, ZERO, false, null);
+                ZERO, ZERO, ZERO, false, null);
         installment.markAsAdditional();
         loanTransaction.getLoan().addLoanRepaymentScheduleInstallment(installment);
         return installment;
@@ -658,7 +658,7 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
                     Loan loan = loanTransaction.getLoan();
                     LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan,
                             (ctx.getInstallments().size() + 1), pastDueDate, transactionDate, zeroMoney.getAmount(), zeroMoney.getAmount(),
-                            zeroMoney.getAmount(), zeroMoney.getAmount(), false, null);
+                            zeroMoney.getAmount(), zeroMoney.getAmount(), zeroMoney.getAmount(), false, null);
                     recognizeAmountsAfterChargeback(ctx, transactionDate, installment, chargebackAllocation);
                     installment.markAsAdditional();
                     loan.addLoanRepaymentScheduleInstallment(installment);
@@ -721,14 +721,14 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
         if (fee.isGreaterThanZero()) {
             installment.addToCreditedFee(fee.getAmount());
             installment.addToChargePortion(fee, Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency),
-                    Money.zero(currency));
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency));
         }
 
         Money penalty = chargebackAllocation.get(PENALTY);
         if (penalty.isGreaterThanZero()) {
             installment.addToCreditedPenalty(penalty.getAmount());
             installment.addToChargePortion(Money.zero(currency), Money.zero(currency), Money.zero(currency), penalty, Money.zero(currency),
-                    Money.zero(currency));
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency), Money.zero(currency));
         }
     }
 

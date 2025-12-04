@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeDataDTO;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -69,7 +70,8 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
         final LocalDate lastDueDate = loan.getLastLoanRepaymentScheduleInstallment().getDueDate();
         reverseTransactionsAfter(existingAccruals, lastDueDate, addJournal);
         ensureAccrualTransactionMappings(loan, existingAccruals, chargeOnDueDate);
-        if (DateUtils.isAfter(tillDate, lastDueDate)) {
+        final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
+        if (DateUtils.isAfter(tillDate, lastDueDate) && !isFactorRateEnabled) {
             tillDate = lastDueDate;
         }
 
@@ -166,6 +168,20 @@ public class CustomLoanAccrualProcessingServiceImpl extends LoanAccrualsProcessi
                     loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct(),
                     loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(), false,
                     false, false, null, newTransactionDTOs, null);
+
+            // Populate LOC receivable flags for proper accounting treatment
+            boolean isLocReceivable = loan.getLoanProduct().isEnableLocReceivable()
+                    && loan.isPeriodicAccrualAccountingEnabledOnLoanProduct();
+            if (isLocReceivable) {
+                accountingBridgeData.setLocReceivable(true);
+                accountingBridgeData.setTotalContractualInterest(
+                        loan.getSummary().getTotalInterestCharged() != null ? loan.getSummary().getTotalInterestCharged()
+                                : BigDecimal.ZERO);
+                // Note: For accruals, we don't need fee amounts as fees are not accrued for LOC receivable
+                accountingBridgeData.setTotalDisbursementFees(BigDecimal.ZERO);
+                accountingBridgeData.setTotalDisbursementFeesTax(BigDecimal.ZERO);
+            }
+
             this.journalEntryWritePlatformService.createJournalEntriesForLoan(accountingBridgeData);
         }
     }

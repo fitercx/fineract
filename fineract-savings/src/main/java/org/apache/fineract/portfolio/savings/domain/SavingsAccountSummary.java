@@ -76,6 +76,9 @@ public final class SavingsAccountSummary {
     @Column(name = "total_withhold_tax_derived", scale = 6, precision = 19)
     private BigDecimal totalWithholdTax;
 
+    @Column(name = "total_pay_tax_derived", scale = 6, precision = 19)
+    private BigDecimal totalPayTax;
+
     @Column(name = "last_interest_calculation_date")
     private LocalDate lastInterestCalculationDate;
 
@@ -104,12 +107,13 @@ public final class SavingsAccountSummary {
         this.totalPenaltyChargesWaived = wrapper.calculateTotalPenaltyChargeWaived(currency, transactions);
         this.totalOverdraftInterestDerived = wrapper.calculateTotalOverdraftInterest(currency, transactions);
         this.totalWithholdTax = wrapper.calculateTotalWithholdTaxWithdrawal(currency, transactions);
+        this.totalPayTax = wrapper.calculateTotalPayTaxWithdrawal(currency, transactions);
 
         updateRunningBalanceAndPivotDate(false, transactions, null, null, null, currency);
 
         this.accountBalance = Money.of(currency, this.totalDeposits).plus(this.totalInterestPosted).minus(this.totalWithdrawals)
                 .minus(this.totalWithdrawalFees).minus(this.totalAnnualFees).minus(this.totalFeeCharge).minus(this.totalPenaltyCharge)
-                .minus(totalOverdraftInterestDerived).minus(totalWithholdTax).getAmount();
+                .minus(totalOverdraftInterestDerived).minus(totalWithholdTax).minus(totalPayTax).getAmount();
     }
 
     public void updateSummaryWithPivotConfig(final MonetaryCurrency currency, final SavingsAccountTransactionSummaryWrapper wrapper,
@@ -176,6 +180,12 @@ public final class SavingsAccountSummary {
                 case WITHHOLD_TAX:
                     if (transaction.isWithHoldTaxAndNotReversed()) {
                         this.totalWithholdTax = Money.of(currency, this.totalWithholdTax).plus(transactionAmount).getAmount();
+                        this.accountBalance = Money.of(currency, this.accountBalance).minus(transactionAmount).getAmount();
+                    }
+                break;
+                case PAY_TAX:
+                    if (transaction.isPayTaxAndNotReversed()) {
+                        this.totalPayTax = Money.of(currency, this.totalPayTax).plus(transactionAmount).getAmount();
                         this.accountBalance = Money.of(currency, this.accountBalance).minus(transactionAmount).getAmount();
                     }
                 break;
@@ -337,5 +347,9 @@ public final class SavingsAccountSummary {
 
     public BigDecimal getTotalWithholdTax() {
         return this.totalWithholdTax;
+    }
+
+    public BigDecimal getTotalPayTax() {
+        return this.totalPayTax;
     }
 }

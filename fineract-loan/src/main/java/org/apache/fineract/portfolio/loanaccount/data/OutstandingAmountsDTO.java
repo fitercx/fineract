@@ -31,19 +31,21 @@ public class OutstandingAmountsDTO {
     private Money interest;
     private Money feeCharges;
     private Money penaltyCharges;
+    private Money taxCharges;
 
     public OutstandingAmountsDTO(MonetaryCurrency currency) {
         this.principal = Money.zero(currency);
         this.interest = Money.zero(currency);
         this.feeCharges = Money.zero(currency);
         this.penaltyCharges = Money.zero(currency);
+        this.taxCharges = Money.zero(currency);
     }
 
     public Money getTotalOutstanding() {
         return principal() //
                 .plus(interest()) //
                 .plus(feeCharges()) //
-                .plus(penaltyCharges());
+                .plus(penaltyCharges()).plus(taxCharges());
     }
 
     public OutstandingAmountsDTO plusPrincipal(Money principal) {
@@ -63,6 +65,11 @@ public class OutstandingAmountsDTO {
 
     public OutstandingAmountsDTO plusPenaltyCharges(Money penaltyCharges) {
         this.penaltyCharges = this.penaltyCharges.plus(penaltyCharges);
+        return this;
+    }
+
+    public OutstandingAmountsDTO plusTaxCharges(Money taxCharges) {
+        this.taxCharges = this.taxCharges.plus(taxCharges);
         return this;
     }
 

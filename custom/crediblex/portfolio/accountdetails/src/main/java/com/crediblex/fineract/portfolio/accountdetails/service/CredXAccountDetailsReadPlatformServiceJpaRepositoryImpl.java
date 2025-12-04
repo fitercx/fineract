@@ -191,7 +191,15 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
                     .append(" (SELECT MIN(rps.duedate) FROM m_loan_repayment_schedule rps ").append(" WHERE rps.loan_id = l.id ")
                     .append(" AND (rps.completed_derived = false OR rps.completed_derived IS NULL)) ")
-                    .append(" ELSE NULL END as nextInstalmentDate")
+                    .append(" ELSE NULL END as nextInstalmentDate,")
+
+                    // CredibleX specific summary fields
+                    .append(" l.is_factor_rate_enabled as factorRateEnabled,").append(" l.factor_rate as factorRate,")
+                    .append(" l.factor_rate_loan_amount as factorRateLoanAmount,")
+                    .append(" l.fee_charges_charged_derived as totalFeeChargesCharged,")
+                    .append(" l.tax_charges_charged_derived as totalTaxChargesCharged,").append(" l.term_frequency as termFrequency,")
+                    .append(" l.term_period_frequency_enum as termPeriodFrequencyType,")
+                    .append(" lp.penalty_grace_period as penaltyGracePeriod")
 
                     .append(" from m_loan l ").append("LEFT JOIN m_product_loan AS lp ON lp.id = l.product_id")
                     .append(" left join m_currency curr on curr.code = l.currency_code")
@@ -295,6 +303,17 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final Boolean isRestructured = rs.getBoolean("isRestructured");
             final LocalDate nextInstalmentDate = JdbcSupport.getLocalDate(rs, "nextInstalmentDate");
 
+            // CredibleX-specific summary fields
+            final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
+            final BigDecimal factorRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRate");
+            final BigDecimal factorRateLoanAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRateLoanAmount");
+            final BigDecimal totalFeeChargesCharged = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalFeeChargesCharged");
+            final BigDecimal totalTaxChargesCharged = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalTaxChargesCharged");
+            final Integer penaltyGracePeriod = JdbcSupport.getInteger(rs, "penaltyGracePeriod");
+            final Integer termFrequency = JdbcSupport.getInteger(rs, "termFrequency");
+            final Integer termPeriodFrequencyTypeValue = JdbcSupport.getInteger(rs, "termPeriodFrequencyType");
+            final EnumOptionData termPeriodFrequencyType = LoanEnumerations.termFrequencyType(termPeriodFrequencyTypeValue);
+
             // Use calculated installment amount if fixed EMI is not set
             final BigDecimal effectiveInstallmentAmount = (installmentAmount != null && installmentAmount.compareTo(BigDecimal.ZERO) > 0)
                     ? installmentAmount
@@ -315,6 +334,18 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     parentAccountNumber, externalId, productId, loanProductName, shortLoanProductName, loanStatus, currency, loanType,
                     loanCycle, timeline, inArrears, originalLoan, loanBalance, amountPaid);
 
+            // Populate newly added LoanAccountSummaryData fields
+            extendedLoanAccountSummaryData.setFactorRateEnabled(factorRateEnabled);
+            extendedLoanAccountSummaryData.setFactorRate(factorRate);
+            extendedLoanAccountSummaryData.setFactorRateLoanAmount(factorRateLoanAmount);
+            extendedLoanAccountSummaryData.setTotalFeeChargesCharged(totalFeeChargesCharged);
+            extendedLoanAccountSummaryData.setTotalTaxChargesCharged(totalTaxChargesCharged);
+            extendedLoanAccountSummaryData.setActualMaturityDate(actualMaturityDate);
+            extendedLoanAccountSummaryData.setPenaltyGracePeriod(penaltyGracePeriod);
+            extendedLoanAccountSummaryData.setTermFrequency(termFrequency);
+            extendedLoanAccountSummaryData.setTermPeriodFrequencyType(termPeriodFrequencyType);
+
+            // Custom parameters used by CredibleX UI
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.EFFECTIVE_INSTALLMENT_AMOUNT,
                     effectiveInstallmentAmount);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.TOTAL_LATE_FEES, totalLateFees);

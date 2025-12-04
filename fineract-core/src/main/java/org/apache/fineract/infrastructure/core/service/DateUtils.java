@@ -435,8 +435,8 @@ public final class DateUtils {
         return fromDate != null && !DateUtils.isBefore(targetDate, fromDate) && !DateUtils.isAfter(targetDate, toDate);
     }
 
-    public static boolean isDateInRangeExclusive(LocalDate targetDate, LocalDate fromDate, LocalDate toDate) {
-        return fromDate != null && DateUtils.isAfter(targetDate, fromDate) && DateUtils.isBefore(targetDate, toDate);
+    public static boolean isDateInRangeFromInclusiveToExclusive(LocalDate targetDate, LocalDate fromDate, LocalDate toDate) {
+        return fromDate != null && DateUtils.isAfterInclusive(targetDate, fromDate) && DateUtils.isBefore(targetDate, toDate);
     }
 
     public static boolean isDateInRangeFromExclusiveToInclusive(LocalDate targetDate, LocalDate fromDate, LocalDate toDate) {

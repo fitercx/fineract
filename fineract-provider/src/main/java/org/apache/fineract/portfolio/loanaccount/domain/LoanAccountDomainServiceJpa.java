@@ -128,7 +128,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
 
     private final LoanAssembler loanAccountAssembler;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
-    private final LoanTransactionRepository loanTransactionRepository;
+    protected final LoanTransactionRepository loanTransactionRepository;
     protected final ConfigurationDomainService configurationDomainService;
     protected final HolidayRepository holidayRepository;
     protected final WorkingDaysRepositoryWrapper workingDaysRepository;
@@ -1028,7 +1028,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
 
         final LoanRepaymentScheduleInstallment newInstallment = new LoanRepaymentScheduleInstallment(null, newInstallments.size() + 1,
                 installmentStartDate, transactionDate, totalPrincipal.getAmount(), balances[0].getAmount(), balances[1].getAmount(),
-                balances[2].getAmount(), isInterestComponent, null);
+                balances[2].getAmount(), balances[3].getAmount(), isInterestComponent, null);
         newInstallment.updateInstallmentNumber(newInstallments.size() + 1);
         newInstallments.add(newInstallment);
         loan.updateLoanScheduleOnForeclosure(newInstallments);

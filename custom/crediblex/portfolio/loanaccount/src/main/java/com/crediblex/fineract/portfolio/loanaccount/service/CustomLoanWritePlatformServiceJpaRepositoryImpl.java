@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
+import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
@@ -8,10 +9,12 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParam
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -43,6 +46,7 @@ import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
+import org.apache.fineract.infrastructure.event.business.BusinessEventListener;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanDisbursalTransactionBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
@@ -56,6 +60,8 @@ import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
+import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
+import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
 import org.apache.fineract.portfolio.account.domain.AccountTransferType;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionRepository;
 import org.apache.fineract.portfolio.account.domain.StandingInstructionStatus;
@@ -126,7 +132,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -136,7 +141,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
 
-    private final JdbcTemplate jdbcTemplate;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final StandingInstructionRepository standingInstructionRepository;
@@ -179,7 +183,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
-            JdbcTemplate jdbcTemplate, CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
+            CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
             LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
@@ -202,7 +206,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService,
                 fineractProperties);
 
-        this.jdbcTemplate = jdbcTemplate;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
         this.standingInstructionRepository = standingInstructionRepository;
@@ -211,6 +214,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanChargeRepository = loanChargeRepository;
         this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
+    }
+
+    @PostConstruct
+    public void registerForNotification() {
+        businessEventNotifierService.addPostBusinessEventListener(SavingsToLoanAccountTransferBusinessEvent.class,
+                new SavingsToLoanTransferBusinessEventListener());
     }
 
     @Transactional
@@ -679,7 +688,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
             Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-            BigDecimal amount = loan.getPrincipal().getAmount();
+            BigDecimal amount = loan.getProposedPrincipal();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
@@ -817,32 +826,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Override the parent's undoLoanDisbursal method to include LOC balance adjustments
-     */
-    @Override
-    @Transactional
-    public CommandProcessingResult undoLoanDisbursal(final Long loanId, final JsonCommand command) {
-        // Call the parent method to perform the standard undo disbursal
-        CommandProcessingResult result = super.undoLoanDisbursal(loanId, command);
-
-        if (result != null && result.hasChanges() && result.getResourceId() != null) {
-            // Fetch the loan to get disbursal amount
-            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
-            BigDecimal disbursalAmount = loan.getNetDisbursalAmount();
-
-            // Get the transaction date from the command or use current date
-            LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-            if (transactionDate == null) {
-                transactionDate = DateUtils.getBusinessLocalDate();
-            }
-
-            updateLocBalance(loanId, disbursalAmount, transactionDate, LineOfCreditTransactionType.UNDO_DISBURSEMENT, null);
-
-        }
-        return result;
-    }
-
-    /**
      * Override the parent's adjustLoanTransaction method to include LOC balance adjustments when undoing/reversing loan
      * transactions (especially repayments)
      */
@@ -896,6 +879,47 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // For repayments, we reduce the LOC balance (i.e. free up credit)
             lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, locProductTypeOpt.get().getLineOfCredit(), transactionDate,
                     transactionType);
+        }
+    }
+
+    private final class SavingsToLoanTransferBusinessEventListener
+            implements BusinessEventListener<SavingsToLoanAccountTransferBusinessEvent> {
+
+        @Override
+        public void onBusinessEvent(SavingsToLoanAccountTransferBusinessEvent event) {
+            AccountTransferDetails accountTransferDetails = event.get();
+
+            if (accountTransferDetails.fromSavingsAccount() != null && accountTransferDetails.toLoanAccount() != null) {
+
+                Long loanId = accountTransferDetails.toLoanAccount().getId();
+                Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loanId);
+                if (lineOfCreditParams.isPresent()) {
+                    LineOfCredit lineOfCredit = lineOfCreditParams.get().getLineOfCredit();
+
+                    Optional<AccountTransferTransaction> acctTransferTransaction = accountTransferDetails.getAccountTransferTransactions()
+                            .stream().findFirst();
+
+                    if (acctTransferTransaction.isEmpty()) {
+                        throw new GeneralPlatformDomainRuleException("account.transfer.transaction.not.found",
+                                "Account transfer transaction not found for transfer from savings account id: "
+                                        + accountTransferDetails.fromSavingsAccount().getId() + " to loan account id: "
+                                        + accountTransferDetails.toLoanAccount().getId());
+                    }
+
+                    LoanTransaction loanTransaction = acctTransferTransaction.get().getToLoanTransaction();
+                    BigDecimal amount;
+
+                    if (lineOfCredit.getProductType().isReceivable()) {
+                        amount = loanTransaction.getAmount();
+                    } else {
+                        amount = loanTransaction.getPrincipalPortion();
+                    }
+
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, amount, lineOfCredit, loanTransaction.getTransactionDate(),
+                            LineOfCreditTransactionType.REPAYMENT);
+                }
+
+            }
         }
     }
 

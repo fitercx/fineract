@@ -59,6 +59,9 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
     private ArgumentCaptor<Money> feeChargesDue = ArgumentCaptor.forClass(Money.class);
     private ArgumentCaptor<Money> feeChargesWaived = ArgumentCaptor.forClass(Money.class);
     private ArgumentCaptor<Money> feeChargesWrittenOff = ArgumentCaptor.forClass(Money.class);
+    private ArgumentCaptor<Money> taxChargesDue = ArgumentCaptor.forClass(Money.class);
+    private ArgumentCaptor<Money> taxChargesWaived = ArgumentCaptor.forClass(Money.class);
+    private ArgumentCaptor<Money> taxChargesWrittenOff = ArgumentCaptor.forClass(Money.class);
     private ArgumentCaptor<Money> penaltyChargesDue = ArgumentCaptor.forClass(Money.class);
     private ArgumentCaptor<Money> penaltyChargesWaived = ArgumentCaptor.forClass(Money.class);
     private ArgumentCaptor<Money> penaltyChargesWrittenOff = ArgumentCaptor.forClass(Money.class);
@@ -110,7 +113,8 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapperTest {
             String expectedPenaltyChargesWrittenOff) {
 
         verify(period, times(1)).addToChargePortion(feeChargesDue.capture(), feeChargesWaived.capture(), feeChargesWrittenOff.capture(),
-                penaltyChargesDue.capture(), penaltyChargesWaived.capture(), penaltyChargesWrittenOff.capture());
+                taxChargesDue.capture(), taxChargesWaived.capture(), taxChargesWrittenOff.capture(), penaltyChargesDue.capture(),
+                penaltyChargesWaived.capture(), penaltyChargesWrittenOff.capture());
 
         assertEquals(new BigDecimal(expectedFeeChargesDue).setScale(1, RoundingMode.UNNECESSARY),
                 feeChargesDue.getValue().getAmount().setScale(1, RoundingMode.UNNECESSARY));

@@ -195,6 +195,13 @@ public class AccrualBasedAccountingProcessorForSavings implements AccountingProc
                         savingsTransactionDTO.getTaxPayments());
             }
 
+            else if (savingsTransactionDTO.getTransactionType().isPayTax()) {
+                this.helper.createAccrualBasedJournalEntriesAndReversalsForSavingsTax(office, currencyCode,
+                        AccrualAccountsForSavings.SAVINGS_CONTROL, AccrualAccountsForSavings.SAVINGS_REFERENCE, savingsProductId,
+                        paymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal,
+                        savingsTransactionDTO.getTaxPayments());
+            }
+
             /** Handle Fees Deductions and reversals of Fees Deductions **/
             else if (savingsTransactionDTO.getTransactionType().isFeeDeduction() && savingsTransactionDTO.isOverdraftTransaction()) {
                 boolean isPositive = amount.subtract(overdraftAmount).compareTo(BigDecimal.ZERO) > 0;

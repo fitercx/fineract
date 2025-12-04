@@ -1113,6 +1113,12 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         }
         final SavingsAccountCharge savingsAccountCharge = SavingsAccountCharge.createNewFromJson(savingsAccount, chargeDefinition, command);
 
+        // Extract and set loanAccountId if provided
+        if (command.parameterExists(SavingsApiConstants.loanAccountIdParamName)) {
+            final Long loanAccountId = command.longValueOfParameterNamed(SavingsApiConstants.loanAccountIdParamName);
+            savingsAccountCharge.setLoanAccountId(loanAccountId);
+        }
+
         if (chargeDefinition.isEnableFreeWithdrawal()) {
             savingsAccountCharge.setFreeWithdrawalCount(0);
         }

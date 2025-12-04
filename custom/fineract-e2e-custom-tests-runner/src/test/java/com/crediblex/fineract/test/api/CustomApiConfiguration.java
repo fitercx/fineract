@@ -21,9 +21,13 @@ package com.crediblex.fineract.test.api;
 import com.crediblex.client.services.LineOfCreditApi;
 import com.crediblex.client.services.LoanTransactionsApi;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.client.services.AccountTransfersApi;
+import org.apache.fineract.client.services.GeneralLedgerAccountApi;
+import org.apache.fineract.client.services.SchedulerJobApi;
 import org.apache.fineract.client.services.TaxComponentsApi;
 import org.apache.fineract.client.services.TaxGroupApi;
 import org.apache.fineract.client.util.FineractClient;
+import org.apache.fineract.test.service.JobService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -51,6 +55,14 @@ public class CustomApiConfiguration {
     @Bean
     public LoanTransactionsApi loanTransactionsApi() {return fineractClient.createService(LoanTransactionsApi.class);}
 
+    @Bean
+    public AccountTransfersApi accountTransfersApi() {return fineractClient.createService(AccountTransfersApi.class);
+    }
+
+    @Bean
+    public SchedulerJobApi schedulerJobApi() {
+        return fineractClient.createService(SchedulerJobApi.class);
+    }
 }
 
 

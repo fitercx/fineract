@@ -119,7 +119,8 @@ public class LoanScheduleCalculationPlatformServiceImpl implements LoanScheduleC
                 loanApplicationTerms, loan, loan.getOfficeId(), loanRepaymentScheduleTransactionProcessor);
         LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment = new LoanRepaymentScheduleInstallment(null, 0, today, today,
                 outstandingAmountsDTO.principal().getAmount(), outstandingAmountsDTO.interest().getAmount(),
-                outstandingAmountsDTO.feeCharges().getAmount(), outstandingAmountsDTO.penaltyCharges().getAmount(), false, null);
+                outstandingAmountsDTO.feeCharges().getAmount(), outstandingAmountsDTO.penaltyCharges().getAmount(),
+                outstandingAmountsDTO.taxCharges().getAmount(), false, null);
 
         Money interestDue = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
         boolean isNewPaymentRequired = loanRepaymentScheduleInstallment.isInterestDue(currency) || totalPrincipal.isGreaterThanZero();

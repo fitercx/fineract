@@ -30,6 +30,7 @@ import com.crediblex.client.services.LineOfCreditApi;
 
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
+import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import java.io.IOException;
@@ -51,6 +52,8 @@ import org.apache.fineract.client.models.PostLoansResponse;
 import org.apache.fineract.client.models.PostSavingsAccountsResponse;
 import org.apache.fineract.client.models.TableData;
 import org.apache.fineract.client.services.LoansApi;
+import org.apache.fineract.test.data.ChargeCalculationType;
+import org.apache.fineract.test.data.ChargeTimeType;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,11 +79,16 @@ public class LineOfCreditStepDef extends AbstractStepDef {
     @When("Client creates a new line of credit with start date {string} and max limit {int}")
     public void clientCreatesNewLineOfCredit(String startDate, int maxLimit) throws IOException {
         // Default to RECEIVABLE type for backward compatibility
-        clientCreatesNewLineOfCreditWithType("receivable", startDate, maxLimit);
+        clientCreatesNewLineOfCreditWithType("receivable", startDate, maxLimit,0,0);
     }
 
     @When("Client creates a new {string} line of credit with start date {string} and max limit {int}")
     public void clientCreatesNewLineOfCreditWithType(String locType, String startDate, int maxLimit) throws IOException {
+        clientCreatesNewLineOfCreditWithType(locType, startDate, maxLimit,0,0);
+    }
+
+    @When("Client creates a new {string} line of credit with start date {string} and max limit {int} with activation charge of {double} and having vat of {float}")
+    public void clientCreatesNewLineOfCreditWithType(String locType, String startDate, int maxLimit,double activationCharge, float vatValue) throws IOException {
         Response<PostClientsResponse> clientResponse = testContext().get(TestContextKey.CLIENT_CREATE_RESPONSE);
         assertThat(clientResponse).isNotNull();
         createdClientId = clientResponse.body().getClientId();
@@ -123,7 +131,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .tenorDays(tenorDays) // Updated to match payload example
                 .advancePercentage("100") // Updated to match payload example
                 .cashMarginType(1)
-                .cashMarginValue(10)
+                .cashMarginValue(10.5f)
                 .interestChargeTime(1)
                 .loanOfficerId(null) // optional
                 .distributionPartner("Partner X")
@@ -131,6 +139,12 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .settlementSavingsAccountId(settlementSavingsAccountId)
                 .dateFormat(DATE_FORMAT)
                 .locale(DEFAULT_LOCALE);
+
+        if(vatValue > 0f){
+            request.addChargesItem(
+                new LineOfCreditCharge(testContext().get(TestContextKey.LINE_OF_CREDIT_ACTIVATION_CHARGE_RESPONSE),BigDecimal.valueOf(activationCharge))
+            );
+        }
 
         log.info("Creating {} Line of Credit request: {}", locType, request);
         Response<PostLineOfCreditResponse> response = lineOfCreditApi.create(createdClientId, request).execute();
@@ -165,6 +179,10 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         currentLocType = locType.toLowerCase();
         log.info("Created {} Line of Credit ID: {} for Client ID: {}", locType, createdLineOfCreditId, createdClientId);
         testContext().set(TestContextKey.LINE_OF_CREDIT_CREATE_RESPONSE, response);
+    }
+
+
+    private record LineOfCreditCharge (Long chargeId, BigDecimal editableAmount){
     }
 
     @When("Client creates a new line of credit with start date {string}, max limit {int} and expected available {int}")
@@ -413,11 +431,13 @@ public class LineOfCreditStepDef extends AbstractStepDef {
             BigDecimal advancePercentage = advancePercentageStr != null && !advancePercentageStr.isEmpty() ? new BigDecimal(advancePercentageStr) : new BigDecimal(90);
             // Set advance percentage
             loanRequest.setAdvancePercentage(advancePercentage);
+            BigDecimal amountAfterAdvance = approvedReceivableAmount
+                    .multiply(advancePercentage)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             loanRequest.setPrincipal(
-                    approvedReceivableAmount
-                            .multiply(advancePercentage)
-                            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP)
+                    amountAfterAdvance
             );
+            loanRequest.setAmountAfterAdvance(amountAfterAdvance);
 
             loanRequest.setBuyerDetails(List.of(supplierOrBuyerId));
 
@@ -446,17 +466,6 @@ public class LineOfCreditStepDef extends AbstractStepDef {
             loanRequest.setSupplierDetails(List.of(supplierOrBuyerId));
         }
 
-
-
-        if(drawdownDetails.containsKey("hasDisburseCharge")){
-            // Add disbursement charge if specified
-            assert testContext().get(TestContextKey.CHARGE_FOR_LOAN_DISBURSEMENT_CHARGE_CREATE_RESPONSE) != null : "Charge for loan disbursement should exist in context";
-
-            Long disbursementChargeId = testContext().get(TestContextKey.CHARGE_FOR_LOAN_DISBURSEMENT_CHARGE_CREATE_RESPONSE);
-            loanRequest.charges(List.of(new PostLoansRequestChargeData()
-                    .chargeId(disbursementChargeId)
-                    .amount(new BigDecimal(10))));
-        }
 
         Response<PostLoansResponse> loanResponse = loansApi.calculateLoanScheduleOrSubmitLoanApplication(loanRequest, "").execute();
 

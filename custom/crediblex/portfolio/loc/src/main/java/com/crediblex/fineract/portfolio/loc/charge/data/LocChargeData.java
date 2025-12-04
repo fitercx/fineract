@@ -12,13 +12,16 @@ public class LocChargeData {
     Long id;
     Long chargeDefinitionId;
     boolean penalty;
+    String chargeName;
     Integer chargeTime;
     Integer chargeCalculation;
     LocalDate dueDate;
     Integer feeOnMonth;
     Integer feeOnDay;
     Integer feeInterval;
+    BigDecimal percentageAmount;
     BigDecimal amount;
+    BigDecimal taxAmount;
     BigDecimal amountOutstanding;
     BigDecimal amountPaid;
     BigDecimal amountWaived;

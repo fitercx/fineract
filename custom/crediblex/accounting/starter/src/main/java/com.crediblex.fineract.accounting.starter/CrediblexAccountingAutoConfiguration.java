@@ -24,5 +24,5 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.ComponentScans;
 
 @AutoConfiguration
-@ComponentScans({ @ComponentScan({ "com.crediblex.fineract.accounting.journalentry" }) })
+@ComponentScans({ @ComponentScan({ "com.crediblex.fineract.accounting" }) })
 public class CrediblexAccountingAutoConfiguration {}

@@ -249,7 +249,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     private final LoanReadPlatformService loanReadPlatformService;
     protected final FromJsonHelper fromApiJsonHelper;
     private final CalendarRepository calendarRepository;
-    private final LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService;
+    protected final LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService;
     protected final LoanApplicationValidator loanApplicationValidator;
     private final AccountAssociationsRepository accountAssociationRepository;
     private final AccountTransferDetailRepository accountTransferDetailRepository;
@@ -2603,8 +2603,8 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
                         scheduledLoanInstallment.periodNumber(), scheduledLoanInstallment.periodFromDate(),
                         scheduledLoanInstallment.periodDueDate(), scheduledLoanInstallment.principalDue(),
                         scheduledLoanInstallment.interestDue(), scheduledLoanInstallment.feeChargesDue(),
-                        scheduledLoanInstallment.penaltyChargesDue(), scheduledLoanInstallment.isRecalculatedInterestComponent(),
-                        scheduledLoanInstallment.getLoanCompoundingDetails());
+                        scheduledLoanInstallment.penaltyChargesDue(), scheduledLoanInstallment.taxChargesDue(),
+                        scheduledLoanInstallment.isRecalculatedInterestComponent(), scheduledLoanInstallment.getLoanCompoundingDetails());
                 installments.add(installment);
             }
         }
