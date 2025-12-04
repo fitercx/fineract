@@ -96,45 +96,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
 
     // NOTE: The following tests are commented out because adjustLocBalanceOnRepayment method doesn't exist
     // These tests were pre-existing and need to be updated when the method is implemented
-    /*
-     * @Test public void testAdjustLocBalanceOnRepayment_NoLocAssociation() { // Given BigDecimal repaymentAmount = new
-     * BigDecimal("1000.00");
-     *
-     * // Mock no LOC association
-     * when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"), eq(Long.class),
-     * eq(loanId))) .thenReturn(null);
-     *
-     * // When boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId, repaymentAmount);
-     *
-     * // Then assertTrue(result, "Should return true when no LOC association (not an error)");
-     *
-     * // Verify no LOC balance updates were attempted verify(jdbcTemplate, never()).update(
-     * eq("UPDATE m_line_of_credit SET consumed_amount = ?, available_balance = ?, last_modified_date = NOW() WHERE id = ?"
-     * ), any(BigDecimal.class), any(BigDecimal.class), any(Long.class)); }
-     *
-     * @Test public void testAdjustLocBalanceOnRepayment_InvalidRepaymentAmount() { // Given BigDecimal
-     * invalidRepaymentAmount = new BigDecimal("-100.00");
-     *
-     * // When boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId,
-     * invalidRepaymentAmount);
-     *
-     * // Then assertFalse(result, "Should return false for invalid repayment amount");
-     *
-     * // Verify no database calls were made since the method returns early for invalid amounts verify(jdbcTemplate,
-     * never()).queryForObject(anyString(), any(Class.class), anyLong()); verify(jdbcTemplate,
-     * never()).queryForMap(anyString(), anyLong()); verify(jdbcTemplate, never()).update(anyString(),
-     * any(Object[].class)); }
-     *
-     * @Test public void testAdjustLocBalanceOnRepayment_DatabaseError() { // Given BigDecimal repaymentAmount = new
-     * BigDecimal("1000.00");
-     *
-     * // Mock database error when(jdbcTemplate.queryForObject(eq("SELECT line_of_credit_id FROM m_loan WHERE id = ?"),
-     * eq(Long.class), eq(loanId))) .thenThrow(new RuntimeException("Database connection failed"));
-     *
-     * // When boolean result = customLoanWritePlatformService.adjustLocBalanceOnRepayment(loanId, repaymentAmount);
-     *
-     * // Then assertFalse(result, "Should return false when database error occurs"); }
-     */
 
     // ========== Multi-Tranche Disbursement Date Validation Tests ==========
 
