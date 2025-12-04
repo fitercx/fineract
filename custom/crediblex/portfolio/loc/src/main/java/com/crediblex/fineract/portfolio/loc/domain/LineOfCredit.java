@@ -329,7 +329,8 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.tenorDays = newValue;
         }
 
-        if (command.isChangeInIntegerParameterNamed("cashMarginType", this.cashMarginType.getValue())) {
+        if (command.isChangeInIntegerParameterNamed("cashMarginType",
+                this.cashMarginType == null ? null : this.cashMarginType.getValue())) {
             final Integer newValue = command.integerValueOfParameterNamed("cashMarginType");
             actualChanges.put("cashMarginType", newValue);
             this.cashMarginType = LocCashMarginType.fromInt(newValue);
