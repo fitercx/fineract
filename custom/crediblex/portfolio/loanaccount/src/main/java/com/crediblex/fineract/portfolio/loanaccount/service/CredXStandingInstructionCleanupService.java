@@ -79,7 +79,7 @@ public class CredXStandingInstructionCleanupService {
      *
      * @param loanId
      *            The loan ID to check
-     * @return true if any standing instruction exists for the loan, false otherwise
+     * @return true if any standing instruction (active or disabled) exists for the loan, false otherwise
      */
     public boolean hasStandingInstructionForLoan(Long loanId) {
         if (loanId == null) {
@@ -94,12 +94,11 @@ public class CredXStandingInstructionCleanupService {
             return true;
         }
 
-        // We need to check for disabled SIs too, but the repository doesn't have a method for that
-        // So we'll use the findByLoanAccountAndStatus method
-        // Note: This requires a Loan object, so we'll need to handle this differently
-        // For now, we'll rely on the active check and the cleanup service to handle disabled ones
+        // Check for disabled standing instructions
+        boolean hasDisabled = standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.DISABLED.getValue());
 
-        return false;
+        return hasDisabled;
     }
 
     /**

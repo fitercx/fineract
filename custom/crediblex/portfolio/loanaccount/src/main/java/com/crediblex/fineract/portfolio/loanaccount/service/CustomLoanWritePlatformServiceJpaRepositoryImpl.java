@@ -634,7 +634,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(command.dateFormat()).withLocale(locale);
 
         // Get destination savings account - either from parameter or linked account
-        Long destinationSavingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.destinationSavingsAccountIdParameterName);
+        Long destinationSavingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME);
         PortfolioAccountData portfolioAccountData;
 
         if (destinationSavingsAccountId != null) {
@@ -658,14 +658,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final boolean isRegularTransaction = true;
 
         // Use tranche amount instead of full loan amount
-        final BigDecimal trancheAmount = amount.getAmount();
-        final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, trancheAmount,
+        final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, amount.getAmount(),
                 PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), portfolioAccountData.getId(), "Loan Disbursement",
                 locale, fmt, paymentDetail, LoanTransactionType.DISBURSEMENT.getValue(), null, null, null,
                 AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, null, txnExternalId, loan, null, fromSavingsAccount,
                 isRegularTransaction, isExceptionForBalanceCheck);
         // Set netLoanDisbursementAmount to tranche amount (not full loan amount)
-        accountTransferDTO.setNetLoanDisbursementAmount(trancheAmount);
+        accountTransferDTO.setNetLoanDisbursementAmount(amount.getAmount());
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
     }
 
@@ -944,10 +943,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         if (hasActive) {
             return true;
         }
-        // Note: We don't check for disabled SIs here because the repository doesn't have a method for that.
-        // The cleanup service will handle removing all SIs (active and disabled) on undo.
-        // For disbursement, we only need to check active SIs to prevent duplicates.
-        return false;
+        // Check for disabled standing instructions
+        boolean hasDisabled = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.DISABLED.getValue());
+        return hasDisabled;
     }
 
     /**
