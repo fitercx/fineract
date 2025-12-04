@@ -787,11 +787,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 isRecoveryRepayment, chargeRefundChargeType);
 
         /**
-         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application is not working as intended
+         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application
+         * is not working as intended
          */
         // if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
-        //   this.applyOverdueChargesForSingleLoan(loanId);
-        //}
+        // this.applyOverdueChargesForSingleLoan(loanId);
+        // }
         return result;
     }
 
