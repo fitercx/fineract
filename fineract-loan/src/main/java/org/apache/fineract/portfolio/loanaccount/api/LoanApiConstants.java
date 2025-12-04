@@ -183,6 +183,8 @@ public interface LoanApiConstants {
     String FACTOR_RATE_PARAM_NAME = "factorRate";
     String FACTOR_RATE_ENABLED_PARAM_NAME = "factorRateEnabled";
 
+    String destinationSavingsAccountIdParameterName = "destinationSavingsAccountId";
+
     // Loan Summary Transaction Types
     List<LoanTransactionType> LOAN_SUMMARY_TRANSACTION_TYPES = List.of(LoanTransactionType.CHARGE_ADJUSTMENT, //
             LoanTransactionType.CHARGEBACK, //

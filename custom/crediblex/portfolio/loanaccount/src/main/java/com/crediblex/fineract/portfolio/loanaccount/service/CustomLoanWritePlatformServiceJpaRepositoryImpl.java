@@ -116,6 +116,7 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDat
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.RepaymentWithPostDatedChecksAssembler;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,6 +133,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final StandingInstructionRepository standingInstructionRepository;
+    private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -167,8 +169,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            StandingInstructionRepository standingInstructionRepository) {
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
+            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -187,6 +189,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
         this.standingInstructionRepository = standingInstructionRepository;
+        this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
     }
 
     @PostConstruct
@@ -629,22 +632,109 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final Locale locale = command.extractLocale();
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(command.dateFormat()).withLocale(locale);
-        final PortfolioAccountData portfolioAccountData = this.accountAssociationsReadPlatformService
-                .retriveLoanLinkedAssociation(loan.getId());
-        if (portfolioAccountData == null) {
-            final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
-            throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+
+        // Get destination savings account - either from parameter or linked account
+        Long destinationSavingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.destinationSavingsAccountIdParameterName);
+        PortfolioAccountData portfolioAccountData;
+
+        if (destinationSavingsAccountId != null) {
+            // Validate the specified destination account
+            validateDestinationSavingsAccount(loan, destinationSavingsAccountId);
+            // Get the savings account data
+            final SavingsAccount destinationSavingsAccount = savingsAccountRepositoryWrapper
+                    .findOneWithNotFoundDetection(destinationSavingsAccountId);
+            portfolioAccountData = PortfolioAccountData.lookup(destinationSavingsAccountId, destinationSavingsAccount.getAccountNumber());
+        } else {
+            // Use linked account (backward compatibility)
+            portfolioAccountData = this.accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(loan.getId());
+            if (portfolioAccountData == null) {
+                final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
+                throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+            }
         }
+
         final SavingsAccount fromSavingsAccount = null;
         final boolean isExceptionForBalanceCheck = false;
         final boolean isRegularTransaction = true;
-        final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, amount.getAmount(),
+
+        // Use tranche amount instead of full loan amount
+        final BigDecimal trancheAmount = amount.getAmount();
+        final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, trancheAmount,
                 PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), portfolioAccountData.getId(), "Loan Disbursement",
                 locale, fmt, paymentDetail, LoanTransactionType.DISBURSEMENT.getValue(), null, null, null,
                 AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, null, txnExternalId, loan, null, fromSavingsAccount,
                 isRegularTransaction, isExceptionForBalanceCheck);
-        accountTransferDTO.setNetLoanDisbursementAmount(loan.getNetDisbursalAmount());
+        // Set netLoanDisbursementAmount to tranche amount (not full loan amount)
+        accountTransferDTO.setNetLoanDisbursementAmount(trancheAmount);
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+    }
+
+    /**
+     * Validates that the destination savings account is eligible for loan disbursement. Checks: - Account exists and is
+     * active - Currency matches loan currency - Account belongs to the same borrower/client
+     *
+     * @param loan
+     *            The loan being disbursed
+     * @param savingsAccountId
+     *            The destination savings account ID
+     * @throws GeneralPlatformDomainRuleException
+     *             if validation fails
+     */
+    private void validateDestinationSavingsAccount(final Loan loan, final Long savingsAccountId) {
+        final SavingsAccount savingsAccount = savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(savingsAccountId);
+
+        // Check if account is active
+        if (savingsAccount.isNotActive()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.not.active",
+                    "Destination savings account with id:" + savingsAccountId + " is not active", savingsAccountId);
+        }
+
+        // Check currency match
+        if (!savingsAccount.getCurrency().getCode().equals(loan.getCurrencyCode())) {
+            throw new GeneralPlatformDomainRuleException(
+                    "error.msg.loan.destination.savings.account.currency.mismatch", "Destination savings account currency ("
+                            + savingsAccount.getCurrency().getCode() + ") does not match loan currency (" + loan.getCurrencyCode() + ")",
+                    savingsAccountId);
+        }
+
+        // Check borrower/client match
+        final Long loanClientId = loan.getClientId();
+        final Long loanGroupId = loan.getGroupId();
+        final Long savingsClientId = savingsAccount.clientId();
+        final Long savingsGroupId = savingsAccount.groupId();
+
+        boolean clientMatch = false;
+        if (loanClientId != null && savingsClientId != null && loanClientId.equals(savingsClientId)) {
+            clientMatch = true;
+        }
+
+        boolean groupMatch = false;
+        if (loanGroupId != null && savingsGroupId != null && loanGroupId.equals(savingsGroupId)) {
+            groupMatch = true;
+        }
+
+        // For individual loans, client must match
+        // For group loans, group must match
+        // For JLG loans, both client and group must match
+        if (loanClientId != null && loanGroupId == null) {
+            // Individual loan - client must match
+            if (!clientMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.client.mismatch",
+                        "Destination savings account does not belong to the same client as the loan", savingsAccountId);
+            }
+        } else if (loanClientId == null && loanGroupId != null) {
+            // Group loan - group must match
+            if (!groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.group.mismatch",
+                        "Destination savings account does not belong to the same group as the loan", savingsAccountId);
+            }
+        } else if (loanClientId != null && loanGroupId != null) {
+            // JLG loan - both client and group must match
+            if (!clientMatch || !groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.borrower.mismatch",
+                        "Destination savings account does not belong to the same borrower (client/group) as the loan", savingsAccountId);
+            }
+        }
     }
 
     @Override
