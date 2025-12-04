@@ -104,7 +104,7 @@ public class LineOfCreditRequest {
 
     @Schema(example = "3", description = "Annual interest rate")
     @NotNull(message = "Annual interest rate is required")
-    private Integer annualInterestRate;
+    private Float annualInterestRate;
 
     @Schema(example = "365", description = "Tenor in days")
     @NotNull(message = "Tenor days is required")
