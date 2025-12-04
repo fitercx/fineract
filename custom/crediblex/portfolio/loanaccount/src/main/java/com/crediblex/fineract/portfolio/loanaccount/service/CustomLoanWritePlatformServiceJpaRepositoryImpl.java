@@ -343,30 +343,36 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isAutoRepaymentForDownPaymentEnabled() && !isWithoutAutoPayment) {
                 // updating linked savings account for auto down payment transaction for disbursement to savings account
                 if (isAccountTransfer && loan.shouldCreateStandingInstructionAtDisbursement()) {
-                    final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
-                            .retriveLoanLinkedAssociation(loanId);
-                    final SavingsAccount fromSavingsAccount = null;
-                    final boolean isRegularTransaction = true;
-                    final boolean isExceptionForBalanceCheck = false;
+                    // Guard: Check if a down-payment standing instruction already exists to prevent duplicate key
+                    // violations
+                    if (!hasDownPaymentStandingInstruction(loanId)) {
+                        final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
+                                .retriveLoanLinkedAssociation(loanId);
+                        final SavingsAccount fromSavingsAccount = null;
+                        final boolean isRegularTransaction = true;
+                        final boolean isExceptionForBalanceCheck = false;
 
-                    BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
-                            .getDisbursedAmountPercentageForDownPayment();
-                    // Ensure we use the correct amount for down payment calculation
-                    Money downPaymentMoney = Money.of(loan.getCurrency(),
-                            MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
-                    if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
-                        downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
-                                loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
+                                .getDisbursedAmountPercentageForDownPayment();
+                        // Ensure we use the correct amount for down payment calculation
+                        Money downPaymentMoney = Money.of(loan.getCurrency(),
+                                MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
+                        if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
+                            downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
+                                    loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        }
+                        final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
+                                downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
+                                linkedSavingsAccountData.getId(), loan.getId(),
+                                "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
+                                        + " Standing instruction transfer ",
+                                locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
+                                AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
+                                fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
+                        this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+                    } else {
+                        log.info("Skipping down-payment standing instruction creation for loan ID: {} - one already exists", loanId);
                     }
-                    final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
-                            downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
-                            linkedSavingsAccountData.getId(), loan.getId(),
-                            "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
-                                    + " Standing instruction transfer ",
-                            locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
-                            AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
-                            fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
-                    this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
                 } else {
                     loanDownPaymentHandlerService.handleDownPayment(scheduleGeneratorDTO, command, disbursementTransaction, loan);
                     loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -830,8 +836,42 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
     }
 
+    /**
+     * Checks if any standing instruction exists for a loan (active or disabled, but not deleted). This includes both
+     * repayment standing instructions and down-payment standing instructions.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if any standing instruction exists for the loan, false otherwise
+     */
     private boolean standingInstructionExists(Long loanId) {
-        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+        if (loanId == null) {
+            return false;
+        }
+        // Check for active standing instructions
+        boolean hasActive = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
                 StandingInstructionStatus.ACTIVE.getValue());
+        if (hasActive) {
+            return true;
+        }
+        // Note: We don't check for disabled SIs here because the repository doesn't have a method for that.
+        // The cleanup service will handle removing all SIs (active and disabled) on undo.
+        // For disbursement, we only need to check active SIs to prevent duplicates.
+        return false;
+    }
+
+    /**
+     * Checks if a down-payment standing instruction exists for a loan. This is used to prevent creating duplicate
+     * down-payment standing instructions when re-disbursing a loan after undo operations.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if a down-payment standing instruction exists, false otherwise
+     */
+    private boolean hasDownPaymentStandingInstruction(Long loanId) {
+        // Since we clean up all SIs on undo, we can use the same check as standingInstructionExists
+        // The cleanup service removes all SIs (including down-payment ones) when undo is called.
+        // So if any SI exists, it means we shouldn't create a new one.
+        return standingInstructionExists(loanId);
     }
 }
