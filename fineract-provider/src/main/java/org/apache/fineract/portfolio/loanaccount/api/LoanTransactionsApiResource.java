@@ -90,15 +90,15 @@ public class LoanTransactionsApiResource {
     public static final String REAGE = "reAge";
     public static final String REAMORTIZE = "reAmortize";
     public static final String UNDO_REAMORTIZE = "undoReAmortize";
-    private final Set<String> responseDataParameters = new HashSet<>(Arrays.asList("id", "type", "date", "currency", "amount", "externalId",
-            LoanApiConstants.REVERSAL_EXTERNAL_ID_PARAMNAME, LoanApiConstants.REVERSED_ON_DATE_PARAMNAME));
+    protected final Set<String> responseDataParameters = new HashSet<>(Arrays.asList("id", "type", "date", "currency", "amount",
+            "externalId", LoanApiConstants.REVERSAL_EXTERNAL_ID_PARAMNAME, LoanApiConstants.REVERSED_ON_DATE_PARAMNAME));
 
-    private static final String RESOURCE_NAME_FOR_PERMISSIONS = "LOAN";
+    protected static final String RESOURCE_NAME_FOR_PERMISSIONS = "LOAN";
 
-    private final PlatformSecurityContext context;
-    private final LoanReadPlatformService loanReadPlatformService;
-    private final ApiRequestParameterHelper apiRequestParameterHelper;
-    private final DefaultToApiJsonSerializer<LoanTransactionData> toApiJsonSerializer;
+    protected final PlatformSecurityContext context;
+    protected final LoanReadPlatformService loanReadPlatformService;
+    protected final ApiRequestParameterHelper apiRequestParameterHelper;
+    protected final DefaultToApiJsonSerializer<LoanTransactionData> toApiJsonSerializer;
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final LoanChargePaidByReadService loanChargePaidByReadService;
