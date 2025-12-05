@@ -127,7 +127,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .endDate(startDate) // For simplicity in tests
                 .reviewPeriod(6) // Updated to match payload example
                 .interimReviewDate(interimReviewDate)
-                .annualInterestRate(12) // Updated to match payload example
+                .annualInterestRate(12f) // Updated to match payload example
                 .tenorDays(tenorDays) // Updated to match payload example
                 .advancePercentage("100") // Updated to match payload example
                 .cashMarginType(1)
@@ -551,15 +551,6 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         String value = map.get(key);
         assert value != null && !value.trim().isEmpty() : "Expected non-null, non-empty value for key: " + key;
         return value;
-    }
-
-
-    /**
-     * Helper method to get optional string value from map with default
-     */
-    private Long getOptionalValueLong(Map<String, String> map, String key, Long defaultValue) {
-        String value = map.get(key);
-        return (value == null || value.trim().isEmpty()) ? defaultValue : Long.valueOf(value);
     }
 
     /**

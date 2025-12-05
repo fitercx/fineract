@@ -1080,4 +1080,23 @@ public class DataValidatorBuilder {
         return ApiParameterError.parameterError(validationErrorCode, defaultEnglishMessage, parameterName, defaultUserMessageArgs);
     }
 
+    public DataValidatorBuilder floatGreaterThan(Float number) {
+        if (this.value == null && this.ignoreNullValue) {
+            return this;
+        }
+
+        if (this.value != null) {
+            final float floatValue = Float.parseFloat(this.value.toString());
+            if (floatValue < number + 1) {
+                String validationErrorCode = "validation.msg." + this.resource + "." + this.parameter
+                        + ".not.greater.than.specified.number";
+                String defaultEnglishMessage = "The parameter `" + this.parameter + "` must be greater than " + number;
+                final ApiParameterError error = ApiParameterError.parameterError(validationErrorCode, defaultEnglishMessage, this.parameter,
+                        floatValue, number);
+                this.dataValidationErrors.add(error);
+            }
+        }
+        return this;
+    }
+
 }

@@ -3,8 +3,12 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
+import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
@@ -15,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,11 +33,14 @@ import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrappe
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
+import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
+import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -65,6 +73,7 @@ import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
 import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulkDisbursalCommand;
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
+import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -83,6 +92,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepositor
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleHistoryWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
@@ -120,6 +131,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrap
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -133,6 +145,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final StandingInstructionRepository standingInstructionRepository;
+    private final CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService;
+    private final CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService;
+    private final CustomLoanChargeRepository loanChargeRepository;
+    private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
+    private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
     private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
@@ -168,6 +185,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
             LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
+            CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
+            CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
+            LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
+            @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
             LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
             SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper) {
@@ -186,9 +207,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 loanScheduleService, loanChargeValidator, loanOfficerService, reprocessLoanTransactionsService, loanAccountService,
                 journalEntryPoster, loanAdjustmentService, loanAccountingBridgeMapper, loanMapper, loanTransactionProcessingService,
                 fineractProperties);
+
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
         this.lineOfCreditBalanceUpdateService = lineOfCreditBalanceUpdateService;
         this.standingInstructionRepository = standingInstructionRepository;
+        this.customLoanChargeReadPlatformService = customLoanChargeReadPlatformService;
+        this.credibleXLoanReadPlatformService = credibleXLoanReadPlatformService;
+        this.loanChargeRepository = loanChargeRepository;
+        this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
+        this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
         this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
     }
 
@@ -825,6 +852,76 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         return result;
+    }
+
+    public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
+            final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
+
+        final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
+        Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
+
+        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
+                .map(p -> new ExtendedLoanSchedulePeriodData(p,
+                        this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
+                .toList();
+
+        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
+                penaltyWaitPeriodValue);
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
+
+        if (!penaltiesToDisable.isEmpty()) {
+            List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
+
+            loanChargeRepository.deactivateCharges(loanId, chargeIds);
+        }
+
+        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
+                isRecoveryRepayment, chargeRefundChargeType);
+
+        /**
+         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application
+         * is not working as intended
+         */
+        // if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
+        // this.applyOverdueChargesForSingleLoan(loanId);
+        // }
+        return result;
+    }
+
+    public void applyOverdueChargesForSingleLoan(Long loanId) {
+        final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
+        final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
+
+        final Collection<OverdueLoanScheduleData> installmentsForLoan = this.credibleXLoanReadPlatformService
+                .retrieveOverdueInstallmentsForLoan(loanId, penaltyWaitPeriodValue, backdatePenalties);
+
+        if (installmentsForLoan.isEmpty()) {
+            return;
+        }
+
+        try {
+            this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(loanId, installmentsForLoan);
+
+        } catch (final PlatformApiDataValidationException e) {
+            // Validation errors (e.g. bad data, config issues)
+            for (final ApiParameterError error : e.getErrors()) {
+                log.error("Apply overdue charges failed for loan {} with validation error: {}", loanId, error.getDeveloperMessage(), e);
+            }
+            throw e; // rethrow so caller knows it failed
+
+        } catch (final AbstractPlatformDomainRuleException e) {
+            // Business rule violation (e.g. not allowed state transition)
+            log.error("Apply overdue charges failed for loan {} with business rule error: {}", loanId, e.getDefaultUserMessage(), e);
+            throw e;
+
+        } catch (Exception e) {
+            // Catch-all for unexpected exceptions
+            log.error("Apply overdue charges failed for loan {}", loanId, e);
+            throw new RuntimeException("Unexpected error while applying overdue charges for loan " + loanId, e);
+        }
     }
 
     /**

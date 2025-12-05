@@ -120,7 +120,7 @@ public class LineOfCreditDataValidator {
 
         baseDataValidator.reset().parameter("maximumCreditLimit").value(request.getMaxCreditLimit()).notNull().longGreaterThanNumber(0L);
         // Validate annual interest rate is always provided
-        baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().integerGreaterThanZero();
+        baseDataValidator.reset().parameter("annualInterestRate").value(request.getAnnualInterestRate()).notNull().floatGreaterThan(0f);
 
         // Validate advance percentage is always provided
         baseDataValidator.reset().parameter("advancePercentage").value(request.getAdvancePercentage()).notNull().notBlank();

@@ -240,9 +240,9 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final CalendarInstanceRepository calendarInstanceRepository;
     protected final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
-    private final HolidayRepositoryWrapper holidayRepository;
+    protected final HolidayRepositoryWrapper holidayRepository;
     protected final ConfigurationDomainService configurationDomainService;
-    private final WorkingDaysRepositoryWrapper workingDaysRepository;
+    protected final WorkingDaysRepositoryWrapper workingDaysRepository;
     protected final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
     protected final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
@@ -275,7 +275,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     private final LoanOfficerValidator loanOfficerValidator;
     protected final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
     protected final LoanDisbursementService loanDisbursementService;
-    private final LoanScheduleService loanScheduleService;
+    protected final LoanScheduleService loanScheduleService;
     private final LoanChargeValidator loanChargeValidator;
     private final LoanOfficerService loanOfficerService;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
