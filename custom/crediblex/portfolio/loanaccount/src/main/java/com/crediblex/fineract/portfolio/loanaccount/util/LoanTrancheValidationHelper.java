@@ -29,7 +29,11 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
  * loans for validation purposes.
  */
 @Slf4j
-public class LoanTrancheValidationHelper {
+public final class LoanTrancheValidationHelper {
+
+    private LoanTrancheValidationHelper() {
+        // Utility class - prevent instantiation
+    }
 
     /**
      * Checks if the loan actually has multiple tranches or pending undisbursed tranches.
