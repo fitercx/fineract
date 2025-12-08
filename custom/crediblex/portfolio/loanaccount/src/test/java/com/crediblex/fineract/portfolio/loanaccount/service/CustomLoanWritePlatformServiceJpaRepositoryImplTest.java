@@ -25,11 +25,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
-import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
-import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
-import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -464,8 +463,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
                 "amount.exceeds.threshold", "The transaction amount cannot exceed threshold.");
 
         // First call throws exception, second call succeeds (after our fix)
-        when(parentService.makeLoanRepayment(any(), eq(loanId), any(), anyBoolean()))
-                .thenThrow(validationException)
+        when(parentService.makeLoanRepayment(any(), eq(loanId), any(), anyBoolean())).thenThrow(validationException)
                 .thenReturn(createSuccessCommandProcessingResult(loanId));
 
         // When & Then - Should succeed after retry
@@ -515,8 +513,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
 
         // Mock parent to throw different exception
-        InvalidLoanStateTransitionException differentException = new InvalidLoanStateTransitionException("transaction",
-                "different.error", "Different error message");
+        InvalidLoanStateTransitionException differentException = new InvalidLoanStateTransitionException("transaction", "different.error",
+                "Different error message");
         when(parentService.makeLoanRepayment(any(), eq(loanId), any(), anyBoolean())).thenThrow(differentException);
 
         // When & Then - Should re-throw different exception

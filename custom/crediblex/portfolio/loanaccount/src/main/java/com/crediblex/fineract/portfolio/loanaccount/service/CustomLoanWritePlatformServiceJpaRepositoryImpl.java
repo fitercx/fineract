@@ -43,7 +43,6 @@ import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainR
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
-import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -94,6 +93,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationR
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
+import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
@@ -747,7 +747,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     // Fetch the updated loan to get the loan transaction
                     Loan updatedLoan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
 
-                BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+                    BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
 
                     // Find the specific transaction that was just created using the resourceId (transaction ID)
                     LoanTransaction transaction = updatedLoan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
@@ -757,30 +757,32 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
                         // Extract affected installments using the shared utility method
-                        List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(updatedLoan,
-                                transaction);
+                        List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils
+                                .extractAffectedInstallments(updatedLoan, transaction);
 
-                    LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+                        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
-                    // Add the affected installments to the result for webhook payload
-                    Map<String, Object> additionalChanges = new HashMap<>();
-                    if (result.getChanges() != null) {
-                        additionalChanges.putAll(result.getChanges());
+                        // Add the affected installments to the result for webhook payload
+                        Map<String, Object> additionalChanges = new HashMap<>();
+                        if (result.getChanges() != null) {
+                            additionalChanges.putAll(result.getChanges());
+                        }
+
+                        // Add affected installments and transaction details to the changes
+                        additionalChanges.put("affectedInstallments", affectedInstallments);
+                        additionalChanges.put("transactionAmount", transactionAmount);
+                        additionalChanges.put("transactionDate", transactionDate);
+                        additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction
+                                                                                        // ID
+
+                        // Create a new result with the additional schedule information
+                        return new CommandProcessingResultBuilder().withCommandId(result.getCommandId())
+                                .withEntityId(result.getResourceId()).withEntityExternalId(result.getResourceExternalId())
+                                .withSubEntityId(result.getSubResourceId()).withSubEntityExternalId(result.getSubResourceExternalId())
+                                .withOfficeId(result.getOfficeId()).withClientId(result.getClientId()).withGroupId(result.getGroupId())
+                                .withLoanId(result.getLoanId()).withLoanExternalId(result.getLoanExternalId()).with(additionalChanges)
+                                .build();
                     }
-
-                    // Add affected installments and transaction details to the changes
-                    additionalChanges.put("affectedInstallments", affectedInstallments);
-                    additionalChanges.put("transactionAmount", transactionAmount);
-                    additionalChanges.put("transactionDate", transactionDate);
-                    additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction ID
-
-                    // Create a new result with the additional schedule information
-                    return new CommandProcessingResultBuilder().withCommandId(result.getCommandId()).withEntityId(result.getResourceId())
-                            .withEntityExternalId(result.getResourceExternalId()).withSubEntityId(result.getSubResourceId())
-                            .withSubEntityExternalId(result.getSubResourceExternalId()).withOfficeId(result.getOfficeId())
-                            .withClientId(result.getClientId()).withGroupId(result.getGroupId()).withLoanId(result.getLoanId())
-                            .withLoanExternalId(result.getLoanExternalId()).with(additionalChanges).build();
-                }
 
                 } catch (Exception e) {
                     // Log the error but don't fail the repayment transaction
@@ -811,8 +813,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Fixed version of validateTransactionAmountNotExceedThresholdForMultiDisburseLoan
-     * that only applies validation when the loan actually has multiple tranches.
+     * Fixed version of validateTransactionAmountNotExceedThresholdForMultiDisburseLoan that only applies validation
+     * when the loan actually has multiple tranches.
      */
     private void validateTransactionAmountNotExceedThresholdForMultiDisburseLoanFixed(Loan loan) {
         // Only apply validation if the loan actually has multiple tranches or pending tranches

@@ -181,4 +181,3 @@ class LoanTrancheValidationHelperTest {
         assertTrue(result, "Loan with mixed disbursed and pending tranches should return true");
     }
 }
-

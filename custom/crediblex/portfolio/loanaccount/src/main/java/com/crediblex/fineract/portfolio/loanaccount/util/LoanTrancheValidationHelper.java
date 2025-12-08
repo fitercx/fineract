@@ -22,11 +22,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 
 /**
- * Helper utility to determine if a loan actually has multiple tranches
- * or pending undisbursed tranches, regardless of product setting.
+ * Helper utility to determine if a loan actually has multiple tranches or pending undisbursed tranches, regardless of
+ * product setting.
  *
- * This fixes the issue where single-tranche loans under multi-tranche products
- * are incorrectly treated as multi-tranche loans for validation purposes.
+ * This fixes the issue where single-tranche loans under multi-tranche products are incorrectly treated as multi-tranche
+ * loans for validation purposes.
  */
 @Slf4j
 public class LoanTrancheValidationHelper {
@@ -34,11 +34,11 @@ public class LoanTrancheValidationHelper {
     /**
      * Checks if the loan actually has multiple tranches or pending undisbursed tranches.
      *
-     * For repayment validation purposes, we should only apply multi-tranche validation
-     * when the loan actually has multiple tranches or pending tranches, not just when
-     * the product allows multi-tranche.
+     * For repayment validation purposes, we should only apply multi-tranche validation when the loan actually has
+     * multiple tranches or pending tranches, not just when the product allows multi-tranche.
      *
-     * @param loan The loan to check
+     * @param loan
+     *            The loan to check
      * @return true if the loan has multiple tranches or pending tranches, false otherwise
      */
     public static boolean hasActualMultipleTranches(Loan loan) {
@@ -50,14 +50,12 @@ public class LoanTrancheValidationHelper {
         // Check if loan has multiple disbursement details (actual multiple tranches)
         long disbursementDetailsCount = loan.getDisbursementDetails().size();
         if (disbursementDetailsCount > 1) {
-            log.debug("Loan {} has {} disbursement details - treating as multi-tranche", loan.getId(),
-                    disbursementDetailsCount);
+            log.debug("Loan {} has {} disbursement details - treating as multi-tranche", loan.getId(), disbursementDetailsCount);
             return true;
         }
 
         // Check if there are pending undisbursed tranches
-        boolean hasPendingTranches = loan.getDisbursementDetails().stream()
-                .anyMatch(detail -> detail.actualDisbursementDate() == null);
+        boolean hasPendingTranches = loan.getDisbursementDetails().stream().anyMatch(detail -> detail.actualDisbursementDate() == null);
 
         if (hasPendingTranches) {
             log.debug("Loan {} has pending undisbursed tranches - treating as multi-tranche", loan.getId());
@@ -69,4 +67,3 @@ public class LoanTrancheValidationHelper {
         return false;
     }
 }
-

@@ -1199,8 +1199,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" and " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ")
-                .append(" and loic.id IS NULL "); // Exclude installments with existing overdue charges
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
+                                                                                                                      // installments
+                                                                                                                      // with
+                                                                                                                      // existing
+                                                                                                                      // overdue
+                                                                                                                      // charges
 
         if (!backdatePenalties) {
             // Only apply for duedate = yesterday (so that we don't apply penalties on the duedate itself)
@@ -1212,8 +1216,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     /**
-     * Override to enhance SQL query to exclude installments that already have overdue charges applied.
-     * This ensures late fees are applied consistently for both single-tranche and multi-tranche loans.
+     * Override to enhance SQL query to exclude installments that already have overdue charges applied. This ensures
+     * late fees are applied consistently for both single-tranche and multi-tranche loans.
      */
     @Override
     public Collection<OverdueLoanScheduleData> retrieveAllLoansWithOverdueInstallments(final Long penaltyWaitPeriod,
@@ -1228,8 +1232,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" where " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ")
-                .append(" and loic.id IS NULL "); // Exclude installments with existing overdue charges
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
+                                                                                                                      // installments
+                                                                                                                      // with
+                                                                                                                      // existing
+                                                                                                                      // overdue
+                                                                                                                      // charges
 
         if (backdatePenalties) {
             return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod);
