@@ -825,7 +825,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
                     if (trancheCharge != null) {
                         // Charge is linked to a specific tranche - use that tranche's principal
-                        yield trancheCharge.getloanDisbursementDetails().principal().add(totalInterestCharged);
+                        yield trancheCharge.getLoanDisbursementDetails().principal().add(totalInterestCharged);
                     } else {
                         // Find tranche by disbursement date for proportional calculation
                         LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
@@ -846,7 +846,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             case PERCENT_OF_INTEREST -> getTotalInterest();
             case PERCENT_OF_DISBURSEMENT_AMOUNT -> {
                 if (loanCharge.getTrancheDisbursementCharge() != null) {
-                    yield loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().principal();
+                    yield loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().principal();
                 } else {
                     yield getPrincipal().getAmount();
                 }
@@ -950,10 +950,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 LoanTrancheDisbursementCharge loanTrancheDisbursementCharge;
                 loanCharge.update(this);
                 if (this.loanProduct.isMultiDisburseLoan() && loanCharge.isTrancheDisbursementCharge()) {
-                    loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().updateLoan(this);
+                    loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().updateLoan(this);
                     for (final LoanDisbursementDetails loanDisbursementDetails : getDisbursementDetails()) {
-                        if (loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().getId() == null
-                                && loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().equals(loanDisbursementDetails)) {
+                        if (loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().getId() == null
+                                && loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().equals(loanDisbursementDetails)) {
                             loanTrancheDisbursementCharge = new LoanTrancheDisbursementCharge(loanCharge, loanDisbursementDetails);
                             loanCharge.updateLoanTrancheDisbursementCharge(loanTrancheDisbursementCharge);
                         }
@@ -2449,7 +2449,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (loanCharge.isDueAtDisbursement() && loanCharge.isActive()) {
             LoanTrancheDisbursementCharge trancheDisbursementCharge = loanCharge.getTrancheDisbursementCharge();
             if (trancheDisbursementCharge != null) {
-                LoanDisbursementDetails details = trancheDisbursementCharge.getloanDisbursementDetails();
+                LoanDisbursementDetails details = trancheDisbursementCharge.getLoanDisbursementDetails();
                 actualDisbursementDate = details.actualDisbursementDate();
             }
         }
@@ -2471,7 +2471,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             if (charge.isOverdueInstallmentCharge()) {
                 charge.setActive(false);
             } else if (charge.isTrancheDisbursementCharge() && disbursementDetail.getDisbursementDate()
-                    .equals(charge.getTrancheDisbursementCharge().getloanDisbursementDetails().actualDisbursementDate())) {
+                    .equals(charge.getTrancheDisbursementCharge().getLoanDisbursementDetails().actualDisbursementDate())) {
                 charge.resetToOriginal(getCurrency());
             }
         }
@@ -2537,7 +2537,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
             if (trancheCharge != null) {
                 // Charge is linked to a specific tranche - use that tranche's principal
-                amount = trancheCharge.getloanDisbursementDetails().principal();
+                amount = trancheCharge.getLoanDisbursementDetails().principal();
             } else {
                 // Charge not linked to tranche - find tranche by disbursement date and calculate proportionally
                 LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);

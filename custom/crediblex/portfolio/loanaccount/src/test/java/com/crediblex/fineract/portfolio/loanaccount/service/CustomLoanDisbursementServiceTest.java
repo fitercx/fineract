@@ -258,7 +258,7 @@ class CustomLoanDisbursementServiceTest {
         // Given: Charge linked to specific tranche
         Money trancheFeeMoney = Money.of(currencyData, EXPECTED_TRANCHE_1_FEE);
         when(processingFeeCharge.getTrancheDisbursementCharge()).thenReturn(trancheDisbursementCharge);
-        when(trancheDisbursementCharge.getloanDisbursementDetails()).thenReturn(tranche1Details);
+        when(trancheDisbursementCharge.getLoanDisbursementDetails()).thenReturn(tranche1Details);
         when(processingFeeCharge.getAmount(currency)).thenReturn(trancheFeeMoney);
         when(loan.getActualDisbursementDate(processingFeeCharge)).thenReturn(DISBURSEMENT_DATE_1);
 
