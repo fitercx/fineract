@@ -156,6 +156,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     BigDecimal.TEN      // penalty amount
             ));
             Mockito.doReturn(true).when(paidPeriod).getComplete();
@@ -179,6 +180,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     penaltyAmount       // penalty amount due
             ));
             Mockito.doReturn(partialPayment).when(lateFeePeriod).getTotalPaidForPeriod();
@@ -200,6 +202,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     BigDecimal.ZERO     // penalty amount
             ));
             Mockito.doReturn(partialPaymentAmount).when(partialPaidPeriod).getTotalPaidForPeriod();
@@ -223,6 +226,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     penaltyAmount       // penalty amount due
             ));
             Mockito.doReturn(fullPayment).when(overduePeriod).getTotalPaidForPeriod();
@@ -244,6 +248,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     BigDecimal.ZERO     // no penalty amount due
             ));
 
@@ -266,6 +271,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     penaltyAmount       // penalty amount due
             ));
             Mockito.doReturn(exactPayment).when(overdueExactPaymentPeriod).getTotalPaidForPeriod();
@@ -284,6 +290,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     BigDecimal.ZERO     // penalty amount
             ));
 
@@ -303,6 +310,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     BigDecimal.ZERO     // penalty amount
             ));
 
@@ -323,6 +331,7 @@ public class CredXLoanReadPlatformServiceImplTest {
                     BigDecimal.ZERO,    // outstanding loan balance
                     BigDecimal.ZERO,    // interest amount
                     BigDecimal.ZERO,    // fee amount
+                    BigDecimal.ZERO,    // tax amount
                     penaltyAmount       // penalty amount (but not overdue)
             ));
 
