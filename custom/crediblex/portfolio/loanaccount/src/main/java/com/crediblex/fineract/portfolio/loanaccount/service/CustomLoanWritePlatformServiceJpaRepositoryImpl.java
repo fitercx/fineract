@@ -90,6 +90,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
@@ -231,9 +232,31 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.only.allowed.via.savings.account.transfer",
                     "Loan disbursement is only allowed via savings account transfer");
         }
-        loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
+        // Load loan first to check if it's multi-tranche
         Loan loan = loanAssembler.assembleFrom(loanId);
+
+        // Fix: Validate multi-tranche disbursement date against specific tranche's expected date
+        // before calling core validator (which validates against loan-level expected date)
+        if (loan.getLoanProduct().isMultiDisburseLoan() && loan.getLoanProduct().isSyncExpectedWithDisbursementDate()) {
+            validateMultiTrancheDisbursementDate(command, loan);
+        }
+
+        // Call core validator - it will validate all other aspects
+        // For multi-tranche loans, it may throw DateMismatchException with wrong expected date,
+        // but we've already validated correctly above, so we catch and ignore that specific case
+        try {
+            loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
+        } catch (org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException e) {
+            // If this is a multi-tranche loan, we've already validated correctly above
+            // The core validator uses loan-level expected date which is wrong for multi-tranche
+            // So we ignore this exception for multi-tranche loans
+            if (!loan.getLoanProduct().isMultiDisburseLoan() || !loan.getLoanProduct().isSyncExpectedWithDisbursementDate()) {
+                // Not multi-tranche, re-throw the exception
+                throw e;
+            }
+            // For multi-tranche, we've already validated - continue with disbursement
+        }
 
         if (loan.loanProduct().isDisallowExpectedDisbursements()) {
             List<LoanDisbursementDetails> filteredList = loan.getDisbursementDetails().stream()
@@ -930,5 +953,96 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private boolean standingInstructionExists(Long loanId) {
         return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
                 StandingInstructionStatus.ACTIVE.getValue());
+    }
+
+    /**
+     * Validates actual disbursement date against the specific tranche's expected date for multi-tranche loans, instead
+     * of using the loan-level expected date.
+     *
+     * This fixes the issue where core Fineract validates against loan.expectedDisbursementDate (first tranche's date)
+     * instead of the specific tranche being disbursed.
+     */
+    private void validateMultiTrancheDisbursementDate(JsonCommand command, Loan loan) {
+        final JsonElement element = fromApiJsonHelper.parse(command.json());
+        final LocalDate actualDisbursementDate = fromApiJsonHelper.extractLocalDateNamed("actualDisbursementDate", element);
+
+        if (actualDisbursementDate == null) {
+            return; // Will be validated by core validator
+        }
+
+        // Get the tranche being disbursed
+        final BigDecimal principalDisbursed = fromApiJsonHelper
+                .extractBigDecimalWithLocaleNamed(LoanApiConstants.principalDisbursedParameterName, element);
+
+        LoanDisbursementDetails trancheToDisburse = findTrancheToDisburse(loan, actualDisbursementDate, principalDisbursed);
+
+        if (trancheToDisburse != null) {
+            // Validate against the specific tranche's expected date
+            LocalDate expectedDate = trancheToDisburse.expectedDisbursementDate();
+            if (expectedDate != null && !DateUtils.isEqual(actualDisbursementDate, expectedDate)) {
+                throw new DateMismatchException(actualDisbursementDate, expectedDate);
+            }
+        } else {
+            // If no specific tranche found, try to find by expected date proximity
+            // This handles cases where principalDisbursed might not match exactly
+            java.util.Collection<LoanDisbursementDetails> undisbursedDetails = loan.fetchUndisbursedDetail();
+            if (!undisbursedDetails.isEmpty()) {
+                // Find tranche with expected date closest to actual date
+                LoanDisbursementDetails closestTranche = findClosestTrancheByDate(undisbursedDetails, actualDisbursementDate);
+                if (closestTranche != null) {
+                    LocalDate expectedDate = closestTranche.expectedDisbursementDate();
+                    if (expectedDate != null && !DateUtils.isEqual(actualDisbursementDate, expectedDate)) {
+                        throw new DateMismatchException(actualDisbursementDate, expectedDate);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Finds the specific tranche being disbursed based on: 1. Principal amount match (if provided) 2. Expected date
+     * closest to actual date
+     */
+    private LoanDisbursementDetails findTrancheToDisburse(Loan loan, LocalDate actualDisbursementDate, BigDecimal principalDisbursed) {
+        java.util.Collection<LoanDisbursementDetails> undisbursedDetails = loan.fetchUndisbursedDetail();
+
+        if (undisbursedDetails.isEmpty()) {
+            return null;
+        }
+
+        // If principal amount is provided, try to match by amount first
+        if (principalDisbursed != null) {
+            for (LoanDisbursementDetails detail : undisbursedDetails) {
+                if (detail.principal().compareTo(principalDisbursed) == 0) {
+                    return detail;
+                }
+            }
+        }
+
+        // Otherwise, find the tranche with expected date closest to actual date
+        return findClosestTrancheByDate(undisbursedDetails, actualDisbursementDate);
+    }
+
+    /**
+     * Finds the tranche with expected date closest to the actual disbursement date.
+     */
+    private LoanDisbursementDetails findClosestTrancheByDate(java.util.Collection<LoanDisbursementDetails> undisbursedDetails,
+            LocalDate actualDisbursementDate) {
+        LoanDisbursementDetails closestTranche = null;
+        long minDaysDiff = Long.MAX_VALUE;
+
+        for (LoanDisbursementDetails detail : undisbursedDetails) {
+            LocalDate expectedDate = detail.expectedDisbursementDate();
+            if (expectedDate != null) {
+                long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
+
+                if (daysDiff < minDaysDiff) {
+                    minDaysDiff = daysDiff;
+                    closestTranche = detail;
+                }
+            }
+        }
+
+        return closestTranche;
     }
 }
