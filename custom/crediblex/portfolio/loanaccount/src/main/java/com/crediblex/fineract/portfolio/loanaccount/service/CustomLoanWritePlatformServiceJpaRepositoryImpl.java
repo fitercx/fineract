@@ -9,6 +9,7 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParam
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
+import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
@@ -150,6 +151,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final CustomLoanChargeRepository loanChargeRepository;
     private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
     private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
+    private final CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -189,8 +191,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            StandingInstructionRepository standingInstructionRepository) {
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
+            com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -215,6 +217,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanChargeRepository = loanChargeRepository;
         this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
+        this.customLoanDisbursementDateValidator = customLoanDisbursementDateValidator;
     }
 
     @PostConstruct
@@ -1044,5 +1047,41 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         return closestTranche;
+    }
+
+    /**
+     * Override to add custom validation for future tranche date updates. Validates business rules before allowing date
+     * changes.
+     */
+    @Transactional
+    @Override
+    public CommandProcessingResult updateDisbursementDateAndAmountForTranche(final Long loanId, final Long disbursementId,
+            final JsonCommand command) {
+
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        if (loan.isChargedOff()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.is.charged.off",
+                    "Update Loan: " + loanId + " disbursement details is not allowed. Loan Account is Charged-off", loanId);
+        }
+
+        final LoanDisbursementDetails loanDisbursementDetails = loan.fetchLoanDisbursementsById(disbursementId);
+        if (loanDisbursementDetails == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.not.found",
+                    "Disbursement detail with id " + disbursementId + " not found for loan " + loanId);
+        }
+
+        // Extract new expected date from command
+        final LocalDate newExpectedDate = command.localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+
+        // Apply custom validation for future tranche date updates
+        customLoanDisbursementDateValidator.validateFutureTrancheDateUpdate(loan, loanDisbursementDetails, newExpectedDate);
+
+        // Call parent validation (validates JSON structure, amounts, etc.)
+        this.loanTransactionValidator.validateUpdateDisbursementDateAndAmount(command.json(), loanDisbursementDetails);
+
+        // Call parent implementation which handles the actual update and schedule regeneration
+        // We use super to avoid recursion since we're overriding the method
+        return super.updateDisbursementDateAndAmountForTranche(loanId, disbursementId, command);
     }
 }
