@@ -128,6 +128,7 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDat
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.RepaymentWithPostDatedChecksAssembler;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,6 +151,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final CustomLoanChargeRepository loanChargeRepository;
     private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
     private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
+    private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -189,8 +191,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            StandingInstructionRepository standingInstructionRepository) {
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
+            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -215,6 +217,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanChargeRepository = loanChargeRepository;
         this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
+        this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
     }
 
     @PostConstruct
@@ -393,30 +396,36 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isAutoRepaymentForDownPaymentEnabled() && !isWithoutAutoPayment) {
                 // updating linked savings account for auto down payment transaction for disbursement to savings account
                 if (isAccountTransfer && loan.shouldCreateStandingInstructionAtDisbursement()) {
-                    final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
-                            .retriveLoanLinkedAssociation(loanId);
-                    final SavingsAccount fromSavingsAccount = null;
-                    final boolean isRegularTransaction = true;
-                    final boolean isExceptionForBalanceCheck = false;
+                    // Guard: Check if a down-payment standing instruction already exists to prevent duplicate key
+                    // violations
+                    if (!hasDownPaymentStandingInstruction(loanId)) {
+                        final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
+                                .retriveLoanLinkedAssociation(loanId);
+                        final SavingsAccount fromSavingsAccount = null;
+                        final boolean isRegularTransaction = true;
+                        final boolean isExceptionForBalanceCheck = false;
 
-                    BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
-                            .getDisbursedAmountPercentageForDownPayment();
-                    // Ensure we use the correct amount for down payment calculation
-                    Money downPaymentMoney = Money.of(loan.getCurrency(),
-                            MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
-                    if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
-                        downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
-                                loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
+                                .getDisbursedAmountPercentageForDownPayment();
+                        // Ensure we use the correct amount for down payment calculation
+                        Money downPaymentMoney = Money.of(loan.getCurrency(),
+                                MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
+                        if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
+                            downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
+                                    loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        }
+                        final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
+                                downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
+                                linkedSavingsAccountData.getId(), loan.getId(),
+                                "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
+                                        + " Standing instruction transfer ",
+                                locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
+                                AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
+                                fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
+                        this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+                    } else {
+                        log.info("Skipping down-payment standing instruction creation for loan ID: {} - one already exists", loanId);
                     }
-                    final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
-                            downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
-                            linkedSavingsAccountData.getId(), loan.getId(),
-                            "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
-                                    + " Standing instruction transfer ",
-                            locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
-                            AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
-                            fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
-                    this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
                 } else {
                     loanDownPaymentHandlerService.handleDownPayment(scheduleGeneratorDTO, command, disbursementTransaction, loan);
                     loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -673,22 +682,108 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final Locale locale = command.extractLocale();
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(command.dateFormat()).withLocale(locale);
-        final PortfolioAccountData portfolioAccountData = this.accountAssociationsReadPlatformService
-                .retriveLoanLinkedAssociation(loan.getId());
-        if (portfolioAccountData == null) {
-            final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
-            throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+
+        // Get destination savings account - either from parameter or linked account
+        Long destinationSavingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME);
+        PortfolioAccountData portfolioAccountData;
+
+        if (destinationSavingsAccountId != null) {
+            // Validate the specified destination account
+            validateDestinationSavingsAccount(loan, destinationSavingsAccountId);
+            // Get the savings account data
+            final SavingsAccount destinationSavingsAccount = savingsAccountRepositoryWrapper
+                    .findOneWithNotFoundDetection(destinationSavingsAccountId);
+            portfolioAccountData = PortfolioAccountData.lookup(destinationSavingsAccountId, destinationSavingsAccount.getAccountNumber());
+        } else {
+            // Use linked account (backward compatibility)
+            portfolioAccountData = this.accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(loan.getId());
+            if (portfolioAccountData == null) {
+                final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
+                throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+            }
         }
+
         final SavingsAccount fromSavingsAccount = null;
         final boolean isExceptionForBalanceCheck = false;
         final boolean isRegularTransaction = true;
+
+        // Use tranche amount instead of full loan amount
         final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, amount.getAmount(),
                 PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), portfolioAccountData.getId(), "Loan Disbursement",
                 locale, fmt, paymentDetail, LoanTransactionType.DISBURSEMENT.getValue(), null, null, null,
                 AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, null, txnExternalId, loan, null, fromSavingsAccount,
                 isRegularTransaction, isExceptionForBalanceCheck);
-        accountTransferDTO.setNetLoanDisbursementAmount(loan.getNetDisbursalAmount());
+        // Set netLoanDisbursementAmount to tranche amount (not full loan amount)
+        accountTransferDTO.setNetLoanDisbursementAmount(amount.getAmount());
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+    }
+
+    /**
+     * Validates that the destination savings account is eligible for loan disbursement. Checks: - Account exists and is
+     * active - Currency matches loan currency - Account belongs to the same borrower/client
+     *
+     * @param loan
+     *            The loan being disbursed
+     * @param savingsAccountId
+     *            The destination savings account ID
+     * @throws GeneralPlatformDomainRuleException
+     *             if validation fails
+     */
+    private void validateDestinationSavingsAccount(final Loan loan, final Long savingsAccountId) {
+        final SavingsAccount savingsAccount = savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(savingsAccountId);
+
+        // Check if account is active
+        if (savingsAccount.isNotActive()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.not.active",
+                    "Destination savings account with id:" + savingsAccountId + " is not active", savingsAccountId);
+        }
+
+        // Check currency match
+        if (!savingsAccount.getCurrency().getCode().equals(loan.getCurrencyCode())) {
+            throw new GeneralPlatformDomainRuleException(
+                    "error.msg.loan.destination.savings.account.currency.mismatch", "Destination savings account currency ("
+                            + savingsAccount.getCurrency().getCode() + ") does not match loan currency (" + loan.getCurrencyCode() + ")",
+                    savingsAccountId);
+        }
+
+        // Check borrower/client match
+        final Long loanClientId = loan.getClientId();
+        final Long loanGroupId = loan.getGroupId();
+        final Long savingsClientId = savingsAccount.clientId();
+        final Long savingsGroupId = savingsAccount.groupId();
+
+        boolean clientMatch = false;
+        if (loanClientId != null && savingsClientId != null && loanClientId.equals(savingsClientId)) {
+            clientMatch = true;
+        }
+
+        boolean groupMatch = false;
+        if (loanGroupId != null && savingsGroupId != null && loanGroupId.equals(savingsGroupId)) {
+            groupMatch = true;
+        }
+
+        // For individual loans, client must match
+        // For group loans, group must match
+        // For JLG loans, both client and group must match
+        if (loanClientId != null && loanGroupId == null) {
+            // Individual loan - client must match
+            if (!clientMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.client.mismatch",
+                        "Destination savings account does not belong to the same client as the loan", savingsAccountId);
+            }
+        } else if (loanClientId == null && loanGroupId != null) {
+            // Group loan - group must match
+            if (!groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.group.mismatch",
+                        "Destination savings account does not belong to the same group as the loan", savingsAccountId);
+            }
+        } else if (loanClientId != null && loanGroupId != null) {
+            // JLG loan - both client and group must match
+            if (!clientMatch || !groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.borrower.mismatch",
+                        "Destination savings account does not belong to the same borrower (client/group) as the loan", savingsAccountId);
+            }
+        }
     }
 
     @Override
@@ -950,9 +1045,43 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
     }
 
+    /**
+     * Checks if any standing instruction exists for a loan (active or disabled, but not deleted). This includes both
+     * repayment standing instructions and down-payment standing instructions.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if any standing instruction exists for the loan, false otherwise
+     */
     private boolean standingInstructionExists(Long loanId) {
-        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+        if (loanId == null) {
+            return false;
+        }
+        // Check for active standing instructions
+        boolean hasActive = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
                 StandingInstructionStatus.ACTIVE.getValue());
+        if (hasActive) {
+            return true;
+        }
+        // Check for disabled standing instructions
+        boolean hasDisabled = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.DISABLED.getValue());
+        return hasDisabled;
+    }
+
+    /**
+     * Checks if a down-payment standing instruction exists for a loan. This is used to prevent creating duplicate
+     * down-payment standing instructions when re-disbursing a loan after undo operations.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if a down-payment standing instruction exists, false otherwise
+     */
+    private boolean hasDownPaymentStandingInstruction(Long loanId) {
+        // Since we clean up all SIs on undo, we can use the same check as standingInstructionExists
+        // The cleanup service removes all SIs (including down-payment ones) when undo is called.
+        // So if any SI exists, it means we shouldn't create a new one.
+        return standingInstructionExists(loanId);
     }
 
     /**
