@@ -460,7 +460,7 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 break;
                 case PERCENT_OF_DISBURSEMENT_AMOUNT:
                     LoanTrancheDisbursementCharge loanTrancheDisbursementCharge = this.loanTrancheDisbursementCharge;
-                    amountPercentageAppliedTo = loanTrancheDisbursementCharge.getloanDisbursementDetails().principal();
+                    amountPercentageAppliedTo = loanTrancheDisbursementCharge.getLoanDisbursementDetails().principal();
                 break;
                 default:
                 break;

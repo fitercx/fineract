@@ -294,7 +294,7 @@ public class LoanDisbursementService {
         loan.getCharges().stream() //
                 .filter(charge -> { //
                     final LoanTrancheDisbursementCharge transCharge = charge.getTrancheDisbursementCharge(); //
-                    if (transCharge == null || !Objects.equals(id, transCharge.getloanDisbursementDetails().getId())) {
+                    if (transCharge == null || !Objects.equals(id, transCharge.getLoanDisbursementDetails().getId())) {
                         return false;
                     }
                     loanChargeValidator.validateLoanIsNotClosed(loan, charge); //

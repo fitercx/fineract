@@ -1191,11 +1191,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
 
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema()).append(" where ml.id = ? ") // filter for a single loan
+        sqlBuilder.append("select ").append(rm.schema())
+                // Exclude installments that already have overdue charges applied
+                .append(" left join m_loan_charge lc on lc.loan_id = ml.id and lc.charge_id = mc.id and lc.is_active = true ")
+                .append(" left join m_loan_overdue_installment_charge loic on loic.loan_charge_id = lc.id and loic.loan_schedule_id = ls.id ")
+                .append(" where ml.id = ? ") // filter for a single loan
                 .append(" and " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ");
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
+                                                                                                                      // installments
+                                                                                                                      // with
+                                                                                                                      // existing
+                                                                                                                      // overdue
+                                                                                                                      // charges
 
         if (!backdatePenalties) {
             // Only apply for duedate = yesterday (so that we don't apply penalties on the duedate itself)
@@ -1204,6 +1213,39 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         return this.jdbcTemplate.query(sqlBuilder.toString(), rm, loanId, penaltyWaitPeriod);
+    }
+
+    /**
+     * Override to enhance SQL query to exclude installments that already have overdue charges applied. This ensures
+     * late fees are applied consistently for both single-tranche and multi-tranche loans.
+     */
+    @Override
+    public Collection<OverdueLoanScheduleData> retrieveAllLoansWithOverdueInstallments(final Long penaltyWaitPeriod,
+            final Boolean backdatePenalties) {
+        final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
+
+        final StringBuilder sqlBuilder = new StringBuilder(400);
+        sqlBuilder.append("select ").append(rm.schema())
+                // Exclude installments that already have overdue charges applied
+                .append(" left join m_loan_charge lc on lc.loan_id = ml.id and lc.charge_id = mc.id and lc.is_active = true ")
+                .append(" left join m_loan_overdue_installment_charge loic on loic.loan_charge_id = lc.id and loic.loan_schedule_id = ls.id ")
+                .append(" where " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
+                .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
+                .append(" and ls.recalculated_interest_component <> true ")
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
+                                                                                                                      // installments
+                                                                                                                      // with
+                                                                                                                      // existing
+                                                                                                                      // overdue
+                                                                                                                      // charges
+
+        if (backdatePenalties) {
+            return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod);
+        }
+        // Only apply for duedate = yesterday (so that we don't apply penalties on the duedate itself)
+        sqlBuilder.append(" and ls.duedate >= " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
+
+        return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, penaltyWaitPeriod);
     }
 
     @Override

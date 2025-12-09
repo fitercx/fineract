@@ -1,11 +1,15 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Optional;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDisbursementValidator;
@@ -42,18 +46,38 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
                             && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
                 if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
-                    charge.markAsFullyPaid();
-                    final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.amount(),
+                    // Calculate proportional fee for multi-tranche loans
+                    Money chargeAmount = calculateProportionalChargeAmount(loan, charge, disbursedOn);
+                    Money taxAmount = calculateProportionalTaxAmount(loan, charge, disbursedOn);
+
+                    // Mark charge as fully paid only if this is a tranche-specific charge or single disbursement
+                    if (charge.getTrancheDisbursementCharge() != null || !loan.isMultiDisburmentLoan()) {
+                        charge.markAsFullyPaid();
+                        if (charge.hasTax() && taxAmount.isGreaterThanZero()) {
+                            charge.markAsFullyPaidWithTaxes();
+                        }
+                    } else {
+                        // For multi-tranche DISBURSEMENT charges without tranche association,
+                        // track partial payment to ensure total doesn't exceed full charge amount
+                        Money totalPaidSoFar = charge.getAmountPaid(loan.getCurrency()).plus(chargeAmount);
+                        if (totalPaidSoFar.isGreaterThanOrEqualTo(charge.getAmount(loan.getCurrency()))) {
+                            charge.markAsFullyPaid();
+                            if (charge.hasTax()) {
+                                charge.markAsFullyPaidWithTaxes();
+                            }
+                        }
+                    }
+
+                    final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, chargeAmount.getAmount(),
                             installmentNumber);
                     chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
                     // Treat all such charge amounts as fee portion (no longer misusing interest portion here)
-                    feeAndPenaltyPortion = feeAndPenaltyPortion.plus(charge.amount());
-                    if (charge.hasTax()) {
-                        taxesPaid = taxesPaid.plus(charge.getTaxAmount());
-                        final LoanChargePaidBy taxChargePaidBy = new LoanChargePaidBy(chargesPayment, charge, charge.getTaxAmount(),
+                    feeAndPenaltyPortion = feeAndPenaltyPortion.plus(chargeAmount);
+                    if (charge.hasTax() && taxAmount.isGreaterThanZero()) {
+                        taxesPaid = taxesPaid.plus(taxAmount);
+                        final LoanChargePaidBy taxChargePaidBy = new LoanChargePaidBy(taxPaymentTransaction, charge, taxAmount.getAmount(),
                                 installmentNumber);
                         taxPaymentTransaction.getLoanChargesPaid().add(taxChargePaidBy);
-                        charge.markAsFullyPaidWithTaxes();
                     }
                 }
             } else if (disbursedOn.equals(loan.getActualDisbursementDate())
@@ -80,5 +104,90 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
 
         final LocalDate expectedDate = loan.getExpectedFirstRepaymentOnDate();
         loanDisbursementValidator.validateDisburseDate(loan, disbursedOn, expectedDate);
+    }
+
+    /**
+     * Calculates proportional charge amount for multi-tranche loans. For DISBURSEMENT charges on multi-tranche loans
+     * without tranche association, calculates: (trancheAmount / sanctionedAmount) * totalChargeAmount
+     *
+     * @param loan
+     *            the loan
+     * @param charge
+     *            the charge
+     * @param disbursedOn
+     *            the disbursement date
+     * @return the proportional charge amount
+     */
+    private Money calculateProportionalChargeAmount(final Loan loan, final LoanCharge charge, final LocalDate disbursedOn) {
+        // If charge is linked to a specific tranche, use its amount directly
+        if (charge.getTrancheDisbursementCharge() != null) {
+            return charge.getAmount(loan.getCurrency());
+        }
+
+        // For multi-tranche loans with DISBURSEMENT charges, calculate proportionally
+        if (loan.isMultiDisburmentLoan() && charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+            // Find the current tranche being disbursed
+            Optional<LoanDisbursementDetails> currentTranche = loan.getDisbursementDetails().stream()
+                    .filter(detail -> disbursedOn.equals(detail.actualDisbursementDate())).findFirst();
+
+            if (currentTranche.isPresent()) {
+                Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
+                Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
+                Money totalChargeAmount = charge.getAmount(loan.getCurrency());
+
+                if (sanctionedAmount.isGreaterThanZero()) {
+                    // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
+                    BigDecimal proportionalAmount = totalChargeAmount.getAmount().multiply(trancheAmount.getAmount())
+                            .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
+                    return Money.of(loan.getCurrency(), proportionalAmount);
+                }
+            }
+        }
+
+        // Default: use full charge amount (for single disbursement or non-multi-tranche loans)
+        return charge.getAmount(loan.getCurrency());
+    }
+
+    /**
+     * Calculates proportional tax amount for multi-tranche loans.
+     *
+     * @param loan
+     *            the loan
+     * @param charge
+     *            the charge
+     * @param disbursedOn
+     *            the disbursement date
+     * @return the proportional tax amount
+     */
+    private Money calculateProportionalTaxAmount(final Loan loan, final LoanCharge charge, final LocalDate disbursedOn) {
+        if (!charge.hasTax()) {
+            return Money.zero(loan.getCurrency());
+        }
+
+        // If charge is linked to a specific tranche, use its tax amount directly
+        if (charge.getTrancheDisbursementCharge() != null) {
+            return charge.getTaxAmount(loan.getCurrency());
+        }
+
+        // For multi-tranche loans with DISBURSEMENT charges, calculate tax proportionally
+        if (loan.isMultiDisburmentLoan() && charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+            Optional<LoanDisbursementDetails> currentTranche = loan.getDisbursementDetails().stream()
+                    .filter(detail -> disbursedOn.equals(detail.actualDisbursementDate())).findFirst();
+
+            if (currentTranche.isPresent()) {
+                Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
+                Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
+                Money totalTaxAmount = charge.getTaxAmount(loan.getCurrency());
+
+                if (sanctionedAmount.isGreaterThanZero()) {
+                    BigDecimal proportionalTax = totalTaxAmount.getAmount().multiply(trancheAmount.getAmount())
+                            .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
+                    return Money.of(loan.getCurrency(), proportionalTax);
+                }
+            }
+        }
+
+        // Default: use full tax amount
+        return charge.getTaxAmount(loan.getCurrency());
     }
 }
