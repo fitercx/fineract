@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Update Savings Accounts Transactions Report SQL -->
+    <changeSet author="CredibleX" id="0039-update-savings-accounts-transactions-report-sql">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Savings Accounts Transactions Report'
+            </sqlCheck>
+        </preConditions>
+        <update tableName="stretchy_report">
+            <column name="report_sql"><![CDATA[
+SELECT
+    c.id AS "Client Id",
+    CONCAT(c.firstname, ' ', COALESCE(c.middlename, ''), ' ', COALESCE(c.lastname, '')) AS "Client Name",
+    sa.id AS "Saving Account Id",
+    sa.account_no AS "Savings account no.",
+    t.id AS "Transaction Id",
+    to_char(COALESCE(t.submitted_on_date, t.created_date::date, t.transaction_date), 'DD Month YYYY') AS "Value Date",
+    to_char(t.transaction_date, 'DD Month YYYY') AS "Transaction Date",
+    sa.external_id AS "External Id",
+    CASE t.transaction_type_enum
+        WHEN 1 THEN 'Deposit'
+        WHEN 2 THEN 'Withdrawal'
+        WHEN 3 THEN 'Interest Posting'
+        WHEN 4 THEN 'Withdrawal Fee'
+        WHEN 5 THEN 'Annual Fee'
+        WHEN 12 THEN 'Dividend Payout'
+        WHEN 13 THEN 'Overdraft Interest'
+        WHEN 21 THEN 'Withhold Tax'
+        ELSE 'Other'
+    END AS "Transaction Type",
+    CASE WHEN t.transaction_type_enum IN (2, 4, 5, 13, 21) THEN t.amount ELSE NULL END AS "Debit",
+    CASE WHEN t.transaction_type_enum IN (1, 3, 12) THEN t.amount ELSE NULL END AS "Credit",
+    t.running_balance_derived AS "Balance",
+    pt.value AS "Payment Type"
+FROM m_savings_account_transaction t
+JOIN m_savings_account sa ON sa.id = t.savings_account_id
+JOIN m_client c ON c.id = sa.client_id
+LEFT JOIN m_payment_detail pd ON pd.id = t.payment_detail_id
+LEFT JOIN m_payment_type pt ON pt.id = pd.payment_type_id
+WHERE t.is_reversed = FALSE
+  AND (${clientId} = -1 OR c.id = ${clientId})
+  AND (${savingsId} = -1 OR sa.id = ${savingsId})
+  AND pt.value IS NOT NULL
+  AND pd.payment_type_id <> 5
+ORDER BY c.id ASC, sa.id ASC, t.transaction_date DESC, t.id DESC
+            ]]></column>
+            <where>report_name = 'Savings Accounts Transactions Report'</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>
