@@ -21,12 +21,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
@@ -53,8 +56,10 @@ import org.apache.fineract.infrastructure.event.business.service.BusinessEventNo
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
+import org.apache.fineract.portfolio.PortfolioProductType;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
@@ -80,13 +85,16 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
@@ -149,6 +157,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final CustomLoanChargeRepository loanChargeRepository;
     private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
     private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
+    private final JournalEntryRepository journalEntryRepository;
+    private final LoanTransactionRepository loanTransactionRepository;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -189,7 +199,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
             LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            StandingInstructionRepository standingInstructionRepository) {
+            StandingInstructionRepository standingInstructionRepository,
+            JournalEntryRepository journalEntryRepository) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -214,6 +225,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanChargeRepository = loanChargeRepository;
         this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
+        this.journalEntryRepository = journalEntryRepository;
+        this.loanTransactionRepository = loanTransactionRepository;
     }
 
     @PostConstruct
@@ -774,13 +787,148 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
                 penaltyWaitPeriodValue);
-        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-        List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        final List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
 
         if (!penaltiesToDisable.isEmpty()) {
-            List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
+            final List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
+            log.info("Starting deletion of {} penalty charges for loan ID: {} (backdated to {})",
+                    chargeIds.size(), loanId, transactionDate);
 
-            loanChargeRepository.deactivateCharges(loanId, chargeIds);
+            // Step 1: Find accrual transactions related to these charges and reverse them
+            final List<LoanTransaction> accrualTransactions = loanChargeRepository.findAccrualTransactionsByChargeIds(chargeIds);
+            for (final LoanTransaction accrualTransaction : accrualTransactions) {
+                // Before reversing, update the repayment schedule to reduce accrued amounts
+                // This ensures the accrual job can run correctly later
+                if (!accrualTransaction.isReversed()) {
+                    final MonetaryCurrency currency = loan.getCurrency();
+
+                    // Accrual transactions store data in two ways:
+                    // 1. Interest - stored in transaction.interestPortion (no charge mapping)
+                    // 2. Fees/Penalties - stored via LoanChargePaidBy (has charge mappings)
+
+                    // Group accrual amounts by installment number using Maps
+                    final Map<Integer, Money> interestByInstallment = new HashMap<>();
+                    final Map<Integer, Money> feesByInstallment = new HashMap<>();
+                    final Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
+
+                    // PART 1: Process charge-based accruals (fees and penalties)
+                    final Set<LoanChargePaidBy> chargesPaid = accrualTransaction.getLoanChargesPaid();
+                    for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                        final Integer installmentNumber = chargePaidBy.getInstallmentNumber();
+                        final LoanCharge charge = chargePaidBy.getLoanCharge();
+                        final Money amount = Money.of(currency, chargePaidBy.getAmount());
+
+                        if (charge.isPenaltyCharge()) {
+                            // Accumulate penalty amounts for this installment
+                            penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
+                        } else if (charge.isFeeCharge()) {
+                            // Accumulate fee amounts for this installment
+                            feesByInstallment.merge(installmentNumber, amount, Money::plus);
+                        }
+                    }
+
+                    // PART 2: Process interest accrual (stored in transaction field, not as charge)
+                    final Money totalInterest = Money.of(currency, accrualTransaction.getInterestPortion());
+                    if (totalInterest.isGreaterThanZero()) {
+                        // Find the installment that this interest belongs to
+                        // Use accrual date to determine which installment period it covers
+                        final LocalDate accrualDate = accrualTransaction.getTransactionDate();
+                        final LoanRepaymentScheduleInstallment targetInstallment =
+                                loan.getRepaymentScheduleInstallments().stream()
+                                    .filter(inst -> !inst.isDownPayment() && !inst.isAdditional())
+                                    .filter(inst -> DateUtils.isEqual(accrualDate, inst.getDueDate())
+                                                 || DateUtils.isBefore(accrualDate, inst.getDueDate()))
+                                    .findFirst()
+                                    .orElse(null);
+
+                        if (targetInstallment != null) {
+                            interestByInstallment.put(targetInstallment.getInstallmentNumber(), totalInterest);
+                        } else {
+                            // If no matching installment found, log warning
+                            log.warn("Could not find target installment for interest accrual reversal. " +
+                                    "Accrual date: {}, Transaction ID: {}", accrualDate, accrualTransaction.getId());
+                        }
+                    }
+
+                    // PART 3: Update all affected installments with reduced accrual amounts
+                    final Set<Integer> allInstallmentNumbers = new HashSet<>();
+                    allInstallmentNumbers.addAll(interestByInstallment.keySet());
+                    allInstallmentNumbers.addAll(feesByInstallment.keySet());
+                    allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
+
+                    for (Integer installmentNumber : allInstallmentNumbers) {
+                        final LoanRepaymentScheduleInstallment installment =
+                                loan.fetchRepaymentScheduleInstallment(installmentNumber);
+
+                        // Get amounts to reverse (default to zero if not present in map)
+                        final Money interestToReverse = interestByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                        final Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                        final Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+
+                        // Get current accrued amounts from the installment
+                        final Money currentInterestAccrued = installment.getInterestAccrued(currency);
+                        final Money currentFeeAccrued = installment.getFeeAccrued(currency);
+                        final Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
+
+                        // Calculate new reduced amounts by subtracting reversed portions
+                        final Money newInterestAccrued = currentInterestAccrued.minus(interestToReverse);
+                        final Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
+                        final Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
+
+                        // Update the installment with reduced accrual amounts
+                        installment.updateAccrualPortion(newInterestAccrued, newFeeAccrued, newPenaltyAccrued);
+
+                        log.debug("Reversed accrual in installment {}: interest={}, fees={}, penalties={}",
+                                installmentNumber,
+                                interestToReverse.getAmount(),
+                                feesToReverse.getAmount(),
+                                penaltiesToReverse.getAmount());
+                    }
+                }
+
+                // Now reverse the accrual transaction itself
+                accrualTransaction.reverse();
+                this.loanTransactionRepository.saveAndFlush(accrualTransaction);
+            }
+            log.info("Reversed {} accrual transactions and updated installment accrual amounts for loan ID: {}",
+                    accrualTransactions.size(), loanId);
+
+            // Step 2: Delete journal entries for these accrual transactions
+//            for (LoanTransaction accrualTransaction : accrualTransactions) {
+//                List<JournalEntry> journalEntries = journalEntryRepository
+//                        .findJournalEntries("L" + accrualTransaction.getId(),
+//                                PortfolioProductType.LOAN.getValue());
+//                if (!journalEntries.isEmpty()) {
+//                    journalEntryRepository.deleteAll(journalEntries);
+//                    log.info("Deleted {} journal entries for accrual transaction ID: {}",
+//                            journalEntries.size(), accrualTransaction.getId());
+//                }
+//            }
+
+            // Step 3: Delete the accrual transactions themselves
+//            if (!accrualTransactions.isEmpty()) {
+//                loanTransactionRepository.deleteAll(accrualTransactions);
+//                log.info("Deleted {} accrual transactions for charges", accrualTransactions.size());
+//            }
+
+            // Step 4: Delete LoanChargePaidBy records
+            int deletedChargePaidBy = loanChargeRepository.deleteChargePaidByForChargeIds(chargeIds);
+            log.info("Deleted {} LoanChargePaidBy records", deletedChargePaidBy);
+
+            // Step 5: Delete LoanInstallmentCharge records
+            int deletedInstallmentCharges = loanChargeRepository.deleteInstallmentChargesByChargeIds(chargeIds);
+            log.info("Deleted {} LoanInstallmentCharge records", deletedInstallmentCharges);
+
+            // Step 6: Delete the LoanCharge entities from database
+            loanChargeRepository.deleteAllById(chargeIds);
+            log.info("Deleted {} penalty charges from database for loan ID: {}", chargeIds.size(), loanId);
+
+            // Step 7: CRITICAL FIX - Remove deleted charges from Loan entity's in-memory collection
+            // This synchronizes the in-memory state with the database state and prevents
+            // the super method from trying to create LoanChargePaidBy for deleted charges
+            loan.getCharges().removeIf(charge -> chargeIds.contains(charge.getId()));
+            log.info("Removed {} deleted charges from Loan entity in-memory collection", chargeIds.size());
         }
 
         CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
