@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Insert LOC Expanded Data Report (updated SQL) -->
+    <changeSet author="CredibleX" id="0040-insert-loc-expanded-data-report">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'LOC Expanded Data Report'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="stretchy_report">
+            <column name="report_name" value="LOC Expanded Data Report"/>
+            <column name="report_type" value="Table"/>
+            <column name="report_subtype" value="NULL"/>
+            <column name="report_category" value="Loan"/>
+            <column name="report_sql"><![CDATA[
+WITH charge_fields AS (
+    SELECT
+        mlc.loan_id,
+        SUM(CASE WHEN mc.charge_time_enum = 1 THEN mlc.amount ELSE 0 END) AS total_charges_at_disbursement,
+        SUM(CASE WHEN mc.id = 2 THEN mlc.amount ELSE 0 END) AS early_payment_fee,
+        SUM(CASE WHEN mc.id = 3 THEN mlc.amount ELSE 0 END) AS total_late_payment_charges
+    FROM m_loan_charge mlc
+    LEFT JOIN m_charge mc ON mc.id = mlc.charge_id
+    WHERE
+        (mlc.is_active = TRUE AND mlc.waived = FALSE AND mc.charge_time_enum = 1)
+        OR
+        (mlc.is_active = TRUE AND mlc.waived = FALSE AND mc.id IN (2, 3))
+    GROUP BY mlc.loan_id
+),
+repayment_schedule_cte AS (
+    SELECT
+        loan_id,
+        obligations_met_on_date,
+        ROW_NUMBER() OVER (PARTITION BY loan_id ORDER BY fromdate) AS rn
+    FROM m_loan_repayment_schedule
+)
+SELECT
+    mc.display_name AS "SME Name",
+    mlocab.name AS "Vendor Name",
+    mloc.approved_credit_facility_amount AS "Facility Amount ",
+    mllocp.loan_id AS "Loan ID",
+    mllocp.invoice_no AS "Invoice No.",
+    mllocp.invoice_date AS "Invoice Date",
+    mllocp.invoice_currency AS "Invoice Currency",
+    mllocp.invoice_amount AS "Invoice Amount",
+    mllocp.amount_in_facility_currency AS "Amount in Facility Currency",
+    mllocp.disapproved_amount AS "Disapproved Amount",
+    mllocp.approved_receivable_amount AS "Approved Receivables Amount",
+    mllocp.amount_after_advance AS "Amount after Advance %",
+    mllocp.approved_payable_amount AS "Approved Payable Amount ",
+    ml.disbursedon_date + ml.term_frequency AS "Loan Due Date",
+    ml.disbursedon_date AS "Disbursement Date",
+    ml.term_frequency AS "Expected Tenor (days)",
+    CASE
+        WHEN ml.loan_status_id = 100 THEN 'Awaiting approval'
+        WHEN ml.loan_status_id = 200 THEN 'Approved'
+        WHEN ml.loan_status_id = 300 THEN 'Active'
+        WHEN ml.loan_status_id = 303 THEN 'Transfer in Progress'
+        WHEN ml.loan_status_id = 304 THEN 'Transfer on Hold'
+        WHEN ml.loan_status_id = 400 THEN 'Withdrawn by client'
+        WHEN ml.loan_status_id = 500 THEN 'Rejected'
+        WHEN ml.loan_status_id = 600 THEN 'Closed'
+        WHEN ml.loan_status_id = 601 THEN 'Written-Off'
+        WHEN ml.loan_status_id = 602 THEN 'Rescheduled'
+        WHEN ml.loan_status_id = 700 THEN 'Overpaid'
+    END AS "Status",
+    ml.interest_charged_derived AS "Expected Interest",
+    ml.net_disbursal_amount AS "Disbursement Amount",
+    ml.principal_outstanding_derived AS "Principal Outstanding",
+    ml.total_outstanding_derived AS "Net Outstanding",
+    ml.annual_nominal_interest_rate AS "Interest %",
+    current_date - mlaa.overdue_since_date_derived AS "Overdue Days",
+    mlrs.obligations_met_on_date - ml.disbursedon_date AS "Utilized Tenor",
+    mlrs.obligations_met_on_date AS "Repayment Date"
+FROM m_line_of_credit mloc
+LEFT JOIN m_client mc ON mloc.client_id = mc.id
+LEFT JOIN m_loan_line_of_credit_params mllocp ON mllocp.line_of_credit_id = mloc.id
+LEFT JOIN m_loan ml ON ml.id = mllocp.loan_id
+LEFT JOIN charge_fields cf ON cf.loan_id = ml.id
+LEFT JOIN m_loan_arrears_aging mlaa ON mlaa.loan_id = ml.id
+LEFT JOIN repayment_schedule_cte mlrs ON mlrs.loan_id = ml.id AND rn = 1
+-- Only include buyer/supplier actually associated with the loan
+LEFT JOIN m_loan_approver_buyers_suppliers mlabs ON mlabs.loan_id = ml.id
+LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = mlabs.buyer_supplier_id
+WHERE ml.id IS NOT NULL
+ORDER BY mc.display_name, ml.id
+            ]]></column>
+            <column name="description" value="Provides a comprehensive view of all Line of Credit (LOC) accounts, including loan, invoice, and repayment details."/>
+            <column name="core_report" valueBoolean="false"/>
+            <column name="use_report" valueBoolean="false"/>
+            <column name="self_service_user_report" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>
