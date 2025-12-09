@@ -1719,6 +1719,26 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
     }
 
     @Override
+    public Collection<OverdueLoanScheduleData> retrieveLoanOverdueInstallments(Long loanId, Long penaltyWaitPeriod,
+            Boolean backdatePenalties) {
+        final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
+        final StringBuilder sqlBuilder = new StringBuilder(400);
+        sqlBuilder.append("select ").append(rm.schema())
+                .append(" left join m_loan_charge lc on lc.loan_id = ml.id and lc.charge_id = mc.id and lc.is_active = true ")
+                .append(" left join m_loan_overdue_installment_charge loic on loic.loan_charge_id = lc.id and loic.loan_schedule_id = ls.id ")
+                .append(" where ").append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
+                .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
+                .append(" and ls.recalculated_interest_component <> true ")
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL ")
+                .append(" and ml.id = ? ");
+        if (backdatePenalties) {
+            return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, loanId);
+        }
+        sqlBuilder.append(" and ls.duedate >= ").append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
+        return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, loanId, penaltyWaitPeriod);
+    }
+
+    @Override
     public Collection<OverdueLoanScheduleData> retrieveAllOverdueInstallmentsForLoan(final Loan loan) {
         Collection<OverdueLoanScheduleData> list = new ArrayList<>();
 

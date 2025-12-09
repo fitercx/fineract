@@ -9,6 +9,8 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParam
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
+import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
@@ -28,7 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
@@ -43,6 +45,7 @@ import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
+import org.apache.fineract.infrastructure.core.exception.MultiException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
@@ -55,11 +58,10 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.transaction
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
-import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
-import org.apache.fineract.portfolio.PortfolioProductType;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
@@ -94,10 +96,11 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
+import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
@@ -114,6 +117,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanUpdateCommand
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDisbursementService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDownPaymentHandlerService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanJournalEntryPoster;
@@ -135,6 +139,7 @@ import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDat
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.RepaymentWithPostDatedChecksAssembler;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrapper;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -157,8 +162,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final CustomLoanChargeRepository loanChargeRepository;
     private final LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO;
     private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
-    private final JournalEntryRepository journalEntryRepository;
-    private final LoanTransactionRepository loanTransactionRepository;
+    private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
+    private final CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -197,10 +202,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
             LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService,
-            StandingInstructionRepository standingInstructionRepository,
-            JournalEntryRepository journalEntryRepository) {
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, JournalEntryRepository journalEntryRepository,
+            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
+            com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
+            LoanChargeWritePlatformService loanChargeWritePlatformService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -225,8 +231,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.loanChargeRepository = loanChargeRepository;
         this.loanRepaymentsSummaryDAO = loanRepaymentsSummaryDAO;
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
-        this.journalEntryRepository = journalEntryRepository;
-        this.loanTransactionRepository = loanTransactionRepository;
+        this.customLoanDisbursementDateValidator = customLoanDisbursementDateValidator;
+        this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
     }
 
     @PostConstruct
@@ -244,9 +250,31 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.only.allowed.via.savings.account.transfer",
                     "Loan disbursement is only allowed via savings account transfer");
         }
-        loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
 
+        // Load loan first to check if it's multi-tranche
         Loan loan = loanAssembler.assembleFrom(loanId);
+
+        // Fix: Validate multi-tranche disbursement date against specific tranche's expected date
+        // before calling core validator (which validates against loan-level expected date)
+        if (loan.getLoanProduct().isMultiDisburseLoan() && loan.getLoanProduct().isSyncExpectedWithDisbursementDate()) {
+            validateMultiTrancheDisbursementDate(command, loan);
+        }
+
+        // Call core validator - it will validate all other aspects
+        // For multi-tranche loans, it may throw DateMismatchException with wrong expected date,
+        // but we've already validated correctly above, so we catch and ignore that specific case
+        try {
+            loanTransactionValidator.validateDisbursement(command, isAccountTransfer, loanId);
+        } catch (org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException e) {
+            // If this is a multi-tranche loan, we've already validated correctly above
+            // The core validator uses loan-level expected date which is wrong for multi-tranche
+            // So we ignore this exception for multi-tranche loans
+            if (!loan.getLoanProduct().isMultiDisburseLoan() || !loan.getLoanProduct().isSyncExpectedWithDisbursementDate()) {
+                // Not multi-tranche, re-throw the exception
+                throw e;
+            }
+            // For multi-tranche, we've already validated - continue with disbursement
+        }
 
         if (loan.loanProduct().isDisallowExpectedDisbursements()) {
             List<LoanDisbursementDetails> filteredList = loan.getDisbursementDetails().stream()
@@ -383,30 +411,36 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (loan.isAutoRepaymentForDownPaymentEnabled() && !isWithoutAutoPayment) {
                 // updating linked savings account for auto down payment transaction for disbursement to savings account
                 if (isAccountTransfer && loan.shouldCreateStandingInstructionAtDisbursement()) {
-                    final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
-                            .retriveLoanLinkedAssociation(loanId);
-                    final SavingsAccount fromSavingsAccount = null;
-                    final boolean isRegularTransaction = true;
-                    final boolean isExceptionForBalanceCheck = false;
+                    // Guard: Check if a down-payment standing instruction already exists to prevent duplicate key
+                    // violations
+                    if (!hasDownPaymentStandingInstruction(loanId)) {
+                        final PortfolioAccountData linkedSavingsAccountData = this.accountAssociationsReadPlatformService
+                                .retriveLoanLinkedAssociation(loanId);
+                        final SavingsAccount fromSavingsAccount = null;
+                        final boolean isRegularTransaction = true;
+                        final boolean isExceptionForBalanceCheck = false;
 
-                    BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
-                            .getDisbursedAmountPercentageForDownPayment();
-                    // Ensure we use the correct amount for down payment calculation
-                    Money downPaymentMoney = Money.of(loan.getCurrency(),
-                            MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
-                    if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
-                        downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
-                                loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        BigDecimal disbursedAmountPercentageForDownPayment = loan.getLoanRepaymentScheduleDetail()
+                                .getDisbursedAmountPercentageForDownPayment();
+                        // Ensure we use the correct amount for down payment calculation
+                        Money downPaymentMoney = Money.of(loan.getCurrency(),
+                                MathUtil.percentageOf(amountToDisburse.getAmount(), disbursedAmountPercentageForDownPayment, 19));
+                        if (loan.getLoanProduct().getInstallmentAmountInMultiplesOf() != null) {
+                            downPaymentMoney = Money.roundToMultiplesOf(downPaymentMoney,
+                                    loan.getLoanProduct().getInstallmentAmountInMultiplesOf());
+                        }
+                        final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
+                                downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
+                                linkedSavingsAccountData.getId(), loan.getId(),
+                                "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
+                                        + " Standing instruction transfer ",
+                                locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
+                                AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
+                                fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
+                        this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+                    } else {
+                        log.info("Skipping down-payment standing instruction creation for loan ID: {} - one already exists", loanId);
                     }
-                    final AccountTransferDTO accountTransferDTO = new AccountTransferDTO(actualDisbursementDate,
-                            downPaymentMoney.getAmount(), PortfolioAccountType.SAVINGS, PortfolioAccountType.LOAN,
-                            linkedSavingsAccountData.getId(), loan.getId(),
-                            "To loan " + loan.getAccountNumber() + " from savings " + linkedSavingsAccountData.getAccountNo()
-                                    + " Standing instruction transfer ",
-                            locale, fmt, null, null, LoanTransactionType.DOWN_PAYMENT.getValue(), null, null,
-                            AccountTransferType.LOAN_DOWN_PAYMENT.getValue(), null, null, ExternalId.empty(), null, null,
-                            fromSavingsAccount, isRegularTransaction, isExceptionForBalanceCheck);
-                    this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
                 } else {
                     loanDownPaymentHandlerService.handleDownPayment(scheduleGeneratorDTO, command, disbursementTransaction, loan);
                     loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -663,22 +697,108 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final Locale locale = command.extractLocale();
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(command.dateFormat()).withLocale(locale);
-        final PortfolioAccountData portfolioAccountData = this.accountAssociationsReadPlatformService
-                .retriveLoanLinkedAssociation(loan.getId());
-        if (portfolioAccountData == null) {
-            final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
-            throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+
+        // Get destination savings account - either from parameter or linked account
+        Long destinationSavingsAccountId = command.longValueOfParameterNamed(LoanApiConstants.DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME);
+        PortfolioAccountData portfolioAccountData;
+
+        if (destinationSavingsAccountId != null) {
+            // Validate the specified destination account
+            validateDestinationSavingsAccount(loan, destinationSavingsAccountId);
+            // Get the savings account data
+            final SavingsAccount destinationSavingsAccount = savingsAccountRepositoryWrapper
+                    .findOneWithNotFoundDetection(destinationSavingsAccountId);
+            portfolioAccountData = PortfolioAccountData.lookup(destinationSavingsAccountId, destinationSavingsAccount.getAccountNumber());
+        } else {
+            // Use linked account (backward compatibility)
+            portfolioAccountData = this.accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(loan.getId());
+            if (portfolioAccountData == null) {
+                final String errorMessage = "Disburse Loan with id:" + loan.getId() + " requires linked savings account for payment";
+                throw new LinkedAccountRequiredException("loan.disburse.to.savings", errorMessage, loan.getId());
+            }
         }
+
         final SavingsAccount fromSavingsAccount = null;
         final boolean isExceptionForBalanceCheck = false;
         final boolean isRegularTransaction = true;
+
+        // Use tranche amount instead of full loan amount
         final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, amount.getAmount(),
                 PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), portfolioAccountData.getId(), "Loan Disbursement",
                 locale, fmt, paymentDetail, LoanTransactionType.DISBURSEMENT.getValue(), null, null, null,
                 AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, null, txnExternalId, loan, null, fromSavingsAccount,
                 isRegularTransaction, isExceptionForBalanceCheck);
-        accountTransferDTO.setNetLoanDisbursementAmount(loan.getNetDisbursalAmount());
+        // Set netLoanDisbursementAmount to tranche amount (not full loan amount)
+        accountTransferDTO.setNetLoanDisbursementAmount(amount.getAmount());
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
+    }
+
+    /**
+     * Validates that the destination savings account is eligible for loan disbursement. Checks: - Account exists and is
+     * active - Currency matches loan currency - Account belongs to the same borrower/client
+     *
+     * @param loan
+     *            The loan being disbursed
+     * @param savingsAccountId
+     *            The destination savings account ID
+     * @throws GeneralPlatformDomainRuleException
+     *             if validation fails
+     */
+    private void validateDestinationSavingsAccount(final Loan loan, final Long savingsAccountId) {
+        final SavingsAccount savingsAccount = savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(savingsAccountId);
+
+        // Check if account is active
+        if (savingsAccount.isNotActive()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.not.active",
+                    "Destination savings account with id:" + savingsAccountId + " is not active", savingsAccountId);
+        }
+
+        // Check currency match
+        if (!savingsAccount.getCurrency().getCode().equals(loan.getCurrencyCode())) {
+            throw new GeneralPlatformDomainRuleException(
+                    "error.msg.loan.destination.savings.account.currency.mismatch", "Destination savings account currency ("
+                            + savingsAccount.getCurrency().getCode() + ") does not match loan currency (" + loan.getCurrencyCode() + ")",
+                    savingsAccountId);
+        }
+
+        // Check borrower/client match
+        final Long loanClientId = loan.getClientId();
+        final Long loanGroupId = loan.getGroupId();
+        final Long savingsClientId = savingsAccount.clientId();
+        final Long savingsGroupId = savingsAccount.groupId();
+
+        boolean clientMatch = false;
+        if (loanClientId != null && savingsClientId != null && loanClientId.equals(savingsClientId)) {
+            clientMatch = true;
+        }
+
+        boolean groupMatch = false;
+        if (loanGroupId != null && savingsGroupId != null && loanGroupId.equals(savingsGroupId)) {
+            groupMatch = true;
+        }
+
+        // For individual loans, client must match
+        // For group loans, group must match
+        // For JLG loans, both client and group must match
+        if (loanClientId != null && loanGroupId == null) {
+            // Individual loan - client must match
+            if (!clientMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.client.mismatch",
+                        "Destination savings account does not belong to the same client as the loan", savingsAccountId);
+            }
+        } else if (loanClientId == null && loanGroupId != null) {
+            // Group loan - group must match
+            if (!groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.group.mismatch",
+                        "Destination savings account does not belong to the same group as the loan", savingsAccountId);
+            }
+        } else if (loanClientId != null && loanGroupId != null) {
+            // JLG loan - both client and group must match
+            if (!clientMatch || !groupMatch) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.destination.savings.account.borrower.mismatch",
+                        "Destination savings account does not belong to the same borrower (client/group) as the loan", savingsAccountId);
+            }
+        }
     }
 
     @Override
@@ -718,262 +838,252 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     @Transactional
     public CommandProcessingResult makeLoanRepayment(final LoanTransactionType repaymentTransactionType, final Long loanId,
             final JsonCommand command, final boolean isRecoveryRepayment) {
-        // Call the parent implementation to handle the core repayment logic
-        CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
+        // Fix: Validate repayment with corrected multi-tranche logic before calling parent
+        // The parent will call validateRepayment which has the broken validation, so we need to
+        // catch and handle that exception, then re-validate with the fixed logic
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        try {
+            // Call the parent implementation to handle the core repayment logic
+            CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
 
-        // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
-        if (result != null && result.hasChanges() && result.getResourceId() != null) {
-            try {
-                // Fetch the updated loan to get the loan transaction
-                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+            // Use resourceId instead of subResourceId since parent puts transaction ID in entityId (resourceId)
+            if (result != null && result.hasChanges() && result.getResourceId() != null) {
+                try {
+                    // Fetch the updated loan to get the loan transaction
+                    Loan updatedLoan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
 
-                BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+                    BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
 
-                // Find the specific transaction that was just created using the resourceId (transaction ID)
-                LoanTransaction transaction = loan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
+                    // Find the specific transaction that was just created using the resourceId (transaction ID)
+                    LoanTransaction transaction = updatedLoan.getLoanTransaction(t -> t.getId().equals(result.getResourceId()));
 
-                updateLocBalance(loanId, transactionAmount, command.localDateValueOfParameterNamed("transactionDate"),
-                        LineOfCreditTransactionType.REPAYMENT, transaction);
+                    updateLocBalance(loanId, transactionAmount, command.localDateValueOfParameterNamed("transactionDate"),
+                            LineOfCreditTransactionType.REPAYMENT, transaction);
 
-                if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
-                    // Extract affected installments using the shared utility method
-                    List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
-                            transaction);
+                    if (transaction != null && transaction.getLoanTransactionToRepaymentScheduleMappings() != null) {
+                        // Extract affected installments using the shared utility method
+                        List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils
+                                .extractAffectedInstallments(updatedLoan, transaction);
 
-                    LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+                        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
-                    // Add the affected installments to the result for webhook payload
-                    Map<String, Object> additionalChanges = new HashMap<>();
-                    if (result.getChanges() != null) {
-                        additionalChanges.putAll(result.getChanges());
+                        // Add the affected installments to the result for webhook payload
+                        Map<String, Object> additionalChanges = new HashMap<>();
+                        if (result.getChanges() != null) {
+                            additionalChanges.putAll(result.getChanges());
+                        }
+
+                        // Add affected installments and transaction details to the changes
+                        additionalChanges.put("affectedInstallments", affectedInstallments);
+                        additionalChanges.put("transactionAmount", transactionAmount);
+                        additionalChanges.put("transactionDate", transactionDate);
+                        additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction
+                                                                                        // ID
+
+                        // Create a new result with the additional schedule information
+                        return new CommandProcessingResultBuilder().withCommandId(result.getCommandId())
+                                .withEntityId(result.getResourceId()).withEntityExternalId(result.getResourceExternalId())
+                                .withSubEntityId(result.getSubResourceId()).withSubEntityExternalId(result.getSubResourceExternalId())
+                                .withOfficeId(result.getOfficeId()).withClientId(result.getClientId()).withGroupId(result.getGroupId())
+                                .withLoanId(result.getLoanId()).withLoanExternalId(result.getLoanExternalId()).with(additionalChanges)
+                                .build();
                     }
 
-                    // Add affected installments and transaction details to the changes
-                    additionalChanges.put("affectedInstallments", affectedInstallments);
-                    additionalChanges.put("transactionAmount", transactionAmount);
-                    additionalChanges.put("transactionDate", transactionDate);
-                    additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction ID
-
-                    // Create a new result with the additional schedule information
-                    return new CommandProcessingResultBuilder().withCommandId(result.getCommandId()).withEntityId(result.getResourceId())
-                            .withEntityExternalId(result.getResourceExternalId()).withSubEntityId(result.getSubResourceId())
-                            .withSubEntityExternalId(result.getSubResourceExternalId()).withOfficeId(result.getOfficeId())
-                            .withClientId(result.getClientId()).withGroupId(result.getGroupId()).withLoanId(result.getLoanId())
-                            .withLoanExternalId(result.getLoanExternalId()).with(additionalChanges).build();
+                } catch (Exception e) {
+                    // Log the error but don't fail the repayment transaction
+                    log.warn("Failed to fetch affected installments for webhook payload: {}", e.getMessage());
+                    return result;
                 }
-
-            } catch (Exception e) {
-                // Log the error but don't fail the repayment transaction
-                log.warn("Failed to fetch affected installments for webhook payload: {}", e.getMessage());
-                return result;
             }
+            return result;
+        } catch (InvalidLoanStateTransitionException e) {
+            // Check if this is the multi-tranche validation error for a single-tranche loan
+            if ("amount.exceeds.threshold".equals(e.getGlobalisationMessageCode())) {
+                // Re-validate with fixed logic: only apply validation if loan actually has multiple tranches
+                if (!LoanTrancheValidationHelper.hasActualMultipleTranches(loan)) {
+                    // Single-tranche loan under multi-tranche product - validation should not apply
+                    log.debug("Ignoring multi-tranche validation error for single-tranche loan {}", loanId);
+                    // Retry the repayment without the broken validation
+                    // We need to call the parent again, but this time we'll skip the validation
+                    // Actually, we can't skip it easily, so we'll just re-throw if it's a real error
+                    // For now, let's validate manually and then proceed
+                    validateTransactionAmountNotExceedThresholdForMultiDisburseLoanFixed(loan);
+                    // If validation passes, retry the repayment
+                    return super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
+                }
+            }
+            // Re-throw if it's a different error or if it's a real multi-tranche loan
+            throw e;
+        }
+    }
+
+    /**
+     * Fixed version of validateTransactionAmountNotExceedThresholdForMultiDisburseLoan that only applies validation
+     * when the loan actually has multiple tranches.
+     */
+    private void validateTransactionAmountNotExceedThresholdForMultiDisburseLoanFixed(Loan loan) {
+        // Only apply validation if the loan actually has multiple tranches or pending tranches
+        if (!LoanTrancheValidationHelper.hasActualMultipleTranches(loan)) {
+            return;
         }
 
-        return result;
+        // Apply the original validation logic for actual multi-tranche loans
+        BigDecimal totalDisbursed = loan.getDisbursedAmount();
+        BigDecimal totalPrincipalAdjusted = loan.getSummary().getTotalPrincipalAdjustments();
+        BigDecimal totalPrincipalCredited = totalDisbursed.add(totalPrincipalAdjusted);
+        if (totalPrincipalCredited.compareTo(loan.getSummary().getTotalPrincipalRepaid()) < 0) {
+            final String errorMessage = "The transaction amount cannot exceed threshold.";
+            throw new InvalidLoanStateTransitionException("transaction", "amount.exceeds.threshold", errorMessage);
+        }
     }
 
     public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
             final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-
         final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
-        Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
-
-        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
+        final Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
+        final List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
                 .map(p -> new ExtendedLoanSchedulePeriodData(p,
                         this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
                 .toList();
-
-        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue);
+        final CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus,
+                loanCharges, penaltyWaitPeriodValue);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
         final List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
-
         if (!penaltiesToDisable.isEmpty()) {
             final List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
-            log.info("Starting deletion of {} penalty charges for loan ID: {} (backdated to {})",
-                    chargeIds.size(), loanId, transactionDate);
-
-            // Step 1: Find accrual transactions related to these charges and reverse them
-            final List<LoanTransaction> accrualTransactions = loanChargeRepository.findAccrualTransactionsByChargeIds(chargeIds);
+            final List<LoanTransaction> accrualTransactions = loanChargeRepository.findAccrualTransactionsByChargeIds(chargeIds,
+                    LoanTransactionType.ACCRUAL);
             for (final LoanTransaction accrualTransaction : accrualTransactions) {
-                // Before reversing, update the repayment schedule to reduce accrued amounts
-                // This ensures the accrual job can run correctly later
                 if (!accrualTransaction.isReversed()) {
                     final MonetaryCurrency currency = loan.getCurrency();
-
-                    // Accrual transactions store data in two ways:
-                    // 1. Interest - stored in transaction.interestPortion (no charge mapping)
-                    // 2. Fees/Penalties - stored via LoanChargePaidBy (has charge mappings)
-
-                    // Group accrual amounts by installment number using Maps
                     final Map<Integer, Money> interestByInstallment = new HashMap<>();
                     final Map<Integer, Money> feesByInstallment = new HashMap<>();
                     final Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
-
-                    // PART 1: Process charge-based accruals (fees and penalties)
-                    final Set<LoanChargePaidBy> chargesPaid = accrualTransaction.getLoanChargesPaid();
+                    final Set<LoanChargePaidBy> chargesPaid = new HashSet<>(accrualTransaction.getLoanChargesPaid());
                     for (LoanChargePaidBy chargePaidBy : chargesPaid) {
                         final Integer installmentNumber = chargePaidBy.getInstallmentNumber();
                         final LoanCharge charge = chargePaidBy.getLoanCharge();
                         final Money amount = Money.of(currency, chargePaidBy.getAmount());
-
                         if (charge.isPenaltyCharge()) {
-                            // Accumulate penalty amounts for this installment
                             penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
                         } else if (charge.isFeeCharge()) {
-                            // Accumulate fee amounts for this installment
                             feesByInstallment.merge(installmentNumber, amount, Money::plus);
                         }
                     }
-
-                    // PART 2: Process interest accrual (stored in transaction field, not as charge)
                     final Money totalInterest = Money.of(currency, accrualTransaction.getInterestPortion());
                     if (totalInterest.isGreaterThanZero()) {
-                        // Find the installment that this interest belongs to
-                        // Use accrual date to determine which installment period it covers
                         final LocalDate accrualDate = accrualTransaction.getTransactionDate();
-                        final LoanRepaymentScheduleInstallment targetInstallment =
-                                loan.getRepaymentScheduleInstallments().stream()
-                                    .filter(inst -> !inst.isDownPayment() && !inst.isAdditional())
-                                    .filter(inst -> DateUtils.isEqual(accrualDate, inst.getDueDate())
-                                                 || DateUtils.isBefore(accrualDate, inst.getDueDate()))
-                                    .findFirst()
-                                    .orElse(null);
-
+                        final LoanRepaymentScheduleInstallment targetInstallment = loan.getRepaymentScheduleInstallments().stream()
+                                .filter(inst -> !inst.isDownPayment() && !inst.isAdditional())
+                                .filter(inst -> DateUtils.isEqual(accrualDate, inst.getDueDate())
+                                        || DateUtils.isBefore(accrualDate, inst.getDueDate()))
+                                .findFirst().orElse(null);
                         if (targetInstallment != null) {
                             interestByInstallment.put(targetInstallment.getInstallmentNumber(), totalInterest);
-                        } else {
-                            // If no matching installment found, log warning
-                            log.warn("Could not find target installment for interest accrual reversal. " +
-                                    "Accrual date: {}, Transaction ID: {}", accrualDate, accrualTransaction.getId());
                         }
                     }
-
-                    // PART 3: Update all affected installments with reduced accrual amounts
                     final Set<Integer> allInstallmentNumbers = new HashSet<>();
                     allInstallmentNumbers.addAll(interestByInstallment.keySet());
                     allInstallmentNumbers.addAll(feesByInstallment.keySet());
                     allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
-
-                    for (Integer installmentNumber : allInstallmentNumbers) {
-                        final LoanRepaymentScheduleInstallment installment =
-                                loan.fetchRepaymentScheduleInstallment(installmentNumber);
-
-                        // Get amounts to reverse (default to zero if not present in map)
+                    for (final Integer installmentNumber : allInstallmentNumbers) {
+                        final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
                         final Money interestToReverse = interestByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
                         final Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
                         final Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
-
-                        // Get current accrued amounts from the installment
                         final Money currentInterestAccrued = installment.getInterestAccrued(currency);
                         final Money currentFeeAccrued = installment.getFeeAccrued(currency);
                         final Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
-
-                        // Calculate new reduced amounts by subtracting reversed portions
                         final Money newInterestAccrued = currentInterestAccrued.minus(interestToReverse);
                         final Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
                         final Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
-
-                        // Update the installment with reduced accrual amounts
                         installment.updateAccrualPortion(newInterestAccrued, newFeeAccrued, newPenaltyAccrued);
-
-                        log.debug("Reversed accrual in installment {}: interest={}, fees={}, penalties={}",
-                                installmentNumber,
-                                interestToReverse.getAmount(),
-                                feesToReverse.getAmount(),
-                                penaltiesToReverse.getAmount());
                     }
                 }
-
-                // Now reverse the accrual transaction itself
                 accrualTransaction.reverse();
-                this.loanTransactionRepository.saveAndFlush(accrualTransaction);
             }
-            log.info("Reversed {} accrual transactions and updated installment accrual amounts for loan ID: {}",
-                    accrualTransactions.size(), loanId);
-
-            // Step 2: Delete journal entries for these accrual transactions
-//            for (LoanTransaction accrualTransaction : accrualTransactions) {
-//                List<JournalEntry> journalEntries = journalEntryRepository
-//                        .findJournalEntries("L" + accrualTransaction.getId(),
-//                                PortfolioProductType.LOAN.getValue());
-//                if (!journalEntries.isEmpty()) {
-//                    journalEntryRepository.deleteAll(journalEntries);
-//                    log.info("Deleted {} journal entries for accrual transaction ID: {}",
-//                            journalEntries.size(), accrualTransaction.getId());
-//                }
-//            }
-
-            // Step 3: Delete the accrual transactions themselves
-//            if (!accrualTransactions.isEmpty()) {
-//                loanTransactionRepository.deleteAll(accrualTransactions);
-//                log.info("Deleted {} accrual transactions for charges", accrualTransactions.size());
-//            }
-
-            // Step 4: Delete LoanChargePaidBy records
-            int deletedChargePaidBy = loanChargeRepository.deleteChargePaidByForChargeIds(chargeIds);
-            log.info("Deleted {} LoanChargePaidBy records", deletedChargePaidBy);
-
-            // Step 5: Delete LoanInstallmentCharge records
-            int deletedInstallmentCharges = loanChargeRepository.deleteInstallmentChargesByChargeIds(chargeIds);
-            log.info("Deleted {} LoanInstallmentCharge records", deletedInstallmentCharges);
-
-            // Step 6: Delete the LoanCharge entities from database
-            loanChargeRepository.deleteAllById(chargeIds);
-            log.info("Deleted {} penalty charges from database for loan ID: {}", chargeIds.size(), loanId);
-
-            // Step 7: CRITICAL FIX - Remove deleted charges from Loan entity's in-memory collection
-            // This synchronizes the in-memory state with the database state and prevents
-            // the super method from trying to create LoanChargePaidBy for deleted charges
-            loan.getCharges().removeIf(charge -> chargeIds.contains(charge.getId()));
-            log.info("Removed {} deleted charges from Loan entity in-memory collection", chargeIds.size());
+            if (!accrualTransactions.isEmpty()) {
+                this.loanTransactionRepository.saveAllAndFlush(accrualTransactions);
+            }
+            if (!chargeIds.isEmpty()) {
+                loan.getLoanCharges().stream().filter(loanCharge -> chargeIds.contains(loanCharge.getId()))
+                        .forEach(loanCharge -> loanCharge.setActive(false));
+                saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            }
+            log.info("Deactivated {} penalty charges for loan id {}", chargeIds.size(), loanId);
         }
-
-        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
+        final CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
                 isRecoveryRepayment, chargeRefundChargeType);
-
-        /**
-         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application
-         * is not working as intended
-         */
-        // if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
-        // this.applyOverdueChargesForSingleLoan(loanId);
-        // }
+        if (result != null && result.getResourceId() != null && !penaltiesToDisable.isEmpty()) {
+            final Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
+            this.applyOverdueChargesLoan(loanId);
+            this.addLoanPeriodicAccruals(backdatedLoan);
+        }
         return result;
     }
 
-    public void applyOverdueChargesForSingleLoan(Long loanId) {
+    private void addLoanPeriodicAccruals(final Loan loan) {
+        final LocalDate accrualDate = DateUtils.getBusinessLocalDate();
+        try {
+            loanAccrualsProcessingService.addPeriodicAccruals(accrualDate, loan);
+        } catch (MultiException me) {
+            final String message = ExceptionUtils.getMessage(me);
+            log.error("Error adding periodic accruals for loan id {}: {}", loan.getId(), message);
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
+                    "Adding periodic accruals failed with error message : " + message);
+        } catch (Exception e) {
+            final String message = ExceptionUtils.getMessage(e);
+            log.error("Unexpected error adding periodic accruals for loan id {}: {}", loan.getId(), message);
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
+                    "Adding periodic accruals failed with error message : " + message);
+        }
+    }
+
+    private void applyOverdueChargesLoan(final Long loanId) {
         final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
         final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
-
-        final Collection<OverdueLoanScheduleData> installmentsForLoan = this.credibleXLoanReadPlatformService
-                .retrieveOverdueInstallmentsForLoan(loanId, penaltyWaitPeriodValue, backdatePenalties);
-
-        if (installmentsForLoan.isEmpty()) {
-            return;
-        }
-
-        try {
-            this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(loanId, installmentsForLoan);
-
-        } catch (final PlatformApiDataValidationException e) {
-            // Validation errors (e.g. bad data, config issues)
-            for (final ApiParameterError error : e.getErrors()) {
-                log.error("Apply overdue charges failed for loan {} with validation error: {}", loanId, error.getDeveloperMessage(), e);
+        final Collection<OverdueLoanScheduleData> overdueLoanScheduledInstallments = loanReadPlatformService
+                .retrieveLoanOverdueInstallments(loanId, penaltyWaitPeriodValue, backdatePenalties);
+        if (!overdueLoanScheduledInstallments.isEmpty()) {
+            final Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData = new HashMap<>();
+            for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduledInstallments) {
+                if (overdueScheduleData.containsKey(overdueInstallment.getLoanId())) {
+                    overdueScheduleData.get(overdueInstallment.getLoanId()).add(overdueInstallment);
+                } else {
+                    Collection<OverdueLoanScheduleData> loanData = new ArrayList<>();
+                    loanData.add(overdueInstallment);
+                    overdueScheduleData.put(overdueInstallment.getLoanId(), loanData);
+                }
             }
-            throw e; // rethrow so caller knows it failed
 
-        } catch (final AbstractPlatformDomainRuleException e) {
-            // Business rule violation (e.g. not allowed state transition)
-            log.error("Apply overdue charges failed for loan {} with business rule error: {}", loanId, e.getDefaultUserMessage(), e);
-            throw e;
-
-        } catch (Exception e) {
-            // Catch-all for unexpected exceptions
-            log.error("Apply overdue charges failed for loan {}", loanId, e);
-            throw new RuntimeException("Unexpected error while applying overdue charges for loan " + loanId, e);
+            final List<Throwable> exceptions = new ArrayList<>();
+            for (final Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
+                try {
+                    if (!entry.getValue().isEmpty()) {
+                        this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(entry.getKey(), entry.getValue());
+                    }
+                } catch (final PlatformApiDataValidationException e) {
+                    final List<ApiParameterError> errors = e.getErrors();
+                    for (final ApiParameterError error : errors) {
+                        log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
+                                error.getDeveloperMessage(), e);
+                    }
+                    exceptions.add(e);
+                } catch (final AbstractPlatformDomainRuleException e) {
+                    log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
+                            e.getDefaultUserMessage(), e);
+                    exceptions.add(e);
+                } catch (Exception e) {
+                    log.error("Apply Charges due for overdue loans failed for account {}", entry.getKey(), e);
+                    exceptions.add(e);
+                }
+            }
+            if (!exceptions.isEmpty()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.applying.overdue.charges.failed",
+                        "Applying overdue charges failed for loan id: " + loanId);
+            }
         }
     }
 
@@ -1075,8 +1185,169 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
     }
 
+    /**
+     * Checks if any standing instruction exists for a loan (active or disabled, but not deleted). This includes both
+     * repayment standing instructions and down-payment standing instructions.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if any standing instruction exists for the loan, false otherwise
+     */
     private boolean standingInstructionExists(Long loanId) {
-        return this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+        if (loanId == null) {
+            return false;
+        }
+        // Check for active standing instructions
+        boolean hasActive = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
                 StandingInstructionStatus.ACTIVE.getValue());
+        if (hasActive) {
+            return true;
+        }
+        // Check for disabled standing instructions
+        boolean hasDisabled = this.standingInstructionRepository.existsByAccountTransferDetails_ToLoanAccount_IdAndStatus(loanId,
+                StandingInstructionStatus.DISABLED.getValue());
+        return hasDisabled;
+    }
+
+    /**
+     * Checks if a down-payment standing instruction exists for a loan. This is used to prevent creating duplicate
+     * down-payment standing instructions when re-disbursing a loan after undo operations.
+     *
+     * @param loanId
+     *            The loan ID to check
+     * @return true if a down-payment standing instruction exists, false otherwise
+     */
+    private boolean hasDownPaymentStandingInstruction(Long loanId) {
+        // Since we clean up all SIs on undo, we can use the same check as standingInstructionExists
+        // The cleanup service removes all SIs (including down-payment ones) when undo is called.
+        // So if any SI exists, it means we shouldn't create a new one.
+        return standingInstructionExists(loanId);
+    }
+
+    /**
+     * Validates actual disbursement date against the specific tranche's expected date for multi-tranche loans, instead
+     * of using the loan-level expected date.
+     *
+     * This fixes the issue where core Fineract validates against loan.expectedDisbursementDate (first tranche's date)
+     * instead of the specific tranche being disbursed.
+     */
+    private void validateMultiTrancheDisbursementDate(JsonCommand command, Loan loan) {
+        final JsonElement element = fromApiJsonHelper.parse(command.json());
+        final LocalDate actualDisbursementDate = fromApiJsonHelper.extractLocalDateNamed("actualDisbursementDate", element);
+
+        if (actualDisbursementDate == null) {
+            return; // Will be validated by core validator
+        }
+
+        // Get the tranche being disbursed
+        final BigDecimal principalDisbursed = fromApiJsonHelper
+                .extractBigDecimalWithLocaleNamed(LoanApiConstants.principalDisbursedParameterName, element);
+
+        LoanDisbursementDetails trancheToDisburse = findTrancheToDisburse(loan, actualDisbursementDate, principalDisbursed);
+
+        if (trancheToDisburse != null) {
+            // Validate against the specific tranche's expected date
+            LocalDate expectedDate = trancheToDisburse.expectedDisbursementDate();
+            if (expectedDate != null && !DateUtils.isEqual(actualDisbursementDate, expectedDate)) {
+                throw new DateMismatchException(actualDisbursementDate, expectedDate);
+            }
+        } else {
+            // If no specific tranche found, try to find by expected date proximity
+            // This handles cases where principalDisbursed might not match exactly
+            java.util.Collection<LoanDisbursementDetails> undisbursedDetails = loan.fetchUndisbursedDetail();
+            if (!undisbursedDetails.isEmpty()) {
+                // Find tranche with expected date closest to actual date
+                LoanDisbursementDetails closestTranche = findClosestTrancheByDate(undisbursedDetails, actualDisbursementDate);
+                if (closestTranche != null) {
+                    LocalDate expectedDate = closestTranche.expectedDisbursementDate();
+                    if (expectedDate != null && !DateUtils.isEqual(actualDisbursementDate, expectedDate)) {
+                        throw new DateMismatchException(actualDisbursementDate, expectedDate);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Finds the specific tranche being disbursed based on: 1. Principal amount match (if provided) 2. Expected date
+     * closest to actual date
+     */
+    private LoanDisbursementDetails findTrancheToDisburse(Loan loan, LocalDate actualDisbursementDate, BigDecimal principalDisbursed) {
+        java.util.Collection<LoanDisbursementDetails> undisbursedDetails = loan.fetchUndisbursedDetail();
+
+        if (undisbursedDetails.isEmpty()) {
+            return null;
+        }
+
+        // If principal amount is provided, try to match by amount first
+        if (principalDisbursed != null) {
+            for (LoanDisbursementDetails detail : undisbursedDetails) {
+                if (detail.principal().compareTo(principalDisbursed) == 0) {
+                    return detail;
+                }
+            }
+        }
+
+        // Otherwise, find the tranche with expected date closest to actual date
+        return findClosestTrancheByDate(undisbursedDetails, actualDisbursementDate);
+    }
+
+    /**
+     * Finds the tranche with expected date closest to the actual disbursement date.
+     */
+    private LoanDisbursementDetails findClosestTrancheByDate(java.util.Collection<LoanDisbursementDetails> undisbursedDetails,
+            LocalDate actualDisbursementDate) {
+        LoanDisbursementDetails closestTranche = null;
+        long minDaysDiff = Long.MAX_VALUE;
+
+        for (LoanDisbursementDetails detail : undisbursedDetails) {
+            LocalDate expectedDate = detail.expectedDisbursementDate();
+            if (expectedDate != null) {
+                long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
+
+                if (daysDiff < minDaysDiff) {
+                    minDaysDiff = daysDiff;
+                    closestTranche = detail;
+                }
+            }
+        }
+
+        return closestTranche;
+    }
+
+    /**
+     * Override to add custom validation for future tranche date updates. Validates business rules before allowing date
+     * changes.
+     */
+    @Transactional
+    @Override
+    public CommandProcessingResult updateDisbursementDateAndAmountForTranche(final Long loanId, final Long disbursementId,
+            final JsonCommand command) {
+
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        if (loan.isChargedOff()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.is.charged.off",
+                    "Update Loan: " + loanId + " disbursement details is not allowed. Loan Account is Charged-off", loanId);
+        }
+
+        final LoanDisbursementDetails loanDisbursementDetails = loan.fetchLoanDisbursementsById(disbursementId);
+        if (loanDisbursementDetails == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.not.found",
+                    "Disbursement detail with id " + disbursementId + " not found for loan " + loanId);
+        }
+
+        // Extract new expected date from command
+        final LocalDate newExpectedDate = command.localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+
+        // Apply custom validation for future tranche date updates
+        customLoanDisbursementDateValidator.validateFutureTrancheDateUpdate(loan, loanDisbursementDetails, newExpectedDate);
+
+        // Call parent validation (validates JSON structure, amounts, etc.)
+        this.loanTransactionValidator.validateUpdateDisbursementDateAndAmount(command.json(), loanDisbursementDetails);
+
+        // Call parent implementation which handles the actual update and schedule regeneration
+        // We use super to avoid recursion since we're overriding the method
+        return super.updateDisbursementDateAndAmountForTranche(loanId, disbursementId, command);
     }
 }

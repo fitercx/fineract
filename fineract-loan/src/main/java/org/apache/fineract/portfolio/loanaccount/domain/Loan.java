@@ -821,7 +821,24 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             case PERCENT_OF_AMOUNT_AND_INTEREST -> {
                 final BigDecimal totalInterestCharged = getTotalInterest();
                 if (isMultiDisburmentLoan() && loanCharge.isDisbursementCharge()) {
-                    yield getTotalAllTrancheDisbursementAmount().getAmount().add(totalInterestCharged);
+                    // For multi-disbursement loans, use tranche-specific amount if available
+                    LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
+                    if (trancheCharge != null) {
+                        // Charge is linked to a specific tranche - use that tranche's principal
+                        yield trancheCharge.getLoanDisbursementDetails().principal().add(totalInterestCharged);
+                    } else {
+                        // Find tranche by disbursement date for proportional calculation
+                        LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
+                        if (actualDisbursementDate != null) {
+                            Optional<LoanDisbursementDetails> matchingTranche = getDisbursementDetails().stream()
+                                    .filter(detail -> actualDisbursementDate.equals(detail.actualDisbursementDate())).findFirst();
+                            if (matchingTranche.isPresent()) {
+                                yield matchingTranche.get().principal().add(totalInterestCharged);
+                            }
+                        }
+                        // Fallback to total of all tranches (for backward compatibility)
+                        yield getTotalAllTrancheDisbursementAmount().getAmount().add(totalInterestCharged);
+                    }
                 } else {
                     yield getPrincipal().getAmount().add(totalInterestCharged);
                 }
@@ -829,7 +846,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             case PERCENT_OF_INTEREST -> getTotalInterest();
             case PERCENT_OF_DISBURSEMENT_AMOUNT -> {
                 if (loanCharge.getTrancheDisbursementCharge() != null) {
-                    yield loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().principal();
+                    yield loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().principal();
                 } else {
                     yield getPrincipal().getAmount();
                 }
@@ -933,10 +950,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 LoanTrancheDisbursementCharge loanTrancheDisbursementCharge;
                 loanCharge.update(this);
                 if (this.loanProduct.isMultiDisburseLoan() && loanCharge.isTrancheDisbursementCharge()) {
-                    loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().updateLoan(this);
+                    loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().updateLoan(this);
                     for (final LoanDisbursementDetails loanDisbursementDetails : getDisbursementDetails()) {
-                        if (loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().getId() == null
-                                && loanCharge.getTrancheDisbursementCharge().getloanDisbursementDetails().equals(loanDisbursementDetails)) {
+                        if (loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().getId() == null
+                                && loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().equals(loanDisbursementDetails)) {
                             loanTrancheDisbursementCharge = new LoanTrancheDisbursementCharge(loanCharge, loanDisbursementDetails);
                             loanCharge.updateLoanTrancheDisbursementCharge(loanTrancheDisbursementCharge);
                         }
@@ -2432,7 +2449,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (loanCharge.isDueAtDisbursement() && loanCharge.isActive()) {
             LoanTrancheDisbursementCharge trancheDisbursementCharge = loanCharge.getTrancheDisbursementCharge();
             if (trancheDisbursementCharge != null) {
-                LoanDisbursementDetails details = trancheDisbursementCharge.getloanDisbursementDetails();
+                LoanDisbursementDetails details = trancheDisbursementCharge.getLoanDisbursementDetails();
                 actualDisbursementDate = details.actualDisbursementDate();
             }
         }
@@ -2454,7 +2471,7 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             if (charge.isOverdueInstallmentCharge()) {
                 charge.setActive(false);
             } else if (charge.isTrancheDisbursementCharge() && disbursementDetail.getDisbursementDate()
-                    .equals(charge.getTrancheDisbursementCharge().getloanDisbursementDetails().actualDisbursementDate())) {
+                    .equals(charge.getTrancheDisbursementCharge().getLoanDisbursementDetails().actualDisbursementDate())) {
                 charge.resetToOriginal(getCurrency());
             }
         }
@@ -2515,7 +2532,35 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public BigDecimal getDerivedAmountForCharge(final LoanCharge loanCharge) {
         BigDecimal amount = BigDecimal.ZERO;
         if (isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
-            amount = getApprovedPrincipal();
+            // For multi-disbursement loans, calculate fee proportionally per tranche
+            // Check if charge is associated with a specific tranche
+            LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
+            if (trancheCharge != null) {
+                // Charge is linked to a specific tranche - use that tranche's principal
+                amount = trancheCharge.getLoanDisbursementDetails().principal();
+            } else {
+                // Charge not linked to tranche - find tranche by disbursement date and calculate proportionally
+                LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
+                if (actualDisbursementDate != null) {
+                    // Find the tranche that matches this disbursement date
+                    Optional<LoanDisbursementDetails> matchingTranche = getDisbursementDetails().stream()
+                            .filter(detail -> actualDisbursementDate.equals(detail.actualDisbursementDate())).findFirst();
+
+                    if (matchingTranche.isPresent()) {
+                        // Use the matching tranche's principal for proportional calculation
+                        // The fee percentage will be applied to this tranche amount, ensuring
+                        // proportional allocation: (trancheAmount / sanctionedAmount) * totalFee
+                        amount = matchingTranche.get().principal();
+                    } else {
+                        // Fallback: if no matching tranche found, use approved principal
+                        // This should not happen in normal flow, but provides safety
+                        amount = getApprovedPrincipal();
+                    }
+                } else {
+                    // No disbursement date yet - use approved principal as fallback
+                    amount = getApprovedPrincipal();
+                }
+            }
         } else {
             // If charge type is specified due date and loan is multi disburment loan.
             // Then we need to get as of this loan charge due date how much amount disbursed.
