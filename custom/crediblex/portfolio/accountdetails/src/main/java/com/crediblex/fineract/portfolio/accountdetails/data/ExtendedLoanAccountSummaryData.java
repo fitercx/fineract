@@ -20,8 +20,6 @@
 package com.crediblex.fineract.portfolio.accountdetails.data;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
 import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
@@ -39,8 +37,6 @@ public class ExtendedLoanAccountSummaryData extends LoanAccountSummaryData {
         super(id, accountNo, parentAccountNumber, externalId, productId, productName, shortProductName, status, currency, loanType,
                 loanCycle, timeline, inArrears, originalLoan, loanBalance, amountPaid);
     }
-
-    protected final Map<String, Object> additionalProperties = new HashMap<>();
 
     public void addCustomParameter(String name, Object value) {
         additionalProperties.put(name, value);
