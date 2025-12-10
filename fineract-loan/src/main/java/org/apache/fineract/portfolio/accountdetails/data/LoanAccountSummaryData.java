@@ -20,6 +20,8 @@ package org.apache.fineract.portfolio.accountdetails.data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -77,6 +79,8 @@ public class LoanAccountSummaryData {
     private EnumOptionData termPeriodFrequencyType;
     @Setter
     BigDecimal netDisbursalAmount;
+
+    protected final Map<String, Object> additionalProperties = new HashMap<>();
 
     public LoanAccountSummaryData(final Long id, final String accountNo, final String externalId, final Long productId,
             final String loanProductName, final String shortLoanProductName, final LoanStatusEnumData loanStatus,

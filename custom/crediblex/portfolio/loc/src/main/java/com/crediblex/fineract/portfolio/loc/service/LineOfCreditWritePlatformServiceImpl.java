@@ -131,12 +131,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     }
 
                     // Extract chargeId - could be nested in the charge object or directly as "id"
-                    Long chargeId = null;
-                    if (fromJsonHelper.parameterExists("chargeId", charge)) {
-                        chargeId = fromJsonHelper.extractLongNamed("chargeId", charge);
-                    } else if (fromJsonHelper.parameterExists("id", charge)) {
-                        chargeId = fromJsonHelper.extractLongNamed("id", charge);
-                    }
+                    Long chargeId = fromJsonHelper.extractLongNamed("chargeDefinitionId", charge);
 
                     if (chargeId == null) {
                         throw new PlatformApiDataValidationException("error.msg.loc.charge.chargeId.required",
@@ -158,14 +153,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
                     // Extract override amount - could be "overrideAmount", "editableAmount", or "amount"
                     BigDecimal overrideAmount = null;
-                    if (fromJsonHelper.parameterExists("overrideAmount", charge)
-                            && fromJsonHelper.parameterHasValue("overrideAmount", charge)) {
-                        overrideAmount = fromJsonHelper.extractBigDecimalNamed("overrideAmount", charge, Locale.ENGLISH);
-                    } else if (fromJsonHelper.parameterExists("editableAmount", charge)
+                    if (fromJsonHelper.parameterExists("editableAmount", charge)
                             && fromJsonHelper.parameterHasValue("editableAmount", charge)) {
                         overrideAmount = fromJsonHelper.extractBigDecimalNamed("editableAmount", charge, Locale.ENGLISH);
-                    } else if (fromJsonHelper.parameterExists("amount", charge) && fromJsonHelper.parameterHasValue("amount", charge)) {
-                        overrideAmount = fromJsonHelper.extractBigDecimalNamed("amount", charge, Locale.ENGLISH);
                     }
 
                     LineOfCreditCharge instance = locChargeDomainService.create(lineOfCredit, chargeDefinition, overrideAmount);

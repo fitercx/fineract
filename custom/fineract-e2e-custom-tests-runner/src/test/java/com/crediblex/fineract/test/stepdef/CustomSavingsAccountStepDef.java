@@ -33,15 +33,12 @@ import org.apache.fineract.client.models.SavingsAccountData;
 import org.apache.fineract.client.services.GeneralLedgerAccountApi;
 import org.apache.fineract.client.services.SavingsAccountApi;
 import org.apache.fineract.client.services.SavingsProductApi;
-import org.apache.fineract.test.factory.SavingsAccountRequestFactory;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import retrofit2.Response;
 
 import static org.apache.fineract.test.factory.SavingsAccountRequestFactory.DATE_FORMAT;
-import static org.apache.fineract.test.factory.SavingsAccountRequestFactory.DEFAULT_CLIENT_ID;
-import static org.apache.fineract.test.factory.SavingsAccountRequestFactory.DEFAULT_SUBMITTED_ON_DATE;
 import static org.apache.fineract.test.initializer.global.GLGlobalInitializerStep.GLA_NAME_6;
 import static org.apache.fineract.test.support.TestContextKey.DEFAULT_SAVINGS_PRODUCT_CREATE_RESPONSE_EUR;
 import static org.junit.jupiter.api.Assertions.assertEquals;
