@@ -291,6 +291,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.approved_receivable_amount as approvedReceivableAmount,
                     mlcp.amount_after_advance as amountAfterAdvance,
                     mlcp.approved_payable_amount as approvedPayableAmount,
+                    mlcp.amount_in_facility_currency as amountInFacilityCurrency,
                     mlcp.invoice_amount as invoiceAmount,
                     STRING_AGG(mlocab.name, ', ') as buyerSupplier
                     FROM m_line_of_credit loc
@@ -315,7 +316,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
                     l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived,la.overdue_since_date_derived,
-                    mlcp.approved_receivable_amount, mlcp.amount_after_advance,mlcp.approved_payable_amount,mlcp.invoice_amount
+                    mlcp.approved_receivable_amount, mlcp.amount_after_advance,mlcp.approved_payable_amount,mlcp.invoice_amount,
+                     mlcp.amount_in_facility_currency
                     """;
         }
 
@@ -396,6 +398,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal amountAfterAdvance = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amountAfterAdvance");
             final BigDecimal approvedPayableAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "approvedPayableAmount");
             final BigDecimal invoiceAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "invoiceAmount");
+            final BigDecimal amountInFacilityCurrency = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amountInFacilityCurrency");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -410,6 +413,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             summaryData.getAdditionalProperties().put("approvedReceivableAmount", approvedReceivableAmount);
             summaryData.getAdditionalProperties().put("amountAfterAdvance", amountAfterAdvance);
+            summaryData.getAdditionalProperties().put("amountInFacilityCurrency", amountInFacilityCurrency);
             summaryData.getAdditionalProperties().put("approvedPayableAmount", approvedPayableAmount);
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
             return summaryData;

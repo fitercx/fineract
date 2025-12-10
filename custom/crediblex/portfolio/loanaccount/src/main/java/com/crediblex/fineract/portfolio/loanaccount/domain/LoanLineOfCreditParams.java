@@ -121,8 +121,8 @@ public class LoanLineOfCreditParams {
     private void computeFields() {
         computeApprovedReceivableAmount();
         computeAmountAfterAdvance();
-        computeAmountInFacilityCurrency();
         computeApprovedPayableAmount();
+        computeAmountInFacilityCurrency();
     }
 
     // Business logic: Approved Receivable Amount = Invoice Amount - Disapproved Amount
@@ -143,7 +143,7 @@ public class LoanLineOfCreditParams {
 
     // Business logic: Amount In Facility Currency = Approved Receivable Amount * Exchange Rate
     private void computeAmountInFacilityCurrency() {
-        if (this.approvedReceivableAmount != null && this.exchangeRate != null && lineOfCredit.getProductType().isPayable()) {
+        if (this.approvedPayableAmount != null && this.exchangeRate != null && lineOfCredit.getProductType().isPayable()) {
             this.amountInFacilityCurrency = this.approvedPayableAmount.multiply(this.exchangeRate.add(this.markup));
         }
     }
