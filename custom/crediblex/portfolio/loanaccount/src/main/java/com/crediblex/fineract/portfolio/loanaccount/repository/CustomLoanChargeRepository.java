@@ -19,11 +19,11 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.repository;
 
-import jakarta.transaction.Transactional;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -44,14 +44,14 @@ public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Lo
             """)
     List<LoanCharge> findActiveByLoanIdWithOrder(@Param("loanId") Long loanId);
 
-    @Modifying
-    @Transactional
     @Query("""
-            UPDATE LoanCharge lc
-            SET lc.active = false
-            WHERE lc.loan.id = :loanId
-            AND lc.id IN :chargeIds
+            SELECT DISTINCT lt FROM LoanTransaction lt
+            INNER JOIN lt.loanChargesPaid lcpb
+            WHERE lcpb.loanCharge.id IN :chargeIds
+            AND lt.typeOf = :transactionType
+            AND lt.reversed = false
             """)
-    int deactivateCharges(@Param("loanId") Long loanId, @Param("chargeIds") List<Long> chargeIds);
+    List<LoanTransaction> findAccrualTransactionsByChargeIds(@Param("chargeIds") List<Long> chargeIds,
+            @Param("transactionType") LoanTransactionType transactionType);
 
 }

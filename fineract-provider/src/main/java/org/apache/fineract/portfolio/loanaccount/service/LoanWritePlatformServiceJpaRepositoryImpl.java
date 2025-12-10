@@ -246,7 +246,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     protected final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
     protected final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
-    private final LoanReadPlatformService loanReadPlatformService;
+    protected final LoanReadPlatformService loanReadPlatformService;
     protected final FromJsonHelper fromApiJsonHelper;
     private final CalendarRepository calendarRepository;
     protected final LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService;

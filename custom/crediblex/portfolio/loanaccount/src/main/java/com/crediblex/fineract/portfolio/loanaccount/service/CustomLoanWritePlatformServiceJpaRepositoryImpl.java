@@ -23,12 +23,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
@@ -42,6 +45,7 @@ import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
+import org.apache.fineract.infrastructure.core.exception.MultiException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
@@ -54,6 +58,7 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.transaction
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepositoryWrapper;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.teller.data.CashierTransactionDataValidator;
 import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
@@ -82,9 +87,11 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -110,6 +117,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanUpdateCommand
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDisbursementService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDownPaymentHandlerService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanJournalEntryPoster;
@@ -194,10 +202,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
             LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
             @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, JournalEntryRepository journalEntryRepository,
             SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
             LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
-            com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator) {
+            com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
+            LoanChargeWritePlatformService loanChargeWritePlatformService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -932,69 +941,149 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-
         final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
-        Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
-
-        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
+        final Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
+        final List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
                 .map(p -> new ExtendedLoanSchedulePeriodData(p,
                         this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
                 .toList();
-
-        CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue);
-        LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-        List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
-
+        final CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus,
+                loanCharges, penaltyWaitPeriodValue);
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        final List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
         if (!penaltiesToDisable.isEmpty()) {
-            List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
-
-            loanChargeRepository.deactivateCharges(loanId, chargeIds);
+            final List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
+            final List<LoanTransaction> accrualTransactions = loanChargeRepository.findAccrualTransactionsByChargeIds(chargeIds,
+                    LoanTransactionType.ACCRUAL);
+            for (final LoanTransaction accrualTransaction : accrualTransactions) {
+                if (!accrualTransaction.isReversed()) {
+                    final MonetaryCurrency currency = loan.getCurrency();
+                    final Map<Integer, Money> interestByInstallment = new HashMap<>();
+                    final Map<Integer, Money> feesByInstallment = new HashMap<>();
+                    final Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
+                    final Set<LoanChargePaidBy> chargesPaid = new HashSet<>(accrualTransaction.getLoanChargesPaid());
+                    for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                        final Integer installmentNumber = chargePaidBy.getInstallmentNumber();
+                        final LoanCharge charge = chargePaidBy.getLoanCharge();
+                        final Money amount = Money.of(currency, chargePaidBy.getAmount());
+                        if (charge.isPenaltyCharge()) {
+                            penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
+                        } else if (charge.isFeeCharge()) {
+                            feesByInstallment.merge(installmentNumber, amount, Money::plus);
+                        }
+                    }
+                    final Money totalInterest = Money.of(currency, accrualTransaction.getInterestPortion());
+                    if (totalInterest.isGreaterThanZero()) {
+                        final LocalDate accrualDate = accrualTransaction.getTransactionDate();
+                        final LoanRepaymentScheduleInstallment targetInstallment = loan.getRepaymentScheduleInstallments().stream()
+                                .filter(inst -> !inst.isDownPayment() && !inst.isAdditional())
+                                .filter(inst -> DateUtils.isEqual(accrualDate, inst.getDueDate())
+                                        || DateUtils.isBefore(accrualDate, inst.getDueDate()))
+                                .findFirst().orElse(null);
+                        if (targetInstallment != null) {
+                            interestByInstallment.put(targetInstallment.getInstallmentNumber(), totalInterest);
+                        }
+                    }
+                    final Set<Integer> allInstallmentNumbers = new HashSet<>();
+                    allInstallmentNumbers.addAll(interestByInstallment.keySet());
+                    allInstallmentNumbers.addAll(feesByInstallment.keySet());
+                    allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
+                    for (final Integer installmentNumber : allInstallmentNumbers) {
+                        final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
+                        final Money interestToReverse = interestByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                        final Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                        final Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                        final Money currentInterestAccrued = installment.getInterestAccrued(currency);
+                        final Money currentFeeAccrued = installment.getFeeAccrued(currency);
+                        final Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
+                        final Money newInterestAccrued = currentInterestAccrued.minus(interestToReverse);
+                        final Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
+                        final Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
+                        installment.updateAccrualPortion(newInterestAccrued, newFeeAccrued, newPenaltyAccrued);
+                    }
+                }
+                accrualTransaction.reverse();
+            }
+            if (!accrualTransactions.isEmpty()) {
+                this.loanTransactionRepository.saveAllAndFlush(accrualTransactions);
+            }
+            if (!chargeIds.isEmpty()) {
+                loan.getLoanCharges().stream().filter(loanCharge -> chargeIds.contains(loanCharge.getId()))
+                        .forEach(loanCharge -> loanCharge.setActive(false));
+                saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            }
+            log.info("Deactivated {} penalty charges for loan id {}", chargeIds.size(), loanId);
         }
-
-        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
+        final CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
                 isRecoveryRepayment, chargeRefundChargeType);
-
-        /**
-         * Commenting for now as overdue charges are applied via a scheduler job and this logic for manual application
-         * is not working as intended
-         */
-        // if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
-        // this.applyOverdueChargesForSingleLoan(loanId);
-        // }
+        if (result != null && result.getResourceId() != null && !penaltiesToDisable.isEmpty()) {
+            final Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
+            this.applyOverdueChargesLoan(loanId);
+            this.addLoanPeriodicAccruals(backdatedLoan);
+        }
         return result;
     }
 
-    public void applyOverdueChargesForSingleLoan(Long loanId) {
+    private void addLoanPeriodicAccruals(final Loan loan) {
+        final LocalDate accrualDate = DateUtils.getBusinessLocalDate();
+        try {
+            loanAccrualsProcessingService.addPeriodicAccruals(accrualDate, loan);
+        } catch (MultiException me) {
+            final String message = ExceptionUtils.getMessage(me);
+            log.error("Error adding periodic accruals for loan id {}: {}", loan.getId(), message);
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
+                    "Adding periodic accruals failed with error message : " + message);
+        } catch (Exception e) {
+            final String message = ExceptionUtils.getMessage(e);
+            log.error("Unexpected error adding periodic accruals for loan id {}: {}", loan.getId(), message);
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
+                    "Adding periodic accruals failed with error message : " + message);
+        }
+    }
+
+    private void applyOverdueChargesLoan(final Long loanId) {
         final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
         final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
-
-        final Collection<OverdueLoanScheduleData> installmentsForLoan = this.credibleXLoanReadPlatformService
-                .retrieveOverdueInstallmentsForLoan(loanId, penaltyWaitPeriodValue, backdatePenalties);
-
-        if (installmentsForLoan.isEmpty()) {
-            return;
-        }
-
-        try {
-            this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(loanId, installmentsForLoan);
-
-        } catch (final PlatformApiDataValidationException e) {
-            // Validation errors (e.g. bad data, config issues)
-            for (final ApiParameterError error : e.getErrors()) {
-                log.error("Apply overdue charges failed for loan {} with validation error: {}", loanId, error.getDeveloperMessage(), e);
+        final Collection<OverdueLoanScheduleData> overdueLoanScheduledInstallments = loanReadPlatformService
+                .retrieveLoanOverdueInstallments(loanId, penaltyWaitPeriodValue, backdatePenalties);
+        if (!overdueLoanScheduledInstallments.isEmpty()) {
+            final Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData = new HashMap<>();
+            for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduledInstallments) {
+                if (overdueScheduleData.containsKey(overdueInstallment.getLoanId())) {
+                    overdueScheduleData.get(overdueInstallment.getLoanId()).add(overdueInstallment);
+                } else {
+                    Collection<OverdueLoanScheduleData> loanData = new ArrayList<>();
+                    loanData.add(overdueInstallment);
+                    overdueScheduleData.put(overdueInstallment.getLoanId(), loanData);
+                }
             }
-            throw e; // rethrow so caller knows it failed
 
-        } catch (final AbstractPlatformDomainRuleException e) {
-            // Business rule violation (e.g. not allowed state transition)
-            log.error("Apply overdue charges failed for loan {} with business rule error: {}", loanId, e.getDefaultUserMessage(), e);
-            throw e;
-
-        } catch (Exception e) {
-            // Catch-all for unexpected exceptions
-            log.error("Apply overdue charges failed for loan {}", loanId, e);
-            throw new RuntimeException("Unexpected error while applying overdue charges for loan " + loanId, e);
+            final List<Throwable> exceptions = new ArrayList<>();
+            for (final Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
+                try {
+                    if (!entry.getValue().isEmpty()) {
+                        this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(entry.getKey(), entry.getValue());
+                    }
+                } catch (final PlatformApiDataValidationException e) {
+                    final List<ApiParameterError> errors = e.getErrors();
+                    for (final ApiParameterError error : errors) {
+                        log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
+                                error.getDeveloperMessage(), e);
+                    }
+                    exceptions.add(e);
+                } catch (final AbstractPlatformDomainRuleException e) {
+                    log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
+                            e.getDefaultUserMessage(), e);
+                    exceptions.add(e);
+                } catch (Exception e) {
+                    log.error("Apply Charges due for overdue loans failed for account {}", entry.getKey(), e);
+                    exceptions.add(e);
+                }
+            }
+            if (!exceptions.isEmpty()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.applying.overdue.charges.failed",
+                        "Applying overdue charges failed for loan id: " + loanId);
+            }
         }
     }
 

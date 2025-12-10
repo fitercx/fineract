@@ -68,6 +68,7 @@ import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -97,7 +98,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             LoanTransactionRepository loanTransactionRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
             LoanRepositoryWrapper loanRepositoryWrapper, JournalEntryWritePlatformService journalEntryWritePlatformService,
             LoanAccountDomainService loanAccountDomainService, @Qualifier("loanChargeRepository") LoanChargeRepository loanChargeRepository,
-            LoanWritePlatformService loanWritePlatformService, LoanUtilService loanUtilService,
+            @Lazy LoanWritePlatformService loanWritePlatformService, LoanUtilService loanUtilService,
             LoanChargeReadPlatformService loanChargeReadPlatformService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
             AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, FromJsonHelper fromApiJsonHelper,
             ConfigurationDomainService configurationDomainService,

@@ -32,7 +32,6 @@ public class CredibleXLoanPenaltyCalculator {
 
     public BigDecimal calculatePenaltySum(LocalDate transactionDate) {
 
-        final BigDecimal principalDueForInstallment = getPrincipalDueForTransaction(transactionDate);
         final LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
 
         // Business rule validation
@@ -46,17 +45,11 @@ public class CredibleXLoanPenaltyCalculator {
         LocalDate lower = firstPendingInstallmentDate;
         LocalDate upper = transactionDate;
 
-        // Collect the included charges (unpaid, applicable penalties)
-        List<LoanChargeData> includedCharges = loanCharges.stream().filter(LoanChargeData::isPenalty) // only penalties
-                .filter(charge -> !charge.isWaived()) // exclude waived
-                .filter(charge -> !charge.isPaid()) // exclude already paid charges
-                .filter(charge -> isChargeApplicable(charge, lower, upper, principalDueForInstallment)).toList();
-
         // Calculate the penalty sum from unpaid, applicable penalties
         return loanCharges.stream().filter(LoanChargeData::isPenalty) // only penalties
                 .filter(charge -> !charge.isWaived()) // exclude waived
                 .filter(charge -> !charge.isPaid()) // exclude already paid charges
-                .filter(charge -> isChargeApplicable(charge, lower, upper, principalDueForInstallment)).map(LoanChargeData::getAmount)
+                .filter(charge -> isChargeApplicable(charge, lower, upper)).map(LoanChargeData::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -73,8 +66,7 @@ public class CredibleXLoanPenaltyCalculator {
         return installment.getPrincipalDue();
     }
 
-    private boolean isChargeApplicable(LoanChargeData charge, LocalDate firstPendingInstallmentDate, LocalDate transactionDate,
-            BigDecimal principalDueForInstallment) {
+    private boolean isChargeApplicable(LoanChargeData charge, LocalDate firstPendingInstallmentDate, LocalDate transactionDate) {
 
         LocalDate chargeDueDate = charge.getDueDate();
         if (chargeDueDate == null) {
@@ -109,7 +101,6 @@ public class CredibleXLoanPenaltyCalculator {
     }
 
     public Collection<LoanChargeData> getApplicableCharges(LocalDate transactionDate) {
-        BigDecimal principalDueForInstallment = this.getPrincipalDueForTransaction(transactionDate);
         LocalDate firstPendingInstallmentDate = this.getFirstPendingInstallmentDate(transactionDate);
 
         return loanCharges.stream().filter(LoanChargeData::isPenalty) // only penalties
@@ -118,8 +109,7 @@ public class CredibleXLoanPenaltyCalculator {
                                                                                                                               // fully
                                                                                                                               // paid
                                                                                                                               // charges
-                .filter(charge -> isChargeApplicable(charge, firstPendingInstallmentDate, transactionDate, principalDueForInstallment))
-                .toList();
+                .filter(charge -> isChargeApplicable(charge, firstPendingInstallmentDate, transactionDate)).toList();
 
     }
 
