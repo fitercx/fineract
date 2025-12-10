@@ -30,7 +30,6 @@ import com.crediblex.client.services.LineOfCreditApi;
 
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.And;
-import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import java.io.IOException;
@@ -47,13 +46,10 @@ import org.apache.fineract.client.models.GetLoansTemplateLineOfCreditOptions;
 import org.apache.fineract.client.models.GetLoansTemplateResponse;
 import org.apache.fineract.client.models.PostClientsResponse;
 import org.apache.fineract.client.models.PostLoansRequest;
-import org.apache.fineract.client.models.PostLoansRequestChargeData;
 import org.apache.fineract.client.models.PostLoansResponse;
 import org.apache.fineract.client.models.PostSavingsAccountsResponse;
 import org.apache.fineract.client.models.TableData;
 import org.apache.fineract.client.services.LoansApi;
-import org.apache.fineract.test.data.ChargeCalculationType;
-import org.apache.fineract.test.data.ChargeTimeType;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -182,7 +178,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
     }
 
 
-    private record LineOfCreditCharge (Long chargeId, BigDecimal editableAmount){
+    private record LineOfCreditCharge (Long chargeDefinitionId, BigDecimal editableAmount){
     }
 
     @When("Client creates a new line of credit with start date {string}, max limit {int} and expected available {int}")
