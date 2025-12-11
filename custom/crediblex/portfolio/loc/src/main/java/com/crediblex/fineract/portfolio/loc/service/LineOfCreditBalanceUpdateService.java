@@ -48,20 +48,47 @@ public class LineOfCreditBalanceUpdateService {
     }
 
     /**
-     * Overloaded method that includes loan transaction ID for better traceability.
+     * Overloaded method that includes loan transaction ID for better traceability and audit purposes.
+     *
+     * <p>
+     * This version should be used when you have access to the specific loan transaction ID (e.g., from
+     * LoanTransaction.getId()). The loanTransactionId enables direct linking between LOC transactions and loan
+     * transactions, improving audit trails and making it easier to trace LOC balance changes back to specific loan
+     * operations.
+     * </p>
+     *
+     * <p>
+     * Use this overload when:
+     * <ul>
+     * <li>Processing loan disbursements, repayments, or other loan-related transactions where the transaction ID is
+     * available</li>
+     * <li>You need to maintain a direct relationship between LOC transactions and loan transactions for reporting or
+     * reconciliation</li>
+     * <li>Creating audit trails that require transaction-level traceability</li>
+     * </ul>
+     * </p>
+     *
+     * <p>
+     * Use the original method (without loanTransactionId) when:
+     * <ul>
+     * <li>The loan transaction ID is not available or not relevant</li>
+     * <li>Processing non-loan transactions (e.g., manual LOC adjustments)</li>
+     * <li>Maintaining backward compatibility with existing code</li>
+     * </ul>
+     * </p>
      *
      * @param loanId
      *            the loan ID
      * @param loanTransactionId
-     *            the loan transaction ID (can be null for non-loan transactions)
+     *            the loan transaction ID for traceability (can be null for non-loan transactions or when not available)
      * @param amount
-     *            the transaction amount
+     *            the transaction amount (should be the approved_principal from the loan for disbursements)
      * @param lineOfCredit
-     *            the line of credit
+     *            the line of credit parameters containing LOC details
      * @param transactionDate
      *            the transaction date
      * @param lineOfCreditTransactionType
-     *            the type of transaction
+     *            the type of transaction (disbursement, repayment, refund, etc.)
      */
     @Transactional
     public void computeLocBalance(Long loanId, Long loanTransactionId, BigDecimal amount, LineOfCredit lineOfCredit,
@@ -382,15 +409,38 @@ public class LineOfCreditBalanceUpdateService {
      * Reconciles consumed_amount by recalculating it from actual loan data. This method ensures consumed_amount equals
      * the sum of principal_disbursed_derived for all loans under the LOC.
      *
-     * This is useful for: - Fixing data inconsistencies - Validating consumed_amount accuracy - Recovering from data
-     * corruption
+     * <p>
+     * This is useful for:
+     * <ul>
+     * <li>Fixing data inconsistencies between LOC summary and actual loan disbursements</li>
+     * <li>Validating consumed_amount accuracy during audits</li>
+     * <li>Recovering from data corruption or migration issues</li>
+     * </ul>
+     * </p>
+     *
+     * <p>
+     * <b>Note:</b> This method directly queries and updates financial data. Comprehensive unit tests are required
+     * covering scenarios such as:
+     * <ul>
+     * <li>LOC with zero loans (should return 0)</li>
+     * <li>LOC with multiple loans (should sum all principal_disbursed_derived)</li>
+     * <li>Null handling for lineOfCredit parameter</li>
+     * <li>Edge cases with loans having null or zero principal_disbursed_derived</li>
+     * <li>Verification that available balance is correctly recalculated</li>
+     * </ul>
+     * </p>
      *
      * @param lineOfCredit
-     *            The line of credit to reconcile
+     *            The line of credit to reconcile (must not be null)
      * @return The recalculated consumed amount based on actual loan data
+     * @throws IllegalArgumentException
+     *             if lineOfCredit is null
      */
     @Transactional
     public BigDecimal reconcileConsumedAmountFromLoanData(LineOfCredit lineOfCredit) {
+        if (lineOfCredit == null) {
+            throw new IllegalArgumentException("LineOfCredit cannot be null");
+        }
         // Query to get sum of principal_disbursed_derived for all loans under this LOC
         String sql = """
                 SELECT COALESCE(SUM(l.principal_disbursed_derived), 0)

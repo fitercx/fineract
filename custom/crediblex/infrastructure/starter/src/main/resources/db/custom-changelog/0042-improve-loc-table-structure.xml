@@ -298,14 +298,26 @@
         <comment>Backfill loan_id from reference_number for existing loan-related transactions</comment>
         <sql>
             -- Extract loan_id from reference_number format: "LOAN_{loanId}_{transactionType}"
+            -- Uses safe casting with validation to prevent errors from malformed reference_numbers
             UPDATE m_line_of_credit_transactions
-            SET loan_id = CAST(
-                SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_') AS BIGINT
-            )
+            SET loan_id = CASE
+                WHEN reference_number ~ '^LOAN_[0-9]+_' THEN
+                    -- Extract and validate the loan ID substring before casting
+                    CAST(
+                        NULLIF(
+                            SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_'),
+                            ''
+                        ) AS BIGINT
+                    )
+                ELSE
+                    NULL
+            END
             WHERE loan_id IS NULL
               AND reference_number IS NOT NULL
               AND reference_number LIKE 'LOAN_%'
-              AND reference_number ~ '^LOAN_[0-9]+_';
+              AND reference_number ~ '^LOAN_[0-9]+_'
+              -- Additional safety: ensure the extracted substring is purely numeric
+              AND SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_') ~ '^[0-9]+$';
         </sql>
     </changeSet>
 
