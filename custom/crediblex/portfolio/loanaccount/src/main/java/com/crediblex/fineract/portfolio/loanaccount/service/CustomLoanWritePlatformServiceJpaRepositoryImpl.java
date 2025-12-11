@@ -369,7 +369,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                 loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                disburseLoanToSavings(loan, command, amountToDisburse, paymentDetail);
+                // Calculate net disbursement amount by deducting fees from principal
+                Money netDisbursementAmount = amountToDisburse.minus(Money.of(loan.getCurrency(), chargeReducableFromDisbursement));
+                disburseLoanToSavings(loan, command, amountToDisburse, netDisbursementAmount, paymentDetail);
                 existingTransactionIds.addAll(loan.findExistingTransactionIds());
                 existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
             } else {
@@ -602,7 +604,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                    disburseLoanToSavings(loan, command, disburseAmount, paymentDetail);
+                    // Calculate net disbursement amount by deducting fees from principal
+                    Money netDisbursementAmount = disburseAmount.minus(Money.of(loan.getCurrency(), chargeReducableFromDisbursement));
+                    disburseLoanToSavings(loan, command, disburseAmount, netDisbursementAmount, paymentDetail);
                     existingTransactionIds.addAll(loan.findExistingTransactionIds());
                     existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
 
@@ -691,7 +695,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return changes;
     }
 
-    private void disburseLoanToSavings(final Loan loan, final JsonCommand command, final Money amount, final PaymentDetail paymentDetail) {
+    private void disburseLoanToSavings(final Loan loan, final JsonCommand command, final Money amount, final Money netDisbursementAmount,
+            final PaymentDetail paymentDetail) {
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
         final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
@@ -722,14 +727,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final boolean isExceptionForBalanceCheck = false;
         final boolean isRegularTransaction = true;
 
-        // Use tranche amount instead of full loan amount
+        // Use tranche amount for transaction amount (full principal for accounting)
         final CustomAccountTransferDTO accountTransferDTO = new CustomAccountTransferDTO(transactionDate, amount.getAmount(),
                 PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), portfolioAccountData.getId(), "Loan Disbursement",
                 locale, fmt, paymentDetail, LoanTransactionType.DISBURSEMENT.getValue(), null, null, null,
                 AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, null, txnExternalId, loan, null, fromSavingsAccount,
                 isRegularTransaction, isExceptionForBalanceCheck);
-        // Set netLoanDisbursementAmount to tranche amount (not full loan amount)
-        accountTransferDTO.setNetLoanDisbursementAmount(amount.getAmount());
+        // Set netLoanDisbursementAmount to amount after deducting fees (actual amount to deposit to savings)
+        accountTransferDTO.setNetLoanDisbursementAmount(netDisbursementAmount.getAmount());
         this.accountTransfersWritePlatformService.transferFunds(accountTransferDTO);
     }
 
