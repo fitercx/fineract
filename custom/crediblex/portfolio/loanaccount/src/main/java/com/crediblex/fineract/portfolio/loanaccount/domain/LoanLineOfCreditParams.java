@@ -103,7 +103,7 @@ public class LoanLineOfCreditParams {
     @Column(name = "exchange_rate", precision = 19, scale = 6)
     private BigDecimal exchangeRate;
 
-    @Column(name = "markup", precision = 5, scale = 2)
+    @Column(name = "markup", precision = 10, scale = 4)
     private BigDecimal markup;
 
     @Column(name = "amount_in_facility_currency", precision = 19, scale = 6)
