@@ -448,7 +448,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         BigDecimal delta = newLimit.subtract(currentBalance);
-        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, delta, loc, transactionDate,
+        // INCREMENT is not loan-related, so pass null for loanId
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate,
                 LineOfCreditTransactionType.INCREMENT);
         loc.setMaximumAmount(loc.getMaximumAmount().add(delta));
         this.lineOfCreditRepository.saveAndFlush(loc);
@@ -507,7 +508,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         // Update LOC balance history and summary (recomputation handled inside for backdated entries)
-        lineOfCreditBalanceUpdateService.computeLocBalance(lineOfCreditId, adjustmentAmount, loc, transactionDate,
+        // DECREMENT is not loan-related, so pass null for loanId
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, adjustmentAmount, loc, transactionDate,
                 LineOfCreditTransactionType.DECREMENT);
 
         // Adjust current maximum limit (current state); even for backdated, we store present effective limit.
