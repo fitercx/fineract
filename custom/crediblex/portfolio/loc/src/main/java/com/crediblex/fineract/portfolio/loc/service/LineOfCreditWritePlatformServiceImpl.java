@@ -449,8 +449,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         BigDecimal delta = newLimit.subtract(currentBalance);
         // INCREMENT is not loan-related, so pass null for loanId
-        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate,
-                LineOfCreditTransactionType.INCREMENT);
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.INCREMENT);
         loc.setMaximumAmount(loc.getMaximumAmount().add(delta));
         this.lineOfCreditRepository.saveAndFlush(loc);
 

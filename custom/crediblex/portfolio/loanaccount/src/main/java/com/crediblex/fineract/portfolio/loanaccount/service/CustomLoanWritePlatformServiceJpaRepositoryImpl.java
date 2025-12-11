@@ -1141,8 +1141,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // For repayments, we reduce the LOC balance (i.e. free up credit)
             // Pass loan transaction ID for better traceability
             Long loanTransactionId = loanTransaction != null ? loanTransaction.getId() : null;
-            lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, locProductTypeOpt.get().getLineOfCredit(), transactionDate,
-                    transactionType);
+            lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, locProductTypeOpt.get().getLineOfCredit(),
+                    transactionDate, transactionType);
         }
     }
 
@@ -1181,8 +1181,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     // Pass loan transaction ID for better traceability
                     Long loanTransactionId = loanTransaction != null ? loanTransaction.getId() : null;
-                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, lineOfCredit, loanTransaction.getTransactionDate(),
-                            LineOfCreditTransactionType.REPAYMENT);
+                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, lineOfCredit,
+                            loanTransaction.getTransactionDate(), LineOfCreditTransactionType.REPAYMENT);
                 }
 
             }

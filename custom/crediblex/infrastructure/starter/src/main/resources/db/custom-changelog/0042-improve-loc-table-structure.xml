@@ -31,8 +31,8 @@
             <and>
                 <tableExists tableName="m_line_of_credit"/>
                 <sqlCheck expectedResult="0">
-                    SELECT COUNT(*) FROM information_schema.table_constraints 
-                    WHERE constraint_name = 'chk_loc_consumed_amount_non_negative' 
+                    SELECT COUNT(*) FROM information_schema.table_constraints
+                    WHERE constraint_name = 'chk_loc_consumed_amount_non_negative'
                     AND table_name = 'm_line_of_credit'
                 </sqlCheck>
             </and>
@@ -40,8 +40,8 @@
         <comment>Add check constraint to ensure consumed amount is non-negative</comment>
         <sql>
             <![CDATA[
-            ALTER TABLE m_line_of_credit 
-            ADD CONSTRAINT chk_loc_consumed_amount_non_negative 
+            ALTER TABLE m_line_of_credit
+            ADD CONSTRAINT chk_loc_consumed_amount_non_negative
             CHECK (consumed_amount >= 0);
             ]]>
         </sql>
@@ -53,8 +53,8 @@
             <and>
                 <tableExists tableName="m_line_of_credit"/>
                 <sqlCheck expectedResult="0">
-                    SELECT COUNT(*) FROM information_schema.table_constraints 
-                    WHERE constraint_name = 'chk_loc_available_balance_non_negative' 
+                    SELECT COUNT(*) FROM information_schema.table_constraints
+                    WHERE constraint_name = 'chk_loc_available_balance_non_negative'
                     AND table_name = 'm_line_of_credit'
                 </sqlCheck>
             </and>
@@ -62,8 +62,8 @@
         <comment>Add check constraint to ensure available balance is non-negative</comment>
         <sql>
             <![CDATA[
-            ALTER TABLE m_line_of_credit 
-            ADD CONSTRAINT chk_loc_available_balance_non_negative 
+            ALTER TABLE m_line_of_credit
+            ADD CONSTRAINT chk_loc_available_balance_non_negative
             CHECK (available_balance >= 0);
             ]]>
         </sql>
@@ -75,8 +75,8 @@
             <and>
                 <tableExists tableName="m_line_of_credit"/>
                 <sqlCheck expectedResult="0">
-                    SELECT COUNT(*) FROM information_schema.table_constraints 
-                    WHERE constraint_name = 'chk_loc_consumed_amount_within_limit' 
+                    SELECT COUNT(*) FROM information_schema.table_constraints
+                    WHERE constraint_name = 'chk_loc_consumed_amount_within_limit'
                     AND table_name = 'm_line_of_credit'
                 </sqlCheck>
             </and>
@@ -84,8 +84,8 @@
         <comment>Add check constraint to ensure consumed amount doesn't exceed maximum amount</comment>
         <sql>
             <![CDATA[
-            ALTER TABLE m_line_of_credit 
-            ADD CONSTRAINT chk_loc_consumed_amount_within_limit 
+            ALTER TABLE m_line_of_credit
+            ADD CONSTRAINT chk_loc_consumed_amount_within_limit
             CHECK (consumed_amount <= maximum_amount);
             ]]>
         </sql>
@@ -98,8 +98,8 @@
             <and>
                 <tableExists tableName="m_line_of_credit"/>
                 <sqlCheck expectedResult="0">
-                    SELECT COUNT(*) FROM information_schema.table_constraints 
-                    WHERE constraint_name = 'chk_loc_balance_consistency' 
+                    SELECT COUNT(*) FROM information_schema.table_constraints
+                    WHERE constraint_name = 'chk_loc_balance_consistency'
                     AND table_name = 'm_line_of_credit'
                 </sqlCheck>
             </and>
@@ -107,8 +107,8 @@
         <comment>Add check constraint to ensure balance consistency (available_balance + consumed_amount = maximum_amount)</comment>
         <sql>
             <![CDATA[
-            ALTER TABLE m_line_of_credit 
-            ADD CONSTRAINT chk_loc_balance_consistency 
+            ALTER TABLE m_line_of_credit
+            ADD CONSTRAINT chk_loc_balance_consistency
             CHECK ((available_balance + consumed_amount) = maximum_amount);
             ]]>
         </sql>
@@ -200,12 +200,12 @@
             </and>
         </preConditions>
         <comment>Add foreign key constraint for loan_id in LOC transactions</comment>
-        <addForeignKeyConstraint baseTableName="m_line_of_credit_transactions" 
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_transactions"
                                  baseColumnNames="loan_id"
                                  constraintName="FK_loc_txn_loan"
-                                 referencedTableName="m_loan" 
+                                 referencedTableName="m_loan"
                                  referencedColumnNames="id"
-                                 onDelete="SET NULL" 
+                                 onDelete="SET NULL"
                                  onUpdate="RESTRICT"/>
     </changeSet>
 
@@ -222,12 +222,12 @@
             </and>
         </preConditions>
         <comment>Add foreign key constraint for loan_transaction_id in LOC transactions</comment>
-        <addForeignKeyConstraint baseTableName="m_line_of_credit_transactions" 
+        <addForeignKeyConstraint baseTableName="m_line_of_credit_transactions"
                                  baseColumnNames="loan_transaction_id"
                                  constraintName="FK_loc_txn_loan_transaction"
-                                 referencedTableName="m_loan_transaction" 
+                                 referencedTableName="m_loan_transaction"
                                  referencedColumnNames="id"
-                                 onDelete="SET NULL" 
+                                 onDelete="SET NULL"
                                  onUpdate="RESTRICT"/>
     </changeSet>
 
@@ -302,8 +302,8 @@
             SET loan_id = CAST(
                 SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_') AS BIGINT
             )
-            WHERE loan_id IS NULL 
-              AND reference_number IS NOT NULL 
+            WHERE loan_id IS NULL
+              AND reference_number IS NOT NULL
               AND reference_number LIKE 'LOAN_%'
               AND reference_number ~ '^LOAN_[0-9]+_';
         </sql>
@@ -316,16 +316,16 @@
         </preConditions>
         <comment>Add documentation comments to LOC columns</comment>
         <sql>
-            COMMENT ON COLUMN m_line_of_credit.consumed_amount IS 
+            COMMENT ON COLUMN m_line_of_credit.consumed_amount IS
             'Total amount drawn from LOC (sum of all principal_disbursed_derived). Does NOT decrease on repayments, only on reversals/refunds/undo disbursements.';
-            
-            COMMENT ON COLUMN m_line_of_credit.available_balance IS 
+
+            COMMENT ON COLUMN m_line_of_credit.available_balance IS
             'Available credit = maximum_amount - consumed_amount. Increases on repayments (credit freed up).';
-            
-            COMMENT ON COLUMN m_line_of_credit_transactions.loan_id IS 
+
+            COMMENT ON COLUMN m_line_of_credit_transactions.loan_id IS
             'Loan ID associated with this transaction. NULL for non-loan transactions (INCREMENT/DECREMENT).';
-            
-            COMMENT ON COLUMN m_line_of_credit_transactions.loan_transaction_id IS 
+
+            COMMENT ON COLUMN m_line_of_credit_transactions.loan_transaction_id IS
             'Specific loan transaction ID that triggered this LOC transaction. NULL for non-loan transactions or when transaction ID is not available.';
         </sql>
     </changeSet>
