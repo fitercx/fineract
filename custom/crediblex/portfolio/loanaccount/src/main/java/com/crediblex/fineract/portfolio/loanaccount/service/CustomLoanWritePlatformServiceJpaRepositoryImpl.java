@@ -1126,7 +1126,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             // Reverse the LOC balance adjustments (opposite of what happens during repayment)
-            updateLocBalance(loanId, repaymentAmount, transactionDate, LineOfCreditTransactionType.REVERSAL, null);
+            // Pass transactionToAdjust so we can get the principal portion for non-receivable LOC products
+            updateLocBalance(loanId, repaymentAmount, transactionDate, LineOfCreditTransactionType.REVERSAL, transactionToAdjust);
 
         }
 
@@ -1140,7 +1141,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (transactionType.isRepayment() || transactionType.isReversal() || transactionType.isRefund()) {
             if (locProductTypeOpt.isPresent() && !locProductTypeOpt.get().getLineOfCredit().getProductType().isReceivable()) {
-                amount = loanTransaction.getPrincipalPortion();
+                // For non-receivable LOC products, use principal portion if available, otherwise use the provided
+                // amount
+                if (loanTransaction != null) {
+                    amount = loanTransaction.getPrincipalPortion();
+                }
+                // If loanTransaction is null, use the provided amount as-is (should not happen in normal flow)
             }
         }
 
