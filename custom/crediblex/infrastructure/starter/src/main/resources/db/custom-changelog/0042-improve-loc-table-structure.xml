@@ -92,7 +92,9 @@
     </changeSet>
 
     <!-- Add check constraint: balance consistency (available + consumed = maximum) -->
-    <!-- Note: This constraint may need to be added after data cleanup if existing data violates it -->
+    <!-- Note: This constraint is TOO STRICT and causes failures with fees, interest, and partial repayments -->
+    <!-- DISABLED: This constraint has been removed in 0043-CRED-313-add-cleanup-script.xml changeset id="2" -->
+    <!--
     <changeSet author="crediblex" id="1c" context="postgresql">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <and>
@@ -113,6 +115,7 @@
             ]]>
         </sql>
     </changeSet>
+    -->
 
     <!-- Add composite index for transaction queries (line_of_credit_id + transaction_date) -->
     <changeSet author="crediblex" id="2" context="postgresql">
@@ -287,7 +290,7 @@
     </changeSet>
 
     <!-- Backfill loan_id from reference_number for existing transactions -->
-    <changeSet author="crediblex" id="9" context="postgresql">
+    <changeSet author="crediblex" id="101" context="postgresql">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <and>
                 <tableExists tableName="m_line_of_credit_transactions"/>
@@ -299,25 +302,28 @@
         <sql>
             -- Extract loan_id from reference_number format: "LOAN_{loanId}_{transactionType}"
             -- Uses safe casting with validation to prevent errors from malformed reference_numbers
+            -- Only updates if the extracted loan_id exists in m_loan table to avoid FK violations
             UPDATE m_line_of_credit_transactions
-            SET loan_id = CASE
-                WHEN reference_number ~ '^LOAN_[0-9]+_' THEN
-                    -- Extract and validate the loan ID substring before casting
-                    CAST(
-                        NULLIF(
-                            SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_'),
-                            ''
-                        ) AS BIGINT
-                    )
-                ELSE
-                    NULL
-            END
+            SET loan_id = CAST(
+                NULLIF(
+                    SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_'),
+                    ''
+                ) AS BIGINT
+            )
             WHERE loan_id IS NULL
               AND reference_number IS NOT NULL
               AND reference_number LIKE 'LOAN_%'
               AND reference_number ~ '^LOAN_[0-9]+_'
-              -- Additional safety: ensure the extracted substring is purely numeric
-              AND SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_') ~ '^[0-9]+$';
+              AND SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_') ~ '^[0-9]+$'
+              AND EXISTS (
+                  SELECT 1 FROM m_loan
+                  WHERE id = CAST(
+                      NULLIF(
+                          SUBSTRING(reference_number FROM 'LOAN_([0-9]+)_'),
+                          ''
+                      ) AS BIGINT
+                  )
+              );
         </sql>
     </changeSet>
 
