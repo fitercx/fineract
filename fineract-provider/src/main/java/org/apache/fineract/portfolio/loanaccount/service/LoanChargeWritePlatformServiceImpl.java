@@ -853,12 +853,17 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             log.info("Adding overdue charge to the last installment for factor rate loan: {}", loanId);
             final OverdueLoanScheduleData lastInstallmentOverdueLoanScheduleData = overdueLoanScheduleDataOrderedList.stream()
                     .max(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).orElseThrow();
-            final BigDecimal principalOverdue = loan.getSummary().getTotalPrincipalOutstanding();
-            if (principalOverdue.compareTo(BigDecimal.ZERO) <= 0) {
-                log.info("No principal outstanding for factor rate loan: {}. Hence not adding overdue charge.", loanId);
+            final BigDecimal totalPrincipalOutstanding = loan.getSummary().getTotalPrincipalOutstanding();
+            final BigDecimal totalFeeChargesOutstanding = loan.getSummary().getTotalFeeChargesOutstanding();
+            final BigDecimal totalTaxChargesOutstanding = loan.getSummary().getTotalTaxChargesOutstanding();
+            final BigDecimal totalOutstandingForLoan = totalPrincipalOutstanding.add(totalFeeChargesOutstanding)
+                    .add(totalTaxChargesOutstanding);
+            if (totalOutstandingForLoan.compareTo(BigDecimal.ZERO) <= 0) {
+                log.info("No total outstanding (principal + fees + taxes) for factor rate loan: {}. Hence not adding overdue charge.",
+                        loanId);
                 return;
             }
-            lastInstallmentOverdueLoanScheduleData.setPrincipalOverdue(principalOverdue);
+            lastInstallmentOverdueLoanScheduleData.setPrincipalOverdue(totalOutstandingForLoan);
             overdueLoanScheduleDataOrderedList = Collections.singletonList(lastInstallmentOverdueLoanScheduleData);
         }
         Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
