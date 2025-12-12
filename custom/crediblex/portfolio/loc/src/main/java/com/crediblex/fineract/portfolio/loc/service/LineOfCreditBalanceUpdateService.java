@@ -13,6 +13,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class LineOfCreditBalanceUpdateService {
 
     private final LineOfCreditTransactionRepository lineOfCreditTransactionRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * Computes and updates Line of Credit balance upon loan transactions (disbursement/repayment/refund/foreclosure).
@@ -42,6 +44,55 @@ public class LineOfCreditBalanceUpdateService {
     @Transactional
     public void computeLocBalance(Long loanId, BigDecimal amount, LineOfCredit lineOfCredit, LocalDate transactionDate,
             LineOfCreditTransactionType lineOfCreditTransactionType) {
+        computeLocBalance(loanId, null, amount, lineOfCredit, transactionDate, lineOfCreditTransactionType);
+    }
+
+    /**
+     * Overloaded method that includes loan transaction ID for better traceability and audit purposes.
+     *
+     * <p>
+     * This version should be used when you have access to the specific loan transaction ID (e.g., from
+     * LoanTransaction.getId()). The loanTransactionId enables direct linking between LOC transactions and loan
+     * transactions, improving audit trails and making it easier to trace LOC balance changes back to specific loan
+     * operations.
+     * </p>
+     *
+     * <p>
+     * Use this overload when:
+     * <ul>
+     * <li>Processing loan disbursements, repayments, or other loan-related transactions where the transaction ID is
+     * available</li>
+     * <li>You need to maintain a direct relationship between LOC transactions and loan transactions for reporting or
+     * reconciliation</li>
+     * <li>Creating audit trails that require transaction-level traceability</li>
+     * </ul>
+     * </p>
+     *
+     * <p>
+     * Use the original method (without loanTransactionId) when:
+     * <ul>
+     * <li>The loan transaction ID is not available or not relevant</li>
+     * <li>Processing non-loan transactions (e.g., manual LOC adjustments)</li>
+     * <li>Maintaining backward compatibility with existing code</li>
+     * </ul>
+     * </p>
+     *
+     * @param loanId
+     *            the loan ID
+     * @param loanTransactionId
+     *            the loan transaction ID for traceability (can be null for non-loan transactions or when not available)
+     * @param amount
+     *            the transaction amount (should be the approved_principal from the loan for disbursements)
+     * @param lineOfCredit
+     *            the line of credit parameters containing LOC details
+     * @param transactionDate
+     *            the transaction date
+     * @param lineOfCreditTransactionType
+     *            the type of transaction (disbursement, repayment, refund, etc.)
+     */
+    @Transactional
+    public void computeLocBalance(Long loanId, Long loanTransactionId, BigDecimal amount, LineOfCredit lineOfCredit,
+            LocalDate transactionDate, LineOfCreditTransactionType lineOfCreditTransactionType) {
 
         if (lineOfCredit == null) {
             return;
@@ -75,8 +126,8 @@ public class LineOfCreditBalanceUpdateService {
             BigDecimal transactionAvailableBalanceAfter = calculateTransactionBalanceAfter(currentAvailableBalance, amount,
                     lineOfCreditTransactionType);
 
-            LineOfCreditTransaction transaction = createTransactionRecord(lineOfCredit, loanId, amount, currentAvailableBalance,
-                    transactionAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType);
+            LineOfCreditTransaction transaction = createTransactionRecord(lineOfCredit, loanId, loanTransactionId, amount,
+                    currentAvailableBalance, transactionAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType);
 
             // Set backdated flag for auditing
             transaction.setIsBackdatedEntry(false);
@@ -88,9 +139,12 @@ public class LineOfCreditBalanceUpdateService {
         if (isBackdatedTransaction) {
             // First, create and save the new backdated transaction with placeholder balances
             // The actual balances will be corrected during recomputation
-            LineOfCreditTransaction backdatedTransaction = createTransactionRecord(lineOfCredit, loanId, amount, BigDecimal.ZERO,
-                    BigDecimal.ZERO, transactionDate, lineOfCreditTransactionType);
+            LineOfCreditTransaction backdatedTransaction = createTransactionRecord(lineOfCredit, loanId, loanTransactionId, amount,
+                    BigDecimal.ZERO, BigDecimal.ZERO, transactionDate, lineOfCreditTransactionType);
             backdatedTransaction.setIsBackdatedEntry(true);
+            // Reset consumed amount fields as they will be recalculated during recomputation
+            backdatedTransaction.setConsumedAmountBefore(null);
+            backdatedTransaction.setConsumedAmountAfter(null);
             lineOfCreditTransactionRepository.saveAndFlush(backdatedTransaction);
 
             // We now have to recalculate all transactions from the backdated date onwards
@@ -127,9 +181,12 @@ public class LineOfCreditBalanceUpdateService {
                         .setTotalDrawDownCountDerived(lineOfCredit.getSummary().getTotalDrawDownCountDerived().add(totalIncrement));
             }
         } else if (type.isIncrementTransaction()) {
-            // Repayments, refunds, and foreclosures increase available balance and decrease consumed amount
+            // Repayments, refunds, and foreclosures increase available balance
             BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
-            if (!type.isBalanceIncrement()) {
+
+            // Only decrease consumed amount for reversals, refunds, undo disbursements, and write-offs
+            // Regular repayments should NOT reduce consumed amount (consumed = sum of all disbursed amounts)
+            if (!type.isBalanceIncrement() && (type.isReversal() || type.isRefund() || type.isUndoDisbursement() || type.isWriteOff())) {
                 BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
                 lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             }
@@ -156,13 +213,53 @@ public class LineOfCreditBalanceUpdateService {
     /**
      * Creates the appropriate transaction record based on transaction type
      */
-    private LineOfCreditTransaction createTransactionRecord(LineOfCredit lineOfCredit, Long loanId, BigDecimal amount,
-            BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate, LineOfCreditTransactionType loanTransactionType) {
+    private LineOfCreditTransaction createTransactionRecord(LineOfCredit lineOfCredit, Long loanId, Long loanTransactionId,
+            BigDecimal amount, BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate,
+            LineOfCreditTransactionType loanTransactionType) {
 
-        final String referenceNumber = "LOAN_" + loanId + "_" + loanTransactionType.name();
+        // Generate reference number based on transaction type
+        // For loan-related transactions, include loan ID; for LOC operations (INCREMENT/DECREMENT), use LOC ID
+        final String referenceNumber;
+        if (loanId != null && (loanTransactionType.isDisbursement() || loanTransactionType.isRepayment() || loanTransactionType.isRefund()
+                || loanTransactionType.isReversal() || loanTransactionType.isUndoDisbursement() || loanTransactionType.isForeclosure()
+                || loanTransactionType.isWriteOff())) {
+            referenceNumber = "LOAN_" + loanId + "_" + loanTransactionType.name();
+        } else {
+            // For INCREMENT/DECREMENT or other non-loan transactions
+            referenceNumber = "LOC_" + lineOfCredit.getId() + "_" + loanTransactionType.name();
+        }
 
-        return LineOfCreditTransaction.newTransactionInstance(lineOfCredit, amount, balanceBefore, balanceAfter, transactionDate,
-                referenceNumber, loanTransactionType);
+        BigDecimal consumedAmountBefore = lineOfCredit.getSummary().getConsumedAmount();
+        BigDecimal consumedAmountAfter = calculateConsumedAmountAfter(lineOfCredit, amount, loanTransactionType, consumedAmountBefore);
+
+        LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(lineOfCredit, amount, balanceBefore,
+                balanceAfter, transactionDate, referenceNumber, loanTransactionType);
+
+        // Set additional audit fields
+        // Only set loanId and loanTransactionId for loan-related transactions (null for INCREMENT/DECREMENT)
+        transaction.setLoanId(loanId);
+        transaction.setLoanTransactionId(loanTransactionId);
+        transaction.setConsumedAmountBefore(consumedAmountBefore);
+        transaction.setConsumedAmountAfter(consumedAmountAfter);
+
+        return transaction;
+    }
+
+    /**
+     * Calculates consumed amount after transaction based on transaction type
+     */
+    private BigDecimal calculateConsumedAmountAfter(LineOfCredit lineOfCredit, BigDecimal amount, LineOfCreditTransactionType type,
+            BigDecimal currentConsumedAmount) {
+        if (type.isDecrementTransaction() && !type.isBalanceDecrement()) {
+            // Disbursements increase consumed amount
+            return currentConsumedAmount.add(amount);
+        } else if (type.isIncrementTransaction() && !type.isBalanceIncrement()
+                && (type.isReversal() || type.isRefund() || type.isUndoDisbursement() || type.isWriteOff())) {
+            // Only reversals, refunds, undo disbursements, and write-offs decrease consumed amount
+            return currentConsumedAmount.subtract(amount);
+        }
+        // Repayments and other increment transactions don't change consumed amount
+        return currentConsumedAmount;
     }
 
     /**
@@ -234,13 +331,46 @@ public class LineOfCreditBalanceUpdateService {
             } else if (tx.getTransactionType().isIncrementTransaction()) {
                 runningAvailableBalance = runningAvailableBalance.add(transactionAmount);
 
-                if (!tx.getTransactionType().isBalanceIncrement()) {
+                // Only decrease consumed amount for reversals, refunds, undo disbursements, and write-offs
+                // Regular repayments should NOT reduce consumed amount (consumed = sum of all disbursed amounts)
+                if (!tx.getTransactionType().isBalanceIncrement()
+                        && (tx.getTransactionType().isReversal() || tx.getTransactionType().isRefund()
+                                || tx.getTransactionType().isUndoDisbursement() || tx.getTransactionType().isWriteOff())) {
                     runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
+                }
+            }
+
+            // Calculate consumed amount before this transaction
+            BigDecimal consumedBefore = runningConsumedAmount;
+            if (tx.getTransactionType().isDecrementTransaction() && !tx.getTransactionType().isBalanceDecrement()) {
+                // Before disbursement, consumed amount was less
+                consumedBefore = runningConsumedAmount.subtract(tx.getAmount());
+            } else if (tx.getTransactionType().isIncrementTransaction() && !tx.getTransactionType().isBalanceIncrement()
+                    && (tx.getTransactionType().isReversal() || tx.getTransactionType().isRefund()
+                            || tx.getTransactionType().isUndoDisbursement() || tx.getTransactionType().isWriteOff())) {
+                // Before reversal/refund/undo, consumed amount was more
+                consumedBefore = runningConsumedAmount.add(tx.getAmount());
+            }
+
+            // Extract loanId from reference_number for existing transactions that don't have it set
+            if (tx.getLoanId() == null && tx.getReferenceNumber() != null && tx.getReferenceNumber().startsWith("LOAN_")) {
+                try {
+                    // Extract loan ID from reference_number format: "LOAN_{loanId}_{transactionType}"
+                    String[] parts = tx.getReferenceNumber().split("_");
+                    if (parts.length >= 2) {
+                        Long extractedLoanId = Long.parseLong(parts[1]);
+                        tx.setLoanId(extractedLoanId);
+                    }
+                } catch (NumberFormatException e) {
+                    // If parsing fails, leave loanId as null (might be old format or non-loan transaction)
                 }
             }
 
             tx.setBalanceBefore(balanceBefore);
             tx.setBalanceAfter(runningAvailableBalance);
+            tx.setConsumedAmountBefore(consumedBefore);
+            tx.setConsumedAmountAfter(runningConsumedAmount);
+
             transactionsToSave.add(tx);
         }
 
@@ -273,6 +403,71 @@ public class LineOfCreditBalanceUpdateService {
             }
         }
         // If no transactions exist, no validation is needed as this would be the first transaction
+    }
+
+    /**
+     * Reconciles consumed_amount by recalculating it from actual loan data. This method ensures consumed_amount equals
+     * the sum of principal_disbursed_derived for all loans under the LOC.
+     *
+     * <p>
+     * This is useful for:
+     * <ul>
+     * <li>Fixing data inconsistencies between LOC summary and actual loan disbursements</li>
+     * <li>Validating consumed_amount accuracy during audits</li>
+     * <li>Recovering from data corruption or migration issues</li>
+     * </ul>
+     * </p>
+     *
+     * <p>
+     * <b>Note:</b> This method directly queries and updates financial data. Comprehensive unit tests are required
+     * covering scenarios such as:
+     * <ul>
+     * <li>LOC with zero loans (should return 0)</li>
+     * <li>LOC with multiple loans (should sum all principal_disbursed_derived)</li>
+     * <li>Null handling for lineOfCredit parameter</li>
+     * <li>Edge cases with loans having null or zero principal_disbursed_derived</li>
+     * <li>Verification that available balance is correctly recalculated</li>
+     * </ul>
+     * </p>
+     *
+     * @param lineOfCredit
+     *            The line of credit to reconcile (must not be null)
+     * @return The recalculated consumed amount based on actual loan data
+     * @throws IllegalArgumentException
+     *             if lineOfCredit is null
+     */
+    @Transactional
+    public BigDecimal reconcileConsumedAmountFromLoanData(LineOfCredit lineOfCredit) {
+        if (lineOfCredit == null) {
+            throw new IllegalArgumentException("LineOfCredit cannot be null");
+        }
+        // Query to get sum of principal_disbursed_derived for all loans under this LOC
+        String sql = """
+                SELECT COALESCE(SUM(l.principal_disbursed_derived), 0)
+                FROM m_loan l
+                INNER JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = l.id
+                WHERE mlcp.line_of_credit_id = ?
+                AND l.principal_disbursed_derived IS NOT NULL
+                AND l.principal_disbursed_derived > 0
+                """;
+
+        BigDecimal actualConsumedAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
+        if (actualConsumedAmount == null) {
+            actualConsumedAmount = BigDecimal.ZERO;
+        }
+
+        // Update LOC summary
+        BigDecimal oldConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
+        lineOfCredit.getSummary().setConsumedAmount(actualConsumedAmount);
+        lineOfCredit.getSummary().setAvailableBalance(lineOfCredit.getMaximumAmount().subtract(actualConsumedAmount));
+
+        // Log reconciliation if there was a difference
+        if (oldConsumedAmount.compareTo(actualConsumedAmount) != 0) {
+            // Optionally create a reconciliation transaction record for audit
+            // For now, we just update the summary
+        }
+
+        return actualConsumedAmount;
     }
 
 }

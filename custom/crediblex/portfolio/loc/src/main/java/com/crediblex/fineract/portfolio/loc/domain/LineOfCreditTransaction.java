@@ -72,6 +72,18 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
     @Column(name = "is_backdated_entry", nullable = false)
     private Boolean isBackdatedEntry = false;
 
+    @Column(name = "loan_id")
+    private Long loanId;
+
+    @Column(name = "loan_transaction_id")
+    private Long loanTransactionId;
+
+    @Column(name = "consumed_amount_before", precision = 19, scale = 6)
+    private BigDecimal consumedAmountBefore;
+
+    @Column(name = "consumed_amount_after", precision = 19, scale = 6)
+    private BigDecimal consumedAmountAfter;
+
     /**
      * Default constructor.
      */
