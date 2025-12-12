@@ -186,7 +186,8 @@ public class LineOfCreditBalanceUpdateService {
 
             // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
             // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
-            // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit increase
+            // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
+            // increase
             if (!type.isBalanceIncrement()) {
                 BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
                 // Ensure consumed amount doesn't go negative
@@ -339,7 +340,8 @@ public class LineOfCreditBalanceUpdateService {
 
                 // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
                 // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
-                // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit increase
+                // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
+                // increase
                 if (!tx.getTransactionType().isBalanceIncrement()) {
                     runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
                     // Ensure consumed amount doesn't go negative
