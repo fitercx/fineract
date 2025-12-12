@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.math.BigDecimal;
@@ -36,6 +37,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
 import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
+import org.apache.fineract.portfolio.loanaccount.serialization.LoanApplicationValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformServiceJpaRepositoryImpl;
@@ -76,6 +78,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
 
     @Mock
     private LoanWritePlatformServiceJpaRepositoryImpl parentService;
+
+    @Mock
+    private CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator;
+
+    @Mock
+    private LoanApplicationValidator loanApplicationValidator;
 
     @InjectMocks
     private CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanWritePlatformService;
@@ -555,4 +563,5 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     private CommandProcessingResult createSuccessCommandProcessingResult(Long loanId) {
         return new CommandProcessingResultBuilder().withLoanId(loanId).withEntityId(1L).with(new HashMap<>()).build();
     }
+
 }
