@@ -184,10 +184,17 @@ public class LineOfCreditBalanceUpdateService {
             // Repayments, refunds, and foreclosures increase available balance
             BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
 
-            // Only decrease consumed amount for reversals, refunds, undo disbursements, and write-offs
-            // Regular repayments should NOT reduce consumed amount (consumed = sum of all disbursed amounts)
-            if (!type.isBalanceIncrement() && (type.isReversal() || type.isRefund() || type.isUndoDisbursement() || type.isWriteOff())) {
+            // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
+            // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
+            // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
+            // increase
+            if (!type.isBalanceIncrement()) {
                 BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
+                // Ensure consumed amount doesn't go negative
+                if (newConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
+                    throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
+                            "Consumed amount cannot be negative after transaction", "consumedAmount", newConsumedAmount);
+                }
                 lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
             }
 
@@ -331,12 +338,19 @@ public class LineOfCreditBalanceUpdateService {
             } else if (tx.getTransactionType().isIncrementTransaction()) {
                 runningAvailableBalance = runningAvailableBalance.add(transactionAmount);
 
-                // Only decrease consumed amount for reversals, refunds, undo disbursements, and write-offs
-                // Regular repayments should NOT reduce consumed amount (consumed = sum of all disbursed amounts)
-                if (!tx.getTransactionType().isBalanceIncrement()
-                        && (tx.getTransactionType().isReversal() || tx.getTransactionType().isRefund()
-                                || tx.getTransactionType().isUndoDisbursement() || tx.getTransactionType().isWriteOff())) {
+                // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
+                // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
+                // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
+                // increase
+                if (!tx.getTransactionType().isBalanceIncrement()) {
                     runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
+                    // Ensure consumed amount doesn't go negative
+                    if (runningConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
+                        throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
+                                "LOC transaction history error: Consumed amount cannot be negative during re-computation for Tx ID:"
+                                        + tx.getId(),
+                                List.of());
+                    }
                 }
             }
 
@@ -345,10 +359,9 @@ public class LineOfCreditBalanceUpdateService {
             if (tx.getTransactionType().isDecrementTransaction() && !tx.getTransactionType().isBalanceDecrement()) {
                 // Before disbursement, consumed amount was less
                 consumedBefore = runningConsumedAmount.subtract(tx.getAmount());
-            } else if (tx.getTransactionType().isIncrementTransaction() && !tx.getTransactionType().isBalanceIncrement()
-                    && (tx.getTransactionType().isReversal() || tx.getTransactionType().isRefund()
-                            || tx.getTransactionType().isUndoDisbursement() || tx.getTransactionType().isWriteOff())) {
-                // Before reversal/refund/undo, consumed amount was more
+            } else if (tx.getTransactionType().isIncrementTransaction() && !tx.getTransactionType().isBalanceIncrement()) {
+                // Before increment transaction (repayment, reversal, refund, undo, write-off, foreclosure),
+                // consumed amount was more
                 consumedBefore = runningConsumedAmount.add(tx.getAmount());
             }
 

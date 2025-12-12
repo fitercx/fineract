@@ -15,7 +15,9 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import com.google.common.collect.Lists;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -1347,7 +1349,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         // Extract new expected date from command
-        final LocalDate newExpectedDate = command.localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+        // Try both parameter names (updatedDisbursementDate for single update, expectedDisbursementDate for bulk edit)
+        LocalDate newExpectedDate = null;
+        if (command.parameterExists(LoanApiConstants.updatedDisbursementDateParameterName)) {
+            newExpectedDate = command.localDateValueOfParameterNamed(LoanApiConstants.updatedDisbursementDateParameterName);
+        } else if (command.parameterExists(LoanApiConstants.expectedDisbursementDateParameterName)) {
+            newExpectedDate = command.localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+        }
+
+        if (newExpectedDate == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.date.required",
+                    "Expected disbursement date is required for tranche update", loanId);
+        }
 
         // Apply custom validation for future tranche date updates
         customLoanDisbursementDateValidator.validateFutureTrancheDateUpdate(loan, loanDisbursementDetails, newExpectedDate);
@@ -1358,5 +1371,166 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Call parent implementation which handles the actual update and schedule regeneration
         // We use super to avoid recursion since we're overriding the method
         return super.updateDisbursementDateAndAmountForTranche(loanId, disbursementId, command);
+    }
+
+    /**
+     * Override to detect single future tranche date updates and route them to the proper update logic instead of bulk
+     * edit logic. This prevents the loan state from being reset when only updating a future tranche date.
+     */
+    @Transactional
+    @Override
+    public CommandProcessingResult addAndDeleteLoanDisburseDetails(Long loanId, JsonCommand command) {
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        if (loan.isChargedOff()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.is.charged.off",
+                    "Update Loan: " + loanId + " disbursement details is not allowed. Loan Account is Charged-off", loanId);
+        }
+
+        // Check if this is a single future tranche date update (not add/delete operation)
+        if (command.parameterExists(LoanApiConstants.disbursementDataParameterName)) {
+            final JsonArray disbursementDataArray = command.arrayOfParameterNamed(LoanApiConstants.disbursementDataParameterName);
+            if (disbursementDataArray != null && !disbursementDataArray.isEmpty()) {
+                // Get current tranche count
+                final int currentTrancheCount = loan.getDisbursementDetails().size();
+
+                // Count how many tranches are being updated (have IDs) vs added (no IDs)
+                int updateCount = 0;
+                int addCount = 0;
+                final List<TrancheUpdateInfo> futureTrancheUpdates = new ArrayList<>();
+
+                for (JsonElement jsonElement : disbursementDataArray) {
+                    final JsonObject jsonObject = jsonElement.getAsJsonObject();
+                    if (jsonObject.has(LoanApiConstants.disbursementIdParameterName)
+                            && jsonObject.get(LoanApiConstants.disbursementIdParameterName).isJsonPrimitive()
+                            && !jsonObject.get(LoanApiConstants.disbursementIdParameterName).getAsString().trim().isEmpty()) {
+                        final Long disbursementId = jsonObject.getAsJsonPrimitive(LoanApiConstants.disbursementIdParameterName).getAsLong();
+                        final LoanDisbursementDetails loanDisbursementDetails = loan.fetchLoanDisbursementsById(disbursementId);
+
+                        if (loanDisbursementDetails != null) {
+                            if (loanDisbursementDetails.actualDisbursementDate() == null) {
+                                // This is a future tranche - collect for individual processing
+                                updateCount++;
+                                futureTrancheUpdates.add(new TrancheUpdateInfo(disbursementId, jsonObject));
+                            } else {
+                                // Trying to update an already disbursed tranche - not allowed
+                                // Fall back to parent implementation which will handle the error
+                                return super.addAndDeleteLoanDisburseDetails(loanId, command);
+                            }
+                        } else {
+                            // Tranche ID not found - fall back to parent
+                            return super.addAndDeleteLoanDisburseDetails(loanId, command);
+                        }
+                    } else {
+                        addCount++;
+                    }
+                }
+
+                // If we're updating one or more future tranches (same count, no adds/deletes)
+                // Route each to the single tranche update logic to avoid resetting loan state
+                if (updateCount >= 1 && addCount == 0 && currentTrancheCount == disbursementDataArray.size()) {
+                    log.debug("Detected {} future tranche date update(s) for loan {}, routing to individual update logic", updateCount,
+                            loanId);
+
+                    // Process each future tranche update individually
+                    CommandProcessingResult lastResult = null;
+                    final Map<String, Object> combinedChanges = new LinkedHashMap<>();
+
+                    for (TrancheUpdateInfo updateInfo : futureTrancheUpdates) {
+                        final JsonObject updateObject = updateInfo.jsonObject;
+
+                        // Parse the expected date using the command's helper
+                        LocalDate newExpectedDate = null;
+                        if (updateObject.has(LoanApiConstants.expectedDisbursementDateParameterName)) {
+                            // Create a temporary command to parse the date using the existing helper
+                            final JsonObject tempCommand = new JsonObject();
+                            tempCommand.add(LoanApiConstants.expectedDisbursementDateParameterName,
+                                    updateObject.get(LoanApiConstants.expectedDisbursementDateParameterName));
+                            if (command.parameterExists(LoanApiConstants.dateFormatParameterName)) {
+                                tempCommand.addProperty(LoanApiConstants.dateFormatParameterName,
+                                        command.stringValueOfParameterNamed(LoanApiConstants.dateFormatParameterName));
+                            }
+                            if (command.parameterExists(LoanApiConstants.localeParameterName)) {
+                                tempCommand.addProperty(LoanApiConstants.localeParameterName,
+                                        command.stringValueOfParameterNamed(LoanApiConstants.localeParameterName));
+                            }
+
+                            final JsonCommand tempJsonCommand = JsonCommand.fromExistingCommand(command, tempCommand);
+                            newExpectedDate = tempJsonCommand
+                                    .localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+                        }
+
+                        if (newExpectedDate == null) {
+                            // Fall back to parent implementation if date parsing fails
+                            return super.addAndDeleteLoanDisburseDetails(loanId, command);
+                        }
+
+                        // Get the tranche details (re-fetch to ensure we have the latest state)
+                        final Loan refreshedLoan = this.loanAssembler.assembleFrom(loanId);
+                        final LoanDisbursementDetails loanDisbursementDetails = refreshedLoan
+                                .fetchLoanDisbursementsById(updateInfo.disbursementId);
+
+                        if (loanDisbursementDetails == null) {
+                            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.not.found",
+                                    "Disbursement detail with id " + updateInfo.disbursementId + " not found for loan " + loanId);
+                        }
+
+                        // Apply custom validation
+                        customLoanDisbursementDateValidator.validateFutureTrancheDateUpdate(refreshedLoan, loanDisbursementDetails,
+                                newExpectedDate);
+
+                        // Create a new command JSON object for single tranche update
+                        // Use the parameter names expected by updateDisbursementDateAndAmountForTranche
+                        final JsonObject singleUpdateCommand = new JsonObject();
+                        // The single tranche update endpoint expects 'updatedDisbursementDate' parameter
+                        singleUpdateCommand.addProperty(LoanApiConstants.updatedDisbursementDateParameterName,
+                                updateObject.get(LoanApiConstants.expectedDisbursementDateParameterName).getAsString());
+                        if (updateObject.has(LoanApiConstants.disbursementPrincipalParameterName)) {
+                            final var principalElement = updateObject.get(LoanApiConstants.disbursementPrincipalParameterName);
+                            if (principalElement != null && !principalElement.isJsonNull()) {
+                                // The single tranche update endpoint expects 'updatedDisbursementPrincipal' parameter
+                                singleUpdateCommand.addProperty(LoanApiConstants.updatedDisbursementPrincipalParameterName,
+                                        principalElement.getAsBigDecimal());
+                            }
+                        }
+                        if (command.parameterExists(LoanApiConstants.dateFormatParameterName)) {
+                            singleUpdateCommand.addProperty(LoanApiConstants.dateFormatParameterName,
+                                    command.stringValueOfParameterNamed(LoanApiConstants.dateFormatParameterName));
+                        }
+                        if (command.parameterExists(LoanApiConstants.localeParameterName)) {
+                            singleUpdateCommand.addProperty(LoanApiConstants.localeParameterName,
+                                    command.stringValueOfParameterNamed(LoanApiConstants.localeParameterName));
+                        }
+
+                        // Create JsonCommand from the new JSON object
+                        final JsonCommand singleUpdateJsonCommand = JsonCommand.fromExistingCommand(command, singleUpdateCommand);
+
+                        // Process this individual tranche update
+                        lastResult = updateDisbursementDateAndAmountForTranche(loanId, updateInfo.disbursementId, singleUpdateJsonCommand);
+
+                        // Collect changes from this update
+                        if (lastResult != null && lastResult.getChanges() != null) {
+                            combinedChanges.putAll(lastResult.getChanges());
+                        }
+                    }
+
+                    // Return combined result with all changes
+                    if (lastResult != null) {
+                        return new CommandProcessingResultBuilder().withOfficeId(lastResult.getOfficeId())
+                                .withClientId(lastResult.getClientId()).withGroupId(lastResult.getGroupId()).withLoanId(loanId)
+                                .withEntityId(lastResult.getResourceId()).with(combinedChanges).build();
+                    }
+                }
+            }
+        }
+
+        // For bulk add/delete operations, use parent implementation
+        return super.addAndDeleteLoanDisburseDetails(loanId, command);
+    }
+
+    /**
+     * Helper record to store tranche update information.
+     */
+    private record TrancheUpdateInfo(Long disbursementId, JsonObject jsonObject) {
     }
 }
