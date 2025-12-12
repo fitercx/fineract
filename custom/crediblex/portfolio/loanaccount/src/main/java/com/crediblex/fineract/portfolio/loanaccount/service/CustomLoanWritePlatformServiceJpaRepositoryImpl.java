@@ -1486,9 +1486,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         singleUpdateCommand.addProperty(LoanApiConstants.updatedDisbursementDateParameterName,
                                 updateObject.get(LoanApiConstants.expectedDisbursementDateParameterName).getAsString());
                         if (updateObject.has(LoanApiConstants.disbursementPrincipalParameterName)) {
-                            // The single tranche update endpoint expects 'updatedDisbursementPrincipal' parameter
-                            singleUpdateCommand.addProperty(LoanApiConstants.updatedDisbursementPrincipalParameterName,
-                                    updateObject.get(LoanApiConstants.disbursementPrincipalParameterName).getAsBigDecimal());
+                            final var principalElement = updateObject.get(LoanApiConstants.disbursementPrincipalParameterName);
+                            if (principalElement != null && !principalElement.isJsonNull()) {
+                                // The single tranche update endpoint expects 'updatedDisbursementPrincipal' parameter
+                                singleUpdateCommand.addProperty(LoanApiConstants.updatedDisbursementPrincipalParameterName,
+                                        principalElement.getAsBigDecimal());
+                            }
                         }
                         if (command.parameterExists(LoanApiConstants.dateFormatParameterName)) {
                             singleUpdateCommand.addProperty(LoanApiConstants.dateFormatParameterName,
@@ -1526,16 +1529,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Helper class to store tranche update information.
+     * Helper record to store tranche update information.
      */
-    private static class TrancheUpdateInfo {
-
-        final Long disbursementId;
-        final JsonObject jsonObject;
-
-        TrancheUpdateInfo(Long disbursementId, JsonObject jsonObject) {
-            this.disbursementId = disbursementId;
-            this.jsonObject = jsonObject;
-        }
+    private record TrancheUpdateInfo(Long disbursementId, JsonObject jsonObject) {
     }
 }
