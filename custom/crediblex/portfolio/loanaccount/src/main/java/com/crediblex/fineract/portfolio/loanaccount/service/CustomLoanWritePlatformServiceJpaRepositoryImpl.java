@@ -1406,9 +1406,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         if (command.parameterExists(LoanApiConstants.disbursementDataParameterName)) {
             final JsonArray disbursementDataArray = command.arrayOfParameterNamed(LoanApiConstants.disbursementDataParameterName);
             if (disbursementDataArray != null && !disbursementDataArray.isEmpty()) {
-                // Get current tranche count
-                final int currentTrancheCount = loan.getDisbursementDetails().size();
-
                 // Count how many tranches are being updated (have IDs) vs added (no IDs)
                 int updateCount = 0;
                 int addCount = 0;
