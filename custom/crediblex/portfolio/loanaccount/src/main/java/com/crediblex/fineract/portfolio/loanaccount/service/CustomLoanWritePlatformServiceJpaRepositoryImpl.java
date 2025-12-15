@@ -43,6 +43,7 @@ import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.data.DataValidatorBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
@@ -1393,6 +1394,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     "Update Loan: " + loanId + " disbursement details is not allowed. Loan Account is Charged-off", loanId);
         }
 
+        // Validate total principal if disbursement data provided (covers add/update cases)
+        if (command.parameterExists(LoanApiConstants.disbursementDataParameterName)) {
+            final JsonArray disbursementDataArray = command.arrayOfParameterNamed(LoanApiConstants.disbursementDataParameterName);
+            if (disbursementDataArray != null && !disbursementDataArray.isEmpty()) {
+                validateTotalPrincipalDoesNotExceedLoan(disbursementDataArray, loan);
+            }
+        }
+
         // Check if this is a single future tranche date update (not add/delete operation)
         if (command.parameterExists(LoanApiConstants.disbursementDataParameterName)) {
             final JsonArray disbursementDataArray = command.arrayOfParameterNamed(LoanApiConstants.disbursementDataParameterName);
@@ -1419,9 +1428,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                                 updateCount++;
                                 futureTrancheUpdates.add(new TrancheUpdateInfo(disbursementId, jsonObject));
                             } else {
-                                // Trying to update an already disbursed tranche - not allowed
-                                // Fall back to parent implementation which will handle the error
-                                return super.addAndDeleteLoanDisburseDetails(loanId, command);
+                                // Disbursed tranche present in payload - ignore updates to it but don't fail the whole
+                                // request
+                                // (we will still process undisbursed tranches individually)
                             }
                         } else {
                             // Tranche ID not found - fall back to parent
@@ -1432,9 +1441,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     }
                 }
 
-                // If we're updating one or more future tranches (same count, no adds/deletes)
+                // If we're updating one or more future tranches (no adds/deletes)
                 // Route each to the single tranche update logic to avoid resetting loan state
-                if (updateCount >= 1 && addCount == 0 && currentTrancheCount == disbursementDataArray.size()) {
+                if (updateCount >= 1 && addCount == 0) {
                     log.debug("Detected {} future tranche date update(s) for loan {}, routing to individual update logic", updateCount,
                             loanId);
 
@@ -1538,5 +1547,77 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      * Helper record to store tranche update information.
      */
     private record TrancheUpdateInfo(Long disbursementId, JsonObject jsonObject) {
+    }
+
+    private void validateTotalPrincipalDoesNotExceedLoan(final JsonArray disbursementDataArray, final Loan loan) {
+        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
+        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("loan.disbursement");
+
+        final Map<Long, BigDecimal> principalsById = new HashMap<>();
+        final Set<Long> idsInPayload = new HashSet<>();
+
+        for (JsonElement element : disbursementDataArray) {
+            final JsonObject jsonObject = element.getAsJsonObject();
+            Long disbursementId = null;
+            if (jsonObject.has(LoanApiConstants.disbursementIdParameterName)
+                    && jsonObject.get(LoanApiConstants.disbursementIdParameterName).isJsonPrimitive()
+                    && !jsonObject.get(LoanApiConstants.disbursementIdParameterName).getAsString().trim().isEmpty()) {
+                disbursementId = jsonObject.getAsJsonPrimitive(LoanApiConstants.disbursementIdParameterName).getAsLong();
+                idsInPayload.add(disbursementId);
+            }
+
+            BigDecimal principal = null;
+            if (jsonObject.has(LoanApiConstants.disbursementPrincipalParameterName)) {
+                final JsonElement principalElement = jsonObject.get(LoanApiConstants.disbursementPrincipalParameterName);
+                if (principalElement != null && !principalElement.isJsonNull()) {
+                    principal = principalElement.getAsBigDecimal();
+                }
+            }
+
+            if (disbursementId == null) {
+                // New tranche must have principal
+                baseDataValidator.reset().parameter(LoanApiConstants.disbursementPrincipalParameterName).value(principal).notNull();
+            } else {
+                // Existing tranche: if principal not provided, use existing; otherwise use provided
+                if (principal == null) {
+                    final LoanDisbursementDetails existing = loan.fetchLoanDisbursementsById(disbursementId);
+                    if (existing != null) {
+                        principal = existing.principal();
+                    }
+                }
+            }
+
+            if (principal != null) {
+                if (disbursementId != null) {
+                    principalsById.put(disbursementId, principal);
+                } else {
+                    // Use a synthetic id for new tranche just to sum
+                    principalsById.put(System.identityHashCode(jsonObject) * 1L, principal);
+                }
+            }
+        }
+
+        // Add principals for existing tranches not present in the payload
+        for (LoanDisbursementDetails details : loan.getDisbursementDetails()) {
+            if (details.getId() != null && !idsInPayload.contains(details.getId())) {
+                principalsById.put(details.getId(), details.principal());
+            }
+        }
+
+        // Validate total
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal p : principalsById.values()) {
+            total = total.add(p);
+        }
+        final BigDecimal loanPrincipal = loan.getApprovedPrincipal();
+        if (loanPrincipal != null && total.compareTo(loanPrincipal) > 0) {
+            baseDataValidator.reset().parameter(LoanApiConstants.disbursementDataParameterName).failWithCode(
+                    "error.msg.loan.disbursement.total.principal.exceeds.loan.amount",
+                    "Total disbursement principal exceeds loan principal");
+        }
+
+        if (!dataValidationErrors.isEmpty()) {
+            throw new PlatformApiDataValidationException(dataValidationErrors);
+        }
     }
 }
