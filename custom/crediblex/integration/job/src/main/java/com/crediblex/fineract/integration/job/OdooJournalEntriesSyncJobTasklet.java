@@ -143,13 +143,17 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     // Capture the specific error details for better debugging
                     String specificError = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
                     String detailedErrorMsg;
-                    
+
                     // Handle specific constraint violations
                     if (specificError.contains("account_move_line_account_id_fkey")) {
-                        detailedErrorMsg = String.format("GL Account validation failed for loan %d: One or more GL accounts do not exist in Odoo. Please check GL account mappings.", loanId);
-                        log.error("GL Account constraint violation for loan {}: Check if all GL accounts exist in Odoo chart of accounts", loanId);
+                        detailedErrorMsg = String.format(
+                                "GL Account validation failed for loan %d: One or more GL accounts do not exist in Odoo. Please check GL account mappings.",
+                                loanId);
+                        log.error("GL Account constraint violation for loan {}: Check if all GL accounts exist in Odoo chart of accounts",
+                                loanId);
                     } else if (specificError.contains("constraint") || specificError.contains("fkey")) {
-                        detailedErrorMsg = String.format("Database constraint violation for loan %d: %s. Check data integrity.", loanId, specificError);
+                        detailedErrorMsg = String.format("Database constraint violation for loan %d: %s. Check data integrity.", loanId,
+                                specificError);
                         log.error("Database constraint violation for loan {}: {}", loanId, specificError);
                     } else {
                         detailedErrorMsg = String.format("Failed to post journal entries for loan %d to Odoo: %s", loanId, specificError);
@@ -435,7 +439,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 log.warn("Skipping journal entry with null GL account for loan ID: {}", loanId);
                 continue;
             }
-            
+
             String glCode = journalEntry.getGlAccount().getGlCode();
             String accountName = journalEntry.getGlAccount().getName();
             BigDecimal amount = journalEntry.getAmount();
@@ -479,25 +483,41 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
-     * Validate that all GL accounts referenced in the journal entries exist in Odoo.
-     * This prevents foreign key constraint violations when creating journal entries.
+     * Validate that all GL accounts referenced in the journal entries exist in Odoo. This prevents foreign key
+     * constraint violations when creating journal entries.
      *
-     * @param journalEntries List of journal entries to validate
+     * @param journalEntries
+     *            List of journal entries to validate
      * @return true if all GL accounts exist in Odoo, false otherwise
      */
     private boolean validateGLAccountsExistInOdoo(List<JournalEntryOdooSync> journalEntries) {
         try {
+            log.debug("Validating {} journal entries for GL account existence in Odoo", journalEntries.size());
+
             for (JournalEntryOdooSync entrySync : journalEntries) {
+                if (entrySync == null || entrySync.getJournalEntry() == null || entrySync.getJournalEntry().getGlAccount() == null) {
+                    log.warn("Skipping validation for null journal entry or GL account");
+                    continue;
+                }
+
                 String glCode = entrySync.getJournalEntry().getGlAccount().getGlCode();
                 String accountName = entrySync.getJournalEntry().getGlAccount().getName();
-                
-                // Check if account exists in Odoo (you'll need to implement this method in your service)
+
+                if (glCode == null || glCode.trim().isEmpty()) {
+                    log.error("Journal entry {} has null or empty GL code", entrySync.getJournalEntry().getId());
+                    return false;
+                }
+
+                // Check if account exists in Odoo
                 if (!odooJournalEntryService.doesAccountExistInOdoo(glCode)) {
                     log.error("GL Account with code '{}' and name '{}' does not exist in Odoo", glCode, accountName);
                     return false;
                 }
             }
+
+            log.debug("All GL accounts validated successfully in Odoo");
             return true;
+
         } catch (Exception e) {
             log.error("Error validating GL accounts in Odoo", e);
             return false;
