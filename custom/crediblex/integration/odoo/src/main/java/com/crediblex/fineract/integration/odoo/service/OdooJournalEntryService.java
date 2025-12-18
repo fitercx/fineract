@@ -950,11 +950,11 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Check if a GL account exists in Odoo by its code.
-     * This method validates that the account exists in Odoo's chart of accounts
-     * to prevent foreign key constraint violations when creating journal entries.
+     * Check if a GL account exists in Odoo by its code. This method validates that the account exists in Odoo's chart
+     * of accounts to prevent foreign key constraint violations when creating journal entries.
      *
-     * @param glCode The GL account code to check
+     * @param glCode
+     *            The GL account code to check
      * @return true if the account exists in Odoo, false otherwise
      */
     public boolean doesAccountExistInOdoo(String glCode) {
@@ -967,7 +967,7 @@ public class OdooJournalEntryService {
             // Use the existing integration service to get the account ID
             // If it returns a valid ID, the account exists
             Integer accountId = odooIntegrationService.getOdooAccountId(glCode);
-            
+
             if (accountId != null) {
                 log.debug("GL account with code '{}' exists in Odoo with account ID: {}", glCode, accountId);
                 return true;
@@ -975,7 +975,7 @@ public class OdooJournalEntryService {
                 log.debug("GL account with code '{}' does not exist in Odoo", glCode);
                 return false;
             }
-            
+
         } catch (Exception e) {
             log.error("Error checking if GL account '{}' exists in Odoo", glCode, e);
             // Return false on error to be safe - this will prevent posting potentially invalid entries
@@ -984,23 +984,23 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Validate multiple GL account codes exist in Odoo.
-     * This is a convenience method for bulk validation.
+     * Validate multiple GL account codes exist in Odoo. This is a convenience method for bulk validation.
      *
-     * @param glCodes List of GL codes to validate
+     * @param glCodes
+     *            List of GL codes to validate
      * @return Map of GL code to existence status (true if exists, false if not)
      */
     public Map<String, Boolean> validateMultipleAccountsExistInOdoo(List<String> glCodes) {
         Map<String, Boolean> validationResults = new HashMap<>();
-        
+
         if (glCodes == null || glCodes.isEmpty()) {
             return validationResults;
         }
-        
+
         for (String glCode : glCodes) {
             validationResults.put(glCode, doesAccountExistInOdoo(glCode));
         }
-        
+
         return validationResults;
     }
 
