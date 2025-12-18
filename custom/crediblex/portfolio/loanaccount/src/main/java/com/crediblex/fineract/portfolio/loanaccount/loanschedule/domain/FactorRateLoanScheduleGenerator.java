@@ -20,6 +20,7 @@ package com.crediblex.fineract.portfolio.loanaccount.loanschedule.domain;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,14 +40,17 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.workingdays.data.AdjustedDateDetailsDTO;
 import org.apache.fineract.organisation.workingdays.domain.RepaymentRescheduleType;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
+import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.AbstractCumulativeLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelRepaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanTermVariationParams;
@@ -56,6 +60,7 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.Recalculati
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduleCurrentPeriodParams;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementEmiAmountException;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
 import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
@@ -621,5 +626,149 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
         scheduleParams.addTotalFeeChargesCharged(currentPeriodParams.getFeeChargesForInstallment());
         scheduleParams.addTotalTaxChargesCharged(currentPeriodParams.getTaxChargesForInstallment());
         scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
+    }
+
+    /**
+     * Override to calculate proportional charges per tranche for multi-tranche loans. For multi-tranche loans, charges
+     * should be allocated proportionally based on tranche size.
+     */
+    @Override
+    protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
+            final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
+            final BigDecimal chargesDueAtTimeOfDisbursement) {
+        List<LoanScheduleModelPeriod> periods = new ArrayList<>();
+        if (!loanApplicationTerms.isMultiDisburseLoan()) {
+            // For single disbursement loans, use parent implementation
+            return super.createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, loanScheduleParams,
+                    chargesDueAtTimeOfDisbursement);
+        } else {
+            // For multi-tranche loans, calculate proportional charges per tranche
+            if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
+                loanApplicationTerms.getDisbursementDatas()
+                        .add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
+                                loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal().getAmount(), null,
+                                null, null, null, null));
+            }
+
+            // Get approved principal (sanctioned amount) for proportional calculation
+            Money sanctionedAmount = loanApplicationTerms.getApprovedPrincipal();
+            if (sanctionedAmount == null || sanctionedAmount.isZero()) {
+                // Fallback to total principal if approved principal is not set
+                sanctionedAmount = loanApplicationTerms.getPrincipal();
+            }
+
+            for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
+                if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
+                    // Calculate proportional charges for this tranche
+                    BigDecimal proportionalCharges = calculateProportionalChargesForTranche(disbursementData.getPrincipal(),
+                            sanctionedAmount.getAmount(), chargesDueAtTimeOfDisbursement);
+
+                    final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
+                            disbursementData.disbursementDate(),
+                            Money.of(loanScheduleParams.getCurrency(), disbursementData.getPrincipal()), proportionalCharges);
+                    periods.add(disbursementPeriod);
+                    if (loanApplicationTerms.isDownPaymentEnabled()) {
+                        final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
+                                loanScheduleParams, loanApplicationTerms.getExpectedDisbursementDate(), disbursementData.getPrincipal());
+                        periods.add(downPaymentPeriod);
+                    }
+                }
+            }
+        }
+
+        return periods;
+    }
+
+    /**
+     * Override to calculate proportional charges per tranche during schedule generation.
+     */
+    @Override
+    protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
+            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate) {
+        // Get approved principal (sanctioned amount) for proportional calculation
+        Money sanctionedAmount = loanApplicationTerms.getApprovedPrincipal();
+        if (sanctionedAmount == null || sanctionedAmount.isZero()) {
+            // Fallback to total principal if approved principal is not set
+            sanctionedAmount = loanApplicationTerms.getPrincipal();
+        }
+
+        for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
+            if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
+                    && !DateUtils.isAfter(disburseDetail.getKey(), scheduledDueDate)) {
+                // validation check for amount not exceeds specified max
+                // amount as per the configuration
+                if (loanApplicationTerms.getMaxOutstandingBalance() != null) {
+                    Money maxOutstandingBalance = loanApplicationTerms.getMaxOutstandingBalanceMoney();
+                    if (scheduleParams.getOutstandingBalance().plus(disburseDetail.getValue()).isGreaterThan(maxOutstandingBalance)) {
+                        String errorMsg = "Outstanding balance must not exceed the amount: " + maxOutstandingBalance;
+                        throw new MultiDisbursementOutstandingAmoutException(errorMsg, maxOutstandingBalance.getAmount(),
+                                disburseDetail.getValue());
+                    }
+                }
+
+                // Calculate proportional charges for this tranche
+                BigDecimal proportionalCharges = calculateProportionalChargesForTranche(disburseDetail.getValue().getAmount(),
+                        sanctionedAmount.getAmount(), chargesDueAtTimeOfDisbursement);
+
+                // creates and add disbursement detail to the repayments
+                // period
+                final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
+                        .disbursement(disburseDetail.getKey(), disburseDetail.getValue(), proportionalCharges);
+                periods.add(disbursementPeriod);
+
+                BigDecimal downPaymentAmt = BigDecimal.ZERO;
+                if (loanApplicationTerms.isDownPaymentEnabled()) {
+                    // get list of disbursements done on same day and create down payment periods
+                    List<DisbursementData> disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                            .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disburseDetail.getKey()))
+                            .toList();
+                    for (DisbursementData disbursementData : disbursementsOnSameDate) {
+                        final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
+                                scheduleParams, disbursementData.disbursementDate(), disbursementData.getPrincipal());
+                        periods.add(downPaymentPeriod);
+                        downPaymentAmt = downPaymentAmt.add(downPaymentPeriod.principalDue());
+                    }
+                }
+                // updates actual outstanding balance with new
+                // disbursement detail
+                Money remainingPrincipal = disburseDetail.getValue().minus(downPaymentAmt);
+                scheduleParams.addOutstandingBalance(remainingPrincipal);
+                scheduleParams.addPrincipalToBeScheduled(remainingPrincipal);
+                loanApplicationTerms.setPrincipal(loanApplicationTerms.getPrincipal().plus(remainingPrincipal));
+            }
+        }
+    }
+
+    /**
+     * Calculates proportional charges for a specific tranche based on the formula: proportionalCharges = (trancheAmount
+     * / sanctionedAmount) * totalCharges
+     *
+     * @param trancheAmount
+     *            the amount of the current tranche
+     * @param sanctionedAmount
+     *            the total sanctioned/approved loan amount
+     * @param totalCharges
+     *            the total charges due at disbursement (calculated on full loan amount)
+     * @return the proportional charges for this tranche
+     */
+    private BigDecimal calculateProportionalChargesForTranche(final BigDecimal trancheAmount, final BigDecimal sanctionedAmount,
+            final BigDecimal totalCharges) {
+        if (sanctionedAmount == null || sanctionedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            // If sanctioned amount is zero or null, return full charges (fallback for single disbursement)
+            return totalCharges;
+        }
+
+        if (trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        // Use MathContext with precision of 19 (standard for financial calculations) and HALF_UP rounding
+        MathContext mc = new MathContext(19, RoundingMode.HALF_UP);
+
+        // Calculate proportional charges: (trancheAmount / sanctionedAmount) * totalCharges
+        BigDecimal proportionalCharges = totalCharges.multiply(trancheAmount, mc).divide(sanctionedAmount, mc.getPrecision(),
+                RoundingMode.HALF_UP);
+
+        return proportionalCharges;
     }
 }
