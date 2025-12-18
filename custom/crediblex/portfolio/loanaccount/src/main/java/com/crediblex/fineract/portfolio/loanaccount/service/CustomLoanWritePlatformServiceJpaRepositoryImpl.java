@@ -1552,6 +1552,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final Map<Long, BigDecimal> principalsById = new HashMap<>();
         final Set<Long> idsInPayload = new HashSet<>();
+        final Set<Long> matchedExistingTrancheIds = new HashSet<>(); // Track tranches matched by date/amount
 
         for (JsonElement element : disbursementDataArray) {
             final JsonObject jsonObject = element.getAsJsonObject();
@@ -1571,10 +1572,51 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 }
             }
 
+            LocalDate expectedDate = null;
+            if (jsonObject.has(LoanApiConstants.expectedDisbursementDateParameterName)) {
+                // Try to parse the date from the JSON object
+                try {
+                    final JsonObject tempCommand = new JsonObject();
+                    tempCommand.add(LoanApiConstants.expectedDisbursementDateParameterName,
+                            jsonObject.get(LoanApiConstants.expectedDisbursementDateParameterName));
+                    // We'll parse it later if needed
+                } catch (Exception e) {
+                    // Ignore parsing errors here, will be handled by parent validation
+                }
+            }
+
             if (disbursementId == null) {
-                // New tranche must have principal
-                baseDataValidator.reset().parameter(LoanApiConstants.disbursementPrincipalParameterName).value(principal).notNull();
-            } else {
+                // No ID provided - try to match with existing undisbursed tranche by principal
+                // NOTE: Frontend SHOULD send disbursementId when updating existing tranches.
+                // This matching is a fallback for backward compatibility.
+                if (principal != null) {
+                    // Try to match existing undisbursed tranche by principal amount
+                    // (We match by principal because dates might be changing in the update)
+                    for (LoanDisbursementDetails existing : loan.getDisbursementDetails()) {
+                        if (existing.actualDisbursementDate() == null // Only match undisbursed tranches
+                                && existing.principal().compareTo(principal) == 0 && !matchedExistingTrancheIds.contains(existing.getId())
+                                && !idsInPayload.contains(existing.getId())) {
+                            // Match found by principal - treat as update to existing tranche
+                            disbursementId = existing.getId();
+                            idsInPayload.add(disbursementId);
+                            matchedExistingTrancheIds.add(disbursementId);
+                            log.debug(
+                                    "Matched existing undisbursed tranche {} by principal {} for validation (ID should be provided in payload)",
+                                    disbursementId, principal);
+                            break;
+                        }
+                    }
+                }
+
+                if (disbursementId == null) {
+                    // No match found - this is a new tranche
+                    // New tranche must have principal
+                    baseDataValidator.reset().parameter(LoanApiConstants.disbursementPrincipalParameterName).value(principal).notNull();
+                }
+            }
+
+            // If we have an ID (either from payload or matched), get/use principal
+            if (disbursementId != null) {
                 // Existing tranche: if principal not provided, use existing; otherwise use provided
                 if (principal == null) {
                     final LoanDisbursementDetails existing = loan.fetchLoanDisbursementsById(disbursementId);
@@ -1582,19 +1624,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         principal = existing.principal();
                     }
                 }
-            }
-
-            if (principal != null) {
-                if (disbursementId != null) {
-                    principalsById.put(disbursementId, principal);
-                } else {
-                    // Use a synthetic id for new tranche just to sum
-                    principalsById.put(System.identityHashCode(jsonObject) * 1L, principal);
-                }
+                principalsById.put(disbursementId, principal);
+            } else if (principal != null) {
+                // New tranche - use synthetic id for validation
+                principalsById.put(System.identityHashCode(jsonObject) * 1L, principal);
             }
         }
 
-        // Add principals for existing tranches not present in the payload
+        // Add principals for existing tranches not present in the payload and not matched
         for (LoanDisbursementDetails details : loan.getDisbursementDetails()) {
             if (details.getId() != null && !idsInPayload.contains(details.getId())) {
                 principalsById.put(details.getId(), details.principal());
