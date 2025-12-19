@@ -74,6 +74,7 @@ import org.apache.fineract.organisation.monetary.domain.ApplicationCurrency;
 import org.apache.fineract.organisation.monetary.domain.ApplicationCurrencyRepositoryWrapper;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
 import org.apache.fineract.portfolio.account.domain.AccountAssociations;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
@@ -113,6 +114,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -1473,6 +1475,76 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 appCurrency.toData());
     }
 
+    @Override
+    public LoanTransactionData retrieveDisbursalTemplate(final Long loanId, boolean paymentDetailsRequired) {
+        final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+        final LoanTransactionEnumData transactionType = LoanEnumerations.transactionType(LoanTransactionType.DISBURSEMENT);
+        Collection<PaymentTypeData> paymentOptions = null;
+        if (paymentDetailsRequired) {
+            paymentOptions = this.paymentTypeReadPlatformService.retrieveAllPaymentTypes();
+        }
+        final ApplicationCurrency appCurrency = applicationCurrencyRepository.findOneWithNotFoundDetection(loan.getCurrency());
+
+        // For multi-tranche loans, get the next tranche amount (not the sum of all remaining)
+        BigDecimal disbursementAmount;
+        LocalDate expectedDisbursementDate;
+
+        if (loan.isMultiDisburmentLoan()) {
+            // Get the next undisbursed tranche (earliest expected date)
+            Collection<LoanDisbursementDetails> undisbursedDetails = loan.fetchUndisbursedDetail();
+            if (!undisbursedDetails.isEmpty()) {
+                // Get the tranche with the earliest expected date
+                Optional<LoanDisbursementDetails> nextTranche = undisbursedDetails.stream().min((d1, d2) -> {
+                    LocalDate date1 = d1.expectedDisbursementDate();
+                    LocalDate date2 = d2.expectedDisbursementDate();
+                    if (date1 == null && date2 == null) {
+                        return 0;
+                    }
+                    if (date1 == null) {
+                        return 1;
+                    }
+                    if (date2 == null) {
+                        return -1;
+                    }
+                    return date1.compareTo(date2);
+                });
+
+                if (nextTranche.isPresent()) {
+                    // Use only the next tranche amount, not the sum of all
+                    disbursementAmount = nextTranche.get().principal();
+                    expectedDisbursementDate = nextTranche.get().expectedDisbursementDate();
+                } else {
+                    // Fallback to default calculation
+                    disbursementAmount = loan.getDisburseAmountForTemplate();
+                    expectedDisbursementDate = loan.getExpectedDisbursedOnLocalDateForTemplate();
+                }
+            } else {
+                // No undisbursed tranches - calculate remaining amount from approved principal
+                BigDecimal disbursedAmount = loan.getDisbursedAmount();
+                BigDecimal approvedPrincipal = loan.getApprovedPrincipal();
+                if (approvedPrincipal != null && disbursedAmount != null) {
+                    disbursementAmount = approvedPrincipal.subtract(disbursedAmount);
+                    if (disbursementAmount.compareTo(BigDecimal.ZERO) < 0) {
+                        disbursementAmount = BigDecimal.ZERO;
+                    }
+                } else {
+                    // Fallback to default calculation
+                    disbursementAmount = loan.getDisburseAmountForTemplate();
+                }
+                // Use today's date or next business date for expected date when no tranches exist
+                expectedDisbursementDate = DateUtils.getBusinessLocalDate();
+            }
+        } else {
+            // For non-multi-tranche loans, use default calculation
+            disbursementAmount = loan.getDisburseAmountForTemplate();
+            expectedDisbursementDate = loan.getExpectedDisbursedOnLocalDateForTemplate();
+        }
+
+        return LoanTransactionData.loanTransactionDataForDisbursalTemplate(transactionType, expectedDisbursementDate, disbursementAmount,
+                loan.getNetDisbursalAmount(), paymentOptions, loan.retriveLastEmiAmount(),
+                loan.getNextPossibleRepaymentDateForRescheduling(), appCurrency.toData());
+    }
+
     private static final class LoanScheduleResultSetExtractor implements ResultSetExtractor<LoanScheduleData> {
 
         private final CurrencyData currency;
@@ -1699,6 +1771,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 LocalDate fromDate, LocalDate dueDate, Set<Long> disbursementPeriodIds, BigDecimal disbursementChargeAmount,
                 BigDecimal waivedChargeAmount, List<LoanSchedulePeriodData> periods) {
             BigDecimal disbursedAmount = BigDecimal.ZERO;
+            final BigDecimal totalOriginalPrincipal = this.disbursementData.stream().map(DisbursementData::getPrincipal)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
             for (final DisbursementData data : disbursementData) {
                 boolean isDueForDisbursement = data.isDueForDisbursement(loanScheduleType, fromDate, dueDate);
                 if (((fromDate.equals(this.disbursement.disbursementDate()) && data.disbursementDate().equals(fromDate))
@@ -1706,7 +1780,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         || canAddDisbursementData(data, isDueForDisbursement, excludePastUnDisbursed))
                         && !disbursementPeriodIds.contains(data.getId())) {
                     disbursedAmount = disbursedAmount.add(data.getPrincipal());
-                    LoanSchedulePeriodData periodData = createLoanSchedulePeriodData(data, disbursementChargeAmount, waivedChargeAmount);
+                    LoanSchedulePeriodData periodData = createLoanSchedulePeriodData(data, disbursementChargeAmount, waivedChargeAmount,
+                            totalOriginalPrincipal);
                     periods.add(periodData);
                     this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
                     disbursementPeriodIds.add(data.getId());
@@ -1716,11 +1791,22 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         private LoanSchedulePeriodData createLoanSchedulePeriodData(final DisbursementData data, BigDecimal disbursementChargeAmount,
-                BigDecimal waivedChargeAmount) {
+                BigDecimal waivedChargeAmount, final BigDecimal totalOriginalPrincipal) {
             BigDecimal chargeAmount = data.getChargeAmount() == null ? disbursementChargeAmount
                     : disbursementChargeAmount.add(data.getChargeAmount()).subtract(waivedChargeAmount);
-            return LoanSchedulePeriodData.disbursementOnlyPeriod(data.disbursementDate(), data.getPrincipal(), chargeAmount,
-                    data.isDisbursed());
+            final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
+                    totalOriginalPrincipal, data.getPrincipal(), chargeAmount);
+            return LoanSchedulePeriodData.disbursementOnlyPeriod(data.disbursementDate(), data.getPrincipal(),
+                    chargesDueAtTimeOfDisbursementForTranche, data.isDisbursed());
+        }
+
+        private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
+                final BigDecimal tranchePrincipal, final BigDecimal totalChargesDueAtTimeOfDisbursement) {
+            if (totalChargesDueAtTimeOfDisbursement == null || totalLoanPrincipal == null || tranchePrincipal == null
+                    || totalLoanPrincipal.compareTo(BigDecimal.ZERO) == 0) {
+                return BigDecimal.ZERO;
+            }
+            return tranchePrincipal.multiply(totalChargesDueAtTimeOfDisbursement).divide(totalLoanPrincipal, MoneyHelper.getMathContext());
         }
 
         private boolean canAddDisbursementData(DisbursementData data, boolean isDueForDisbursement, boolean excludePastUnDisbursed) {

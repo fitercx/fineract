@@ -40,6 +40,7 @@ import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.workingdays.data.AdjustedDateDetailsDTO;
 import org.apache.fineract.organisation.workingdays.domain.RepaymentRescheduleType;
 import org.apache.fineract.portfolio.calendar.domain.CalendarInstance;
@@ -75,6 +76,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
     private LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO, final LoanScheduleParams loanScheduleParams) {
 
+        final BigDecimal totalOriginalPrincipal = loanApplicationTerms.getPrincipal().getAmount();
         // generate list of proposed schedule due dates
         LocalDate loanEndDate = getScheduledDateGenerator().getLastRepaymentDate(loanApplicationTerms, holidayDetailDTO);
         LoanTermVariationsData lastDueDateVariation = loanApplicationTerms.getLoanTermVariations()
@@ -112,8 +114,8 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
 
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!scheduleParams.isPartialUpdate()) {
-            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams,
-                    chargesDueAtTimeOfDisbursement);
+            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams, chargesDueAtTimeOfDisbursement,
+                    totalOriginalPrincipal);
         }
 
         // Determine the total interest owed over the full loan for FLAT
@@ -277,7 +279,8 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
                     interestCalculationGraceOnRepaymentPeriodFraction);
 
             if (loanApplicationTerms.isMultiDisburseLoan()) {
-                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate);
+                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate,
+                        totalOriginalPrincipal);
             }
 
             // process repayments to the schedule as per the repayment
@@ -1020,7 +1023,8 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
      *
      */
     protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
-            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate) {
+            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate,
+            final BigDecimal totalOriginalPrincipal) {
         for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
             if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
                     && !DateUtils.isAfter(disburseDetail.getKey(), scheduledDueDate)) {
@@ -1037,8 +1041,10 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
 
                 // creates and add disbursement detail to the repayments
                 // period
+                final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
+                        totalOriginalPrincipal, disburseDetail.getValue().getAmount(), chargesDueAtTimeOfDisbursement);
                 final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
-                        .disbursement(disburseDetail.getKey(), disburseDetail.getValue(), chargesDueAtTimeOfDisbursement);
+                        .disbursement(disburseDetail.getKey(), disburseDetail.getValue(), chargesDueAtTimeOfDisbursementForTranche);
                 periods.add(disbursementPeriod);
 
                 BigDecimal downPaymentAmt = BigDecimal.ZERO;
@@ -2024,7 +2030,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
 
     protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
             final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
-            final BigDecimal chargesDueAtTimeOfDisbursement) {
+            final BigDecimal chargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!loanApplicationTerms.isMultiDisburseLoan()) {
             final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
@@ -2046,9 +2052,11 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             }
             for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
                 if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
+                    final Money principalDisbursed = Money.of(loanScheduleParams.getCurrency(), disbursementData.getPrincipal());
+                    final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
+                            totalOriginalPrincipal, disbursementData.getPrincipal(), chargesDueAtTimeOfDisbursement);
                     final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod.disbursement(
-                            disbursementData.disbursementDate(),
-                            Money.of(loanScheduleParams.getCurrency(), disbursementData.getPrincipal()), chargesDueAtTimeOfDisbursement);
+                            disbursementData.disbursementDate(), principalDisbursed, chargesDueAtTimeOfDisbursementForTranche);
                     periods.add(disbursementPeriod);
                     if (loanApplicationTerms.isDownPaymentEnabled()) {
                         final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
@@ -2060,6 +2068,15 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
         }
 
         return periods;
+    }
+
+    private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
+            final BigDecimal tranchePrincipal, final BigDecimal totalChargesDueAtTimeOfDisbursement) {
+        if (totalChargesDueAtTimeOfDisbursement == null || totalLoanPrincipal == null || tranchePrincipal == null
+                || totalLoanPrincipal.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return tranchePrincipal.multiply(totalChargesDueAtTimeOfDisbursement).divide(totalLoanPrincipal, MoneyHelper.getMathContext());
     }
 
     protected LoanScheduleModelDownPaymentPeriod createDownPaymentPeriod(LoanApplicationTerms loanApplicationTerms,
@@ -2227,6 +2244,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             final HolidayDetailDTO holidayDetailDTO,
             final LoanRepaymentScheduleTransactionProcessor loanRepaymentScheduleTransactionProcessor, LocalDate rescheduleFrom,
             final LocalDate scheduleTillDate) {
+        final BigDecimal totalOriginalPrincipal = loanApplicationTerms.getPrincipal().getAmount();
         // Loan transactions to process and find the variation on payments
         Collection<RecalculationDetail> recalculationDetails = new ArrayList<>();
         List<LoanTransaction> transactions = loan.getLoanTransactions();
@@ -2261,7 +2279,7 @@ public abstract class AbstractCumulativeLoanScheduleGenerator implements LoanSch
             // LoanScheduleModel
             final BigDecimal chargesDueAtTimeOfDisbursement = deriveTotalChargesDueAtTimeOfDisbursement(loan.getActiveCharges());
             periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, loanScheduleParams,
-                    chargesDueAtTimeOfDisbursement);
+                    chargesDueAtTimeOfDisbursement, totalOriginalPrincipal);
             MonetaryCurrency currency = outstandingBalance.getCurrency();
 
             // early payments will be added here and as per the selected
