@@ -115,7 +115,8 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
         if (loan.isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
             final List<LoanDisbursementDetails> loanDisbursementDetails = loan.getDisbursementDetails();
             for (final LoanDisbursementDetails disbursementDetail : loanDisbursementDetails) {
-                if (disbursementDetail.getDisbursementDate().isEqual(disbursedOn)) {
+                final LocalDate disbursementDate = disbursementDetail.getDisbursementDate();
+                if (disbursementDate != null && disbursementDate.isEqual(disbursedOn)) {
                     return true;
                 }
             }

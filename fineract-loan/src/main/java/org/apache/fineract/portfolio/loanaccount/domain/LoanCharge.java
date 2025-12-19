@@ -1239,6 +1239,9 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         BigDecimal multiDisbursementChargePortion = BigDecimal.ZERO;
         if (isTrancheDisbursementCharge() || isDisbursementCharge()) {
             final BigDecimal totalOriginalDisbursementAmount = this.amountPercentageAppliedTo;
+            if (totalOriginalDisbursementAmount == null || BigDecimal.ZERO.compareTo(totalOriginalDisbursementAmount) == 0) {
+                return BigDecimal.ZERO;
+            }
             final BigDecimal disbursementRatio = trancheDisbursementAmount.divide(totalOriginalDisbursementAmount,
                     MoneyHelper.getMathContext());
             final BigDecimal chargeAmount = this.amount.multiply(disbursementRatio);
