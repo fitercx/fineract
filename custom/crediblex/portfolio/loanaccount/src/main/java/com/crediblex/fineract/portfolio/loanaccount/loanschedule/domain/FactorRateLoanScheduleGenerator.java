@@ -83,6 +83,7 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
     private LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO, final LoanScheduleParams loanScheduleParams) {
 
+        final BigDecimal totalOriginalPrincipal = loanApplicationTerms.getPrincipal().getAmount();
         // Adjust principal based on factor rate
         final BigDecimal factorRate = loanApplicationTerms.getFactorRate();
         final Money principalMoney = loanApplicationTerms.getPrincipal();
@@ -141,8 +142,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!scheduleParams.isPartialUpdate()) {
-            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams,
-                    chargesDueAtTimeOfDisbursement);
+            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams, chargesDueAtTimeOfDisbursement,
+                    totalOriginalPrincipal);
         }
 
         // Determine the total interest owed over the full loan for FLAT
@@ -307,7 +308,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
                     interestCalculationGraceOnRepaymentPeriodFraction);
 
             if (loanApplicationTerms.isMultiDisburseLoan()) {
-                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate);
+                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate,
+                        totalOriginalPrincipal);
             }
 
             // process repayments to the schedule as per the repayment
@@ -635,12 +637,12 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
     @Override
     protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
             final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
-            final BigDecimal chargesDueAtTimeOfDisbursement) {
+            final BigDecimal chargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!loanApplicationTerms.isMultiDisburseLoan()) {
             // For single disbursement loans, use parent implementation
             return super.createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, loanScheduleParams,
-                    chargesDueAtTimeOfDisbursement);
+                    chargesDueAtTimeOfDisbursement, totalOriginalPrincipal);
         } else {
             // For multi-tranche loans, calculate proportional charges per tranche
             if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
@@ -684,7 +686,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
      */
     @Override
     protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
-            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate) {
+            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate,
+            final BigDecimal totalOriginalPrincipal) {
         // Get approved principal (sanctioned amount) for proportional calculation
         Money sanctionedAmount = loanApplicationTerms.getApprovedPrincipal();
         if (sanctionedAmount == null || sanctionedAmount.isZero()) {

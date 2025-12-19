@@ -172,6 +172,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
     private LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO, final LoanScheduleParams loanScheduleParams) {
 
+        final BigDecimal totalOriginalPrincipal = loanApplicationTerms.getPrincipal().getAmount();
         // generate list of proposed schedule due dates
         LocalDate loanEndDate = getScheduledDateGenerator().getLastRepaymentDate(loanApplicationTerms, holidayDetailDTO);
         LoanTermVariationsData lastDueDateVariation = loanApplicationTerms.getLoanTermVariations()
@@ -209,8 +210,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
 
         List<LoanScheduleModelPeriod> periods = new ArrayList<>();
         if (!scheduleParams.isPartialUpdate()) {
-            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams,
-                    chargesDueAtTimeOfDisbursement);
+            periods = createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, scheduleParams, chargesDueAtTimeOfDisbursement,
+                    totalOriginalPrincipal);
         }
 
         // Determine the total interest owed over the full loan for FLAT
@@ -378,7 +379,8 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                     interestCalculationGraceOnRepaymentPeriodFraction);
 
             if (loanApplicationTerms.isMultiDisburseLoan()) {
-                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate);
+                processDisbursements(loanApplicationTerms, chargesDueAtTimeOfDisbursement, scheduleParams, periods, scheduledDueDate,
+                        totalOriginalPrincipal);
             }
 
             // process repayments to the schedule as per the repayment

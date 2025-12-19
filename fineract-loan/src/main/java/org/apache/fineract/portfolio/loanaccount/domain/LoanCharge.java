@@ -1235,4 +1235,17 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
     }
 
+    public BigDecimal calculateMultiDisbursementChargeAmount(final BigDecimal trancheDisbursementAmount) {
+        BigDecimal multiDisbursementChargePortion = BigDecimal.ZERO;
+        if (isTrancheDisbursementCharge() || isDisbursementCharge()) {
+            final BigDecimal totalOriginalDisbursementAmount = this.amountPercentageAppliedTo;
+            final BigDecimal disbursementRatio = trancheDisbursementAmount.divide(totalOriginalDisbursementAmount,
+                    MoneyHelper.getMathContext());
+            final BigDecimal chargeAmount = this.amount.multiply(disbursementRatio);
+            final BigDecimal taxAmount = this.taxAmount.multiply(disbursementRatio);
+            multiDisbursementChargePortion = chargeAmount.add(taxAmount);
+        }
+        return multiDisbursementChargePortion;
+    }
+
 }
