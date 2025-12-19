@@ -365,7 +365,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 for (final LoanCharge loanCharge : loanCharges) {
                     if (loanCharge.isDueAtDisbursement() && !loanCharge.getChargePaymentMode().isPaymentModeAccountTransfer()
                             && loanCharge.isChargePending()) {
-                        chargeReducableFromDisbursement = chargeReducableFromDisbursement.add(loanCharge.amountOutstanding());
+                        final BigDecimal multiDisbursementChargeAmount = loanCharge
+                                .calculateMultiDisbursementChargeAmount(amountToDisburse.getAmount());
+                        chargeReducableFromDisbursement = chargeReducableFromDisbursement.add(multiDisbursementChargeAmount);
                     }
 
                 }
@@ -402,6 +404,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 createAndSaveLoanScheduleArchive(loan, scheduleGeneratorDTO);
             }
             loan.getSummary().setReceivableLineOfCredit(isReceivableLineOfCredit);
+            updateNetDisbursalAmountForMultiDisbursalLoan(loan);
             disburseLoan(command, isPaymentTypeApplicableForDisbursementCharge, paymentDetail, loan, currentUser, changes,
                     scheduleGeneratorDTO);
 
@@ -538,6 +541,30 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
                 .withSubEntityExternalId(disbursalTransactionExternalId).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    private void updateNetDisbursalAmountForMultiDisbursalLoan(final Loan loan) {
+        if (loan.isMultiDisburmentLoan()) {
+            BigDecimal netDisbursalAmount = BigDecimal.ZERO;
+            final List<LoanDisbursementDetails> loanDisbursementDetails = loan.getDisbursementDetails();
+            for (final LoanDisbursementDetails disbursementDetail : loanDisbursementDetails) {
+                if (disbursementDetail.actualDisbursementDate() != null) {
+                    final BigDecimal amountToDisburse = disbursementDetail.principal();
+                    final Set<LoanCharge> loanCharges = loan.getActiveCharges();
+                    BigDecimal disbursementCharge = BigDecimal.ZERO;
+                    for (final LoanCharge loanCharge : loanCharges) {
+                        if (loanCharge.isDueAtDisbursement() && !loanCharge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+                            final BigDecimal multiDisbursementChargeAmount = loanCharge
+                                    .calculateMultiDisbursementChargeAmount(amountToDisburse);
+                            disbursementCharge = disbursementCharge.add(multiDisbursementChargeAmount);
+                        }
+                    }
+                    BigDecimal netDisbursementAmount = amountToDisburse.subtract(disbursementCharge);
+                    netDisbursalAmount = netDisbursalAmount.add(netDisbursementAmount);
+                }
+            }
+            loan.setNetDisbursalAmount(netDisbursalAmount);
+        }
     }
 
     /****

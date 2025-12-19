@@ -3,6 +3,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
@@ -44,7 +45,8 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
             if ((charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
                     && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
-                            && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
+                            && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())
+                    || isMultiTrancheDisbursementChargeApplicable(charge, loan, disbursedOn)) {
                 if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                     // Calculate proportional fee for multi-tranche loans
                     Money chargeAmount = calculateProportionalChargeAmount(loan, charge, disbursedOn);
@@ -65,6 +67,9 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
                             if (charge.hasTax()) {
                                 charge.markAsFullyPaidWithTaxes();
                             }
+                        } else {
+                            charge.updatePaidAmountBy(chargeAmount, null, null);
+                            charge.updateTaxAmountPaidBy(taxAmount);
                         }
                     }
 
@@ -104,6 +109,19 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
 
         final LocalDate expectedDate = loan.getExpectedFirstRepaymentOnDate();
         loanDisbursementValidator.validateDisburseDate(loan, disbursedOn, expectedDate);
+    }
+
+    private boolean isMultiTrancheDisbursementChargeApplicable(final LoanCharge loanCharge, final Loan loan, final LocalDate disbursedOn) {
+        if (loan.isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+            final List<LoanDisbursementDetails> loanDisbursementDetails = loan.getDisbursementDetails();
+            for (final LoanDisbursementDetails disbursementDetail : loanDisbursementDetails) {
+                final LocalDate disbursementDate = disbursementDetail.getDisbursementDate();
+                if (disbursementDate != null && disbursementDate.isEqual(disbursedOn)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
