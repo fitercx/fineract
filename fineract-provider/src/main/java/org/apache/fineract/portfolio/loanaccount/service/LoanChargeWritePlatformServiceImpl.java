@@ -792,20 +792,64 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     @Override
     public CommandProcessingResult deactivateOverdueLoanCharge(Long loanId, JsonCommand command) {
         LocalDate fromDueDate = command.dateValueOfParameterNamed("dueDate");
+        LocalDate toDueDate = command.dateValueOfParameterNamed("toDueDate");
 
-        List<LoanCharge> loanCharges = loanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate);
+        List<LoanCharge> loanCharges;
+        if (fromDueDate == null) {
+            // Remove all: get all active overdue charges
+            loanCharges = loanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, ChargeTimeType.OVERDUE_INSTALLMENT.getValue());
+        } else if (toDueDate != null) {
+            // Date range: get charges within the range
+            loanCharges = loanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, toDueDate);
+        } else {
+            // Single date or from date onwards: get all charges from the date
+            loanCharges = loanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate);
+        }
         loanCharges.forEach(this::inactivateOverdueLoanCharge);
 
         Loan loan = loanAssembler.assembleFrom(loanId);
-        List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = loan
-                .getRepaymentScheduleInstallments(si -> DateUtils.isDateInRangeInclusive(fromDueDate, si.getFromDate(), si.getDueDate())
-                        || DateUtils.isAfter(si.getFromDate(), fromDueDate));
-        repaymentScheduleInstallments.forEach(si -> si.setPenaltyAccrued(null));
-        List<LoanTransaction> accrualsToReverse = loan.getLoanTransactions(
-                tx -> tx.isNotReversed() && DateUtils.isAfterInclusive(tx.getTransactionDate(), fromDueDate) && tx.isAccrualRelated());
-        accrualsToReverse.forEach(tx -> loanAdjustmentService.adjustLoanTransaction(loan, tx,
-                LoanAdjustmentParameter.builder().transactionDate(tx.getTransactionDate()).build(), null, new HashMap<>()));
-
+        if (fromDueDate != null) {
+            // Only update installments and transactions if dates are provided
+            LocalDate effectiveToDate = toDueDate != null ? toDueDate : loan.getExpectedMaturityDate();
+            List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = loan
+                    .getRepaymentScheduleInstallments(si -> {
+                        if (toDueDate != null) {
+                            // Date range: check if installment overlaps with the range
+                            return (DateUtils.isDateInRangeInclusive(fromDueDate, si.getFromDate(), si.getDueDate())
+                                    || DateUtils.isDateInRangeInclusive(toDueDate, si.getFromDate(), si.getDueDate())
+                                    || (DateUtils.isAfter(si.getFromDate(), fromDueDate) && DateUtils.isBefore(si.getDueDate(), toDueDate)));
+                        } else {
+                            // From date onwards
+                            return DateUtils.isDateInRangeInclusive(fromDueDate, si.getFromDate(), si.getDueDate())
+                                    || DateUtils.isAfter(si.getFromDate(), fromDueDate);
+                        }
+                    });
+            repaymentScheduleInstallments.forEach(si -> si.setPenaltyAccrued(null));
+            List<LoanTransaction> accrualsToReverse = loan.getLoanTransactions(
+                    tx -> {
+                        boolean isInRange = DateUtils.isAfterInclusive(tx.getTransactionDate(), fromDueDate);
+                        if (toDueDate != null) {
+                            isInRange = isInRange && !DateUtils.isAfter(tx.getTransactionDate(), toDueDate);
+                        }
+                        return tx.isNotReversed() && isInRange && tx.isAccrualRelated();
+                    });
+            accrualsToReverse.forEach(tx -> loanAdjustmentService.adjustLoanTransaction(loan, tx,
+                    LoanAdjustmentParameter.builder().transactionDate(tx.getTransactionDate()).build(), null, new HashMap<>()));
+        } else {
+            // Remove all: clear penalty accrued from all installments and reverse all accrual transactions
+            List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments = loan.getRepaymentScheduleInstallments();
+            repaymentScheduleInstallments.forEach(si -> si.setPenaltyAccrued(null));
+            List<LoanTransaction> accrualsToReverse = loan.getLoanTransactions(
+                    tx -> tx.isNotReversed() && tx.isAccrualRelated());
+            accrualsToReverse.forEach(tx -> loanAdjustmentService.adjustLoanTransaction(loan, tx,
+                    LoanAdjustmentParameter.builder().transactionDate(tx.getTransactionDate()).build(), null, new HashMap<>()));
+        }
+        
+        // Update loan schedule dependent fields and reprocess transactions to reflect charge changes
+        loan.updateLoanScheduleDependentDerivedFields();
+        reprocessLoanTransactionsService.reprocessTransactions(loan);
+        loan.updateLoanSummaryAndStatus();
+        
         loanRepositoryWrapper.saveAndFlush(loan);
 
         final CommandProcessingResultBuilder commandProcessingResultBuilder = new CommandProcessingResultBuilder();

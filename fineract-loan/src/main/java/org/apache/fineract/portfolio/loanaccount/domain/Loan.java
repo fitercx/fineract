@@ -1056,11 +1056,48 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
             LoanOverdueInstallmentCharge overdueInstallmentCharge = loanCharge.getOverdueInstallmentCharge();
             if (overdueInstallmentCharge != null) {
-                Integer installmentNumber = overdueInstallmentCharge.getInstallment().getInstallmentNumber();
-                LoanRepaymentScheduleInstallment installment = fetchRepaymentScheduleInstallment(installmentNumber);
-                overdueInstallmentCharge.updateLoanRepaymentScheduleInstallment(installment);
+                LoanRepaymentScheduleInstallment oldInstallment = overdueInstallmentCharge.getInstallment();
+                if (oldInstallment != null) {
+                    Integer installmentNumber = oldInstallment.getInstallmentNumber();
+                    LoanRepaymentScheduleInstallment installment = fetchRepaymentScheduleInstallment(installmentNumber);
+                    
+                    if (installment == null) {
+                        installment = findClosestInstallmentForOverdueCharge(oldInstallment);
+                    }
+                    
+                    if (installment != null) {
+                        overdueInstallmentCharge.updateLoanRepaymentScheduleInstallment(installment);
+                    }
+                }
             }
         }
+    }
+    
+    private LoanRepaymentScheduleInstallment findClosestInstallmentForOverdueCharge(
+            LoanRepaymentScheduleInstallment oldInstallment) {
+        List<LoanRepaymentScheduleInstallment> installments = getRepaymentScheduleInstallments();
+        if (installments.isEmpty()) {
+            return null;
+        }
+        
+        LocalDate oldDueDate = oldInstallment.getDueDate();
+        
+        LoanRepaymentScheduleInstallment closestLater = installments.stream()
+                .filter(i -> !i.getDueDate().isBefore(oldDueDate))
+                .min((i1, i2) -> Long.compare(
+                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i1.getDueDate(), oldDueDate)),
+                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i2.getDueDate(), oldDueDate))))
+                .orElse(null);
+        
+        if (closestLater != null) {
+            return closestLater;
+        }
+        
+        return installments.stream()
+                .min((i1, i2) -> Long.compare(
+                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i1.getDueDate(), oldDueDate)),
+                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i2.getDueDate(), oldDueDate))))
+                .orElse(null);
     }
 
     public void clearLoanInstallmentChargesBeforeRegeneration(final LoanCharge loanCharge) {

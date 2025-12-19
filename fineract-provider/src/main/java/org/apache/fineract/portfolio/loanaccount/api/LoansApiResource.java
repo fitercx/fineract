@@ -1221,6 +1221,8 @@ public class LoansApiResource {
             commandRequest = new CommandWrapperBuilder().recoverFromGuarantor(resolvedLoanId).build();
         } else if (CommandParameterUtil.is(commandParam, "assigndelinquency")) {
             commandRequest = builder.assignDelinquency(resolvedLoanId).build();
+        } else if (CommandParameterUtil.is(commandParam, "adjustInstallmentDate")) {
+            commandRequest = builder.adjustInstallmentDate(resolvedLoanId).build();
         }
 
         if (commandRequest == null) {
