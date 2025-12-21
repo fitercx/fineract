@@ -20,6 +20,9 @@
 dependencies {
     implementation(project(':fineract-core'))
     implementation(project(':fineract-provider'))
+    implementation(project(':fineract-avro-schemas'))
+    implementation('org.apache.avro:avro')
+
     implementation 'org.liquibase:liquibase-core'
 
     implementation(project(':fineract-client'))

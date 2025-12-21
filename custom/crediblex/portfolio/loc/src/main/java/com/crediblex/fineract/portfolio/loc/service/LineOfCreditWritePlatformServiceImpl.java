@@ -37,6 +37,15 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditActivatedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditApprovedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditClosedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditCreatedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditDeactivatedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditDecreasedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditIncreasedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditReactivatedBusinessEvent;
+import com.crediblex.fineract.portfolio.loc.event.LineOfCreditUpdatedBusinessEvent;
 import com.crediblex.fineract.portfolio.loc.exception.ActivationInsufficientBalanceException;
 import com.crediblex.fineract.portfolio.loc.exception.LineOfCreditInvalidStateException;
 import com.google.gson.JsonArray;
@@ -59,6 +68,7 @@ import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidati
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.portfolio.charge.domain.Charge;
@@ -95,6 +105,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final LineOfCreditNoteRepository lineOfCreditNoteRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final LineOfCreditTransactionRepository lineOfCreditTransactionRepository;
+    private final BusinessEventNotifierService businessEventNotifierService;
 
     /**
      * Helper method to save a note for LOC actions if provided in the command
@@ -172,6 +183,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         final LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditCreatedBusinessEvent(lineOfCredit));
         if (savedLineOfCredit.getApprovedBuyers() != null) {
             savedLineOfCredit.getApprovedBuyers().forEach(buyer -> buyer.setLineOfCredit(savedLineOfCredit));
         }
@@ -276,6 +288,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             lineOfCredit.setStatus(LocStatus.SUBMITTED);
             lineOfCredit.resetStateChangeFields();
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+            this.businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditUpdatedBusinessEvent(lineOfCredit));
         }
 
         // Save note if provided
@@ -312,6 +325,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             applyInitialCharges(lineOfCredit);
 
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+            businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditActivatedBusinessEvent(lineOfCredit));
 
             // Save note if provided
             saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.ACTIVATE);
@@ -347,7 +361,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.getLineOfCreditStateChange().setApprovedBy(context.getAuthenticatedUserIfPresent());
 
         lineOfCreditRepository.saveAndFlush(loc);
-
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditApprovedBusinessEvent(loc));
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.APPROVE);
 
@@ -398,6 +412,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.getLineOfCreditStateChange().setClosedOnDate(closureDate);
         loc.getLineOfCreditStateChange().setClosedBy(context.getAuthenticatedUserIfPresent());
         lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditClosedBusinessEvent(loc));
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.CLOSE);
@@ -452,6 +467,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.INCREMENT);
         loc.setMaximumAmount(loc.getMaximumAmount().add(delta));
         this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditIncreasedBusinessEvent(loc));
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.INCREASE_CREDIT_LIMIT);
@@ -524,6 +540,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditDecreasedBusinessEvent(loc));
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.REDUCE_CREDIT_LIMIT);
@@ -605,6 +622,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.deactivate();
 
         this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditDeactivatedBusinessEvent(loc));
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.DEACTIVATE);
@@ -638,6 +656,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         loc.getLineOfCreditStateChange().setActivatedBy(context.authenticatedUser());
 
         this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditReactivatedBusinessEvent(loc));
 
         // Save note if provided
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.RE_ACTIVATE);

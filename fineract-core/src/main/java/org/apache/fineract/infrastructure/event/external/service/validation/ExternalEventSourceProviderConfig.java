@@ -27,10 +27,11 @@ import org.springframework.context.annotation.Configuration;
 public class ExternalEventSourceProviderConfig {
 
     private static final String EXTERNAL_EVENT_CLASSES_BASE_PACKAGE = "org.apache.fineract";
+    private static final String CREDIBLEX_EXTERNAL_EVENT_CLASSES_BASE_PACKAGE = "com.crediblex.fineract";
 
     @Bean
     public ExternalEventSourceProvider fineractExternalEventSourceProvider() {
-        List<ExternalEventSourceData> sourcePackages = Arrays.asList(new ExternalEventSourceData(EXTERNAL_EVENT_CLASSES_BASE_PACKAGE));
+        List<ExternalEventSourceData> sourcePackages = Arrays.asList(new ExternalEventSourceData(EXTERNAL_EVENT_CLASSES_BASE_PACKAGE), new ExternalEventSourceData(CREDIBLEX_EXTERNAL_EVENT_CLASSES_BASE_PACKAGE));
         return new SimpleExternalEventSourceProvider(sourcePackages);
     }
 }
