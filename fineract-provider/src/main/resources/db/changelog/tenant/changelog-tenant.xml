@@ -192,5 +192,4 @@
     <include file="parts/0171_loan_capitalized_income.xml" relativeToChangelogFile="true"/>
     <include file="parts/0173_add_tax_amount_to_loan_charge.xml" relativeToChangelogFile="true"/>
     <include file="parts/0174_add_penalty_grace_period_to_loan_product.xml" relativeToChangelogFile="true"/>
-    <include file="parts/0175_add_adjust_installment_date_permission.xml" relativeToChangelogFile="true"/>
 </databaseChangeLog>

@@ -39,20 +39,4 @@ public interface LoanChargeRepository extends JpaRepository<LoanCharge, Long>, J
             AND lc.dueDate >= :fromDate
             """)
     List<LoanCharge> findByLoanIdAndFromDueDate(@Param("loanId") Long loanId, @Param("fromDate") LocalDate fromDate);
-
-    @Query("""
-            SELECT lc FROM LoanCharge lc
-            WHERE lc.loan.id = :loanId
-            AND lc.dueDate >= :fromDate
-            AND lc.dueDate <= :toDate
-            """)
-    List<LoanCharge> findByLoanIdAndDueDateRange(@Param("loanId") Long loanId, @Param("fromDate") LocalDate fromDate, @Param("toDate") LocalDate toDate);
-
-    @Query("""
-            SELECT lc FROM LoanCharge lc
-            WHERE lc.loan.id = :loanId
-            AND lc.chargeTime = :chargeTimeType
-            AND lc.active = true
-            """)
-    List<LoanCharge> findAllActiveOverdueChargesByLoanId(@Param("loanId") Long loanId, @Param("chargeTimeType") Integer chargeTimeType);
 }

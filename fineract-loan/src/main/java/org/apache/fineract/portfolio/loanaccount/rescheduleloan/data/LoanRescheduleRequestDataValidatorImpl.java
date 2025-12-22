@@ -214,6 +214,16 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
 
     public static void validateForOverdueCharges(final DataValidatorBuilder dataValidatorBuilder, final Loan loan,
             final LoanRepaymentScheduleInstallment installment) {
+        if (installment != null) {
+            LocalDate rescheduleFromDate = installment.getFromDate();
+            Collection<LoanCharge> charges = loan.getLoanCharges();
+            for (LoanCharge loanCharge : charges) {
+                if (loanCharge.isOverdueInstallmentCharge() && DateUtils.isAfter(loanCharge.getDueLocalDate(), rescheduleFromDate)) {
+                    dataValidatorBuilder.failWithCodeNoParameterAddedToErrorCode("not.allowed.due.to.overdue.charges");
+                    break;
+                }
+            }
+        }
     }
 
     /**

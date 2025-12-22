@@ -188,7 +188,6 @@ import org.apache.fineract.portfolio.loanaccount.exception.LoanForeclosureExcept
 import org.apache.fineract.portfolio.loanaccount.exception.LoanMultiDisbursementException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanOfficerAssignmentException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanOfficerUnassignmentException;
-import org.apache.fineract.portfolio.loanaccount.exception.LoanRepaymentScheduleNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.exception.MultiDisbursementDataNotAllowedException;
 import org.apache.fineract.portfolio.loanaccount.exception.MultiDisbursementDataRequiredException;
@@ -3554,81 +3553,5 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         changes.put("rescheduledOnDate", command.stringValueOfParameterNamed(TRANSACTION_DATE));
 
         loanTransactionValidator.validateLoanRescheduleDate(loan);
-    }
-
-    @Transactional
-    @Override
-    public CommandProcessingResult adjustInstallmentDate(final Long loanId, final JsonCommand command) {
-        final Loan loan = this.loanAssembler.assembleFrom(loanId);
-        checkClientOrGroupActive(loan);
-
-        final Integer installmentNumber = command.integerValueOfParameterNamed("installmentNumber");
-        final LocalDate newDueDate = command.localDateValueOfParameterNamed("newDueDate");
-        final LocalDate adjustmentDate = command.localDateValueOfParameterNamed("adjustmentDate");
-
-        final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
-        if (installment == null) {
-            throw new LoanRepaymentScheduleNotFoundException(installmentNumber);
-        }
-
-        final LocalDate oldDueDate = installment.getDueDate();
-        final Map<String, Object> changes = new HashMap<>();
-
-        if (!oldDueDate.equals(newDueDate)) {
-            final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
-            
-            // Calculate the difference in days between old and new due date
-            final long daysDifference = java.time.temporal.ChronoUnit.DAYS.between(oldDueDate, newDueDate);
-            
-            // Find the installment to adjust and cascade to subsequent installments
-            LoanRepaymentScheduleInstallment previousInstallment = null;
-            
-            for (LoanRepaymentScheduleInstallment inst : installments) {
-                if (inst.getInstallmentNumber().equals(installmentNumber)) {
-                    // Update the target installment
-                    if (previousInstallment != null) {
-                        inst.updateFromDate(previousInstallment.getDueDate());
-                    }
-                    inst.updateDueDate(newDueDate);
-                    changes.put("installmentNumber", installmentNumber);
-                    changes.put("oldDueDate", oldDueDate);
-                    changes.put("newDueDate", newDueDate);
-                    changes.put("daysShifted", daysDifference);
-                    previousInstallment = inst;
-                } else if (inst.getInstallmentNumber() > installmentNumber) {
-                    // Cascade the date change to all subsequent installments (installmentNumber > target)
-                    // Update both fromDate and dueDate by the same number of days
-                    if (inst.getFromDate() != null) {
-                        inst.updateFromDate(inst.getFromDate().plusDays(daysDifference));
-                    }
-                    inst.updateDueDate(inst.getDueDate().plusDays(daysDifference));
-                    previousInstallment = inst;
-                } else {
-                    // Before the target installment, keep track of previous
-                    previousInstallment = inst;
-                }
-            }
-
-            loan.updateLoanScheduleDependentDerivedFields();
-
-            for (final LoanCharge loanCharge : loan.getLoanCharges()) {
-                if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
-                    loan.updateOverdueScheduleInstallment(loanCharge);
-                }
-            }
-
-            saveLoanWithDataIntegrityViolationChecks(loan);
-        }
-
-        return new CommandProcessingResultBuilder()
-                .withCommandId(command.commandId())
-                .withEntityId(loanId)
-                .withEntityExternalId(loan.getExternalId())
-                .withOfficeId(loan.getOfficeId())
-                .withClientId(loan.getClientId())
-                .withGroupId(loan.getGroupId())
-                .withLoanId(loanId)
-                .with(changes)
-                .build();
     }
 }

@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -53,5 +54,33 @@ public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Lo
             """)
     List<LoanTransaction> findAccrualTransactionsByChargeIds(@Param("chargeIds") List<Long> chargeIds,
             @Param("transactionType") LoanTransactionType transactionType);
+
+    @Query("""
+            SELECT lc FROM LoanCharge lc
+            WHERE lc.loan.id = :loanId
+            AND lc.dueDate >= :fromDate
+            AND lc.chargeTime = :chargeTimeValue
+            """)
+    List<LoanCharge> findByLoanIdAndFromDueDate(@Param("loanId") Long loanId, @Param("fromDate") LocalDate fromDate,
+            @Param("chargeTimeValue") Integer chargeTimeValue);
+
+    @Query("""
+            SELECT lc FROM LoanCharge lc
+            WHERE lc.loan.id = :loanId
+            AND lc.dueDate >= :fromDate
+            AND lc.dueDate <= :toDate
+            AND lc.chargeTime = :chargeTimeValue
+            """)
+    List<LoanCharge> findByLoanIdAndDueDateRange(@Param("loanId") Long loanId, @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate, @Param("chargeTimeValue") Integer chargeTimeValue);
+
+    @Query("""
+            SELECT lc FROM LoanCharge lc
+            WHERE lc.loan.id = :loanId
+            AND lc.active = true
+            AND lc.chargeTime = :chargeTimeValue
+            """)
+    List<LoanCharge> findAllActiveOverdueChargesByLoanId(@Param("loanId") Long loanId,
+            @Param("chargeTimeValue") Integer chargeTimeValue);
 
 }

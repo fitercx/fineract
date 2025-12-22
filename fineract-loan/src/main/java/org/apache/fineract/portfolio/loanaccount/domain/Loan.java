@@ -1056,48 +1056,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
             LoanOverdueInstallmentCharge overdueInstallmentCharge = loanCharge.getOverdueInstallmentCharge();
             if (overdueInstallmentCharge != null) {
-                LoanRepaymentScheduleInstallment oldInstallment = overdueInstallmentCharge.getInstallment();
-                if (oldInstallment != null) {
-                    Integer installmentNumber = oldInstallment.getInstallmentNumber();
-                    LoanRepaymentScheduleInstallment installment = fetchRepaymentScheduleInstallment(installmentNumber);
-                    
-                    if (installment == null) {
-                        installment = findClosestInstallmentForOverdueCharge(oldInstallment);
-                    }
-                    
-                    if (installment != null) {
-                        overdueInstallmentCharge.updateLoanRepaymentScheduleInstallment(installment);
-                    }
-                }
+                Integer installmentNumber = overdueInstallmentCharge.getInstallment().getInstallmentNumber();
+                LoanRepaymentScheduleInstallment installment = fetchRepaymentScheduleInstallment(installmentNumber);
+                overdueInstallmentCharge.updateLoanRepaymentScheduleInstallment(installment);
             }
         }
-    }
-    
-    private LoanRepaymentScheduleInstallment findClosestInstallmentForOverdueCharge(
-            LoanRepaymentScheduleInstallment oldInstallment) {
-        List<LoanRepaymentScheduleInstallment> installments = getRepaymentScheduleInstallments();
-        if (installments.isEmpty()) {
-            return null;
-        }
-        
-        LocalDate oldDueDate = oldInstallment.getDueDate();
-        
-        LoanRepaymentScheduleInstallment closestLater = installments.stream()
-                .filter(i -> !i.getDueDate().isBefore(oldDueDate))
-                .min((i1, i2) -> Long.compare(
-                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i1.getDueDate(), oldDueDate)),
-                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i2.getDueDate(), oldDueDate))))
-                .orElse(null);
-        
-        if (closestLater != null) {
-            return closestLater;
-        }
-        
-        return installments.stream()
-                .min((i1, i2) -> Long.compare(
-                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i1.getDueDate(), oldDueDate)),
-                    Math.abs(java.time.temporal.ChronoUnit.DAYS.between(i2.getDueDate(), oldDueDate))))
-                .orElse(null);
     }
 
     public void clearLoanInstallmentChargesBeforeRegeneration(final LoanCharge loanCharge) {
@@ -2569,7 +2532,35 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public BigDecimal getDerivedAmountForCharge(final LoanCharge loanCharge) {
         BigDecimal amount = BigDecimal.ZERO;
         if (isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
-            amount = getApprovedPrincipal();
+            // For multi-disbursement loans, calculate fee proportionally per tranche
+            // Check if charge is associated with a specific tranche
+            LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
+            if (trancheCharge != null) {
+                // Charge is linked to a specific tranche - use that tranche's principal
+                amount = trancheCharge.getLoanDisbursementDetails().principal();
+            } else {
+                // Charge not linked to tranche - find tranche by disbursement date and calculate proportionally
+                LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
+                if (actualDisbursementDate != null) {
+                    // Find the tranche that matches this disbursement date
+                    Optional<LoanDisbursementDetails> matchingTranche = getDisbursementDetails().stream()
+                            .filter(detail -> actualDisbursementDate.equals(detail.actualDisbursementDate())).findFirst();
+
+                    if (matchingTranche.isPresent()) {
+                        // Use the matching tranche's principal for proportional calculation
+                        // The fee percentage will be applied to this tranche amount, ensuring
+                        // proportional allocation: (trancheAmount / sanctionedAmount) * totalFee
+                        amount = matchingTranche.get().principal();
+                    } else {
+                        // Fallback: if no matching tranche found, use approved principal
+                        // This should not happen in normal flow, but provides safety
+                        amount = getApprovedPrincipal();
+                    }
+                } else {
+                    // No disbursement date yet - use approved principal as fallback
+                    amount = getApprovedPrincipal();
+                }
+            }
         } else {
             // If charge type is specified due date and loan is multi disburment loan.
             // Then we need to get as of this loan charge due date how much amount disbursed.
