@@ -1816,15 +1816,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
         }
 
-        return new CommandProcessingResultBuilder()
-                .withCommandId(command.commandId())
-                .withEntityId(loanId)
-                .withEntityExternalId(loan.getExternalId())
-                .withOfficeId(loan.getOfficeId())
-                .withClientId(loan.getClientId())
-                .withGroupId(loan.getGroupId())
-                .withLoanId(loanId)
-                .with(changes)
-                .build();
+        return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
+                .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
+                .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
     }
 }

@@ -1,11 +1,11 @@
 package com.crediblex.fineract.portfolio.loanaccount.handler;
 
+import com.crediblex.fineract.portfolio.loanaccount.service.CustomLoanWritePlatformServiceJpaRepositoryImpl;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.annotation.CommandType;
 import org.apache.fineract.commands.handler.NewCommandSourceHandler;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
-import com.crediblex.fineract.portfolio.loanaccount.service.CustomLoanWritePlatformServiceJpaRepositoryImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,4 +22,3 @@ public class CredXAdjustInstallmentDateCommandHandler implements NewCommandSourc
         return this.writePlatformService.adjustInstallmentDate(command.getLoanId(), command);
     }
 }
-

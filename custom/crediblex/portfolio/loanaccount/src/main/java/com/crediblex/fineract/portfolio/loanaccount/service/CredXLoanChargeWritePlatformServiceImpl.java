@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -23,12 +24,13 @@ import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalance
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanWaiveChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargeAdjustmentPostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
-import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
@@ -39,14 +41,10 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
-import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
-import org.apache.fineract.portfolio.loanaccount.exception.LoanChargeDeactivationException;
-import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentParameter;
-import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -449,31 +447,27 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             loanCharges = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, overdueChargeTimeValue);
         } else if (toDueDate != null) {
             // Date range: get charges within the range
-            loanCharges = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, toDueDate,
-                    overdueChargeTimeValue);
+            loanCharges = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, toDueDate, overdueChargeTimeValue);
         } else {
             // Single date or from date onwards: get all charges from the date
             loanCharges = customLoanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate, overdueChargeTimeValue);
         }
-        
+
         // Track how many charges were actually deactivated
         int totalChargesFound = loanCharges.size();
-        long deactivatedCount = loanCharges.stream()
-                .filter(this::inactivateOverdueLoanCharge)
-                .count();
-        
-        log.info("Found {} overdue charges for loan {}, successfully deactivated {}", 
-                totalChargesFound, loanId, deactivatedCount);
+        long deactivatedCount = loanCharges.stream().filter(this::inactivateOverdueLoanCharge).count();
+
+        log.info("Found {} overdue charges for loan {}, successfully deactivated {}", totalChargesFound, loanId, deactivatedCount);
 
         // Reload loan to get updated state
         Loan loan = loanAssembler.assembleFrom(loanId);
-        
+
         // Only update loan if we actually deactivated any charges
         if (deactivatedCount > 0) {
             try {
                 // Recalculate installment charge portions from active charges
                 recalculateInstallmentChargesFromActiveLoanCharges(loan);
-                
+
                 // Update loan schedule and summary WITHOUT reprocessing transactions (to avoid date validation)
                 loan.updateLoanScheduleDependentDerivedFields();
                 loan.updateLoanSummaryAndStatus();
@@ -489,7 +483,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         changes.put("totalChargesFound", totalChargesFound);
         changes.put("chargesDeactivated", deactivatedCount);
         changes.put("chargesSkipped", totalChargesFound - deactivatedCount);
-        
+
         final CommandProcessingResultBuilder commandProcessingResultBuilder = new CommandProcessingResultBuilder();
         return commandProcessingResultBuilder.withLoanId(loanId) //
                 .withEntityId(loanId) //
@@ -499,9 +493,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     }
 
     /**
-     * Attempts to inactivate an overdue loan charge. Returns true if successful, false if skipped.
-     * This method is lenient and will skip charges that are not active or not overdue installment charges
-     * instead of throwing exceptions.
+     * Attempts to inactivate an overdue loan charge. Returns true if successful, false if skipped. This method is
+     * lenient and will skip charges that are not active or not overdue installment charges instead of throwing
+     * exceptions.
      */
     private boolean inactivateOverdueLoanCharge(LoanCharge loanCharge) {
         // Skip if not an overdue installment charge
@@ -522,19 +516,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         businessEventNotifierService.notifyPostBusinessEvent(
                 new org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent(loanCharge));
-        
+
         log.info("Successfully deactivated overdue charge {}", loanCharge.getId());
         return true;
     }
 
     /**
-     * Recalculates installment charge portions based on currently active loan charges.
-     * This ensures the repayment schedule reflects the correct charge amounts after charges are removed.
-     * NO date validation is performed.
+     * Recalculates installment charge portions based on currently active loan charges. This ensures the repayment
+     * schedule reflects the correct charge amounts after charges are removed. NO date validation is performed.
      */
     private void recalculateInstallmentChargesFromActiveLoanCharges(Loan loan) {
         MonetaryCurrency currency = loan.getCurrency();
-        
+
         // For each installment, recalculate total penalty and fee charges from active loan charges
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
             Money totalFee = Money.zero(currency);
@@ -543,16 +536,16 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             Money penaltyWaived = Money.zero(currency);
             Money feeWrittenOff = Money.zero(currency);
             Money penaltyWrittenOff = Money.zero(currency);
-            
+
             // Sum up all ACTIVE charges for this installment
             for (LoanCharge loanCharge : loan.getLoanCharges()) {
                 if (!loanCharge.isActive()) {
                     continue; // Skip inactive charges
                 }
-                
+
                 // Check if this charge applies to this installment
                 boolean appliesToInstallment = false;
-                
+
                 if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
                     // Overdue charges are linked by due date
                     appliesToInstallment = installment.getDueDate().equals(loanCharge.getDueLocalDate());
@@ -565,7 +558,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         }
                     }
                 }
-                
+
                 if (appliesToInstallment) {
                     if (loanCharge.isPenaltyCharge()) {
                         totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
@@ -578,14 +571,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     }
                 }
             }
-            
+
             // Update the installment's charge portions
-            installment.updateChargePortion(totalFee, feeWaived, feeWrittenOff, 
-                                           totalPenalty, penaltyWaived, penaltyWrittenOff, 
-                                           Money.zero(currency), Money.zero(currency), Money.zero(currency));
-            
-            log.debug("Updated installment {} - Fee: {}, Penalty: {}", 
-                     installment.getInstallmentNumber(), totalFee, totalPenalty);
+            installment.updateChargePortion(totalFee, feeWaived, feeWrittenOff, totalPenalty, penaltyWaived, penaltyWrittenOff,
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency));
+
+            log.debug("Updated installment {} - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), totalFee, totalPenalty);
         }
     }
 }
