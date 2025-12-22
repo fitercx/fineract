@@ -1789,6 +1789,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     changes.put("installmentNumber", installmentNumber);
                     changes.put("oldDueDate", oldDueDate);
                     changes.put("newDueDate", newDueDate);
+                    changes.put("adjustmentDate", adjustmentDate);
                     changes.put("daysShifted", daysDifference);
                     previousInstallment = inst;
                 } else if (inst.getInstallmentNumber() > installmentNumber) {

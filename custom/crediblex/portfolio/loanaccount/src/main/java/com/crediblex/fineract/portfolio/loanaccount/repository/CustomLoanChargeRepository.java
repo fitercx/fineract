@@ -72,7 +72,7 @@ public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Lo
             AND lc.chargeTime = :chargeTimeValue
             """)
     List<LoanCharge> findByLoanIdAndDueDateRange(@Param("loanId") Long loanId, @Param("fromDate") LocalDate fromDate,
-                                                 @Param("toDate") LocalDate toDate, @Param("chargeTimeValue") Integer chargeTimeValue);
+            @Param("toDate") LocalDate toDate, @Param("chargeTimeValue") Integer chargeTimeValue);
 
     @Query("""
             SELECT lc FROM LoanCharge lc

@@ -474,7 +474,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 loanRepositoryWrapper.saveAndFlush(loan);
                 log.info("Successfully updated loan {} after removing {} charges", loanId, deactivatedCount);
             } catch (Exception e) {
-                log.error("Error updating loan {} after charge removal: {}", loanId, e.getMessage(), e);
+                log.error("Error updating loan {} after charge removal", loanId, e);
                 // Continue anyway - charges are already deactivated, this is just a totals update
             }
         }
