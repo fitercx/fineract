@@ -1,7 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.api;
 
-import com.crediblex.fineract.portfolio.loanaccount.service.CustomLoanWritePlatformServiceJpaRepositoryImpl;
-import com.google.gson.JsonElement;
+import com.crediblex.fineract.portfolio.loanaccount.commands.LoanCommandWrapperBuilder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -16,12 +15,10 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import lombok.RequiredArgsConstructor;
-import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
-import org.apache.fineract.infrastructure.core.api.JsonCommand;
+import org.apache.fineract.commands.domain.CommandWrapper;
+import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
-import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
-import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.springframework.stereotype.Component;
 
@@ -32,10 +29,8 @@ import org.springframework.stereotype.Component;
 public class LoanAdjustInstallmentDateApiResource {
 
     private final PlatformSecurityContext context;
-    private final CustomLoanWritePlatformServiceJpaRepositoryImpl loanWritePlatformService;
+    private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
     private final DefaultToApiJsonSerializer<CommandProcessingResult> toApiJsonSerializer;
-    private final ApiRequestParameterHelper apiRequestParameterHelper;
-    private final FromJsonHelper fromJsonHelper;
 
     @POST
     @Path("/{loanId}")
@@ -49,11 +44,12 @@ public class LoanAdjustInstallmentDateApiResource {
 
         this.context.authenticatedUser().validateHasReadPermission("LOAN");
 
-        final JsonElement parsedCommand = this.fromJsonHelper.parse(apiRequestBodyAsJson);
-        final JsonCommand command = JsonCommand.from(apiRequestBodyAsJson, parsedCommand, this.fromJsonHelper, "LOAN", loanId, null, null,
-                null, loanId, null, null, null, null, null, null, null, ExternalId.empty());
+        // Create CommandWrapper with proper entity and action names for audit trail
+        final CommandWrapper commandRequest = new LoanCommandWrapperBuilder().adjustInstallmentDate(loanId).withJson(apiRequestBodyAsJson)
+                .build();
 
-        final CommandProcessingResult result = this.loanWritePlatformService.adjustInstallmentDate(loanId, command);
+        // This will log the command source (audit trail) and trigger the command handler
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
         return this.toApiJsonSerializer.serialize(result);
     }
