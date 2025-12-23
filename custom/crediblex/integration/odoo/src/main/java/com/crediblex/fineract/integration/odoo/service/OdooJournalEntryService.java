@@ -667,6 +667,15 @@ public class OdooJournalEntryService {
         moveValues.put("narration", description);
         moveValues.put("x_studio_loan_id_new", loanId);
 
+        // Add x_studio_lms_loan_id and x_studio_lms_customer_name for consistency with regular moves
+        moveValues.put("x_studio_lms_loan_id", loanId);
+
+        // Get client name from loan ID for x_studio_lms_customer_name
+        String clientName = getClientNameFromLoanId(loanId);
+        if (clientName != null) {
+            moveValues.put("x_studio_lms_customer_name", clientName);
+        }
+
         // Create journal lines
         List<Object> lines = new ArrayList<>();
 

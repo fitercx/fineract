@@ -57,6 +57,7 @@ public class OdooApiClient {
     private final ObjectMapper objectMapper;
     private final CloseableHttpClient httpClient;
     private boolean authenticated = false;
+    private Integer cachedUid = null;
 
     public OdooApiClient(OdooProperties odooProperties) {
         this.odooProperties = odooProperties;
@@ -91,6 +92,12 @@ public class OdooApiClient {
             return null;
         }
 
+        // Return cached UID if available and still authenticated
+        if (cachedUid != null && authenticated) {
+            log.debug("Using cached UID: {}", cachedUid);
+            return cachedUid;
+        }
+
         try {
             log.info("Authenticating with Odoo server: {}", odooProperties.getUrl());
 
@@ -112,23 +119,29 @@ public class OdooApiClient {
 
             if (response.containsKey("error")) {
                 log.error("Authentication failed: {}", response.get("error"));
+                this.authenticated = false;
+                this.cachedUid = null;
                 return null;
             }
 
             Object result = response.get("result");
             if (!(result instanceof Number)) {
                 log.error("Invalid authentication response: {}", result);
+                this.authenticated = false;
+                this.cachedUid = null;
                 return null;
             }
 
             Integer uid = ((Number) result).intValue();
             this.authenticated = true;
+            this.cachedUid = uid; // Cache the UID for future use
             log.info("Successfully authenticated with Odoo as UID: {}", uid);
             return uid;
 
         } catch (Exception e) {
             log.error("Failed to authenticate with Odoo", e);
             this.authenticated = false;
+            this.cachedUid = null;
             return null;
         }
     }
@@ -313,14 +326,23 @@ public class OdooApiClient {
         return UUID.randomUUID().toString();
     }
 
+    /**
+     * Clear cached authentication (useful when authentication expires or credentials change)
+     */
+    public void clearAuthenticationCache() {
+        this.cachedUid = null;
+        this.authenticated = false;
+        log.info("Cleared cached authentication");
+    }
+
     @PreDestroy
     public void cleanup() {
         try {
             if (httpClient != null) {
                 httpClient.close();
             }
-        } catch (IOException e) {
-            log.warn("Failed to close HTTP client", e);
+        } catch (Exception e) {
+            log.warn("Error closing HTTP client", e);
         }
     }
 }

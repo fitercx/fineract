@@ -494,6 +494,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         try {
             log.debug("Validating {} journal entries for GL account existence in Odoo", journalEntries.size());
 
+            // Array of GL codes that should be skipped during validation
+            String[] skipValidationGlCodes = { "Liability Transfer" };
+
             for (JournalEntryOdooSync entrySync : journalEntries) {
                 if (entrySync == null || entrySync.getJournalEntry() == null || entrySync.getJournalEntry().getGlAccount() == null) {
                     log.warn("Skipping validation for null journal entry or GL account");
@@ -506,6 +509,20 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 if (glCode == null || glCode.trim().isEmpty()) {
                     log.error("Journal entry {} has null or empty GL code", entrySync.getJournalEntry().getId());
                     return false;
+                }
+
+                // Check if this GL code should be skipped during validation
+                boolean skipValidation = false;
+                for (String skipCode : skipValidationGlCodes) {
+                    if (skipCode.equals(glCode) || skipCode.equals(accountName)) {
+                        log.debug("Skipping validation for GL code '{}' as it's in the skip list", glCode);
+                        skipValidation = true;
+                        break;
+                    }
+                }
+
+                if (skipValidation) {
+                    continue;
                 }
 
                 // Check if account exists in Odoo
