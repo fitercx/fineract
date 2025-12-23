@@ -6,9 +6,11 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -448,9 +450,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             loanCharges = customLoanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate, overdueChargeTimeValue);
         }
 
-        // Track how many charges were actually deactivated
+        // Track which charges were actually deactivated (collect their IDs for accounting reversal)
         int totalChargesFound = loanCharges.size();
-        long deactivatedCount = loanCharges.stream().filter(this::inactivateOverdueLoanCharge).count();
+        List<Long> deactivatedChargeIds = new ArrayList<>();
+        loanCharges.forEach(charge -> {
+            if (inactivateOverdueLoanCharge(charge)) {
+                deactivatedChargeIds.add(charge.getId());
+            }
+        });
+        long deactivatedCount = deactivatedChargeIds.size();
 
         log.info("Found {} overdue charges for loan {}, successfully deactivated {}", totalChargesFound, loanId, deactivatedCount);
 
@@ -460,6 +468,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // Only update loan if we actually deactivated any charges
         if (deactivatedCount > 0) {
             try {
+                // Find and reverse accrual transactions linked to the deactivated charges
+                List<Long> reversedTransactionIds = reverseAccrualTransactionsForCharges(loan, deactivatedChargeIds);
+
                 // Recalculate installment charge portions from active charges
                 recalculateInstallmentChargesFromActiveLoanCharges(loan);
 
@@ -467,6 +478,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 loan.updateLoanScheduleDependentDerivedFields();
                 loan.updateLoanSummaryAndStatus();
                 loanRepositoryWrapper.saveAndFlush(loan);
+
+                // Post journal entries to reverse accounting entries for the reversed accrual transactions
+                if (!reversedTransactionIds.isEmpty()) {
+                    postJournalEntries(loan, new ArrayList<>(), reversedTransactionIds);
+                    loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, reversedTransactionIds);
+                    log.info("Reversed {} accrual transactions and posted journal entries for loan {}", reversedTransactionIds.size(),
+                            loanId);
+                }
+
                 log.info("Successfully updated loan {} after removing {} charges", loanId, deactivatedCount);
             } catch (Exception e) {
                 log.error("Error updating loan {} after charge removal", loanId, e);
@@ -513,6 +533,94 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         log.info("Successfully deactivated overdue charge {}", loanCharge.getId());
         return true;
+    }
+
+    /**
+     * Finds and reverses accrual transactions linked to the deactivated charges. Updates accrual portions on
+     * installments and returns the list of reversed transaction IDs for journal entry posting.
+     */
+    private List<Long> reverseAccrualTransactionsForCharges(Loan loan, List<Long> deactivatedChargeIds) {
+        List<Long> reversedTransactionIds = new ArrayList<>();
+        MonetaryCurrency currency = loan.getCurrency();
+
+        // Find accrual transactions linked to the deactivated charges
+        List<LoanTransaction> accrualTransactions = customLoanChargeRepository.findAccrualTransactionsByChargeIds(deactivatedChargeIds,
+                LoanTransactionType.ACCRUAL);
+
+        if (accrualTransactions.isEmpty()) {
+            log.debug("No accrual transactions found for deactivated charges {}", deactivatedChargeIds);
+            return reversedTransactionIds;
+        }
+
+        log.info("Found {} accrual transactions to reverse for loan {}", accrualTransactions.size(), loan.getId());
+
+        // Reverse each accrual transaction and update accrual portions
+        for (LoanTransaction accrualTransaction : accrualTransactions) {
+            if (accrualTransaction.isReversed()) {
+                continue; // Skip already reversed transactions
+            }
+
+            // Extract amounts per installment from the accrual transaction
+            Map<Integer, Money> feesByInstallment = new HashMap<>();
+            Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
+            Set<LoanChargePaidBy> chargesPaid = accrualTransaction.getLoanChargesPaid();
+
+            for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                // Only process charges that were deactivated
+                if (!deactivatedChargeIds.contains(chargePaidBy.getLoanCharge().getId())) {
+                    continue;
+                }
+
+                Integer installmentNumber = chargePaidBy.getInstallmentNumber();
+                LoanCharge charge = chargePaidBy.getLoanCharge();
+                Money amount = Money.of(currency, chargePaidBy.getAmount());
+
+                if (charge.isPenaltyCharge()) {
+                    penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
+                } else if (charge.isFeeCharge()) {
+                    feesByInstallment.merge(installmentNumber, amount, Money::plus);
+                }
+            }
+
+            // Update accrual portions on affected installments
+            Set<Integer> allInstallmentNumbers = new HashSet<>();
+            allInstallmentNumbers.addAll(feesByInstallment.keySet());
+            allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
+
+            for (Integer installmentNumber : allInstallmentNumbers) {
+                LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
+                if (installment == null) {
+                    continue;
+                }
+
+                Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+
+                Money currentFeeAccrued = installment.getFeeAccrued(currency);
+                Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
+                Money currentInterestAccrued = installment.getInterestAccrued(currency);
+
+                Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
+                Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
+
+                // Update accrual portions (interest remains unchanged)
+                installment.updateAccrualPortion(currentInterestAccrued, newFeeAccrued, newPenaltyAccrued);
+
+                log.debug("Updated accrual for installment {} - Fee: {} -> {}, Penalty: {} -> {}", installmentNumber, currentFeeAccrued,
+                        newFeeAccrued, currentPenaltyAccrued, newPenaltyAccrued);
+            }
+
+            // Reverse the accrual transaction
+            accrualTransaction.reverse();
+            reversedTransactionIds.add(accrualTransaction.getId());
+        }
+
+        // Save all reversed transactions
+        if (!accrualTransactions.isEmpty()) {
+            loanTransactionRepository.saveAllAndFlush(accrualTransactions);
+        }
+
+        return reversedTransactionIds;
     }
 
     /**
