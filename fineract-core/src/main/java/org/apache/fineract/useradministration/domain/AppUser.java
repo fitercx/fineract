@@ -563,7 +563,7 @@ public class AppUser extends AbstractPersistableCustom<Long> implements Platform
         validateHasPermission("DELETE", resourceType);
     }
 
-    private void validateHasPermission(final String prefix, final String resourceType) {
+    public void validateHasPermission(final String prefix, final String resourceType) {
         final String authorizationMessage = "User has no authority to " + prefix + " " + resourceType.toLowerCase() + "s";
         final String matchPermission = prefix + "_" + resourceType.toUpperCase();
 

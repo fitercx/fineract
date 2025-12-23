@@ -22,6 +22,7 @@ import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -104,6 +105,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepositor
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
 import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
+import org.apache.fineract.portfolio.loanaccount.exception.LoanRepaymentScheduleNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
@@ -1348,7 +1350,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         for (LoanDisbursementDetails detail : undisbursedDetails) {
             LocalDate expectedDate = detail.expectedDisbursementDate();
             if (expectedDate != null) {
-                long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
+                long daysDiff = Math.abs(ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
 
                 if (daysDiff < minDaysDiff) {
                     minDaysDiff = daysDiff;
@@ -1751,5 +1753,73 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         if (!dataValidationErrors.isEmpty()) {
             throw new PlatformApiDataValidationException(dataValidationErrors);
         }
+    }
+
+    public CommandProcessingResult adjustInstallmentDate(final Long loanId, final JsonCommand command) {
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+
+        final Integer installmentNumber = command.integerValueOfParameterNamed("installmentNumber");
+        final LocalDate newDueDate = command.localDateValueOfParameterNamed("newDueDate");
+        final LocalDate adjustmentDate = command.localDateValueOfParameterNamed("adjustmentDate");
+
+        final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
+        if (installment == null) {
+            throw new LoanRepaymentScheduleNotFoundException(installmentNumber);
+        }
+
+        final LocalDate oldDueDate = installment.getDueDate();
+        final Map<String, Object> changes = new HashMap<>();
+
+        if (!oldDueDate.equals(newDueDate)) {
+            final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+
+            // Calculate the difference in days between old and new due date
+            final long daysDifference = ChronoUnit.DAYS.between(oldDueDate, newDueDate);
+
+            // Find the installment to adjust and cascade to subsequent installments
+            LoanRepaymentScheduleInstallment previousInstallment = null;
+
+            for (LoanRepaymentScheduleInstallment inst : installments) {
+                if (inst.getInstallmentNumber().equals(installmentNumber)) {
+                    // Update the target installment
+                    if (previousInstallment != null) {
+                        inst.updateFromDate(previousInstallment.getDueDate());
+                    }
+                    inst.updateDueDate(newDueDate);
+                    changes.put("installmentNumber", installmentNumber);
+                    changes.put("oldDueDate", oldDueDate);
+                    changes.put("newDueDate", newDueDate);
+                    changes.put("adjustmentDate", adjustmentDate);
+                    changes.put("daysShifted", daysDifference);
+                    previousInstallment = inst;
+                } else if (inst.getInstallmentNumber() > installmentNumber) {
+                    // Cascade the date change to all subsequent installments (installmentNumber > target)
+                    // Update both fromDate and dueDate by the same number of days
+                    if (inst.getFromDate() != null) {
+                        inst.updateFromDate(inst.getFromDate().plusDays(daysDifference));
+                    }
+                    inst.updateDueDate(inst.getDueDate().plusDays(daysDifference));
+                    previousInstallment = inst;
+                } else {
+                    // Before the target installment, keep track of previous
+                    previousInstallment = inst;
+                }
+            }
+
+            loan.updateLoanScheduleDependentDerivedFields();
+
+            for (final LoanCharge loanCharge : loan.getLoanCharges()) {
+                if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
+                    loan.updateOverdueScheduleInstallment(loanCharge);
+                }
+            }
+
+            saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
+
+        return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
+                .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
+                .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
     }
 }

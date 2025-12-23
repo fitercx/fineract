@@ -2532,7 +2532,35 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public BigDecimal getDerivedAmountForCharge(final LoanCharge loanCharge) {
         BigDecimal amount = BigDecimal.ZERO;
         if (isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
-            amount = getApprovedPrincipal();
+            // For multi-disbursement loans, calculate fee proportionally per tranche
+            // Check if charge is associated with a specific tranche
+            LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
+            if (trancheCharge != null) {
+                // Charge is linked to a specific tranche - use that tranche's principal
+                amount = trancheCharge.getLoanDisbursementDetails().principal();
+            } else {
+                // Charge not linked to tranche - find tranche by disbursement date and calculate proportionally
+                LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
+                if (actualDisbursementDate != null) {
+                    // Find the tranche that matches this disbursement date
+                    Optional<LoanDisbursementDetails> matchingTranche = getDisbursementDetails().stream()
+                            .filter(detail -> actualDisbursementDate.equals(detail.actualDisbursementDate())).findFirst();
+
+                    if (matchingTranche.isPresent()) {
+                        // Use the matching tranche's principal for proportional calculation
+                        // The fee percentage will be applied to this tranche amount, ensuring
+                        // proportional allocation: (trancheAmount / sanctionedAmount) * totalFee
+                        amount = matchingTranche.get().principal();
+                    } else {
+                        // Fallback: if no matching tranche found, use approved principal
+                        // This should not happen in normal flow, but provides safety
+                        amount = getApprovedPrincipal();
+                    }
+                } else {
+                    // No disbursement date yet - use approved principal as fallback
+                    amount = getApprovedPrincipal();
+                }
+            }
         } else {
             // If charge type is specified due date and loan is multi disburment loan.
             // Then we need to get as of this loan charge due date how much amount disbursed.

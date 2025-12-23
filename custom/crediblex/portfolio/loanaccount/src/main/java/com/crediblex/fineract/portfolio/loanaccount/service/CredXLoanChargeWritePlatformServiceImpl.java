@@ -1,13 +1,16 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -20,14 +23,17 @@ import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanWaiveChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargeAdjustmentPostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
@@ -41,6 +47,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -92,6 +99,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanAccrualsProcessingService loanAccrualsProcessingService;
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final ConfigurationDomainService configurationDomainService;
+    private final CustomLoanChargeRepository customLoanChargeRepository;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
             ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
@@ -112,7 +120,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             LoanAccountService loanAccountService, LoanAdjustmentService loanAdjustmentService,
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanChargeValidator loanChargeValidator1,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine1, LoanAccrualsProcessingService loanAccrualsProcessingService1,
-            LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService1) {
+            LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService1,
+            CustomLoanChargeRepository customLoanChargeRepository) {
 
         super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
                 accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
@@ -137,6 +146,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.loanAccrualsProcessingService = loanAccrualsProcessingService1;
         this.loanAccrualTransactionBusinessEventService = loanAccrualTransactionBusinessEventService1;
         this.configurationDomainService = configurationDomainService;
+        this.customLoanChargeRepository = customLoanChargeRepository;
     }
 
     @Override
@@ -419,5 +429,256 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
 
         return waiveLoanChargeTransaction;
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult deactivateOverdueLoanCharge(Long loanId, JsonCommand command) {
+        LocalDate fromDueDate = command.dateValueOfParameterNamed("dueDate");
+        LocalDate toDueDate = command.dateValueOfParameterNamed("toDueDate");
+
+        List<LoanCharge> loanCharges;
+        Integer overdueChargeTimeValue = ChargeTimeType.OVERDUE_INSTALLMENT.getValue();
+        if (fromDueDate == null) {
+            // Remove all: get all active overdue charges
+            loanCharges = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, overdueChargeTimeValue);
+        } else if (toDueDate != null) {
+            // Date range: get charges within the range
+            loanCharges = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, toDueDate, overdueChargeTimeValue);
+        } else {
+            // Single date or from date onwards: get all charges from the date
+            loanCharges = customLoanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate, overdueChargeTimeValue);
+        }
+
+        // Track which charges were actually deactivated (collect their IDs for accounting reversal)
+        int totalChargesFound = loanCharges.size();
+        List<Long> deactivatedChargeIds = new ArrayList<>();
+        loanCharges.forEach(charge -> {
+            if (inactivateOverdueLoanCharge(charge)) {
+                deactivatedChargeIds.add(charge.getId());
+            }
+        });
+        long deactivatedCount = deactivatedChargeIds.size();
+
+        log.info("Found {} overdue charges for loan {}, successfully deactivated {}", totalChargesFound, loanId, deactivatedCount);
+
+        // Reload loan to get updated state
+        Loan loan = loanAssembler.assembleFrom(loanId);
+
+        // Only update loan if we actually deactivated any charges
+        if (deactivatedCount > 0) {
+            try {
+                // Find and reverse accrual transactions linked to the deactivated charges
+                List<Long> reversedTransactionIds = reverseAccrualTransactionsForCharges(loan, deactivatedChargeIds);
+
+                // Recalculate installment charge portions from active charges
+                recalculateInstallmentChargesFromActiveLoanCharges(loan);
+
+                // Update loan schedule and summary WITHOUT reprocessing transactions (to avoid date validation)
+                loan.updateLoanScheduleDependentDerivedFields();
+                loan.updateLoanSummaryAndStatus();
+                loanRepositoryWrapper.saveAndFlush(loan);
+
+                // Post journal entries to reverse accounting entries for the reversed accrual transactions
+                if (!reversedTransactionIds.isEmpty()) {
+                    postJournalEntries(loan, new ArrayList<>(), reversedTransactionIds);
+                    loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, reversedTransactionIds);
+                    log.info("Reversed {} accrual transactions and posted journal entries for loan {}", reversedTransactionIds.size(),
+                            loanId);
+                }
+
+                log.info("Successfully updated loan {} after removing {} charges", loanId, deactivatedCount);
+            } catch (Exception e) {
+                log.error("Error updating loan {} after charge removal", loanId, e);
+                // Continue anyway - charges are already deactivated, this is just a totals update
+            }
+        }
+
+        final Map<String, Object> changes = new HashMap<>();
+        changes.put("totalChargesFound", totalChargesFound);
+        changes.put("chargesDeactivated", deactivatedCount);
+        changes.put("chargesSkipped", totalChargesFound - deactivatedCount);
+
+        final CommandProcessingResultBuilder commandProcessingResultBuilder = new CommandProcessingResultBuilder();
+        return commandProcessingResultBuilder.withLoanId(loanId) //
+                .withEntityId(loanId) //
+                .withEntityExternalId(loan.getExternalId()) //
+                .with(changes) //
+                .build();
+    }
+
+    /**
+     * Attempts to inactivate an overdue loan charge. Returns true if successful, false if skipped. This method is
+     * lenient and will skip charges that are not active or not overdue installment charges instead of throwing
+     * exceptions.
+     */
+    private boolean inactivateOverdueLoanCharge(LoanCharge loanCharge) {
+        // Skip if not an overdue installment charge
+        if (!loanCharge.getChargeTimeType().isOverdueInstallment()) {
+            log.warn("Skipping charge {} - not an overdue installment charge", loanCharge.getId());
+            return false;
+        }
+
+        // Skip if already inactive
+        if (!loanCharge.isActive()) {
+            log.debug("Skipping charge {} - already inactive", loanCharge.getId());
+            return false;
+        }
+
+        // Deactivate the charge
+        loanCharge.setActive(false);
+        loanChargeRepository.saveAndFlush(loanCharge);
+
+        businessEventNotifierService.notifyPostBusinessEvent(new LoanUpdateChargeBusinessEvent(loanCharge));
+
+        log.info("Successfully deactivated overdue charge {}", loanCharge.getId());
+        return true;
+    }
+
+    /**
+     * Finds and reverses accrual transactions linked to the deactivated charges. Updates accrual portions on
+     * installments and returns the list of reversed transaction IDs for journal entry posting.
+     */
+    private List<Long> reverseAccrualTransactionsForCharges(Loan loan, List<Long> deactivatedChargeIds) {
+        List<Long> reversedTransactionIds = new ArrayList<>();
+        MonetaryCurrency currency = loan.getCurrency();
+
+        // Find accrual transactions linked to the deactivated charges
+        List<LoanTransaction> accrualTransactions = customLoanChargeRepository.findAccrualTransactionsByChargeIds(deactivatedChargeIds,
+                LoanTransactionType.ACCRUAL);
+
+        if (accrualTransactions.isEmpty()) {
+            log.debug("No accrual transactions found for deactivated charges {}", deactivatedChargeIds);
+            return reversedTransactionIds;
+        }
+
+        log.info("Found {} accrual transactions to reverse for loan {}", accrualTransactions.size(), loan.getId());
+
+        // Reverse each accrual transaction and update accrual portions
+        for (LoanTransaction accrualTransaction : accrualTransactions) {
+            if (accrualTransaction.isReversed()) {
+                continue; // Skip already reversed transactions
+            }
+
+            // Extract amounts per installment from the accrual transaction
+            Map<Integer, Money> feesByInstallment = new HashMap<>();
+            Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
+            Set<LoanChargePaidBy> chargesPaid = accrualTransaction.getLoanChargesPaid();
+
+            for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                // Only process charges that were deactivated
+                if (!deactivatedChargeIds.contains(chargePaidBy.getLoanCharge().getId())) {
+                    continue;
+                }
+
+                Integer installmentNumber = chargePaidBy.getInstallmentNumber();
+                LoanCharge charge = chargePaidBy.getLoanCharge();
+                Money amount = Money.of(currency, chargePaidBy.getAmount());
+
+                if (charge.isPenaltyCharge()) {
+                    penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
+                } else if (charge.isFeeCharge()) {
+                    feesByInstallment.merge(installmentNumber, amount, Money::plus);
+                }
+            }
+
+            // Update accrual portions on affected installments
+            Set<Integer> allInstallmentNumbers = new HashSet<>();
+            allInstallmentNumbers.addAll(feesByInstallment.keySet());
+            allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
+
+            for (Integer installmentNumber : allInstallmentNumbers) {
+                LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
+                if (installment == null) {
+                    continue;
+                }
+
+                Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+                Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
+
+                Money currentFeeAccrued = installment.getFeeAccrued(currency);
+                Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
+                Money currentInterestAccrued = installment.getInterestAccrued(currency);
+
+                Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
+                Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
+
+                // Update accrual portions (interest remains unchanged)
+                installment.updateAccrualPortion(currentInterestAccrued, newFeeAccrued, newPenaltyAccrued);
+
+                log.debug("Updated accrual for installment {} - Fee: {} -> {}, Penalty: {} -> {}", installmentNumber, currentFeeAccrued,
+                        newFeeAccrued, currentPenaltyAccrued, newPenaltyAccrued);
+            }
+
+            // Reverse the accrual transaction
+            accrualTransaction.reverse();
+            reversedTransactionIds.add(accrualTransaction.getId());
+        }
+
+        // Save all reversed transactions
+        if (!accrualTransactions.isEmpty()) {
+            loanTransactionRepository.saveAllAndFlush(accrualTransactions);
+        }
+
+        return reversedTransactionIds;
+    }
+
+    /**
+     * Recalculates installment charge portions based on currently active loan charges. This ensures the repayment
+     * schedule reflects the correct charge amounts after charges are removed. NO date validation is performed.
+     */
+    private void recalculateInstallmentChargesFromActiveLoanCharges(Loan loan) {
+        MonetaryCurrency currency = loan.getCurrency();
+
+        // For each installment, recalculate total penalty and fee charges from active loan charges
+        for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            Money totalFee = Money.zero(currency);
+            Money totalPenalty = Money.zero(currency);
+            Money feeWaived = Money.zero(currency);
+            Money penaltyWaived = Money.zero(currency);
+            Money feeWrittenOff = Money.zero(currency);
+            Money penaltyWrittenOff = Money.zero(currency);
+
+            // Sum up all ACTIVE charges for this installment
+            for (LoanCharge loanCharge : loan.getLoanCharges()) {
+                if (!loanCharge.isActive()) {
+                    continue; // Skip inactive charges
+                }
+
+                // Check if this charge applies to this installment
+                boolean appliesToInstallment = false;
+
+                if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
+                    // Overdue charges are linked by due date
+                    appliesToInstallment = installment.getDueDate().equals(loanCharge.getDueLocalDate());
+                } else if (loanCharge.isInstalmentFee()) {
+                    // Installment fees apply to specific installments via LoanInstallmentCharge
+                    for (LoanInstallmentCharge installmentCharge : loanCharge.installmentCharges()) {
+                        if (installmentCharge.getRepaymentInstallment().equals(installment)) {
+                            appliesToInstallment = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (appliesToInstallment) {
+                    if (loanCharge.isPenaltyCharge()) {
+                        totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
+                        penaltyWaived = penaltyWaived.plus(loanCharge.getAmountWaived(currency));
+                        penaltyWrittenOff = penaltyWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
+                    } else {
+                        totalFee = totalFee.plus(loanCharge.getAmount(currency));
+                        feeWaived = feeWaived.plus(loanCharge.getAmountWaived(currency));
+                        feeWrittenOff = feeWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
+                    }
+                }
+            }
+
+            // Update the installment's charge portions
+            installment.updateChargePortion(totalFee, feeWaived, feeWrittenOff, totalPenalty, penaltyWaived, penaltyWrittenOff,
+                    Money.zero(currency), Money.zero(currency), Money.zero(currency));
+
+            log.debug("Updated installment {} - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), totalFee, totalPenalty);
+        }
     }
 }
