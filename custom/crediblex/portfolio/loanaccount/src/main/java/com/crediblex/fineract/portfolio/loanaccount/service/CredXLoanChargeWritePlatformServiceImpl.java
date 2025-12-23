@@ -21,6 +21,7 @@ import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanWaiveChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargeAdjustmentPostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
@@ -97,9 +98,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final ConfigurationDomainService configurationDomainService;
     private final CustomLoanChargeRepository customLoanChargeRepository;
-    private final LoanAdjustmentService loanAdjustmentService;
-    private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
-    private final LoanScheduleService loanScheduleService;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
             ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
@@ -147,9 +145,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.loanAccrualTransactionBusinessEventService = loanAccrualTransactionBusinessEventService1;
         this.configurationDomainService = configurationDomainService;
         this.customLoanChargeRepository = customLoanChargeRepository;
-        this.loanAdjustmentService = loanAdjustmentService;
-        this.reprocessLoanTransactionsService = reprocessLoanTransactionsService;
-        this.loanScheduleService = loanScheduleService;
     }
 
     @Override
@@ -514,8 +509,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         loanCharge.setActive(false);
         loanChargeRepository.saveAndFlush(loanCharge);
 
-        businessEventNotifierService.notifyPostBusinessEvent(
-                new org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent(loanCharge));
+        businessEventNotifierService.notifyPostBusinessEvent(new LoanUpdateChargeBusinessEvent(loanCharge));
 
         log.info("Successfully deactivated overdue charge {}", loanCharge.getId());
         return true;

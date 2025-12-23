@@ -14,9 +14,12 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import com.google.gson.JsonElement;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
+import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -46,10 +49,9 @@ public class LoanAdjustInstallmentDateApiResource {
 
         this.context.authenticatedUser().validateHasReadPermission("LOAN");
 
-        final com.google.gson.JsonElement parsedCommand = this.fromJsonHelper.parse(apiRequestBodyAsJson);
-        final org.apache.fineract.infrastructure.core.api.JsonCommand command = org.apache.fineract.infrastructure.core.api.JsonCommand
-                .from(apiRequestBodyAsJson, parsedCommand, this.fromJsonHelper, "LOAN", loanId, null, null, null, loanId, null, null, null,
-                        null, null, null, null, org.apache.fineract.infrastructure.core.domain.ExternalId.empty());
+        final JsonElement parsedCommand = this.fromJsonHelper.parse(apiRequestBodyAsJson);
+        final JsonCommand command = JsonCommand.from(apiRequestBodyAsJson, parsedCommand, this.fromJsonHelper, "LOAN", loanId, null, null,
+                null, loanId, null, null, null, null, null, null, null, ExternalId.empty());
 
         final CommandProcessingResult result = this.loanWritePlatformService.adjustInstallmentDate(loanId, command);
 

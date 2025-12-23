@@ -22,6 +22,7 @@ import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -1349,7 +1350,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         for (LoanDisbursementDetails detail : undisbursedDetails) {
             LocalDate expectedDate = detail.expectedDisbursementDate();
             if (expectedDate != null) {
-                long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
+                long daysDiff = Math.abs(ChronoUnit.DAYS.between(actualDisbursementDate, expectedDate));
 
                 if (daysDiff < minDaysDiff) {
                     minDaysDiff = daysDiff;
@@ -1774,7 +1775,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
 
             // Calculate the difference in days between old and new due date
-            final long daysDifference = java.time.temporal.ChronoUnit.DAYS.between(oldDueDate, newDueDate);
+            final long daysDifference = ChronoUnit.DAYS.between(oldDueDate, newDueDate);
 
             // Find the installment to adjust and cascade to subsequent installments
             LoanRepaymentScheduleInstallment previousInstallment = null;
