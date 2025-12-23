@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.service.CustomLoanWritePlatformServiceJpaRepositoryImpl;
+import com.google.gson.JsonElement;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -14,7 +15,6 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import com.google.gson.JsonElement;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
