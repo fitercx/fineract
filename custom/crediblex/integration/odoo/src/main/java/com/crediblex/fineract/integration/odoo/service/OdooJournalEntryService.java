@@ -115,7 +115,7 @@ public class OdooJournalEntryService {
      * Build the account move values for Odoo - unified method for single and multiple journal entries
      */
     private Map<String, Object> buildAccountMoveValues(List<JournalEntry> journalEntries, Integer journalId, Long loanId,
-            boolean consolidateLines) {
+            boolean consolidateLines, String businessEventType) {
         Map<String, Object> moveValues = new HashMap<>();
 
         if (journalEntries.isEmpty()) {
@@ -163,18 +163,18 @@ public class OdooJournalEntryService {
         // Build line items based on consolidation preference
         List<Object> lines;
         if (consolidateLines && journalEntries.size() > 1) {
-            lines = buildConsolidatedMoveLines(journalEntries);
+            lines = buildConsolidatedMoveLines(journalEntries, businessEventType);
         } else if (journalEntries.size() == 1) {
             // For single entries, we need to get the account ID
             String accountCode = firstEntry.getGlAccount().getGlCode();
-            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
+            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode, businessEventType);
             if (accountId == null) {
                 throw new RuntimeException(String.format("Could not map Fineract GL account '%s' to Odoo account", accountCode));
             }
             lines = buildMoveLines(firstEntry, accountId);
         } else {
             // Multiple entries but no consolidation - treat each separately
-            lines = buildConsolidatedMoveLines(journalEntries);
+            lines = buildConsolidatedMoveLines(journalEntries, businessEventType);
         }
 
         moveValues.put("line_ids", lines);
@@ -185,14 +185,22 @@ public class OdooJournalEntryService {
      * Build account move values for a single journal entry
      */
     private Map<String, Object> buildAccountMoveValues(JournalEntry fineractEntry, Integer journalId, Integer accountId) {
-        return buildAccountMoveValues(List.of(fineractEntry), journalId, null, false);
+        return buildAccountMoveValues(List.of(fineractEntry), journalId, null, false, null);
     }
 
     /**
      * Build account move values for multiple journal entries of a loan
      */
     private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId) {
-        return buildAccountMoveValues(journalEntries, journalId, loanId, true);
+        return buildAccountMoveValues(journalEntries, journalId, loanId, true, null);
+    }
+
+    /**
+     * Build account move values for multiple journal entries of a loan with business event type
+     */
+    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId, 
+            String businessEventType) {
+        return buildAccountMoveValues(journalEntries, journalId, loanId, true, businessEventType);
     }
 
     /**
@@ -349,6 +357,9 @@ public class OdooJournalEntryService {
 
             // Group entries by journal using business event type from tracking records
             Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs);
+            
+            // Also track business event type per journal for context-aware account mapping
+            Map<Integer, String> journalBusinessEventTypes = getBusinessEventTypesByJournal(journalEntryOdooSyncs, entriesByJournal);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
@@ -359,9 +370,10 @@ public class OdooJournalEntryService {
             for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
                 Integer journalId = journalGroup.getKey();
                 List<JournalEntry> entries = journalGroup.getValue();
+                String businessEventType = journalBusinessEventTypes.get(journalId);
 
                 // Create the account move with multiple lines for this journal
-                Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
+                Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId, businessEventType);
 
                 Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
                 if (odooMoveId == null) {
@@ -434,9 +446,42 @@ public class OdooJournalEntryService {
     }
 
     /**
+     * Get business event types per journal ID
+     * Assumes all entries in the same journal have the same business event type
+     */
+    private Map<Integer, String> getBusinessEventTypesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs,
+            Map<Integer, List<JournalEntry>> entriesByJournal) {
+        Map<Integer, String> journalBusinessEventTypes = new HashMap<>();
+
+        for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+            JournalEntry entry = sync.getJournalEntry();
+            String glCode = entry.getGlAccount().getGlCode();
+            String businessEventType = sync.getBusinessEventType();
+            boolean isDebit = entry.isDebitEntry();
+
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
+            
+            if (journalId != null && businessEventType != null) {
+                // Store the business event type for this journal
+                // If multiple events map to same journal, last one wins (they should be the same anyway)
+                journalBusinessEventTypes.put(journalId, businessEventType);
+            }
+        }
+
+        return journalBusinessEventTypes;
+    }
+
+    /**
      * Build consolidated move lines from multiple journal entries
      */
     private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries) {
+        return buildConsolidatedMoveLines(journalEntries, null);
+    }
+
+    /**
+     * Build consolidated move lines from multiple journal entries with business event type context
+     */
+    private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries, String businessEventType) {
         List<Object> lines = new ArrayList<>();
 
         // Group by account and type to consolidate amounts
@@ -444,10 +489,12 @@ public class OdooJournalEntryService {
 
         for (JournalEntry entry : journalEntries) {
             String accountCode = entry.getGlAccount().getGlCode();
-            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
+            // Pass business event type for context-aware account mapping (e.g., 210003 remapping)
+            Integer accountId = odooIntegrationService.getOdooAccountId(accountCode, businessEventType);
 
             if (accountId == null) {
-                log.warn("Could not map account {} to Odoo, skipping entry {}", accountCode, entry.getId());
+                log.warn("Could not map account {} to Odoo for business event {}, skipping entry {}", 
+                    accountCode, businessEventType, entry.getId());
                 continue;
             }
 

@@ -103,13 +103,28 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
     @Override
     public Integer getOdooAccountId(String fineractAccountCode) {
+        return getOdooAccountId(fineractAccountCode, null);
+    }
+
+    /**
+     * Get Odoo account ID for a Fineract GL code with optional business event context
+     * 
+     * @param fineractAccountCode The Fineract GL code
+     * @param businessEventType Optional business event type for context-aware remapping
+     * @return The Odoo account ID
+     */
+    public Integer getOdooAccountId(String fineractAccountCode, String businessEventType) {
         if (fineractAccountCode == null) {
             return null;
         }
 
-        // Check cache first
-        if (accountMappingCache.containsKey(fineractAccountCode)) {
-            return accountMappingCache.get(fineractAccountCode);
+        // Remap GL code if needed (for special cases like 210003 → 100003)
+        // Only remap for specific business event types to avoid affecting other transactions
+        String odooAccountCode = remapGLCodeForOdoo(fineractAccountCode, businessEventType);
+
+        // Check cache first (use remapped code for cache lookup)
+        if (accountMappingCache.containsKey(odooAccountCode)) {
+            return accountMappingCache.get(odooAccountCode);
         }
 
         try {
@@ -119,8 +134,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 return null;
             }
 
-            // Search for account by code in Odoo
-            List<Object> domain = Arrays.asList(Arrays.asList("code", "=", fineractAccountCode));
+            // Search for account by code in Odoo (use remapped code)
+            List<Object> domain = Arrays.asList(Arrays.asList("code", "=", odooAccountCode));
 
             List<Map<String, Object>> accounts = odooApiClient.searchRead(uid, "account.account", domain,
                     Arrays.asList("id", "code", "name"));
@@ -129,21 +144,63 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 Map<String, Object> account = accounts.get(0);
                 Integer accountId = ((Number) account.get("id")).intValue();
 
-                // Cache the mapping
-                accountMappingCache.put(fineractAccountCode, accountId);
+                // Cache the mapping (using remapped code)
+                accountMappingCache.put(odooAccountCode, accountId);
 
-                log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", fineractAccountCode, accountId, account.get("name"));
+                if (!odooAccountCode.equals(fineractAccountCode)) {
+                    log.debug("Mapped Fineract account '{}' (remapped to '{}' for business event '{}') to Odoo account ID: {} ({})", 
+                        fineractAccountCode, odooAccountCode, businessEventType, accountId, account.get("name"));
+                } else {
+                    log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", 
+                        fineractAccountCode, accountId, account.get("name"));
+                }
 
                 return accountId;
             } else {
-                log.warn("No Odoo account found for Fineract account code: {}", fineractAccountCode);
+                log.warn("No Odoo account found for Fineract account code: {} (remapped to: {})", 
+                    fineractAccountCode, odooAccountCode);
                 return null;
             }
 
         } catch (Exception e) {
-            log.error("Error mapping account code '{}' to Odoo", fineractAccountCode, e);
+            log.error("Error mapping account code '{}' (remapped to '{}') to Odoo", fineractAccountCode, odooAccountCode, e);
             return null;
         }
+    }
+
+    /**
+     * Remap Fineract GL codes to Odoo GL codes for special cases
+     * This handles scenarios where Fineract uses one GL code but Odoo expects a different one
+     * 
+     * @param fineractGlCode The GL code from Fineract
+     * @param businessEventType The business event type for context-aware remapping
+     * @return The GL code to use for Odoo lookup
+     */
+    private String remapGLCodeForOdoo(String fineractGlCode, String businessEventType) {
+        if (fineractGlCode == null) {
+            return null;
+        }
+
+        // Remap 210003 (Working Capital Loan) → 100003 (Bank Account)
+        // ONLY for SAVINGS_WITHDRAWAL (loan disbursement to savings)
+        // Do NOT remap for SAVINGS_DEPOSIT (repayments) or REPAYMENT events
+        if ("210003".equals(fineractGlCode)) {
+            // Only remap for disbursement-related events
+            if ("SAVINGS_WITHDRAWAL".equals(businessEventType) || "DISBURSEMENT".equals(businessEventType)) {
+                log.debug("Remapping GL code 210003 → 100003 for Odoo (business event: {})", businessEventType);
+                return "100003";
+            } else {
+                // For SAVINGS_DEPOSIT, REPAYMENT, or other events, keep 210003 as-is
+                log.debug("NOT remapping GL code 210003 for business event: {} (keeping original)", businessEventType);
+                return fineractGlCode;
+            }
+        }
+
+        // Add more remappings here as needed
+        // Example: if ("XXXXX".equals(fineractGlCode)) { return "YYYYY"; }
+
+        // No remapping needed, return original code
+        return fineractGlCode;
     }
 
     @Override
