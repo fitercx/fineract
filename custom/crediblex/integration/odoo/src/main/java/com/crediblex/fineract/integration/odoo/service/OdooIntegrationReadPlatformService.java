@@ -59,13 +59,25 @@ public interface OdooIntegrationReadPlatformService {
     Integer getJournalIdForTransaction(String transactionType);
 
     /**
-     * Get journal ID based on GL account code
+     * Get journal ID based on GL account code, business event type and debit flag
      *
-     * @param glCode
-     *            GL account code
+     * @param glCode GL account code
+     * @param businessEventType Business event type (DISBURSEMENT, REPAYMENT, etc.)
+     * @param isDebit Whether this is a debit transaction
      * @return Journal ID or null if not found
      */
     Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit);
+    
+    /**
+     * Get journal ID based on GL account code, business event type, debit flag and product type
+     *
+     * @param glCode GL account code
+     * @param businessEventType Business event type (DISBURSEMENT, REPAYMENT, etc.)
+     * @param isDebit Whether this is a debit transaction
+     * @param productType Product type (REVENUE_BASED_FINANCING, LOC_INVOICE_DISCOUNTING, etc.)
+     * @return Journal ID or null if not found
+     */
+    Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit, String productType);
 
     Integer getJournalIdByOdooCode(String odooCode);
 

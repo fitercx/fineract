@@ -347,8 +347,8 @@ public class OdooJournalEntryService {
                 }
             }
 
-            // Group entries by journal using business event type from tracking records
-            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs);
+            // Group entries by journal using business event type from tracking records and loan product type
+            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, loanId);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
@@ -408,7 +408,19 @@ public class OdooJournalEntryService {
      * Group journal entries by their target journal based on GL codes, business event type and debit flag
      */
     private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+        // For business events without loan ID, use default product type
+        return groupEntriesByJournal(journalEntryOdooSyncs, null);
+    }
+    
+    /**
+     * Group journal entries by their target journal based on GL codes, business event type, debit flag and product type
+     */
+    private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs, Long loanId) {
         Map<Integer, List<JournalEntry>> groupedEntries = new HashMap<>();
+        
+        // Get product type from loan ID (or use default if null)
+        String productType = getProductTypeFromLoanId(loanId);
+        log.debug("Using product type '{}' for journal grouping (loan ID: {})", productType, loanId);
 
         for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
             JournalEntry entry = sync.getJournalEntry();
@@ -418,15 +430,15 @@ public class OdooJournalEntryService {
             String businessEventType = sync.getBusinessEventType();
             boolean isDebit = entry.isDebitEntry();
 
-            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit, productType);
 
             if (journalId != null) {
                 groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
-                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}) to journal {}", entry.getId(), glCode,
-                        businessEventType, isDebit, journalId);
+                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}, product: {}) to journal {}", 
+                        entry.getId(), glCode, businessEventType, isDebit, productType, journalId);
             } else {
-                log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
-                        entry.getId(), glCode, businessEventType, isDebit);
+                log.info("Skipping journal entry {} with GL code {}, business event type {}, isDebit {} and product type {} - no journal mapping found",
+                        entry.getId(), glCode, businessEventType, isDebit, productType);
             }
         }
 
@@ -590,6 +602,37 @@ public class OdooJournalEntryService {
         } catch (Exception e) {
             log.warn("Failed to get client name for loan ID: {}", loanId, e);
             return null;
+        }
+    }
+
+    /**
+     * Get product type from loan external ID
+     */
+    private String getProductTypeFromLoanId(Long loanId) {
+        if (loanId == null) {
+            return OdooIntegrationReadPlatformServiceImpl.REVENUE_BASED_FINANCING; // Default
+        }
+
+        try {
+            String sql = "SELECT p.external_id FROM m_product_loan p " +
+                        "JOIN m_loan l ON l.product_id = p.id " +
+                        "WHERE l.id = ?";
+            List<String> externalIds = jdbcTemplate.queryForList(sql, String.class, loanId);
+            
+            if (!externalIds.isEmpty()) {
+                String externalId = externalIds.get(0);
+                if (externalId != null && !externalId.trim().isEmpty()) {
+                    log.debug("Retrieved product type '{}' for loan ID: {} from product external_id", externalId, loanId);
+                    return externalId;
+                }
+            }
+            
+            log.debug("No product external_id found for loan ID: {}, using default product type", loanId);
+            return OdooIntegrationReadPlatformServiceImpl.REVENUE_BASED_FINANCING;
+            
+        } catch (Exception e) {
+            log.warn("Failed to get product type for loan ID: {}, using default", loanId, e);
+            return OdooIntegrationReadPlatformServiceImpl.REVENUE_BASED_FINANCING;
         }
     }
 

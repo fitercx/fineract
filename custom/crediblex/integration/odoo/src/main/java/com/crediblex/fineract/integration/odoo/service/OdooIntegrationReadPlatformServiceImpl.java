@@ -43,6 +43,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private static final String MESSAGE_KEY = "message";
     private static final String TIMESTAMP_KEY = "timestamp";
     private static final String ERROR_KEY = "error";
+    
+    // Product type constants
+    public static final String REVENUE_BASED_FINANCING = "REVENUE_BASED_FINANCING";
+    public static final String LOC_INVOICE_DISCOUNTING = "LOC_RECEIVABLE";
 
     private final OdooApiClient odooApiClient;
 
@@ -156,20 +160,27 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
      * Get journal ID based on GL account code, business event type and debit flag
      */
     public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit) {
+        return getJournalIdForGlCode(glCode, businessEventType, isDebit, REVENUE_BASED_FINANCING);
+    }
+    
+    /**
+     * Get journal ID based on GL account code, business event type, debit flag and product type
+     */
+    public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit, String productType) {
         if (glCode == null) {
             log.warn("GL code is null, no journal available");
             return null;
         }
 
-        // Find which journal this GL code belongs to based on business event type and debit flag
-        String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        // Find which journal this GL code belongs to based on business event type, debit flag and product type
+        String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit, productType);
         if (journalCode != null) {
-            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit,
-                    journalCode);
+            log.debug("GL code {} with business event type {}, isDebit {} and product type {} mapped to journal {}", 
+                    glCode, businessEventType, isDebit, productType, journalCode);
             return getJournalIdByOdooCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
-                    glCode, businessEventType, isDebit);
+            log.debug("No specific journal mapping found for GL code {} with business event type {}, isDebit {} and product type {}, skipping journal entry",
+                    glCode, businessEventType, isDebit, productType);
             return null;
         }
     }
@@ -177,66 +188,105 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Find journal code for a given GL code, business event type and debit flag
      */
-    private String findJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    private String findJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit, String productType) {
         if (glCode == null) {
             return null;
         }
 
+        // Route to appropriate product-specific method
+        if (REVENUE_BASED_FINANCING.equals(productType)) {
+            return findJournalCodeForRevenueBasedFinancing(glCode, businessEventType, isDebit);
+        } else if (LOC_INVOICE_DISCOUNTING.equals(productType)) {
+            return findJournalCodeForLocInvoiceDiscounting(glCode, businessEventType, isDebit);
+        } else {
+            log.warn("Unknown product type: {}, using Revenue Based Financing mappings", productType);
+            return findJournalCodeForRevenueBasedFinancing(glCode, businessEventType, isDebit);
+        }
+    }
+    
+    /**
+     * Find journal code for Revenue Based Financing product
+     */
+    private String findJournalCodeForRevenueBasedFinancing(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
         }
 
-        // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
+        // BNK6 journal for SAVINGS_WITHDRAWAL business events
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
             return "BNK6";
         }
 
-        // BNK5 journal for SAVINGS_WITHDRAWAL i.e. refund from savings account
+        // BNK10 journal for SAVINGS_WITHDRAWAL
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType)) {
-            // When GL code is 100062
             if ("100062".equals(glCode)) {
                 return "BNK10";
             }
-            // When GL code is 210003 and it's a debit transaction
             if ("210003".equals(glCode) && isDebit) {
                 return "BNK10";
             }
         }
 
-        // BNK4 journal for SAVINGS_DEPOSIT i.e. deposit money to savings account
+        // BNK9 journal for SAVINGS_DEPOSIT
         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
-            // When GL code is 210003
             if ("210003".equals(glCode)) {
                 return "BNK9";
             }
-            // When GL code is 100062 and it's a debit transaction
             if ("100062".equals(glCode) && isDebit) {
                 return "BNK9";
             }
         }
 
-        // For GL code 200040, only map to BNK1 if it's a debit transaction
+        // General GL code mappings
         if ("200040".equals(glCode) && isDebit) {
             return "BNK1";
         }
 
-        // For GL code 100003, map regardless of debit/credit
         if ("100003".equals(glCode)) {
             return "BNK1";
         }
 
-        // BNK7 (Cash margin) journal for specific GL codes
         if (Set.of("100006", "210002").contains(glCode)) {
             return "BNK7";
         }
 
-        // BNK8 journal for DISBURSEMENT business events with specific GL codes
+        // BNK8 journal for REPAYMENT business events
         if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
             return "BNK8";
         }
 
-        return null; // No mapping found
+        return null;
+    }
+    
+    /**
+     * Find journal code for LOC Invoice Discounting product
+     */
+    private String findJournalCodeForLocInvoiceDiscounting(String glCode, String businessEventType, boolean isDebit) {
+        // BNK5 journal for DISBURSEMENT business events with LOC specific GL codes
+        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100032","100035", "300008", "200041","100063",  "200065", "300013", "100003").contains(glCode)) {
+            return "BNK5";
+        }
+
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200086", "100062").contains(glCode)) {
+            return "BNK6";
+        }
+
+         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
+            if ("200086".equals(glCode)) {
+                return "BNK9";
+            }
+            if ("100062".equals(glCode) && isDebit) {
+                return "BNK9";
+            }
+        }
+
+        // BNK8 journal for REPAYMENT business events with LOC specific GL codes
+        if ("REPAYMENT".equals(businessEventType) && Set.of("210004", "100035", "100036", "100002").contains(glCode)) {
+            return "BNK8";
+        }
+
+        return null;
     }
 
     /**
