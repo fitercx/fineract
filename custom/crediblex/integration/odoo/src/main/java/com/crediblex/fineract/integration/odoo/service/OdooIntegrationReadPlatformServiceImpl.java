@@ -43,7 +43,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private static final String MESSAGE_KEY = "message";
     private static final String TIMESTAMP_KEY = "timestamp";
     private static final String ERROR_KEY = "error";
-    
+
     // Product type constants
     public static final String REVENUE_BASED_FINANCING = "REVENUE_BASED_FINANCING";
     public static final String LOC_INVOICE_DISCOUNTING = "LOC_RECEIVABLE";
@@ -162,7 +162,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit) {
         return getJournalIdForGlCode(glCode, businessEventType, isDebit, REVENUE_BASED_FINANCING);
     }
-    
+
     /**
      * Get journal ID based on GL account code, business event type, debit flag and product type
      */
@@ -175,11 +175,12 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // Find which journal this GL code belongs to based on business event type, debit flag and product type
         String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit, productType);
         if (journalCode != null) {
-            log.debug("GL code {} with business event type {}, isDebit {} and product type {} mapped to journal {}", 
-                    glCode, businessEventType, isDebit, productType, journalCode);
+            log.debug("GL code {} with business event type {}, isDebit {} and product type {} mapped to journal {}", glCode,
+                    businessEventType, isDebit, productType, journalCode);
             return getJournalIdByOdooCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {} with business event type {}, isDebit {} and product type {}, skipping journal entry",
+            log.debug(
+                    "No specific journal mapping found for GL code {} with business event type {}, isDebit {} and product type {}, skipping journal entry",
                     glCode, businessEventType, isDebit, productType);
             return null;
         }
@@ -203,7 +204,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return findJournalCodeForRevenueBasedFinancing(glCode, businessEventType, isDebit);
         }
     }
-    
+
     /**
      * Find journal code for Revenue Based Financing product
      */
@@ -258,13 +259,14 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
         return null;
     }
-    
+
     /**
      * Find journal code for LOC Invoice Discounting product
      */
     private String findJournalCodeForLocInvoiceDiscounting(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with LOC specific GL codes
-        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100032","100035", "300008", "200041","100063",  "200065", "300013", "100003").contains(glCode)) {
+        if ("DISBURSEMENT".equals(businessEventType)
+                && Set.of("100032", "100035", "300008", "200041", "100063", "200065", "300013", "100003").contains(glCode)) {
             return "BNK5";
         }
 
@@ -272,7 +274,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
-         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
+        if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
             if ("200086".equals(glCode)) {
                 return "BNK9";
             }
