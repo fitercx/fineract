@@ -18,6 +18,7 @@ import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Primary
@@ -31,6 +32,9 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
 
     @Autowired
     private CustomAccountingProcessorHelper customAccountingProcessorHelper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     public CustomCashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
@@ -55,7 +59,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
         try {
             // Query product short_name from database
             String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.helper.getJdbcTemplate().queryForObject(sql, String.class, loanProductId);
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
 
             return RBF_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {

@@ -17,6 +17,7 @@ import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Primary
@@ -30,6 +31,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
@@ -54,7 +58,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         try {
             // Query product short_name from database
             String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.helper.getJdbcTemplate().queryForObject(sql, String.class, loanProductId);
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
 
             return RBF_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
