@@ -23,9 +23,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAccountingProcessorForLoan {
 
-    // RBF Product ID - used for product-specific GL account mapping
+    // RBF Product Short Name - used for product-specific GL account mapping
     // Only RBF products should use LIABILITY_TRANSFER (GL 200040) for account transfers
-    private static final Long RBF_PRODUCT_ID = 1L;
+    // Using short_name instead of ID to be environment-agnostic (works across UAT/PROD)
+    private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
@@ -37,14 +38,30 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
 
     /**
      * Check if the loan product is RBF (Revenue Based Financing) product RBF products should use LIABILITY_TRANSFER
-     * financial activity (mapped to GL 200040) Other products should use their product-specific FUND_SOURCE
+     * financial activity (mapped to GL 200040) Other products should use their product-specific FUND_SOURCE This method
+     * queries the database to get product short_name, making it environment-agnostic (works across UAT/PROD with
+     * different product IDs)
      *
      * @param loanProductId
      *            The loan product ID
      * @return true if RBF product, false otherwise
      */
     private boolean isRBFProduct(Long loanProductId) {
-        return RBF_PRODUCT_ID.equals(loanProductId);
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            // Query product short_name from database
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.helper.getJdbcTemplate().queryForObject(sql, String.class, loanProductId);
+
+            return RBF_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            // If query fails, log and return false (use product FUND_SOURCE as fallback)
+            // This ensures the system continues to work even if there's a DB issue
+            return false;
+        }
     }
 
     @Override
