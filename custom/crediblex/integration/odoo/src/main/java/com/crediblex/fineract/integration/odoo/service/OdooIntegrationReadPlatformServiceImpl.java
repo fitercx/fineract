@@ -108,9 +108,11 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
     /**
      * Get Odoo account ID for a Fineract GL code with optional business event context
-     * 
-     * @param fineractAccountCode The Fineract GL code
-     * @param businessEventType Optional business event type for context-aware remapping
+     *
+     * @param fineractAccountCode
+     *            The Fineract GL code
+     * @param businessEventType
+     *            Optional business event type for context-aware remapping
      * @return The Odoo account ID
      */
     public Integer getOdooAccountId(String fineractAccountCode, String businessEventType) {
@@ -148,17 +150,16 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
                 accountMappingCache.put(odooAccountCode, accountId);
 
                 if (!odooAccountCode.equals(fineractAccountCode)) {
-                    log.debug("Mapped Fineract account '{}' (remapped to '{}' for business event '{}') to Odoo account ID: {} ({})", 
-                        fineractAccountCode, odooAccountCode, businessEventType, accountId, account.get("name"));
+                    log.debug("Mapped Fineract account '{}' (remapped to '{}' for business event '{}') to Odoo account ID: {} ({})",
+                            fineractAccountCode, odooAccountCode, businessEventType, accountId, account.get("name"));
                 } else {
-                    log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", 
-                        fineractAccountCode, accountId, account.get("name"));
+                    log.debug("Mapped Fineract account '{}' to Odoo account ID: {} ({})", fineractAccountCode, accountId,
+                            account.get("name"));
                 }
 
                 return accountId;
             } else {
-                log.warn("No Odoo account found for Fineract account code: {} (remapped to: {})", 
-                    fineractAccountCode, odooAccountCode);
+                log.warn("No Odoo account found for Fineract account code: {} (remapped to: {})", fineractAccountCode, odooAccountCode);
                 return null;
             }
 
@@ -169,11 +170,13 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     }
 
     /**
-     * Remap Fineract GL codes to Odoo GL codes for special cases
-     * This handles scenarios where Fineract uses one GL code but Odoo expects a different one
-     * 
-     * @param fineractGlCode The GL code from Fineract
-     * @param businessEventType The business event type for context-aware remapping
+     * Remap Fineract GL codes to Odoo GL codes for special cases This handles scenarios where Fineract uses one GL code
+     * but Odoo expects a different one
+     *
+     * @param fineractGlCode
+     *            The GL code from Fineract
+     * @param businessEventType
+     *            The business event type for context-aware remapping
      * @return The GL code to use for Odoo lookup
      */
     private String remapGLCodeForOdoo(String fineractGlCode, String businessEventType) {

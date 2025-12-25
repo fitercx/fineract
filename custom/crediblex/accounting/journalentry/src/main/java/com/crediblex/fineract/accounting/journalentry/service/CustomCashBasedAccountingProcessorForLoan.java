@@ -24,12 +24,28 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccountingProcessorForLoan {
 
+    // RBF Product ID - used for product-specific GL account mapping
+    // Only RBF products should use LIABILITY_TRANSFER (GL 200040) for account transfers
+    private static final Long RBF_PRODUCT_ID = 1L;
+
     @Autowired
     private CustomAccountingProcessorHelper customAccountingProcessorHelper;
 
     public CustomCashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
         super(helper, journalEntryWritePlatformService);
+    }
+
+    /**
+     * Check if the loan product is RBF (Revenue Based Financing) product RBF products should use LIABILITY_TRANSFER
+     * financial activity (mapped to GL 200040) Other products should use their product-specific FUND_SOURCE
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if RBF product, false otherwise
+     */
+    private boolean isRBFProduct(Long loanProductId) {
+        return RBF_PRODUCT_ID.equals(loanProductId);
     }
 
     @Override
@@ -156,10 +172,20 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, loanTransactionDTO.getAmount());
         } else if (loanTransactionDTO.isAccountTransfer()) {
-            // net disbursement may not play so well with tranch loans
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
-                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
-                    transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            // For account transfers (disburse to savings), use product-specific logic
+            // Only RBF products should use LIABILITY_TRANSFER (mapped to GL 200040)
+            // Other products should use their product-specific FUND_SOURCE
+            if (isRBFProduct(loanProductId)) {
+                // RBF product: Use LIABILITY_TRANSFER (maps to GL 200040)
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            } else {
+                // Non-RBF products: Use product-specific FUND_SOURCE
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
+                        transactionDate, loanDTO.getNetDisbursalAmount());
+            }
         } else {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,

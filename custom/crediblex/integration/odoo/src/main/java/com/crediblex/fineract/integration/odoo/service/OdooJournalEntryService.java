@@ -198,7 +198,7 @@ public class OdooJournalEntryService {
     /**
      * Build account move values for multiple journal entries of a loan with business event type
      */
-    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId, 
+    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId,
             String businessEventType) {
         return buildAccountMoveValues(journalEntries, journalId, loanId, true, businessEventType);
     }
@@ -357,7 +357,7 @@ public class OdooJournalEntryService {
 
             // Group entries by journal using business event type from tracking records
             Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs);
-            
+
             // Also track business event type per journal for context-aware account mapping
             Map<Integer, String> journalBusinessEventTypes = getBusinessEventTypesByJournal(journalEntryOdooSyncs, entriesByJournal);
 
@@ -446,8 +446,7 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Get business event types per journal ID
-     * Assumes all entries in the same journal have the same business event type
+     * Get business event types per journal ID Assumes all entries in the same journal have the same business event type
      */
     private Map<Integer, String> getBusinessEventTypesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs,
             Map<Integer, List<JournalEntry>> entriesByJournal) {
@@ -460,7 +459,7 @@ public class OdooJournalEntryService {
             boolean isDebit = entry.isDebitEntry();
 
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
-            
+
             if (journalId != null && businessEventType != null) {
                 // Store the business event type for this journal
                 // If multiple events map to same journal, last one wins (they should be the same anyway)
@@ -493,8 +492,8 @@ public class OdooJournalEntryService {
             Integer accountId = odooIntegrationService.getOdooAccountId(accountCode, businessEventType);
 
             if (accountId == null) {
-                log.warn("Could not map account {} to Odoo for business event {}, skipping entry {}", 
-                    accountCode, businessEventType, entry.getId());
+                log.warn("Could not map account {} to Odoo for business event {}, skipping entry {}", accountCode, businessEventType,
+                        entry.getId());
                 continue;
             }
 
