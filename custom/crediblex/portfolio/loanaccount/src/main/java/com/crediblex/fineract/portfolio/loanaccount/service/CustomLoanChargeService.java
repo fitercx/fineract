@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeCalculationUtil;
 import java.math.BigDecimal;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
@@ -31,7 +32,8 @@ public class CustomLoanChargeService extends LoanChargeService {
             if (loanCharge.isOverdueInstallmentCharge()) {
                 amount = loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
             } else {
-                amount = loan.calculateAmountPercentageAppliedTo(loanCharge);
+                // Use custom utility method for multi-disbursement loan charge calculations
+                amount = LoanChargeCalculationUtil.calculateAmountPercentageAppliedTo(loan, loanCharge);
             }
             chargeAmt = loanCharge.getPercentage();
             if (loanCharge.isInstalmentFee()) {
