@@ -64,7 +64,13 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                 if (command.hasParameter("principal")) {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal");
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    // For LOC Receivable loans, percentage-based charges should use approved principal
+                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    if (isReceivableLineOfCredit) {
+                        amountPercentageAppliedTo = loan.getApprovedPrincipal();
+                    } else {
+                        amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    }
                 }
 
                 if (isReceivableLineOfCredit) {
@@ -77,7 +83,13 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal")
                             .add(command.bigDecimalValueOfParameterNamed("interest"));
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount().add(loan.getTotalInterest());
+                    // For LOC Receivable loans, percentage-based charges should use approved principal
+                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    if (isReceivableLineOfCredit) {
+                        amountPercentageAppliedTo = loan.getApprovedPrincipal().add(loan.getTotalInterest());
+                    } else {
+                        amountPercentageAppliedTo = loan.getPrincipal().getAmount().add(loan.getTotalInterest());
+                    }
                 }
 
                 if (isReceivableLineOfCredit) {
