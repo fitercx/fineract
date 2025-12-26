@@ -981,8 +981,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .map(p -> new ExtendedLoanSchedulePeriodData(p,
                         this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
                 .toList();
+        // Check if this is a drawdown loan (linked to a Line of Credit)
+        final boolean isDrawdownLoan = this.loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent();
         final CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus,
-                loanCharges, penaltyWaitPeriodValue);
+                loanCharges, penaltyWaitPeriodValue, isDrawdownLoan);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
         final List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
         if (!penaltiesToDisable.isEmpty()) {
