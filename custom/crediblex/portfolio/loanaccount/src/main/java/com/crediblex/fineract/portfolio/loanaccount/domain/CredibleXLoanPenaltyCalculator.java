@@ -50,8 +50,7 @@ public class CredibleXLoanPenaltyCalculator {
         }
 
         // For drawdown loans with early repayment, use transaction date as lower bound
-        LocalDate lower = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) 
-                ? transactionDate 
+        LocalDate lower = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) ? transactionDate
                 : firstPendingInstallmentDate;
         LocalDate upper = transactionDate;
 
@@ -151,9 +150,8 @@ public class CredibleXLoanPenaltyCalculator {
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 
         // For drawdown loans with early repayment, use the first installment's due date as lower bound
-        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) 
-                && !loanInstallments.isEmpty() 
-                ? loanInstallments.get(0).getDueDate() 
+        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) && !loanInstallments.isEmpty()
+                ? loanInstallments.get(0).getDueDate()
                 : firstPendingInstallmentDate;
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
@@ -166,9 +164,8 @@ public class CredibleXLoanPenaltyCalculator {
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 
         // For drawdown loans with early repayment, use the first installment's due date as lower bound
-        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) 
-                && !loanInstallments.isEmpty() 
-                ? loanInstallments.get(0).getDueDate() 
+        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) && !loanInstallments.isEmpty()
+                ? loanInstallments.get(0).getDueDate()
                 : firstPendingInstallmentDate;
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
