@@ -50,8 +50,7 @@ public class CredibleXLoanPenaltyCalculator {
         }
 
         // For drawdown loans with early repayment, use transaction date as lower bound
-        LocalDate lower = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) ? transactionDate
-                : firstPendingInstallmentDate;
+        LocalDate lower = determineLowerBoundForPenaltyCalculation(transactionDate, firstPendingInstallmentDate);
         LocalDate upper = transactionDate;
 
         // Calculate the penalty sum from unpaid, applicable penalties
@@ -150,9 +149,7 @@ public class CredibleXLoanPenaltyCalculator {
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 
         // For drawdown loans with early repayment, use the first installment's due date as lower bound
-        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) && !loanInstallments.isEmpty()
-                ? loanInstallments.get(0).getDueDate()
-                : firstPendingInstallmentDate;
+        LocalDate lowerBound = determineLowerBoundForOutstandingCalculation(transactionDate, firstPendingInstallmentDate);
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
@@ -164,9 +161,7 @@ public class CredibleXLoanPenaltyCalculator {
         ExtendedLoanSchedulePeriodData targetInstallment = resolveInstallmentByTransactionDate(transactionDate);
 
         // For drawdown loans with early repayment, use the first installment's due date as lower bound
-        LocalDate lowerBound = isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) && !loanInstallments.isEmpty()
-                ? loanInstallments.get(0).getDueDate()
-                : firstPendingInstallmentDate;
+        LocalDate lowerBound = determineLowerBoundForOutstandingCalculation(transactionDate, firstPendingInstallmentDate);
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
@@ -221,6 +216,26 @@ public class CredibleXLoanPenaltyCalculator {
         throw new PlatformApiDataValidationException(
                 List.of(ApiParameterError.parameterError("validation.msg.transactionDate.before.firstInstallment",
                         "Transaction date is before the first installment due date.", "transactionDate", transactionDate)));
+    }
+
+    /**
+     * Determines the lower bound date for penalty calculation. For drawdown loans with early repayment, uses
+     * transaction date; otherwise uses first pending installment date.
+     */
+    private LocalDate determineLowerBoundForPenaltyCalculation(LocalDate transactionDate, LocalDate firstPendingInstallmentDate) {
+        return isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) ? transactionDate : firstPendingInstallmentDate;
+    }
+
+    /**
+     * Determines the lower bound date for outstanding principal/interest calculation. For drawdown loans with early
+     * repayment, uses the first installment's due date; otherwise uses first pending installment date. Note: This
+     * method assumes loanInstallments is non-empty as it's called after resolveInstallmentByTransactionDate.
+     */
+    private LocalDate determineLowerBoundForOutstandingCalculation(LocalDate transactionDate, LocalDate firstPendingInstallmentDate) {
+        if (isDrawdownLoan && transactionDate.isBefore(firstPendingInstallmentDate) && !loanInstallments.isEmpty()) {
+            return loanInstallments.get(0).getDueDate();
+        }
+        return firstPendingInstallmentDate;
     }
 
     /**
