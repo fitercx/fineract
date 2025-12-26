@@ -1146,8 +1146,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
 
+        // Check if this is a drawdown loan (linked to a Line of Credit)
+        final boolean isDrawdownLoan = this.loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent();
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue);
+                penaltyWaitPeriodValue, isDrawdownLoan);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
