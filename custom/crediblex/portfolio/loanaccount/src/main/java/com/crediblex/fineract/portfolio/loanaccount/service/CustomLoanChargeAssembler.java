@@ -64,7 +64,16 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                 if (command.hasParameter("principal")) {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal");
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
+                    // This ensures the charge is calculated on the full loan amount, and then recalculated
+                    // per tranche during actual disbursement
+                    if (loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+                        amountPercentageAppliedTo = loan.getApprovedPrincipal();
+                    } else {
+                        amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    }
                 }
 
                 if (isReceivableLineOfCredit) {
@@ -77,7 +86,13 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal")
                             .add(command.bigDecimalValueOfParameterNamed("interest"));
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount().add(loan.getTotalInterest());
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
+                    BigDecimal principalAmount = loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
+                                    ? loan.getApprovedPrincipal()
+                                    : loan.getPrincipal().getAmount();
+                    amountPercentageAppliedTo = principalAmount.add(loan.getTotalInterest());
                 }
 
                 if (isReceivableLineOfCredit) {

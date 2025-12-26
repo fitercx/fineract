@@ -31,7 +31,14 @@ public class CustomLoanChargeService extends LoanChargeService {
             if (loanCharge.isOverdueInstallmentCharge()) {
                 amount = loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
             } else {
-                amount = loan.calculateAmountPercentageAppliedTo(loanCharge);
+                // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                // use approved principal instead of letting getDerivedAmountForCharge return the first tranche amount
+                if (loan.isMultiDisburmentLoan() && loanCharge.isDisbursementCharge() && loanCharge.getTrancheDisbursementCharge() == null
+                        && loanCharge.getChargeCalculation().isPercentageOfAmount()) {
+                    amount = approvedPrincipal;
+                } else {
+                    amount = loan.calculateAmountPercentageAppliedTo(loanCharge);
+                }
             }
             chargeAmt = loanCharge.getPercentage();
             if (loanCharge.isInstalmentFee()) {
