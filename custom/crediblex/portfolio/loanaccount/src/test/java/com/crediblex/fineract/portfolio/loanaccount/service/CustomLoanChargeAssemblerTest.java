@@ -217,10 +217,14 @@ class CustomLoanChargeAssemblerTest {
         // When: Create charge
         LoanCharge loanCharge = customLoanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, DUE_DATE);
 
-        // Then: Should use approved principal + interest + interest again (LOC Receivable logic)
+        // Then: Should use approved principal + interest + interest again (LOC Receivable specific logic)
+        // Note: For LOC Receivable, PERCENT_OF_AMOUNT_AND_INTEREST adds interest twice:
+        // 1. First: approvedPrincipal + totalInterest (from loan)
+        // 2. Then: adds interest again from command parameter (LOC Receivable business rule)
+        // This matches the implementation in CustomLoanChargeAssembler lines 89 and 97
         BigDecimal expectedBase = APPROVED_PRINCIPAL.add(totalInterest).add(totalInterest);
-        assertThat(loanCharge.getAmountPercentageAppliedTo())
-                .as("LOC Receivable PERCENT_OF_AMOUNT_AND_INTEREST should use approved principal + interest")
+        assertThat(loanCharge.getAmountPercentageAppliedTo()).as(
+                "LOC Receivable PERCENT_OF_AMOUNT_AND_INTEREST should use approved principal + interest + interest (LOC Receivable business rule)")
                 .isEqualByComparingTo(expectedBase);
     }
 
