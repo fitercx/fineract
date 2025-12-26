@@ -34,8 +34,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTrancheDisbursementC
 public class LoanChargeCalculationUtil {
 
     /**
-     * Calculates the derived amount for a charge, with custom logic for multi-disbursement loans.
-     * For multi-disbursement loans with DISBURSEMENT charges, calculates proportionally per tranche.
+     * Calculates the derived amount for a charge, with custom logic for multi-disbursement loans. For
+     * multi-disbursement loans with DISBURSEMENT charges, calculates proportionally per tranche.
      *
      * @param loan
      *            the loan
@@ -45,8 +45,7 @@ public class LoanChargeCalculationUtil {
      */
     public static BigDecimal getDerivedAmountForCharge(final Loan loan, final LoanCharge loanCharge) {
         BigDecimal amount = BigDecimal.ZERO;
-        if (loan.isMultiDisburmentLoan()
-                && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+        if (loan.isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
             // For multi-disbursement loans, calculate fee proportionally per tranche
             // Check if charge is associated with a specific tranche
             LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
@@ -93,8 +92,8 @@ public class LoanChargeCalculationUtil {
     }
 
     /**
-     * Calculates the amount percentage applied to for a charge, with custom logic for multi-disbursement loans.
-     * This is a custom implementation that extends the core logic.
+     * Calculates the amount percentage applied to for a charge, with custom logic for multi-disbursement loans. This is
+     * a custom implementation that extends the core logic.
      *
      * @param loan
      *            the loan
@@ -163,4 +162,3 @@ public class LoanChargeCalculationUtil {
         return amount;
     }
 }
-
