@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
@@ -13,18 +14,25 @@ import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.journalentry.service.AccrualBasedAccountingProcessorForLoan;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
+import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMapping;
+import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.office.domain.Office;
+import org.apache.fineract.portfolio.PortfolioProductType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 @Primary
 @Component
+@Slf4j
 public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAccountingProcessorForLoan {
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
+
+    @Autowired
+    private ProductToGLAccountMappingRepository accountMappingRepository;
 
     public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
@@ -95,10 +103,25 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 }
 
                 // CR Tax Liability (tax portion)
+                // Only create tax liability entry if the mapping exists for the loan product
                 if (MathUtil.isGreaterThanZero(totalFeesTax)) {
-                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
-                            AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue(), loanProductId, paymentTypeId,
-                            loanId, transactionId, transactionDate, totalFeesTax);
+                    ProductToGLAccountMapping taxLiabilityMapping = accountMappingRepository.findCoreProductToFinAccountMapping(
+                            loanProductId, PortfolioProductType.LOAN.getValue(),
+                            AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue());
+
+                    if (taxLiabilityMapping != null) {
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                                AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue(), loanProductId, paymentTypeId,
+                                loanId, transactionId, transactionDate, totalFeesTax);
+                    } else {
+                        log.warn(
+                                "Tax liability mapping not found for loan product {} (ID: {}). Skipping tax liability journal entry for loan {} (ID: {}). "
+                                        + "Please configure the 'LIABILITY FROM TAXES' chart of accounts mapping for this loan product.",
+                                loanProductId, loanProductId, loanId, loanId);
+                        // Note: If tax liability mapping is missing, the tax portion will be included in the net fees
+                        // income
+                        // This may not be the desired accounting behavior, but prevents the disbursement from failing
+                    }
                 }
             }
         }
