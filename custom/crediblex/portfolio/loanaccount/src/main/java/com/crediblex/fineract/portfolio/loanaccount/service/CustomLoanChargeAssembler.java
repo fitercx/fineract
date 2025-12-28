@@ -68,8 +68,11 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                     // use approved principal (total loan amount) instead of current principal
                     // This ensures the charge is calculated on the full loan amount, and then recalculated
                     // per tranche during actual disbursement
-                    if (loan.isMultiDisburmentLoan()
-                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
+                    // For LOC Receivable loans, percentage-based charges should use approved principal
+                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    if ((loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                            || isReceivableLineOfCredit) {
                         amountPercentageAppliedTo = loan.getApprovedPrincipal();
                     } else {
                         amountPercentageAppliedTo = loan.getPrincipal().getAmount();
@@ -88,10 +91,11 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                 } else {
                     // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
                     // use approved principal (total loan amount) instead of current principal
-                    BigDecimal principalAmount = loan.isMultiDisburmentLoan()
-                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
-                                    ? loan.getApprovedPrincipal()
-                                    : loan.getPrincipal().getAmount();
+                    // For LOC Receivable loans, percentage-based charges should use approved principal
+                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    BigDecimal principalAmount = (loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                            || isReceivableLineOfCredit ? loan.getApprovedPrincipal() : loan.getPrincipal().getAmount();
                     amountPercentageAppliedTo = principalAmount.add(loan.getTotalInterest());
                 }
 
