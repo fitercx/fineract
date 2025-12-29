@@ -169,23 +169,42 @@ public class CredibleXLoanPenaltyCalculator {
     }
 
     private ExtendedLoanSchedulePeriodData resolveInstallmentByTransactionDate(LocalDate transactionDate) {
+        // First, try to find an installment whose period contains the transaction date (normal repayment case)
+        // Skip PAID installments when checking periods
         for (int i = 0; i < loanInstallments.size(); i++) {
-            LocalDate currentDueDate = loanInstallments.get(i).getDueDate();
+            ExtendedLoanSchedulePeriodData currentInstallment = loanInstallments.get(i);
+
+            // Skip PAID installments for period matching
+            if (currentInstallment.status == ExtendedLoanSchedulePeriodData.Status.PAID) {
+                continue;
+            }
+
+            LocalDate currentDueDate = currentInstallment.getDueDate();
             LocalDate nextDueDate = (i + 1 < loanInstallments.size()) ? loanInstallments.get(i + 1).getDueDate() : null;
 
             if (nextDueDate != null && (!transactionDate.isBefore(currentDueDate) && transactionDate.isBefore(nextDueDate))) {
-                return loanInstallments.get(i);
+                return currentInstallment;
             }
 
             if (nextDueDate == null && !transactionDate.isBefore(currentDueDate)) {
-                return loanInstallments.get(i);
+                return currentInstallment;
             }
         }
 
-        // For drawdown loans, allow early repayments before the first installment due date
-        // Return the first installment in such cases
-        if (isDrawdownLoan && !loanInstallments.isEmpty()) {
-            return loanInstallments.get(0);
+        // If no installment period contains the transaction date, this is an early repayment
+        // Find the first unpaid installment whose due date is after the transaction date
+        ExtendedLoanSchedulePeriodData firstUnpaidInstallment = loanInstallments.stream()
+                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID).filter(p -> transactionDate.isBefore(p.getDueDate()))
+                .min(Comparator.comparing(ExtendedLoanSchedulePeriodData::getDueDate)).orElse(null);
+
+        if (firstUnpaidInstallment != null) {
+            return firstUnpaidInstallment;
+        }
+
+        // Fallback: if all installments are paid or transaction date is after all due dates,
+        // return the last installment
+        if (!loanInstallments.isEmpty()) {
+            return loanInstallments.get(loanInstallments.size() - 1);
         }
 
         throw new PlatformApiDataValidationException(
@@ -194,23 +213,42 @@ public class CredibleXLoanPenaltyCalculator {
     }
 
     public BigDecimal getInterestDueForTransaction(LocalDate transactionDate) {
+        // First, try to find an installment whose period contains the transaction date (normal repayment case)
+        // Skip PAID installments when checking periods
         for (int i = 0; i < loanInstallments.size(); i++) {
-            LocalDate currentDueDate = loanInstallments.get(i).getDueDate();
+            ExtendedLoanSchedulePeriodData currentInstallment = loanInstallments.get(i);
+
+            // Skip PAID installments for period matching
+            if (currentInstallment.status == ExtendedLoanSchedulePeriodData.Status.PAID) {
+                continue;
+            }
+
+            LocalDate currentDueDate = currentInstallment.getDueDate();
             LocalDate nextDueDate = (i + 1 < loanInstallments.size()) ? loanInstallments.get(i + 1).getDueDate() : null;
 
             if (nextDueDate != null && (!transactionDate.isBefore(currentDueDate) && transactionDate.isBefore(nextDueDate))) {
-                return loanInstallments.get(i).getInterestOutstanding();
+                return currentInstallment.getInterestOutstanding();
             }
 
             if (nextDueDate == null && !transactionDate.isBefore(currentDueDate)) {
-                return loanInstallments.get(i).getInterestOutstanding();
+                return currentInstallment.getInterestOutstanding();
             }
         }
 
-        // For drawdown loans, allow early repayments before the first installment due date
-        // Return interest from the first installment in such cases
-        if (isDrawdownLoan && !loanInstallments.isEmpty()) {
-            return loanInstallments.get(0).getInterestOutstanding();
+        // If no installment period contains the transaction date, this is an early repayment
+        // Find the first unpaid installment whose due date is after the transaction date
+        ExtendedLoanSchedulePeriodData firstUnpaidInstallment = loanInstallments.stream()
+                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID).filter(p -> transactionDate.isBefore(p.getDueDate()))
+                .min(Comparator.comparing(ExtendedLoanSchedulePeriodData::getDueDate)).orElse(null);
+
+        if (firstUnpaidInstallment != null) {
+            return firstUnpaidInstallment.getInterestOutstanding();
+        }
+
+        // Fallback: if all installments are paid or transaction date is after all due dates,
+        // return interest from the last installment
+        if (!loanInstallments.isEmpty()) {
+            return loanInstallments.get(loanInstallments.size() - 1).getInterestOutstanding();
         }
 
         throw new PlatformApiDataValidationException(
