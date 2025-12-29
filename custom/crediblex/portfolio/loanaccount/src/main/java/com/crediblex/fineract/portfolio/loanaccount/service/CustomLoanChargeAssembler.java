@@ -64,9 +64,15 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                 if (command.hasParameter("principal")) {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal");
                 } else {
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
+                    // This ensures the charge is calculated on the full loan amount, and then recalculated
+                    // per tranche during actual disbursement
                     // For LOC Receivable loans, percentage-based charges should use approved principal
                     // (loan amount) instead of disbursed principal to ensure consistent fee calculation
-                    if (isReceivableLineOfCredit) {
+                    if ((loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                            || isReceivableLineOfCredit) {
                         amountPercentageAppliedTo = loan.getApprovedPrincipal();
                     } else {
                         amountPercentageAppliedTo = loan.getPrincipal().getAmount();
@@ -83,13 +89,14 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal")
                             .add(command.bigDecimalValueOfParameterNamed("interest"));
                 } else {
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
                     // For LOC Receivable loans, percentage-based charges should use approved principal
                     // (loan amount) instead of disbursed principal to ensure consistent fee calculation
-                    if (isReceivableLineOfCredit) {
-                        amountPercentageAppliedTo = loan.getApprovedPrincipal().add(loan.getTotalInterest());
-                    } else {
-                        amountPercentageAppliedTo = loan.getPrincipal().getAmount().add(loan.getTotalInterest());
-                    }
+                    BigDecimal principalAmount = (loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                            || isReceivableLineOfCredit ? loan.getApprovedPrincipal() : loan.getPrincipal().getAmount();
+                    amountPercentageAppliedTo = principalAmount.add(loan.getTotalInterest());
                 }
 
                 if (isReceivableLineOfCredit) {
