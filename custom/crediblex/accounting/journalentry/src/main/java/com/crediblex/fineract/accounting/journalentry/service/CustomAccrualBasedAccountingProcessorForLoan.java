@@ -21,6 +21,7 @@ import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.PortfolioProductType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Primary
@@ -28,15 +29,47 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAccountingProcessorForLoan {
 
+    // RBF Product Short Name - only RBF products use LIABILITY_TRANSFER (200040)
+    // Non-RBF products use old "Liability Transfer" GL account (562)
+    private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
+
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
 
     @Autowired
     private ProductToGLAccountMappingRepository accountMappingRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private org.apache.fineract.accounting.glaccount.domain.GLAccountRepository glAccountRepository;
+
     public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
         super(helper, journalEntryWritePlatformService);
+    }
+
+    /**
+     * Check if the loan product is RBF (Revenue Based Financing) product
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if RBF product, false otherwise
+     */
+    private boolean isRBFProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return RBF_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            // If query fails, default to non-RBF (use old Liability Transfer)
+            return false;
+        }
     }
 
     @Override
@@ -131,10 +164,21 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, loanTransactionDTO.getAmount());
         } else if (loanTransactionDTO.isAccountTransfer()) {
-            // May not play so well with multi disbursal transactions
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
-                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
-                    transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            // For account transfers (disburse to savings):
+            // - RBF products: Use GL 200040 directly (Loan Payable - Working Capital - Revenue Finance)
+            // - Non-RBF products: Use LIABILITY_TRANSFER financial activity (maps to "Liability Transfer" 562)
+            if (isRBFProduct(loanProductId)) {
+                // RBF: Use GL 200040 directly
+                org.apache.fineract.accounting.glaccount.domain.GLAccount rbfLiabilityGL = this.glAccountRepository.findById(332L)
+                        .orElseThrow();
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                        loanDTO.getNetDisbursalAmount(), rbfLiabilityGL);
+            } else {
+                // Non-RBF: Use LIABILITY_TRANSFER financial activity (562)
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            }
         } else {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
