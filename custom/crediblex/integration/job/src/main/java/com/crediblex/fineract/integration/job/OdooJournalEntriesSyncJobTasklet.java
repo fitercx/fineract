@@ -97,9 +97,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                 try {
                     // Validate GL accounts exist in Odoo before posting
-                    if (!validateGLAccountsExistInOdoo(loanEntries)) {
-                        String errorMsg = "One or more GL accounts do not exist in Odoo for loan " + loanId;
-                        log.error("GL account validation failed for loan {}", loanId);
+                    Map<String, Boolean> validationResults = validateGLAccountsExistInOdooWithDetails(loanEntries);
+                    List<String> invalidAccounts = validationResults.entrySet().stream().filter(entry -> !entry.getValue())
+                            .map(Map.Entry::getKey).collect(Collectors.toList());
+
+                    if (!invalidAccounts.isEmpty()) {
+                        String errorMsg = String.format("GL accounts do not exist in Odoo for loan %d: %s", loanId,
+                                String.join(", ", invalidAccounts));
+                        log.error("GL account validation failed for loan {} - Missing accounts: {}", loanId, invalidAccounts);
                         for (JournalEntryOdooSync sync : loanEntries) {
                             journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                             failureCount++;
@@ -146,11 +151,17 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                     // Handle specific constraint violations
                     if (specificError.contains("account_move_line_account_id_fkey")) {
+                        // Get detailed account information for better debugging
+                        String accountDetails = loanEntries.stream()
+                                .map(sync -> String.format("JE %d: GL Code '%s' (Account: %s)", sync.getJournalEntry().getId(),
+                                        sync.getJournalEntry().getGlAccount().getGlCode(), sync.getJournalEntry().getGlAccount().getName()))
+                                .collect(Collectors.joining("; "));
+
                         detailedErrorMsg = String.format(
-                                "GL Account validation failed for loan %d: One or more GL accounts do not exist in Odoo. Please check GL account mappings.",
-                                loanId);
-                        log.error("GL Account constraint violation for loan {}: Check if all GL accounts exist in Odoo chart of accounts",
-                                loanId);
+                                "GL Account foreign key constraint violation for loan %d. Accounts in entries: %s. One or more mapped account IDs do not exist in Odoo.",
+                                loanId, accountDetails);
+                        log.error("GL Account constraint violation for loan {} - Account details: {}", loanId, accountDetails);
+                        log.error("This suggests account mapping returned invalid account IDs or accounts were deleted/archived in Odoo");
                     } else if (specificError.contains("constraint") || specificError.contains("fkey")) {
                         detailedErrorMsg = String.format("Database constraint violation for loan %d: %s. Check data integrity.", loanId,
                                 specificError);
@@ -483,16 +494,18 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
-     * Validate that all GL accounts referenced in the journal entries exist in Odoo. This prevents foreign key
-     * constraint violations when creating journal entries.
+     * Validate that all GL accounts referenced in the journal entries exist in Odoo with detailed results. This
+     * prevents foreign key constraint violations when creating journal entries.
      *
      * @param journalEntries
      *            List of journal entries to validate
-     * @return true if all GL accounts exist in Odoo, false otherwise
+     * @return Map of GL code to validation result (true if exists, false if not)
      */
-    private boolean validateGLAccountsExistInOdoo(List<JournalEntryOdooSync> journalEntries) {
+    private Map<String, Boolean> validateGLAccountsExistInOdooWithDetails(List<JournalEntryOdooSync> journalEntries) {
+        Map<String, Boolean> validationResults = new HashMap<>();
+
         try {
-            log.debug("Validating {} journal entries for GL account existence in Odoo", journalEntries.size());
+            log.debug("Validating {} journal entries for GL account existence in Odoo with detailed results", journalEntries.size());
 
             // Array of GL codes that should be skipped during validation
             String[] skipValidationGlCodes = { "Liability Transfer" };
@@ -508,7 +521,13 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                 if (glCode == null || glCode.trim().isEmpty()) {
                     log.error("Journal entry {} has null or empty GL code", entrySync.getJournalEntry().getId());
-                    return false;
+                    validationResults.put("NULL_GL_CODE", false);
+                    continue;
+                }
+
+                // Skip if already validated
+                if (validationResults.containsKey(glCode)) {
+                    continue;
                 }
 
                 // Check if this GL code should be skipped during validation
@@ -516,6 +535,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 for (String skipCode : skipValidationGlCodes) {
                     if (skipCode.equals(glCode) || skipCode.equals(accountName)) {
                         log.debug("Skipping validation for GL code '{}' as it's in the skip list", glCode);
+                        validationResults.put(glCode, true); // Mark as valid since it's skipped
                         skipValidation = true;
                         break;
                     }
@@ -526,19 +546,40 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 }
 
                 // Check if account exists in Odoo
-                if (!odooJournalEntryService.doesAccountExistInOdoo(glCode)) {
+                boolean accountExists = odooJournalEntryService.doesAccountExistInOdoo(glCode);
+                validationResults.put(glCode, accountExists);
+
+                if (!accountExists) {
                     log.error("GL Account with code '{}' and name '{}' does not exist in Odoo", glCode, accountName);
-                    return false;
+                } else {
+                    log.debug("GL Account with code '{}' validated successfully in Odoo", glCode);
                 }
             }
 
-            log.debug("All GL accounts validated successfully in Odoo");
-            return true;
+            long validCount = validationResults.values().stream().mapToLong(valid -> valid ? 1 : 0).sum();
+            long totalCount = validationResults.size();
+            log.debug("GL Account validation completed: {}/{} accounts valid", validCount, totalCount);
+
+            return validationResults;
 
         } catch (Exception e) {
             log.error("Error validating GL accounts in Odoo", e);
-            return false;
+            validationResults.put("VALIDATION_ERROR", false);
+            return validationResults;
         }
+    }
+
+    /**
+     * Validate that all GL accounts referenced in the journal entries exist in Odoo. This prevents foreign key
+     * constraint violations when creating journal entries.
+     *
+     * @param journalEntries
+     *            List of journal entries to validate
+     * @return true if all GL accounts exist in Odoo, false otherwise
+     */
+    private boolean validateGLAccountsExistInOdoo(List<JournalEntryOdooSync> journalEntries) {
+        Map<String, Boolean> validationResults = validateGLAccountsExistInOdooWithDetails(journalEntries);
+        return validationResults.values().stream().allMatch(Boolean::booleanValue);
     }
 
     /**
