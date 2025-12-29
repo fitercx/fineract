@@ -43,17 +43,6 @@ public interface OdooIntegrationReadPlatformService {
     Integer getOdooAccountId(String fineractAccountCode);
 
     /**
-     * Get Odoo account ID for a Fineract GL account code with business event context
-     *
-     * @param fineractAccountCode
-     *            Fineract GL account code
-     * @param businessEventType
-     *            Business event type for context-aware remapping (can be null)
-     * @return Odoo account ID or null if not found
-     */
-    Integer getOdooAccountId(String fineractAccountCode, String businessEventType);
-
-    /**
      * Get default journal ID for journal entries
      *
      * @return Default journal ID or null if not found

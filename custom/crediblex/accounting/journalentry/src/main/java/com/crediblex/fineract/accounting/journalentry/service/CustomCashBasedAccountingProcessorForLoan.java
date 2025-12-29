@@ -25,9 +25,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccountingProcessorForLoan {
 
-    // RBF Product Short Name - used for product-specific GL account mapping
-    // Only RBF products should use LIABILITY_TRANSFER (GL 200040) for account transfers
-    // Using short_name instead of ID to be environment-agnostic (works across UAT/PROD)
+    // RBF Product Short Name - only RBF products use LIABILITY_TRANSFER (200040)
+    // Non-RBF products use old "Liability Transfer" GL account (562)
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
 
     @Autowired
@@ -36,16 +35,16 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private org.apache.fineract.accounting.glaccount.domain.GLAccountRepository glAccountRepository;
+
     public CustomCashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
         super(helper, journalEntryWritePlatformService);
     }
 
     /**
-     * Check if the loan product is RBF (Revenue Based Financing) product RBF products should use LIABILITY_TRANSFER
-     * financial activity (mapped to GL 200040) Other products should use their product-specific FUND_SOURCE This method
-     * queries the database to get product short_name, making it environment-agnostic (works across UAT/PROD with
-     * different product IDs)
+     * Check if the loan product is RBF (Revenue Based Financing) product
      *
      * @param loanProductId
      *            The loan product ID
@@ -57,14 +56,11 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
         }
 
         try {
-            // Query product short_name from database
             String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
             String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-
             return RBF_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
-            // If query fails, log and return false (use product FUND_SOURCE as fallback)
-            // This ensures the system continues to work even if there's a DB issue
+            // If query fails, default to non-RBF (use old Liability Transfer)
             return false;
         }
     }
@@ -193,19 +189,20 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, loanTransactionDTO.getAmount());
         } else if (loanTransactionDTO.isAccountTransfer()) {
-            // For account transfers (disburse to savings), use product-specific logic
-            // Only RBF products should use LIABILITY_TRANSFER (mapped to GL 200040)
-            // Other products should use their product-specific FUND_SOURCE
+            // For account transfers (disburse to savings):
+            // - RBF products: Use GL 200040 directly (Loan Payable - Working Capital - Revenue Finance)
+            // - Non-RBF products: Use LIABILITY_TRANSFER financial activity (maps to "Liability Transfer" 562)
             if (isRBFProduct(loanProductId)) {
-                // RBF product: Use LIABILITY_TRANSFER (maps to GL 200040)
+                // RBF: Use GL 200040 directly
+                org.apache.fineract.accounting.glaccount.domain.GLAccount rbfLiabilityGL = this.glAccountRepository.findById(332L)
+                        .orElseThrow();
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                        loanDTO.getNetDisbursalAmount(), rbfLiabilityGL);
+            } else {
+                // Non-RBF: Use LIABILITY_TRANSFER financial activity (562)
                 this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
                         transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
-            } else {
-                // Non-RBF products: Use product-specific FUND_SOURCE
-                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
-                        AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
-                        transactionDate, loanDTO.getNetDisbursalAmount());
             }
         } else {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
