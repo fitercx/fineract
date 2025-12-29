@@ -194,7 +194,7 @@ public class CredibleXLoanPenaltyCalculator {
         // If no installment period contains the transaction date, this is an early repayment
         // Find the first unpaid installment whose due date is after the transaction date
         ExtendedLoanSchedulePeriodData firstUnpaidInstallment = loanInstallments.stream()
-                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID).filter(p -> transactionDate.isBefore(p.getDueDate()))
+                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID && transactionDate.isBefore(p.getDueDate()))
                 .min(Comparator.comparing(ExtendedLoanSchedulePeriodData::getDueDate)).orElse(null);
 
         if (firstUnpaidInstallment != null) {
@@ -238,7 +238,7 @@ public class CredibleXLoanPenaltyCalculator {
         // If no installment period contains the transaction date, this is an early repayment
         // Find the first unpaid installment whose due date is after the transaction date
         ExtendedLoanSchedulePeriodData firstUnpaidInstallment = loanInstallments.stream()
-                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID).filter(p -> transactionDate.isBefore(p.getDueDate()))
+                .filter(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID && transactionDate.isBefore(p.getDueDate()))
                 .min(Comparator.comparing(ExtendedLoanSchedulePeriodData::getDueDate)).orElse(null);
 
         if (firstUnpaidInstallment != null) {
