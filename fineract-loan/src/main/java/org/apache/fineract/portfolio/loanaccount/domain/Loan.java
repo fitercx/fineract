@@ -840,11 +840,18 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         yield getTotalAllTrancheDisbursementAmount().getAmount().add(totalInterestCharged);
                     }
                 } else {
-                    yield getPrincipal().getAmount().add(totalInterestCharged);
+                    // For LOC Receivable loans, percentage-based charges should use approved principal
+                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    if (this.isReceivableLocLoan) {
+                        yield getApprovedPrincipal().add(totalInterestCharged);
+                    } else {
+                        yield getPrincipal().getAmount().add(totalInterestCharged);
+                    }
                 }
             }
             case PERCENT_OF_INTEREST -> getTotalInterest();
             case PERCENT_OF_DISBURSEMENT_AMOUNT -> {
+                // PERCENT_OF_DISBURSEMENT_AMOUNT should always use disbursed amount, not approved principal
                 if (loanCharge.getTrancheDisbursementCharge() != null) {
                     yield loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().principal();
                 } else {
@@ -2571,7 +2578,13 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     }
                 }
             } else {
-                amount = getPrincipal().getAmount();
+                // For LOC Receivable loans, percentage-based charges should use approved principal
+                // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                if (this.isReceivableLocLoan) {
+                    amount = getApprovedPrincipal();
+                } else {
+                    amount = getPrincipal().getAmount();
+                }
             }
         }
         return amount;
