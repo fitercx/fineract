@@ -37,12 +37,24 @@ public class CustomLoanChargeService extends LoanChargeService {
                         && loanCharge.getChargeCalculation().isPercentageOfAmount()) {
                     amount = approvedPrincipal;
                 } else {
+                    // calculateAmountPercentageAppliedTo now uses getProposedPrincipal() for LOC Receivable loans
                     amount = loan.calculateAmountPercentageAppliedTo(loanCharge);
                 }
             }
             chargeAmt = loanCharge.getPercentage();
             if (loanCharge.isInstalmentFee()) {
-                totalChargeAmt = loan.calculatePerInstallmentChargeAmount(loanCharge);
+                // For LOC Receivable loans with installment fees, use amount (proposed principal)
+                // instead of calculating from installments (which uses disbursed principal)
+                // This ensures consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                if (loan.isReceivableLocLoan() && loanCharge.getChargeCalculation().isPercentageBased()) {
+                    // Calculate directly from amount which is already set to proposed principal via
+                    // calculateAmountPercentageAppliedTo()
+                    // This applies to all percentage-based charges (PERCENT_OF_AMOUNT, PERCENT_OF_AMOUNT_AND_INTEREST,
+                    // PERCENT_OF_INTEREST)
+                    totalChargeAmt = amount.multiply(chargeAmt).divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP);
+                } else {
+                    totalChargeAmt = loan.calculatePerInstallmentChargeAmount(loanCharge);
+                }
             }
         } else {
             chargeAmt = loanCharge.amountOrPercentage();

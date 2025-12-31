@@ -53,8 +53,12 @@ import org.mockito.quality.Strictness;
 class CustomLoanChargeAssemblerTest {
 
     private static final Long LOAN_ID = 1L;
-    private static final BigDecimal APPROVED_PRINCIPAL = new BigDecimal("90000.00"); // Loan amount
-    private static final BigDecimal DISBURSED_PRINCIPAL = new BigDecimal("73999.23"); // Actual disbursed amount
+    private static final BigDecimal PROPOSED_PRINCIPAL = new BigDecimal("90000.00"); // Loan amount (proposed principal
+                                                                                     // for LOC Receivable)
+    private static final BigDecimal APPROVED_PRINCIPAL = new BigDecimal("735.49"); // Approved principal (disbursed
+                                                                                   // amount after interest)
+    private static final BigDecimal DISBURSED_PRINCIPAL = new BigDecimal("73999.23"); // Actual disbursed amount (for
+                                                                                      // regular loans)
     private static final BigDecimal CHARGE_PERCENTAGE = new BigDecimal("10.00"); // 10%
     private static final BigDecimal EXPECTED_CHARGE_AMOUNT = new BigDecimal("9000.00"); // 10% of 90,000
     private static final BigDecimal INCORRECT_CHARGE_AMOUNT = new BigDecimal("7399.92"); // 10% of 73,999.23
@@ -137,6 +141,7 @@ class CustomLoanChargeAssemblerTest {
 
         // Setup principal amounts
         when(loan.getApprovedPrincipal()).thenReturn(APPROVED_PRINCIPAL);
+        when(loan.getProposedPrincipal()).thenReturn(PROPOSED_PRINCIPAL);
         // Create Money objects using lenient mocking to avoid issues
         lenient().when(currency.toData()).thenReturn(new org.apache.fineract.organisation.monetary.data.CurrencyData(CURRENCY_CODE, 2, 1));
         Money disbursedPrincipalMoney = Money.of(currency, DISBURSED_PRINCIPAL);
@@ -162,9 +167,9 @@ class CustomLoanChargeAssemblerTest {
     }
 
     @Test
-    @DisplayName("LOC Receivable: Percentage charge should use approved principal (loan amount), not disbursed amount")
-    void testLocReceivableChargeUsesApprovedPrincipal() {
-        // Given: LOC Receivable loan with approved principal (90,000) and disbursed principal (73,999.23)
+    @DisplayName("LOC Receivable: Percentage charge should use proposed principal (loan amount), not disbursed amount")
+    void testLocReceivableChargeUsesProposedPrincipal() {
+        // Given: LOC Receivable loan with proposed principal (90,000) and approved principal (735.49 - disbursed after interest)
         when(loanLineOfCreditParamsRepository.findByLoanId(LOAN_ID)).thenReturn(Optional.of(loanLineOfCreditParams));
         when(loanLineOfCreditParams.getLineOfCredit()).thenReturn(lineOfCredit);
         when(lineOfCredit.getProductType()).thenReturn(mock(com.crediblex.fineract.portfolio.loc.data.LocProductType.class));
@@ -173,15 +178,19 @@ class CustomLoanChargeAssemblerTest {
         // When: Create charge for LOC Receivable loan
         LoanCharge loanCharge = customLoanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, DUE_DATE);
 
-        // Then: Charge should use approved principal (90,000) as base amount
-        // amountPercentageAppliedTo should be 90,000, not 73,999.23
+        // Then: Charge should use proposed principal (90,000) as base amount
+        // amountPercentageAppliedTo should be 90,000, not 73,999.23 or 735.49
         assertThat(loanCharge.getAmountPercentageAppliedTo())
-                .as("LOC Receivable charge should use approved principal (loan amount) as base")
-                .isEqualByComparingTo(APPROVED_PRINCIPAL);
+                .as("LOC Receivable charge should use proposed principal (loan amount) as base")
+                .isEqualByComparingTo(PROPOSED_PRINCIPAL);
 
         assertThat(loanCharge.getAmountPercentageAppliedTo())
                 .as("LOC Receivable charge should NOT use disbursed principal")
                 .isNotEqualByComparingTo(DISBURSED_PRINCIPAL);
+
+        assertThat(loanCharge.getAmountPercentageAppliedTo())
+                .as("LOC Receivable charge should NOT use approved principal (disbursed amount after interest)")
+                .isNotEqualByComparingTo(APPROVED_PRINCIPAL);
     }
 
     @Test
@@ -200,7 +209,7 @@ class CustomLoanChargeAssemblerTest {
     }
 
     @Test
-    @DisplayName("LOC Receivable: PERCENT_OF_AMOUNT_AND_INTEREST should use approved principal + interest")
+    @DisplayName("LOC Receivable: PERCENT_OF_AMOUNT_AND_INTEREST should use proposed principal + interest")
     void testLocReceivableChargeWithAmountAndInterest() {
         // Given: LOC Receivable loan with interest
         BigDecimal totalInterest = new BigDecimal("7000.77");
@@ -217,14 +226,14 @@ class CustomLoanChargeAssemblerTest {
         // When: Create charge
         LoanCharge loanCharge = customLoanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, DUE_DATE);
 
-        // Then: Should use approved principal + interest + interest again (LOC Receivable specific logic)
+        // Then: Should use proposed principal + interest + interest again (LOC Receivable specific logic)
         // Note: For LOC Receivable, PERCENT_OF_AMOUNT_AND_INTEREST adds interest twice:
-        // 1. First: approvedPrincipal + totalInterest (from loan)
+        // 1. First: proposedPrincipal + totalInterest (from loan)
         // 2. Then: adds interest again from command parameter (LOC Receivable business rule)
         // This matches the implementation in CustomLoanChargeAssembler lines 89 and 97
-        BigDecimal expectedBase = APPROVED_PRINCIPAL.add(totalInterest).add(totalInterest);
+        BigDecimal expectedBase = PROPOSED_PRINCIPAL.add(totalInterest).add(totalInterest);
         assertThat(loanCharge.getAmountPercentageAppliedTo()).as(
-                "LOC Receivable PERCENT_OF_AMOUNT_AND_INTEREST should use approved principal + interest + interest (LOC Receivable business rule)")
+                "LOC Receivable PERCENT_OF_AMOUNT_AND_INTEREST should use proposed principal + interest + interest (LOC Receivable business rule)")
                 .isEqualByComparingTo(expectedBase);
     }
 
@@ -248,11 +257,76 @@ class CustomLoanChargeAssemblerTest {
 
         // Then: Calculated amount should be 9,000 (10% of 90,000), not 7,399.92 (10% of 73,999.23)
         assertThat(calculatedAmount)
-                .as("Charge amount should be calculated on approved principal (90,000 * 10% = 9,000)")
+                .as("Charge amount should be calculated on proposed principal (90,000 * 10% = 9,000)")
                 .isEqualByComparingTo(EXPECTED_CHARGE_AMOUNT);
 
         assertThat(calculatedAmount)
                 .as("Charge amount should NOT be calculated on disbursed principal (73,999.23 * 10% = 7,399.92)")
                 .isNotEqualByComparingTo(INCORRECT_CHARGE_AMOUNT);
+    }
+
+    @Test
+    @DisplayName("LOC Receivable: Installment Fee should use proposed principal for amountPercentageAppliedTo")
+    void testLocReceivableInstallmentFeeUsesProposedPrincipal() {
+        // Given: LOC Receivable loan with installment fee
+        // The key fix is that amountPercentageAppliedTo should be set to proposed principal (90,000)
+        // not approved principal (735.49 - disbursed after interest) or disbursed principal (73,999.23)
+        when(loanLineOfCreditParamsRepository.findByLoanId(LOAN_ID)).thenReturn(Optional.of(loanLineOfCreditParams));
+        when(loanLineOfCreditParams.getLineOfCredit()).thenReturn(lineOfCredit);
+        when(lineOfCredit.getProductType()).thenReturn(mock(com.crediblex.fineract.portfolio.loc.data.LocProductType.class));
+        when(lineOfCredit.getProductType().isReceivable()).thenReturn(true);
+
+        // Setup charge as INSTALMENT_FEE (not DISBURSEMENT)
+        when(chargeDefinition.getChargeTimeType()).thenReturn(ChargeTimeType.INSTALMENT_FEE.getValue());
+        when(chargeDefinition.getChargeCalculation()).thenReturn(ChargeCalculationType.PERCENT_OF_AMOUNT.getValue());
+
+        // When: Create installment fee charge for LOC Receivable loan
+        LoanCharge loanCharge = customLoanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, DUE_DATE);
+
+        // Then: amountPercentageAppliedTo should be set to proposed principal (90,000)
+        // This is the key fix - the charge calculation will use this value, ensuring
+        // 10% of 90,000 = 9,000, not 10% of approved principal (735.49) = 73.55
+        assertThat(loanCharge.getAmountPercentageAppliedTo())
+                .as("LOC Receivable installment fee should use proposed principal (90,000) as base for percentage calculation")
+                .isEqualByComparingTo(PROPOSED_PRINCIPAL);
+
+        assertThat(loanCharge.getAmountPercentageAppliedTo())
+                .as("LOC Receivable installment fee should NOT use approved principal (735.49 - disbursed after interest)")
+                .isNotEqualByComparingTo(APPROVED_PRINCIPAL);
+
+        assertThat(loanCharge.getAmountPercentageAppliedTo())
+                .as("LOC Receivable installment fee should NOT use disbursed principal (73,999.23)")
+                .isNotEqualByComparingTo(DISBURSED_PRINCIPAL);
+
+        // Verify the percentage is set correctly
+        assertThat(loanCharge.getPercentage())
+                .as("Percentage should be set to 10%")
+                .isEqualByComparingTo(CHARGE_PERCENTAGE);
+    }
+
+    @Test
+    @DisplayName("Regular loan: Installment Fee should use disbursed principal for amountPercentageAppliedTo")
+    void testRegularLoanInstallmentFeeUsesDisbursedPrincipal() {
+        // Given: Regular (non-LOC Receivable) loan with installment fee
+        when(loanLineOfCreditParamsRepository.findByLoanId(LOAN_ID)).thenReturn(Optional.empty());
+
+        // Setup charge as INSTALMENT_FEE
+        when(chargeDefinition.getChargeTimeType()).thenReturn(ChargeTimeType.INSTALMENT_FEE.getValue());
+        when(chargeDefinition.getChargeCalculation()).thenReturn(ChargeCalculationType.PERCENT_OF_AMOUNT.getValue());
+
+        // Mock calculatePerInstallmentChargeAmount for regular loans (standard behavior)
+        BigDecimal expectedChargeAmount = new BigDecimal("6619.43");
+        when(loan.calculatePerInstallmentChargeAmount(
+                any(ChargeCalculationType.class),
+                any(BigDecimal.class))).thenReturn(expectedChargeAmount);
+
+        // When: Create installment fee charge for regular loan
+        LoanCharge loanCharge = customLoanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, DUE_DATE);
+
+        // Then: For regular loans, amountPercentageAppliedTo should use disbursed principal
+        // (standard behavior - not LOC Receivable)
+        assertThat(loanCharge.getAmountPercentageAppliedTo())
+                .as("Regular loan installment fee should use disbursed principal (standard behavior)")
+                .isEqualByComparingTo(DISBURSED_PRINCIPAL);
     }
 }
