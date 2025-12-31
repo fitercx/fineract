@@ -124,11 +124,11 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
             if (percentage == null) {
                 percentage = chargeDefinition.getAmount();
             }
-            // For LOC Receivable loans with installment fees, use amountPercentageAppliedTo (approved principal)
+            // For LOC Receivable loans with installment fees, use amountPercentageAppliedTo (proposed principal)
             // instead of calculating from installments (which uses disbursed principal)
             // This ensures consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
             if (isReceivableLineOfCredit && ChargeCalculationType.fromInt(chargeDefinition.getChargeCalculation()).isPercentageBased()) {
-                // Calculate directly from amountPercentageAppliedTo which is already set to approved principal
+                // Calculate directly from amountPercentageAppliedTo which is already set to proposed principal
                 // This applies to all percentage-based charges (PERCENT_OF_AMOUNT, PERCENT_OF_AMOUNT_AND_INTEREST,
                 // PERCENT_OF_INTEREST)
                 loanCharge = amountPercentageAppliedTo.multiply(percentage).divide(BigDecimal.valueOf(100), 6,

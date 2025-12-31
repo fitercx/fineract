@@ -167,9 +167,9 @@ class CustomLoanChargeAssemblerTest {
     }
 
     @Test
-    @DisplayName("LOC Receivable: Percentage charge should use approved principal (loan amount), not disbursed amount")
-    void testLocReceivableChargeUsesApprovedPrincipal() {
-        // Given: LOC Receivable loan with approved principal (90,000) and disbursed principal (73,999.23)
+    @DisplayName("LOC Receivable: Percentage charge should use proposed principal (loan amount), not disbursed amount")
+    void testLocReceivableChargeUsesProposedPrincipal() {
+        // Given: LOC Receivable loan with proposed principal (90,000) and approved principal (735.49 - disbursed after interest)
         when(loanLineOfCreditParamsRepository.findByLoanId(LOAN_ID)).thenReturn(Optional.of(loanLineOfCreditParams));
         when(loanLineOfCreditParams.getLineOfCredit()).thenReturn(lineOfCredit);
         when(lineOfCredit.getProductType()).thenReturn(mock(com.crediblex.fineract.portfolio.loc.data.LocProductType.class));
@@ -257,7 +257,7 @@ class CustomLoanChargeAssemblerTest {
 
         // Then: Calculated amount should be 9,000 (10% of 90,000), not 7,399.92 (10% of 73,999.23)
         assertThat(calculatedAmount)
-                .as("Charge amount should be calculated on approved principal (90,000 * 10% = 9,000)")
+                .as("Charge amount should be calculated on proposed principal (90,000 * 10% = 9,000)")
                 .isEqualByComparingTo(EXPECTED_CHARGE_AMOUNT);
 
         assertThat(calculatedAmount)
