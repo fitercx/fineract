@@ -480,8 +480,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 loanRepositoryWrapper.saveAndFlush(loan);
 
                 // Post journal entries to reverse accounting entries for the reversed accrual transactions
+                // Only post entries for fully reversed transactions (not partially updated ones)
                 if (!reversedTransactionIds.isEmpty()) {
-                    postJournalEntries(loan, new ArrayList<>(), reversedTransactionIds);
+                    // Get existing transaction IDs to ensure we only process the newly reversed transactions
+                    // This prevents processing existing transactions that might have mismatches
+                    List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
+                    // Exclude the transactions we just reversed from existing list
+                    existingTransactionIds.removeAll(reversedTransactionIds);
+                    postJournalEntries(loan, existingTransactionIds, reversedTransactionIds);
                     loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, reversedTransactionIds);
                     log.info("Reversed {} accrual transactions and posted journal entries for loan {}", reversedTransactionIds.size(),
                             loanId);
@@ -565,8 +571,38 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
             Set<LoanChargePaidBy> chargesPaid = accrualTransaction.getLoanChargesPaid();
 
+            // Skip transactions with no LoanChargePaidBy entries (shouldn't happen, but safety check)
+            if (chargesPaid == null || chargesPaid.isEmpty()) {
+                log.warn("Skipping transaction {} - it has no LoanChargePaidBy entries", accrualTransaction.getId());
+                continue;
+            }
+
+            // Check if ALL charges in this transaction are being deactivated
+            boolean allChargesDeactivated = true;
             for (LoanChargePaidBy chargePaidBy : chargesPaid) {
-                // Only process charges that were deactivated
+                if (chargePaidBy.getLoanCharge() == null || chargePaidBy.getAmount() == null) {
+                    log.warn("Skipping transaction {} - it has null LoanCharge or amount in LoanChargePaidBy", accrualTransaction.getId());
+                    allChargesDeactivated = false;
+                    break;
+                }
+                if (!deactivatedChargeIds.contains(chargePaidBy.getLoanCharge().getId())) {
+                    allChargesDeactivated = false;
+                    break;
+                }
+            }
+
+            // Only reverse transactions where ALL charges are being deactivated
+            // For transactions with mixed charges, skip reversal and let charge recalculation handle it
+            if (!allChargesDeactivated) {
+                log.info(
+                        "Skipping reversal of transaction {} - it has charges that are not being deactivated. Accrual portions will be updated via recalculation.",
+                        accrualTransaction.getId());
+                continue; // Skip this transaction entirely
+            }
+
+            // Process charges that are being deactivated (for accrual portion updates)
+            for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                // All charges should be deactivated at this point, but double-check
                 if (!deactivatedChargeIds.contains(chargePaidBy.getLoanCharge().getId())) {
                     continue;
                 }
@@ -582,7 +618,47 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 }
             }
 
-            // Update accrual portions on affected installments
+            // Validate that transaction amounts match the sum of LoanChargePaidBy amounts
+            // This prevents accounting mismatch errors
+            Money transactionFeePortion = accrualTransaction.getFeeChargesPortion(currency);
+            Money transactionPenaltyPortion = accrualTransaction.getPenaltyChargesPortion(currency);
+
+            Money sumFeeFromCharges = Money.zero(currency);
+            Money sumPenaltyFromCharges = Money.zero(currency);
+
+            for (LoanChargePaidBy chargePaidBy : chargesPaid) {
+                LoanCharge charge = chargePaidBy.getLoanCharge();
+                Money amount = Money.of(currency, chargePaidBy.getAmount());
+                if (charge.isPenaltyCharge()) {
+                    sumPenaltyFromCharges = sumPenaltyFromCharges.plus(amount);
+                } else if (charge.isFeeCharge()) {
+                    sumFeeFromCharges = sumFeeFromCharges.plus(amount);
+                }
+            }
+
+            // Check for mismatch (allow small rounding differences of 0.01)
+            boolean feeMismatch = transactionFeePortion.minus(sumFeeFromCharges).abs()
+                    .isGreaterThan(Money.of(currency, BigDecimal.valueOf(0.01)));
+            boolean penaltyMismatch = transactionPenaltyPortion.minus(sumPenaltyFromCharges).abs()
+                    .isGreaterThan(Money.of(currency, BigDecimal.valueOf(0.01)));
+
+            if (feeMismatch || penaltyMismatch) {
+                log.warn(
+                        "Skipping reversal of transaction {} due to amount mismatch - Fee: transaction={}, charges={}, diff={}; Penalty: transaction={}, charges={}, diff={}. This transaction will be skipped to prevent accounting errors.",
+                        accrualTransaction.getId(), transactionFeePortion, sumFeeFromCharges,
+                        transactionFeePortion.minus(sumFeeFromCharges).abs(), transactionPenaltyPortion, sumPenaltyFromCharges,
+                        transactionPenaltyPortion.minus(sumPenaltyFromCharges).abs());
+                // Skip this transaction - don't reverse it, don't update accrual portions, don't add to
+                // reversedTransactionIds
+                continue;
+            }
+
+            // Reverse the entire transaction since all charges are being deactivated and amounts match
+            accrualTransaction.reverse();
+            reversedTransactionIds.add(accrualTransaction.getId());
+            log.info("Reversed transaction {} - all charges are being deactivated, amounts validated", accrualTransaction.getId());
+
+            // Update accrual portions on affected installments (only for successfully reversed transactions)
             Set<Integer> allInstallmentNumbers = new HashSet<>();
             allInstallmentNumbers.addAll(feesByInstallment.keySet());
             allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
@@ -609,10 +685,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 log.debug("Updated accrual for installment {} - Fee: {} -> {}, Penalty: {} -> {}", installmentNumber, currentFeeAccrued,
                         newFeeAccrued, currentPenaltyAccrued, newPenaltyAccrued);
             }
-
-            // Reverse the accrual transaction
-            accrualTransaction.reverse();
-            reversedTransactionIds.add(accrualTransaction.getId());
         }
 
         // Save all reversed transactions
