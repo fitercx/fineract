@@ -447,8 +447,20 @@ public class OdooJournalEntryService {
             Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
 
             if (accountId == null) {
-                log.warn("Could not map account {} to Odoo, skipping entry {}", accountCode, entry.getId());
-                continue;
+                String errorMsg = String.format(
+                        "Could not map GL account '%s' to Odoo account ID for entry %d. Check account mapping configuration.", accountCode,
+                        entry.getId());
+                log.error(errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+
+            // Additional validation: verify account exists in Odoo
+            if (!doesAccountExistInOdoo(accountCode)) {
+                String errorMsg = String.format(
+                        "GL account '%s' (mapped to account ID %d) does not exist in Odoo for entry %d. Account may have been deleted or archived.",
+                        accountCode, accountId, entry.getId());
+                log.error(errorMsg);
+                throw new RuntimeException(errorMsg);
             }
 
             String accountKey = accountId.toString();
@@ -460,6 +472,8 @@ public class OdooJournalEntryService {
             } else {
                 amounts.merge("credit", entry.getAmount(), BigDecimal::add);
             }
+
+            log.debug("Processed journal entry {} with GL code '{}' mapped to account ID {}", entry.getId(), accountCode, accountId);
         }
 
         // Check if we have overdue interest charges (GL code 100030) to add additional LPI entries

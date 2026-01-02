@@ -840,10 +840,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         yield getTotalAllTrancheDisbursementAmount().getAmount().add(totalInterestCharged);
                     }
                 } else {
-                    // For LOC Receivable loans, percentage-based charges should use approved principal
-                    // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                    // For LOC Receivable loans, percentage-based charges should use proposed principal
+                    // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                    // to ensure consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
                     if (this.isReceivableLocLoan) {
-                        yield getApprovedPrincipal().add(totalInterestCharged);
+                        yield getProposedPrincipal().add(totalInterestCharged);
                     } else {
                         yield getPrincipal().getAmount().add(totalInterestCharged);
                     }
@@ -2136,8 +2137,18 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     if (loanCharge.getChargeCalculation().isFlat()) {
                         amount = loanCharge.amountOrPercentage();
                     } else {
-                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
-                                installment).getAmount();
+                        // For LOC Receivable loans with percentage-based installment fees, use the charge's total
+                        // amount
+                        // (which is calculated based on proposed principal) divided by installments, instead of
+                        // calculating
+                        // per installment based on installment principal (which uses disbursed amount)
+                        if (this.isReceivableLocLoan && loanCharge.getChargeCalculation().isPercentageBased()) {
+                            final BigDecimal numberOfInstallments = BigDecimal.valueOf(installments.size());
+                            amount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
+                        } else {
+                            amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
+                                    installment).getAmount();
+                        }
                     }
                 }
                 final LoanInstallmentCharge loanInstallmentCharge = new LoanInstallmentCharge(amount, loanCharge, installment);
@@ -2578,10 +2589,11 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     }
                 }
             } else {
-                // For LOC Receivable loans, percentage-based charges should use approved principal
-                // (loan amount) instead of disbursed principal to ensure consistent fee calculation
+                // For LOC Receivable loans, percentage-based charges should use proposed principal
+                // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                // to ensure consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
                 if (this.isReceivableLocLoan) {
-                    amount = getApprovedPrincipal();
+                    amount = getProposedPrincipal();
                 } else {
                     amount = getPrincipal().getAmount();
                 }

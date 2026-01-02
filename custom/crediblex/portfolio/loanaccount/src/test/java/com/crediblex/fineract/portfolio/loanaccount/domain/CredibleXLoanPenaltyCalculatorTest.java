@@ -222,6 +222,125 @@ class CredibleXLoanPenaltyCalculatorTest {
         assertEquals(expectedPrincipal, result);
     }
 
+    @Test
+    void testSequentialEarlyRepayments_ForDrawdownLoan_WithMultipleInstallments_ResolvesCorrectInstallment() {
+        // Given: A drawdown loan with 3 installments
+        LocalDate firstInstallmentDueDate = LocalDate.of(2026, 1, 15);
+        LocalDate secondInstallmentDueDate = LocalDate.of(2026, 2, 15);
+        LocalDate thirdInstallmentDueDate = LocalDate.of(2026, 3, 15);
+
+        BigDecimal firstInstallmentPrincipal = BigDecimal.valueOf(1000.00);
+        BigDecimal firstInstallmentInterest = BigDecimal.valueOf(100.00);
+        BigDecimal secondInstallmentPrincipal = BigDecimal.valueOf(2000.00);
+        BigDecimal secondInstallmentInterest = BigDecimal.valueOf(200.00);
+        BigDecimal thirdInstallmentPrincipal = BigDecimal.valueOf(3000.00);
+        BigDecimal thirdInstallmentInterest = BigDecimal.valueOf(300.00);
+
+        // Create installments - first one is PAID (after first early repayment)
+        ExtendedLoanSchedulePeriodData firstInstallment = createInstallment(1, firstInstallmentDueDate, firstInstallmentPrincipal,
+                firstInstallmentInterest, ExtendedLoanSchedulePeriodData.Status.PAID);
+        ExtendedLoanSchedulePeriodData secondInstallment = createInstallment(2, secondInstallmentDueDate, secondInstallmentPrincipal,
+                secondInstallmentInterest, ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+        ExtendedLoanSchedulePeriodData thirdInstallment = createInstallment(3, thirdInstallmentDueDate, thirdInstallmentPrincipal,
+                thirdInstallmentInterest, ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+
+        loanInstallments.add(firstInstallment);
+        loanInstallments.add(secondInstallment);
+        loanInstallments.add(thirdInstallment);
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true); // isDrawdownLoan = true (all loans now)
+
+        // When: Making an early repayment for Installment 2 (before its due date, after Installment 1 is paid)
+        LocalDate secondEarlyRepaymentDate = LocalDate.of(2026, 1, 20); // After Installment 1 due date, before
+                                                                        // Installment 2 due date
+
+        BigDecimal principalResult = calculator.getPrincipalDueForTransaction(secondEarlyRepaymentDate);
+        BigDecimal interestResult = calculator.getInterestDueForTransaction(secondEarlyRepaymentDate);
+
+        // Then: Should return Installment 2's principal and interest (not Installment 1, even though date is in
+        // Installment 1's period)
+        assertEquals(secondInstallmentPrincipal, principalResult,
+                "Should return Installment 2's principal, not Installment 1's (which is already PAID)");
+        assertEquals(secondInstallmentInterest, interestResult,
+                "Should return Installment 2's interest, not Installment 1's (which is already PAID)");
+    }
+
+    @Test
+    void testSequentialEarlyRepayments_ForDrawdownLoan_WithThreeInstallments_AllowsThirdEarlyRepayment() {
+        // Given: A drawdown loan with 3 installments, first two are PAID
+        LocalDate firstInstallmentDueDate = LocalDate.of(2026, 1, 15);
+        LocalDate secondInstallmentDueDate = LocalDate.of(2026, 2, 15);
+        LocalDate thirdInstallmentDueDate = LocalDate.of(2026, 3, 15);
+
+        BigDecimal thirdInstallmentPrincipal = BigDecimal.valueOf(3000.00);
+        BigDecimal thirdInstallmentInterest = BigDecimal.valueOf(300.00);
+
+        // Create installments - first two are PAID
+        ExtendedLoanSchedulePeriodData firstInstallment = createInstallment(1, firstInstallmentDueDate, BigDecimal.valueOf(1000.00),
+                BigDecimal.valueOf(100.00), ExtendedLoanSchedulePeriodData.Status.PAID);
+        ExtendedLoanSchedulePeriodData secondInstallment = createInstallment(2, secondInstallmentDueDate, BigDecimal.valueOf(2000.00),
+                BigDecimal.valueOf(200.00), ExtendedLoanSchedulePeriodData.Status.PAID);
+        ExtendedLoanSchedulePeriodData thirdInstallment = createInstallment(3, thirdInstallmentDueDate, thirdInstallmentPrincipal,
+                thirdInstallmentInterest, ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+
+        loanInstallments.add(firstInstallment);
+        loanInstallments.add(secondInstallment);
+        loanInstallments.add(thirdInstallment);
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true); // isDrawdownLoan = true (all loans now)
+
+        // When: Making an early repayment for Installment 3 (before its due date, after Installments 1 & 2 are paid)
+        LocalDate thirdEarlyRepaymentDate = LocalDate.of(2026, 2, 20); // After Installment 2 due date, before
+                                                                       // Installment 3 due date
+
+        BigDecimal principalResult = calculator.getPrincipalDueForTransaction(thirdEarlyRepaymentDate);
+        BigDecimal interestResult = calculator.getInterestDueForTransaction(thirdEarlyRepaymentDate);
+
+        // Then: Should return Installment 3's principal and interest
+        assertEquals(thirdInstallmentPrincipal, principalResult,
+                "Should return Installment 3's principal, skipping PAID Installments 1 & 2");
+        assertEquals(thirdInstallmentInterest, interestResult, "Should return Installment 3's interest, skipping PAID Installments 1 & 2");
+    }
+
+    @Test
+    void testEarlyRepayment_BeforeFirstInstallment_ReturnsFirstInstallment() {
+        // Given: A drawdown loan with 3 installments, all SCHEDULED
+        LocalDate firstInstallmentDueDate = LocalDate.of(2026, 1, 15);
+        LocalDate secondInstallmentDueDate = LocalDate.of(2026, 2, 15);
+        LocalDate thirdInstallmentDueDate = LocalDate.of(2026, 3, 15);
+
+        BigDecimal firstInstallmentPrincipal = BigDecimal.valueOf(1000.00);
+        BigDecimal firstInstallmentInterest = BigDecimal.valueOf(100.00);
+
+        ExtendedLoanSchedulePeriodData firstInstallment = createInstallment(1, firstInstallmentDueDate, firstInstallmentPrincipal,
+                firstInstallmentInterest, ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+        ExtendedLoanSchedulePeriodData secondInstallment = createInstallment(2, secondInstallmentDueDate, BigDecimal.valueOf(2000.00),
+                BigDecimal.valueOf(200.00), ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+        ExtendedLoanSchedulePeriodData thirdInstallment = createInstallment(3, thirdInstallmentDueDate, BigDecimal.valueOf(3000.00),
+                BigDecimal.valueOf(300.00), ExtendedLoanSchedulePeriodData.Status.SCHEDULED);
+
+        loanInstallments.add(firstInstallment);
+        loanInstallments.add(secondInstallment);
+        loanInstallments.add(thirdInstallment);
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true); // isDrawdownLoan = true (all loans now)
+
+        // When: Making an early repayment before the first installment due date
+        LocalDate earlyRepaymentDate = LocalDate.of(2026, 1, 10); // Before first installment due date
+
+        BigDecimal principalResult = calculator.getPrincipalDueForTransaction(earlyRepaymentDate);
+        BigDecimal interestResult = calculator.getInterestDueForTransaction(earlyRepaymentDate);
+
+        // Then: Should return the first installment's principal and interest
+        assertEquals(firstInstallmentPrincipal, principalResult,
+                "Should return first installment's principal for early repayment before first due date");
+        assertEquals(firstInstallmentInterest, interestResult,
+                "Should return first installment's interest for early repayment before first due date");
+    }
+
     /**
      * Helper method to create an ExtendedLoanSchedulePeriodData for testing.
      */
