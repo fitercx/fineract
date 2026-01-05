@@ -20,6 +20,8 @@ public class CustomAccountingBridgeDataDTO extends AccountingBridgeDataDTO {
     private BigDecimal totalContractualInterest = BigDecimal.ZERO;
     private BigDecimal totalDisbursementFees = BigDecimal.ZERO;
     private BigDecimal totalDisbursementFeesTax = BigDecimal.ZERO;
+    // Tax liability GL account ID from charge's tax group (used when product-level mapping is not configured)
+    private Long taxLiabilityGLAccountId;
 
     // Track total accrued interest up to this point (sum of all accrual transactions) for unwinding deferred income on
     // early payments

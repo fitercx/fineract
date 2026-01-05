@@ -136,20 +136,32 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 }
 
                 // CR Tax Liability (tax portion)
-                // Only create tax liability entry if the mapping exists for the loan product
+                // First try product-level mapping, then fall back to charge's tax group GL account
                 if (MathUtil.isGreaterThanZero(totalFeesTax)) {
                     ProductToGLAccountMapping taxLiabilityMapping = accountMappingRepository.findCoreProductToFinAccountMapping(
                             loanProductId, PortfolioProductType.LOAN.getValue(),
                             AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue());
 
                     if (taxLiabilityMapping != null) {
+                        // Use product-level mapping if configured
                         this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                                 AccountingConstants.AccrualAccountsForLoan.LIABILITY_FROM_TAXES.getValue(), loanProductId, paymentTypeId,
                                 loanId, transactionId, transactionDate, totalFeesTax);
+                    } else if (loanDTO.getTaxLiabilityGLAccountId() != null) {
+                        // Fall back to tax liability GL account from charge's tax group
+                        GLAccount taxLiabilityAccount = glAccountRepository.findById(loanDTO.getTaxLiabilityGLAccountId())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Tax liability GL account not found for ID: " + loanDTO.getTaxLiabilityGLAccountId()));
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                totalFeesTax, taxLiabilityAccount);
+                        log.info(
+                                "Using tax liability GL account {} from charge's tax group for loan {} (ID: {}) since product-level mapping is not configured.",
+                                loanDTO.getTaxLiabilityGLAccountId(), loanId, loanId);
                     } else {
                         log.warn(
-                                "Tax liability mapping not found for loan product {} (ID: {}). Skipping tax liability journal entry for loan {} (ID: {}). "
-                                        + "Please configure the 'LIABILITY FROM TAXES' chart of accounts mapping for this loan product.",
+                                "Tax liability mapping not found for loan product {} (ID: {}) and no tax GL account from charge's tax group. "
+                                        + "Skipping tax liability journal entry for loan {} (ID: {}). "
+                                        + "Please configure the 'LIABILITY FROM TAXES' chart of accounts mapping for this loan product or ensure charges have tax groups with GL accounts configured.",
                                 loanProductId, loanProductId, loanId, loanId);
                         // Note: If tax liability mapping is missing, the tax portion will be included in the net fees
                         // income
