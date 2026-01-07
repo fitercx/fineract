@@ -36,6 +36,8 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDa
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementEmiAmountException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -578,6 +580,122 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 scheduleParams.getTotalCumulativeInterest(), true, scheduleParams.isFirstPeriod(), mc));
         scheduleParams.addTotalFeeChargesCharged(currentPeriodParams.getFeeChargesForInstallment());
         scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
+    }
+
+    /**
+     * Override to fix issue where LOC Receivable installment fees are recalculated from installment principal
+     * (disbursed amount) instead of using the charge's total amount (calculated from proposed principal). This ensures
+     * fees remain consistent after approval: 10% of loan amount, not 10% of disbursed amount.
+     */
+    @Override
+    protected Money cumulativeFeeChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd, final Set<LoanCharge> loanCharges,
+            final MonetaryCurrency monetaryCurrency, final PrincipalInterest principalInterestForThisPeriod, final Money principalDisbursed,
+            final Money totalInterestChargedForFullLoanTerm, boolean isInstallmentChargeApplicable, final boolean isFirstPeriod,
+            final MathContext mc) {
+
+        Money cumulative = Money.zero(monetaryCurrency);
+
+        for (final LoanCharge loanCharge : loanCharges) {
+            if (!loanCharge.isDueAtDisbursement() && loanCharge.isFeeCharge()) {
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod);
+                boolean isLocReceivableInstallmentFee = loanCharge.isInstalmentFee() && isInstallmentChargeApplicable
+                        && loanCharge.getLoan() != null && loanCharge.getLoan().isReceivableLocLoan()
+                        && loanCharge.getChargeCalculation().isPercentageBased();
+                boolean taxAlreadyIncluded = false;
+
+                if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
+                    // For LOC Receivable loans with percentage-based installment fees, use the charge's total amount
+                    // (which is calculated from proposed principal) divided by installments, instead of recalculating
+                    // from installment principal (which uses disbursed amount)
+                    if (isLocReceivableInstallmentFee) {
+                        // Use charge's total amount (including tax) divided by number of installments
+                        // This ensures consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                        int numberOfInstallments = loanCharge.getLoan().fetchNumberOfInstallmensAfterExceptions();
+                        if (numberOfInstallments > 0) {
+                            // For LOC Receivable, always recalculate from amountPercentageAppliedTo (proposed
+                            // principal)
+                            // instead of using stored charge amount, which might be temporarily incorrect during
+                            // schedule regeneration (e.g., during approval when schedule is regenerated)
+                            BigDecimal totalChargeAmount;
+                            if (loanCharge.getAmountPercentageAppliedTo() != null && loanCharge.getPercentage() != null) {
+                                // Recalculate from amountPercentageAppliedTo to ensure we use proposed principal
+                                BigDecimal baseAmount = loanCharge.getAmountPercentageAppliedTo();
+                                BigDecimal chargeBaseAmount = baseAmount.multiply(loanCharge.getPercentage())
+                                        .divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP);
+
+                                // Recalculate tax from the correct base amount (chargeBaseAmount) to ensure consistency
+                                // The stored tax amount might be incorrect during approval if it was calculated from
+                                // the wrong base amount (disbursed principal instead of proposed principal)
+                                if (loanCharge.hasTax() && loanCharge.getCharge() != null && loanCharge.getCharge().getTaxGroup() != null
+                                        && loanCharge.getCharge().getTaxGroup().getTaxGroupMappings() != null
+                                        && !loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty()) {
+                                    LocalDate chargeDate = loanCharge.getDueDate() != null ? loanCharge.getDueDate()
+                                            : DateUtils.getBusinessLocalDate();
+                                    Set<TaxGroupMappings> taxGroupMappings = loanCharge.getCharge().getTaxGroup().getTaxGroupMappings();
+                                    // Calculate total amount with tax, then subtract base to get tax amount
+                                    BigDecimal totalWithTax = TaxUtils.addTaxToAmount(chargeBaseAmount, chargeDate, taxGroupMappings,
+                                            chargeBaseAmount.scale());
+                                    BigDecimal recalculatedTaxAmount = totalWithTax != null ? totalWithTax.subtract(chargeBaseAmount)
+                                            : BigDecimal.ZERO;
+                                    totalChargeAmount = chargeBaseAmount.add(recalculatedTaxAmount);
+                                } else {
+                                    totalChargeAmount = chargeBaseAmount;
+                                }
+                            } else {
+                                // Fallback to stored amount if amountPercentageAppliedTo is not available
+                                totalChargeAmount = loanCharge.getAmountWithTaxes();
+                            }
+
+                            Money chargeAmountPerInstallment = Money.of(monetaryCurrency, totalChargeAmount).dividedBy(numberOfInstallments,
+                                    mc);
+                            cumulative = cumulative.plus(chargeAmountPerInstallment);
+                            taxAlreadyIncluded = true; // Tax is already included in totalChargeAmount
+                        }
+                    } else {
+                        // For non-LOC loans or non-percentage charges, use standard calculation
+                        // Reimplement calculateInstallmentCharge logic since it's private in base class
+                        if (loanCharge.getChargeCalculation().isPercentageBased()) {
+                            BigDecimal amount = BigDecimal.ZERO;
+                            if (loanCharge.getChargeCalculation().isPercentageOfAmountAndInterest()) {
+                                amount = amount.add(principalInterestForThisPeriod.principal().getAmount())
+                                        .add(principalInterestForThisPeriod.interest().getAmount());
+                            } else if (loanCharge.getChargeCalculation().isPercentageOfInterest()) {
+                                amount = amount.add(principalInterestForThisPeriod.interest().getAmount());
+                            } else {
+                                amount = amount.add(principalInterestForThisPeriod.principal().getAmount());
+                            }
+                            BigDecimal loanChargeAmt = amount.multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), mc);
+                            cumulative = cumulative.plus(loanChargeAmt);
+                        } else {
+                            cumulative = cumulative.plus(loanCharge.amountOrPercentage());
+                        }
+                    }
+                } else if (loanCharge.isOverdueInstallmentCharge() && isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
+                    cumulative = cumulative.plus(loanCharge.chargeAmount());
+                } else if (isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
+                    // Reimplement calculateSpecificDueDateChargeWithPercentage logic since it's private in base class
+                    BigDecimal amount = BigDecimal.ZERO;
+                    if (loanCharge.getChargeCalculation().isPercentageOfAmountAndInterest()) {
+                        amount = amount.add(principalDisbursed.getAmount()).add(totalInterestChargedForFullLoanTerm.getAmount());
+                    } else if (loanCharge.getChargeCalculation().isPercentageOfInterest()) {
+                        amount = amount.add(totalInterestChargedForFullLoanTerm.getAmount());
+                    } else {
+                        amount = amount.add(principalDisbursed.getAmount());
+                    }
+                    BigDecimal loanChargeAmt = amount.multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), mc);
+                    cumulative = cumulative.plus(loanChargeAmt);
+                } else if (isDue) {
+                    cumulative = cumulative.plus(loanCharge.amount());
+                }
+
+                // Add tax separately, but skip if already included (for LOC Receivable installment fees)
+                if (loanCharge.hasTax() && !taxAlreadyIncluded) {
+                    cumulative = cumulative.plus(loanCharge.getTaxAmount());
+                }
+            }
+        }
+
+        return cumulative;
     }
 
 }
