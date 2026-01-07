@@ -1,7 +1,9 @@
 package com.crediblex.fineract.accounting.journalentry;
 
 import com.crediblex.fineract.accounting.journalentry.service.CustomAccrualBasedAccountingProcessorForLoan;
+import com.crediblex.fineract.accounting.journalentry.service.CustomAccrualBasedAccountingProcessorForSavings;
 import com.crediblex.fineract.accounting.journalentry.service.CustomCashBasedAccountingProcessorForLoan;
+import com.crediblex.fineract.accounting.journalentry.service.CustomCashBasedAccountingProcessorForSavings;
 import org.apache.fineract.accounting.closure.domain.GLClosureRepository;
 import org.apache.fineract.accounting.financialactivityaccount.domain.FinancialActivityAccountRepositoryWrapper;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
@@ -16,6 +18,7 @@ import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @Configuration
 public class CustomJournalEntryConfigurationBeans {
@@ -45,6 +48,20 @@ public class CustomJournalEntryConfigurationBeans {
     public CustomCashBasedAccountingProcessorForLoan cashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
         return new CustomCashBasedAccountingProcessorForLoan(helper, journalEntryWritePlatformService);
+    }
+
+    @Bean
+    @Primary
+    public CustomCashBasedAccountingProcessorForSavings cashBasedAccountingProcessorForSavings(AccountingProcessorHelper helper,
+            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate) {
+        return new CustomCashBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate);
+    }
+
+    @Bean
+    @Primary
+    public CustomAccrualBasedAccountingProcessorForSavings accrualBasedAccountingProcessorForSavings(AccountingProcessorHelper helper,
+            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate) {
+        return new CustomAccrualBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate);
     }
 
 }
