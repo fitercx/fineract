@@ -268,6 +268,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     loc.product_type as locType,
                     loc.va as accountNumber,
                     loc.activation_status as locActivationStatus,
+                    loc.cash_margin_value as locCashMarginValue,
+                    loc.start_date as startDate,
+                    loc.end_date as endDate,
+                    loc.currency as currency,
+                    loc.tenor_days as tenorDays,
                     l.id as loanId,
                     l.account_no as loanAccountNo,
                     lp.name as loanProductName,
@@ -286,6 +291,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.net_disbursal_amount as loanNetDisbursedAmount,
                     l.fixed_emi_amount as loanInstallmentAmount,
                     l.total_overpaid_derived as totalOverpaidDerived,
+                    l.annual_nominal_interest_rate as loanAnnualNominalInterestRate,
                     la.overdue_since_date_derived as overdueSinceDate,
                     mlcp.invoice_no as invoiceNumber,
                     mlcp.approved_receivable_amount as approvedReceivableAmount,
@@ -293,7 +299,9 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.approved_payable_amount as approvedPayableAmount,
                     mlcp.amount_in_facility_currency as amountInFacilityCurrency,
                     mlcp.invoice_amount as invoiceAmount,
-                    STRING_AGG(mlocab.name, ', ') as buyerSupplier
+                    mlcp.advance_percentage as advancePercentage,
+                    STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
+                    STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan
                     FROM m_line_of_credit loc
                     LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
                     LEFT JOIN m_loan l ON l.id = mlcp.loan_id
@@ -301,6 +309,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     LEFT JOIN m_product_loan lp ON lp.id = l.product_id
                     LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
+                    LEFT JOIN m_line_of_credit_approved_buyers mlocab_loc ON mlocab_loc.line_of_credit_id = loc.id
 
                     """;
         }
@@ -315,9 +324,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.external_id, l.currency_digits, l.currency_multiplesof,
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
-                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived,la.overdue_since_date_derived,
-                    mlcp.approved_receivable_amount, mlcp.amount_after_advance,mlcp.approved_payable_amount,mlcp.invoice_amount,
-                     mlcp.amount_in_facility_currency
+                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
+                    mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
+                    mlcp.amount_in_facility_currency, mlcp.advance_percentage,
+                    loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
+                    loc.tenor_days
                     """;
         }
 
@@ -360,11 +371,28 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String productType = rs.getString("locType");
             final String activationStatus = rs.getString("locActivationStatus");
             final String accountNumber = rs.getString("accountNumber");
+            final LocalDate startDate = JdbcSupport.getLocalDate(rs, "startDate");
+            final LocalDate endDate = JdbcSupport.getLocalDate(rs, "endDate");
+            final String currency = rs.getString("currency");
+            final Integer tenorDays = rs.getInt("tenorDays");
+            final BigDecimal cashMarginValue = rs.getBigDecimal("locCashMarginValue");
+            final String buyerSupplier = rs.getString("buyerSupplierLoc");
+            List<String> buyerSupplierList = buyerSupplier == null || buyerSupplier.isBlank() ? Collections.emptyList()
+                    : Arrays.stream(buyerSupplier.split(",\\s*")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
 
-            // Create simplified LOC data with essential fields only, including the activation status
-            return LineOfCreditData.builder().id(id).productType(productType).maximumAmount(creditLimit).availableBalance(balance)
-                    .consumedAmount(utilizationAmount).status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId)
-                    .accountNumber(accountNumber).build();
+            LineOfCreditData.LineOfCreditDataBuilder builder = LineOfCreditData.builder().id(id).productType(productType)
+                    .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount)
+                    .status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId).accountNumber(accountNumber)
+                    .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays);
+
+            // Populate buyers vs suppliers based on product type
+            if (LocProductType.PAYABLE.name().equalsIgnoreCase(productType)) {
+                builder.approvedSuppliers(buyerSupplierList);
+            } else if (LocProductType.RECEIVABLE.name().equalsIgnoreCase(productType)) {
+                builder.approvedBuyers(buyerSupplierList);
+            }
+
+            return builder.build();
         }
 
         /**
@@ -389,7 +417,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             final String invoiceNumber = rs.getString("invoiceNumber");
             final BigDecimal totalOverpaidDerived = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalOverpaidDerived");
-            final String buyerSupplierDetail = rs.getString("buyerSupplier");
+            final String buyerSupplierDetail = rs.getString("buyerSupplierLoan");
 
             final LocalDate overdueSinceDate = JdbcSupport.getLocalDate(rs, "overdueSinceDate");
             Boolean inArrears = (overdueSinceDate != null);
@@ -399,6 +427,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal approvedPayableAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "approvedPayableAmount");
             final BigDecimal invoiceAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "invoiceAmount");
             final BigDecimal amountInFacilityCurrency = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amountInFacilityCurrency");
+            final BigDecimal advancePercentage = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "advancePercentage");
+            final BigDecimal annualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -416,6 +446,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("amountInFacilityCurrency", amountInFacilityCurrency);
             summaryData.getAdditionalProperties().put("approvedPayableAmount", approvedPayableAmount);
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
+            summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
+            summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
             return summaryData;
         }
 
