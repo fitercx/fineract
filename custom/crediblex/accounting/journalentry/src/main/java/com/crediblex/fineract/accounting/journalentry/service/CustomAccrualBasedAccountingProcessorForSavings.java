@@ -111,9 +111,9 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // RBF Loan Repayment withdrawal: DR SAVINGS_CONTROL (2), CR 200040 (RBF Loan Payable)
                 GLAccount rbfGLAccount = getRBFGLAccount();
                 if (rbfGLAccount != null) {
-                    this.helper.createDebitJournalEntryForSavings(office, currencyCode,
-                            getLinkedGLAccountForSavingsProduct(savingsProductId, AccrualAccountsForSavings.SAVINGS_CONTROL.getValue(),
-                                    null),
+                    this.helper.createDebitJournalEntryForSavings(
+                            office, currencyCode, getLinkedGLAccountForSavingsProduct(savingsProductId,
+                                    AccrualAccountsForSavings.SAVINGS_CONTROL.getValue(), null),
                             savingsId, transactionId, transactionDate, amount);
                     this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
                             transactionDate, amount);
