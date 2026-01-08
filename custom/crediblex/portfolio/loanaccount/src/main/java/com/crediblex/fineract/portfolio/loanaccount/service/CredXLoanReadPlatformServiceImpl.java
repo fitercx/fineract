@@ -1844,18 +1844,17 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
         Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
 
-        // For Factor Rate loans, ensure fees and taxes are included from loan summary if not in installment
-        // This handles cases where fees/taxes might not be properly reflected in individual installments
-        if (loan.isFactorRateEnabled()) {
+        // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
+        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding amounts
+        // Only access loanSummary if at least one needs updating (Factor Rate loan with zero fees or taxes)
+        if (loan.isFactorRateEnabled() && (feeChargesAmount.isZero() || taxChargesAmount.isZero())) {
             final LoanSummary loanSummary = loan.getSummary();
-            // Update fees from loan summary if installment amount is zero but loan summary has outstanding fees
             if (feeChargesAmount.isZero()) {
                 Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
                 if (feeOutstanding.isGreaterThanZero()) {
                     feeChargesAmount = feeOutstanding;
                 }
             }
-            // Update taxes from loan summary if installment amount is zero but loan summary has outstanding taxes
             if (taxChargesAmount.isZero()) {
                 Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
                 if (taxOutstanding.isGreaterThanZero()) {
