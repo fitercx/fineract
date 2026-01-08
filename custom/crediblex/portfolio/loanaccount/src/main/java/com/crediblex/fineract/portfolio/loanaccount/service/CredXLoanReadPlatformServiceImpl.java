@@ -1839,8 +1839,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal outstandingLoanBalance = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount();
         final Boolean isReversed = false;
 
-        final Money outStandingAmount = loanRepaymentScheduleInstallment.getTotalOutstanding(currency);
-
         // For Factor Rate loans, use charged amounts (which are set to outstanding in foreclosure detail)
         // to ensure fees and taxes are properly included in foreclosure
         Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
@@ -1864,13 +1862,19 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             }
         }
 
+        // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
+        // This ensures the total amount includes fees/taxes from loan summary when installment amounts are zero
+        Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
+        Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
+        Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
+        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount)
+                .plus(penaltyChargesOutstanding).plus(taxChargesAmount);
+
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
-                earliestUnpaidInstallmentDate, outStandingAmount.getAmount(), loan.getNetDisbursalAmount(),
-                loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getInterestOutstanding(currency).getAmount(), feeChargesAmount.getAmount(),
-                loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency).getAmount(), taxChargesAmount.getAmount(), null,
-                unrecognizedIncomePortion, paymentTypeOptions, ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId,
-                loan.getExternalId());
+                earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
+                principalOutstanding.getAmount(), interestOutstanding.getAmount(), feeChargesAmount.getAmount(),
+                penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
+                ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());
