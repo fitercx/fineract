@@ -203,7 +203,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 return glAccountRepository.findById(glAccountId).orElse(null);
             }
             return null;
-        } catch (Exception e) {
+        } catch (org.springframework.dao.DataAccessException e) {
             log.warn("CustomAccrualBasedAccountingProcessorForSavings: Error finding SAVINGS_CONTROL account: {}", e.getMessage());
             return null;
         }

@@ -212,7 +212,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 return glAccountRepository.findById(glAccountId).orElse(null);
             }
             return null;
-        } catch (Exception e) {
+        } catch (org.springframework.dao.DataAccessException e) {
             log.warn("CustomCashBasedAccountingProcessorForSavings: Error finding SAVINGS_CONTROL account: {}", e.getMessage());
             return null;
         }
