@@ -106,6 +106,19 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Use default parent logic
                     super.createJournalEntriesForSavings(savingsDTO);
                 }
+            } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
+                    && paymentTypeId != null && paymentTypeId == 5L) {
+                // RBF Loan Repayment withdrawal: DR SAVINGS_CONTROL (2), CR 200040 (RBF Loan Payable)
+                GLAccount rbfGLAccount = getRBFGLAccount();
+                if (rbfGLAccount != null) {
+                    this.helper.createDebitJournalEntryOrReversalForSavings(office, currencyCode, savingsProductId, null, savingsId,
+                            transactionId, transactionDate, amount, isReversal, AccrualAccountsForSavings.SAVINGS_CONTROL);
+                    this.helper.createCreditJournalEntryOrReversalForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                            transactionDate, amount, isReversal);
+                } else {
+                    log.error("RBF GL Account 200040 not found, using default logic");
+                    super.createJournalEntriesForSavings(savingsDTO);
+                }
             } else {
                 // For all other transaction types, delegate to parent class
                 super.createJournalEntriesForSavings(savingsDTO);
@@ -188,7 +201,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                                                                                                     // type
                             AccrualAccountsForSavings.SAVINGS_CONTROL.getValue(), paymentTypeId);
                 } catch (Exception e) {
-                    // No mapping with payment type, will try without
+                    log.debug("No mapping found with payment type {}, will try without: {}", paymentTypeId, e.getMessage());
                 }
             }
 

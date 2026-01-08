@@ -115,6 +115,19 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 this.helper.createCashBasedJournalEntriesAndReversalsForSavings(office, currencyCode,
                         CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), CashAccountsForSavings.SAVINGS_CONTROL.getValue(),
                         savingsProductId, effectivePaymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal);
+            } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
+                    && paymentTypeId != null && paymentTypeId == 5L) {
+                // RBF Loan Repayment withdrawal: DR SAVINGS_CONTROL (2), CR 200040 (RBF Loan Payable)
+                GLAccount rbfGLAccount = getRBFGLAccount();
+                if (rbfGLAccount != null) {
+                    this.helper.createDebitJournalEntryOrReversalForSavings(office, currencyCode, savingsProductId, null, savingsId,
+                            transactionId, transactionDate, amount, isReversal, CashAccountsForSavings.SAVINGS_CONTROL);
+                    this.helper.createCreditJournalEntryOrReversalForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                            transactionDate, amount, isReversal);
+                } else {
+                    log.error("RBF GL Account 200040 not found, using default logic");
+                    super.createJournalEntriesForSavings(savingsDTO);
+                }
             } else {
                 // For all other transaction types, delegate to parent
                 super.createJournalEntriesForSavings(savingsDTO);
@@ -197,7 +210,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                                                                                                     // type
                             CashAccountsForSavings.SAVINGS_CONTROL.getValue(), paymentTypeId);
                 } catch (Exception e) {
-                    // No mapping with payment type, will try without
+                    log.debug("No mapping found with payment type {}, will try without: {}", paymentTypeId, e.getMessage());
                 }
             }
 
