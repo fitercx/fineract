@@ -120,10 +120,11 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 // RBF Loan Repayment withdrawal: DR SAVINGS_CONTROL (2), CR 200040 (RBF Loan Payable)
                 GLAccount rbfGLAccount = getRBFGLAccount();
                 if (rbfGLAccount != null) {
-                    this.helper.createDebitJournalEntryOrReversalForSavings(office, currencyCode, savingsProductId, null, savingsId,
-                            transactionId, transactionDate, amount, isReversal, CashAccountsForSavings.SAVINGS_CONTROL);
-                    this.helper.createCreditJournalEntryOrReversalForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
-                            transactionDate, amount, isReversal);
+                    this.helper.createDebitJournalEntryForSavings(office, currencyCode,
+                            getLinkedGLAccountForSavingsProduct(savingsProductId, CashAccountsForSavings.SAVINGS_CONTROL.getValue(), null),
+                            savingsId, transactionId, transactionDate, amount);
+                    this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                            transactionDate, amount);
                 } else {
                     log.error("RBF GL Account 200040 not found, using default logic");
                     super.createJournalEntriesForSavings(savingsDTO);
@@ -227,6 +228,34 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             return null;
         } catch (org.springframework.dao.DataAccessException e) {
             log.warn("CustomCashBasedAccountingProcessorForSavings: Error finding SAVINGS_CONTROL account: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get linked GL account for savings product
+     */
+    private GLAccount getLinkedGLAccountForSavingsProduct(Long savingsProductId, int accountMappingTypeId, Long paymentTypeId) {
+        try {
+            Long glAccountId = null;
+            if (paymentTypeId != null) {
+                String sql = "SELECT gl_account_id FROM acc_product_mapping WHERE product_id = ? AND product_type = ? AND financial_account_type = ? AND payment_type = ? LIMIT 1";
+                try {
+                    glAccountId = jdbcTemplate.queryForObject(sql, Long.class, savingsProductId, 2, accountMappingTypeId, paymentTypeId);
+                } catch (Exception e) {
+                    log.debug("No mapping found with payment type, will try without");
+                }
+            }
+            if (glAccountId == null) {
+                String sql = "SELECT gl_account_id FROM acc_product_mapping WHERE product_id = ? AND product_type = ? AND financial_account_type = ? AND payment_type IS NULL LIMIT 1";
+                glAccountId = jdbcTemplate.queryForObject(sql, Long.class, savingsProductId, 2, accountMappingTypeId);
+            }
+            if (glAccountId != null) {
+                return glAccountRepository.findById(glAccountId).orElse(null);
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("Error finding GL account for savings product: {}", e.getMessage());
             return null;
         }
     }
