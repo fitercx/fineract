@@ -60,9 +60,9 @@ public final class LineOfCreditData implements Serializable {
     private BigDecimal advancePercentage;
     private Integer tenorDays;
 
-    private String approvedBuyers;
+    private List<String> approvedBuyers;
     private List<String> approvedBuyersList;
-
+    private List<String> approvedSuppliers;
     private String cashMarginType;
     private BigDecimal cashMarginValue;
     private LocalDate interimReviewDate;
