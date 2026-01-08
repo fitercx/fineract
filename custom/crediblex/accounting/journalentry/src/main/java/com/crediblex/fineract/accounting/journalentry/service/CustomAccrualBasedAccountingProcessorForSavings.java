@@ -108,17 +108,17 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
                     && paymentTypeId != null && paymentTypeId == 5L) {
-                // RBF Loan Repayment withdrawal: DR SAVINGS_CONTROL (2), CR 200040 (RBF Loan Payable)
+                // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
                 GLAccount rbfGLAccount = getRBFGLAccount();
-                if (rbfGLAccount != null) {
-                    this.helper.createDebitJournalEntryForSavings(
-                            office, currencyCode, getLinkedGLAccountForSavingsProduct(savingsProductId,
-                                    AccrualAccountsForSavings.SAVINGS_CONTROL.getValue(), null),
-                            savingsId, transactionId, transactionDate, amount);
-                    this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                        AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+                if (rbfGLAccount != null && bankAccount != null) {
+                    this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                            transactionDate, amount);
+                    this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
                             transactionDate, amount);
                 } else {
-                    log.error("RBF GL Account 200040 not found, using default logic");
+                    log.error("RBF GL Account 200040 or Bank Account not found, using default logic");
                     super.createJournalEntriesForSavings(savingsDTO);
                 }
             } else {
