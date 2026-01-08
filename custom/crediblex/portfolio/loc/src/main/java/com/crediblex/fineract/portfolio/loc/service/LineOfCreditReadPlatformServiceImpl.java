@@ -324,7 +324,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.external_id, l.currency_digits, l.currency_multiplesof,
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
-                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, la.overdue_since_date_derived,
+                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
                     mlcp.amount_in_facility_currency, mlcp.advance_percentage,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value
