@@ -1844,16 +1844,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
         Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
 
-        // If charged amounts are zero but loan summary has outstanding fees/taxes, use loan summary values
-        // This handles Factor Rate loans where fees/taxes might not be in installments
-        if (loan.isFactorRateEnabled() && (feeChargesAmount.isZero() || taxChargesAmount.isZero())) {
+        // For Factor Rate loans, ensure fees and taxes are included from loan summary if not in installment
+        // This handles cases where fees/taxes might not be properly reflected in individual installments
+        if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
+            // Update fees from loan summary if installment amount is zero but loan summary has outstanding fees
             if (feeChargesAmount.isZero()) {
                 Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
                 if (feeOutstanding.isGreaterThanZero()) {
                     feeChargesAmount = feeOutstanding;
                 }
             }
+            // Update taxes from loan summary if installment amount is zero but loan summary has outstanding taxes
             if (taxChargesAmount.isZero()) {
                 Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
                 if (taxOutstanding.isGreaterThanZero()) {
@@ -1867,8 +1869,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
         Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
         Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
-        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount)
-                .plus(penaltyChargesOutstanding).plus(taxChargesAmount);
+        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
+                .plus(taxChargesAmount);
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
                 earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
