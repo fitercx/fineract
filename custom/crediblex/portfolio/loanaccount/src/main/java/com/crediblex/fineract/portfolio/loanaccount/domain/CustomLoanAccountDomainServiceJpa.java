@@ -49,6 +49,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachin
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
@@ -216,6 +217,23 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money penaltyPayable = foreCloseDetail.getPenaltyChargesCharged(currency);
         Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
+
+        // For Factor Rate loans, ensure fees and taxes are included from loan summary if not in installment
+        if (loan.isFactorRateEnabled()) {
+            final LoanSummary loanSummary = loan.getSummary();
+            if (feePayable.isZero()) {
+                Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
+                if (feeOutstanding.isGreaterThanZero()) {
+                    feePayable = feeOutstanding;
+                }
+            }
+            if (taxPayable.isZero()) {
+                Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+                if (taxOutstanding.isGreaterThanZero()) {
+                    taxPayable = taxOutstanding;
+                }
+            }
+        }
         updateInstallmentsPostDate(loan, foreClosureDate);
 
         LoanTransaction payment = null;
