@@ -386,9 +386,9 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays);
 
             // Populate buyers vs suppliers based on product type
-            if ("PAYABLE".equalsIgnoreCase(productType)) {
+            if (LocProductType.PAYABLE.name().equalsIgnoreCase(productType)) {
                 builder.approvedSuppliers(buyerSupplierList);
-            } else if ("RECEIVABLE".equalsIgnoreCase(productType)) {
+            } else if (LocProductType.RECEIVABLE.name().equalsIgnoreCase(productType)) {
                 builder.approvedBuyers(buyerSupplierList);
             }
 
