@@ -219,16 +219,20 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
 
         // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
-        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding amounts
-        // Only access loanSummary if at least one needs updating (Factor Rate loan with zero fees or taxes)
+        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding
+        // amounts
+        // Note: Outer condition checks if ANY needs updating (efficient loanSummary access), inner conditions ensure
+        // only zero values are updated (non-zero values remain unchanged)
         if (loan.isFactorRateEnabled() && (feePayable.isZero() || taxPayable.isZero())) {
             final LoanSummary loanSummary = loan.getSummary();
+            // Only update fees if installment amount is zero (inner condition protects non-zero values)
             if (feePayable.isZero()) {
                 Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
                 if (feeOutstanding.isGreaterThanZero()) {
                     feePayable = feeOutstanding;
                 }
             }
+            // Only update taxes if installment amount is zero (inner condition protects non-zero values)
             if (taxPayable.isZero()) {
                 Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
                 if (taxOutstanding.isGreaterThanZero()) {
