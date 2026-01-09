@@ -119,6 +119,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSubStatus;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanNotFoundException;
@@ -1838,16 +1839,47 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal outstandingLoanBalance = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount();
         final Boolean isReversed = false;
 
-        final Money outStandingAmount = loanRepaymentScheduleInstallment.getTotalOutstanding(currency);
+        // For Factor Rate loans, use charged amounts (which are set to outstanding in foreclosure detail)
+        // to ensure fees and taxes are properly included in foreclosure
+        Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
+        Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
+
+        // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
+        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding
+        // amounts
+        // Note: Outer condition checks if ANY needs updating (efficient loanSummary access), inner conditions ensure
+        // only zero values are updated (non-zero values remain unchanged)
+        if (loan.isFactorRateEnabled() && (feeChargesAmount.isZero() || taxChargesAmount.isZero())) {
+            final LoanSummary loanSummary = loan.getSummary();
+            // Only update fees if installment amount is zero (inner condition protects non-zero values)
+            if (feeChargesAmount.isZero()) {
+                Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
+                if (feeOutstanding.isGreaterThanZero()) {
+                    feeChargesAmount = feeOutstanding;
+                }
+            }
+            // Only update taxes if installment amount is zero (inner condition protects non-zero values)
+            if (taxChargesAmount.isZero()) {
+                Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+                if (taxOutstanding.isGreaterThanZero()) {
+                    taxChargesAmount = taxOutstanding;
+                }
+            }
+        }
+
+        // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
+        // This ensures the total amount includes fees/taxes from loan summary when installment amounts are zero
+        Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
+        Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
+        Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
+        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
+                .plus(taxChargesAmount);
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
-                earliestUnpaidInstallmentDate, outStandingAmount.getAmount(), loan.getNetDisbursalAmount(),
-                loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getInterestOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getFeeChargesOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getTaxChargesOutstanding(currency).getAmount(), null, unrecognizedIncomePortion,
-                paymentTypeOptions, ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
+                earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
+                principalOutstanding.getAmount(), interestOutstanding.getAmount(), feeChargesAmount.getAmount(),
+                penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
+                ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());
