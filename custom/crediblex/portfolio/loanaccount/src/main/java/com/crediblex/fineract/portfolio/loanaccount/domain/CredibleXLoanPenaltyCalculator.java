@@ -137,9 +137,9 @@ public class CredibleXLoanPenaltyCalculator {
 
         // Step 3: Collect penalties that are after the latest applicable charge due date
         return loanCharges.stream().filter(LoanChargeData::isPenalty) // only penalties
-                .filter(charge -> charge.getDueDate() != null && !charge.getDueDate().isBefore(latestApplicableDueDate)) // after
-                                                                                                                         // latest
-                                                                                                                         // applicable
+                .filter(charge -> charge.getDueDate() != null && charge.getDueDate().isAfter(latestApplicableDueDate)) // after
+                                                                                                                       // latest
+                                                                                                                       // applicable
                 .sorted(Comparator.comparing(LoanChargeData::getDueDate)) // ascending due date
                 .collect(Collectors.toList());
     }
