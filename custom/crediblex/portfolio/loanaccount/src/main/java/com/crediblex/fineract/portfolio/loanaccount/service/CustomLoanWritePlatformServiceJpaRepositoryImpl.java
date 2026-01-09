@@ -1044,7 +1044,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 this.loanTransactionRepository.saveAllAndFlush(accrualTransactions);
             }
             if (!chargeIds.isEmpty()) {
-                loan.getLoanCharges().stream().filter(loanCharge -> chargeIds.contains(loanCharge.getId()))
+                loan.getLoanCharges().stream().filter(loanCharge -> chargeIds.contains(loanCharge.getId()) && !loanCharge.isPaid())
                         .forEach(loanCharge -> loanCharge.setActive(false));
                 saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             }
@@ -1056,6 +1056,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
             this.applyOverdueChargesLoan(loanId);
             this.addLoanPeriodicAccruals(backdatedLoan);
+            loanScheduleService.recalculateSchedule(backdatedLoan, loanUtilService.buildScheduleGeneratorDTO(backdatedLoan, null));
+            saveAndFlushLoanWithDataIntegrityViolationChecks(backdatedLoan);
         }
         return result;
     }
