@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
@@ -15,30 +16,28 @@ import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeDecliningBalanceInterestLoanScheduleGenerator;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeDecliningBalanceInterestLoanScheduleGenerator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.PaymentPeriodsInOneYearCalculator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.PrincipalInterest;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
-import lombok.extern.slf4j.Slf4j;
 
 /**
- * Custom implementation of CumulativeDecliningBalanceInterestLoanScheduleGenerator
- * that fixes multi-tranche loan schedule calculation to use only disbursed amounts.
+ * Custom implementation of CumulativeDecliningBalanceInterestLoanScheduleGenerator that fixes multi-tranche loan
+ * schedule calculation to use only disbursed amounts.
  */
 @Slf4j
 @Component
 @Primary
-public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
-        extends CumulativeDecliningBalanceInterestLoanScheduleGenerator {
+public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends CumulativeDecliningBalanceInterestLoanScheduleGenerator {
 
     public CustomCumulativeDecliningBalanceLoanScheduleGenerator(ScheduledDateGenerator scheduledDateGenerator,
             PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator) {
@@ -53,13 +52,13 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
 
     /**
      * Override to fix multi-tranche loan schedule calculation.
-     * 
-     * For multi-disbursal loans, use only the total DISBURSED amount (not approved/all tranches)
-     * to calculate repayment schedule. This ensures schedules reflect actual disbursed principal,
-     * not approved principal that hasn't been disbursed yet.
-     * 
-     * Fixes bug where schedule was calculated using getTotalMultiDisbursedAmount() (all tranches)
-     * instead of getTotalDisbursedAmount() (only disbursed tranches).
+     *
+     * For multi-disbursal loans, use only the total DISBURSED amount (not approved/all tranches) to calculate repayment
+     * schedule. This ensures schedules reflect actual disbursed principal, not approved principal that hasn't been
+     * disbursed yet.
+     *
+     * Fixes bug where schedule was calculated using getTotalMultiDisbursedAmount() (all tranches) instead of
+     * getTotalDisbursedAmount() (only disbursed tranches).
      */
     @Override
     protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
@@ -67,7 +66,7 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
         if (loanApplicationTerms.isMultiDisburseLoan()) {
             Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
             Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
-            
+
             if (totalDisbursed.isGreaterThanZero()) {
                 // FIX: Use only disbursed amount, not all approved tranches
                 principalToBeScheduled = totalDisbursed;
@@ -85,10 +84,10 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
 
     /**
      * Override to exclude undisbursed tranches from outstanding balance calculation.
-     * 
-     * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones),
-     * which causes the schedule to include future tranches in principal calculations.
-     * This fix ensures only actually disbursed tranches are added to outstanding balance.
+     *
+     * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones), which causes the
+     * schedule to include future tranches in principal calculations. This fix ensures only actually disbursed tranches
+     * are added to outstanding balance.
      */
     @Override
     protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
@@ -98,12 +97,10 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
             // Check if all tranches on this date are actually disbursed
             // If multiple tranches share a date, they're summed in the map, so we need to check all of them
             List<DisbursementData> tranchesOnDate = loanApplicationTerms.getDisbursementDatas().stream()
-                    .filter(data -> data.disbursementDate().equals(disburseDetail.getKey()))
-                    .toList();
-            
+                    .filter(data -> data.disbursementDate().equals(disburseDetail.getKey())).toList();
+
             // Only process if there are tranches on this date AND all of them are disbursed
-            boolean allDisbursed = !tranchesOnDate.isEmpty()
-                    && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
+            boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
 
             if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
                     && !DateUtils.isAfter(disburseDetail.getKey(), scheduledDueDate) && allDisbursed) {
@@ -148,8 +145,8 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
     }
 
     /**
-     * Helper method to calculate charges due at time of disbursement for a tranche.
-     * Copied from parent class since it's private.
+     * Helper method to calculate charges due at time of disbursement for a tranche. Copied from parent class since it's
+     * private.
      */
     private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
             final BigDecimal tranchePrincipal, final BigDecimal totalChargesDueAtTimeOfDisbursement) {
@@ -161,18 +158,15 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator
     }
 
     @Override
-    public PrincipalInterest calculatePrincipalInterestComponentsForPeriod(
-            final PaymentPeriodsInOneYearCalculator calculator,
+    public PrincipalInterest calculatePrincipalInterestComponentsForPeriod(final PaymentPeriodsInOneYearCalculator calculator,
             final BigDecimal interestCalculationGraceOnRepaymentPeriodFraction, final Money totalCumulativePrincipal,
-            final Money totalCumulativeInterest, final Money totalInterestDueForLoan,
-            final Money cumulatingInterestPaymentDueToGrace, final Money outstandingBalance,
-            final LoanApplicationTerms loanApplicationTerms, final int periodNumber, final MathContext mc,
-            final TreeMap<LocalDate, Money> principalVariation, final Map<LocalDate, Money> compoundingMap,
-            final LocalDate periodStartDate, final LocalDate periodEndDate,
-            final Collection<LoanTermVariationsData> termVariations) {
-        return super.calculatePrincipalInterestComponentsForPeriod(calculator,
-                interestCalculationGraceOnRepaymentPeriodFraction, totalCumulativePrincipal, totalCumulativeInterest,
-                totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace, outstandingBalance, loanApplicationTerms,
-                periodNumber, mc, principalVariation, compoundingMap, periodStartDate, periodEndDate, termVariations);
+            final Money totalCumulativeInterest, final Money totalInterestDueForLoan, final Money cumulatingInterestPaymentDueToGrace,
+            final Money outstandingBalance, final LoanApplicationTerms loanApplicationTerms, final int periodNumber, final MathContext mc,
+            final TreeMap<LocalDate, Money> principalVariation, final Map<LocalDate, Money> compoundingMap, final LocalDate periodStartDate,
+            final LocalDate periodEndDate, final Collection<LoanTermVariationsData> termVariations) {
+        return super.calculatePrincipalInterestComponentsForPeriod(calculator, interestCalculationGraceOnRepaymentPeriodFraction,
+                totalCumulativePrincipal, totalCumulativeInterest, totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace,
+                outstandingBalance, loanApplicationTerms, periodNumber, mc, principalVariation, compoundingMap, periodStartDate,
+                periodEndDate, termVariations);
     }
 }
