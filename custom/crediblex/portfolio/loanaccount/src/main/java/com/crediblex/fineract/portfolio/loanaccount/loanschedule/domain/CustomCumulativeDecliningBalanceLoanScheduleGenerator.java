@@ -65,7 +65,6 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
         Money principalToBeScheduled;
         if (loanApplicationTerms.isMultiDisburseLoan()) {
             Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
-            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
 
             if (totalDisbursed.isGreaterThanZero()) {
                 // FIX: Use only disbursed amount, not all approved tranches
