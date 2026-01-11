@@ -46,23 +46,30 @@ public class CustomLoanScheduleService extends LoanScheduleService {
                 loan.isReceivableLocLoan(), loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount());
 
         BigDecimal savedPrincipalForRestore = null;
-        Optional<LoanLineOfCreditParams> lloc = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        // Note: This repository lookup may be redundant if called from
+        // CustomLoanScheduleAssembler.assembleLoanApproval()
+        // which already fetches LoanLineOfCreditParams. However, we fetch here to keep this method self-contained
+        // and reusable from other callers. Consider passing Optional<LoanLineOfCreditParams> as a parameter
+        // or caching it on the loan entity to optimize in the future.
+        Optional<LoanLineOfCreditParams> loanLineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
 
         // Check if this is a LOC Receivable loan by checking LoanLineOfCreditParams
-        boolean isLocReceivable = lloc.isPresent() && lloc.get().getLineOfCredit() != null
-                && lloc.get().getLineOfCredit().getProductType() != null && lloc.get().getLineOfCredit().getProductType().isReceivable();
+        boolean isLocReceivable = loanLineOfCreditParams.isPresent() && loanLineOfCreditParams.get().getLineOfCredit() != null
+                && loanLineOfCreditParams.get().getLineOfCredit().getProductType() != null
+                && loanLineOfCreditParams.get().getLineOfCredit().getProductType().isReceivable();
 
         if (isLocReceivable) {
             log.info(
                     "Loan {}: LOC Receivable detected via LoanLineOfCreditParams. LoanLineOfCreditParams present={}, amountAfterAdvance={}",
-                    loan.getId(), lloc.isPresent(), lloc.map(LoanLineOfCreditParams::getAmountAfterAdvance).orElse(null));
+                    loan.getId(), loanLineOfCreditParams.isPresent(),
+                    loanLineOfCreditParams.map(LoanLineOfCreditParams::getAmountAfterAdvance).orElse(null));
 
-            if (lloc.get().getAmountAfterAdvance() != null) {
+            if (loanLineOfCreditParams.get().getAmountAfterAdvance() != null) {
                 // Save the approved principal (the value we should restore to), not the current principal
                 // because the current principal might already be set to proposed principal by
                 // CustomLoanScheduleAssembler
                 savedPrincipalForRestore = loan.getApprovedPrincipal();
-                BigDecimal proposedPrincipal = lloc.get().getAmountAfterAdvance();
+                BigDecimal proposedPrincipal = loanLineOfCreditParams.get().getAmountAfterAdvance();
                 BigDecimal currentPrincipal = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
                 log.info(
                         "LOC Receivable loan {}: Setting principal to proposed principal {} (from current principal {}) before schedule model generation. Will restore to approved principal {}",

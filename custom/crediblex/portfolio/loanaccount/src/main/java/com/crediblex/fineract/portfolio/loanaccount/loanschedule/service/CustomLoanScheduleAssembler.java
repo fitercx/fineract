@@ -177,6 +177,17 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
         BigDecimal approvedLoanAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
         BigDecimal savedPrincipalForRestore = null;
+
+        // For LOC Receivable loans, ensure charges are calculated using proposed principal (amountAfterAdvance)
+        // instead of approved principal during approval. This ensures consistent fee calculation:
+        // 10% of loan amount (81,000), not 10% of disbursed amount (66,194.31)
+        // Note: We check LoanLineOfCreditParams directly instead of loan.isReceivableLocLoan() because
+        // the flag might not be set yet at this point (it's set during constructLoanApplicationTerms).
+        Optional<LoanLineOfCreditParams> llocParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        boolean isLocReceivable = llocParams.isPresent() && llocParams.get().getLineOfCredit() != null
+                && llocParams.get().getLineOfCredit().getProductType() != null
+                && llocParams.get().getLineOfCredit().getProductType().isReceivable();
+
         if (approvedLoanAmount != null) {
             /*
              * All the calculations are done based on the principal amount, so it is necessary to set principal amount
@@ -193,21 +204,15 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             }
         }
 
-        // For LOC Receivable loans, ensure charges are calculated using proposed principal (amountAfterAdvance)
-        // instead of approved principal during approval. This ensures consistent fee calculation:
-        // 10% of loan amount (81,000), not 10% of disbursed amount (66,194.31)
-        if (loan.isReceivableLocLoan()) {
-            Optional<LoanLineOfCreditParams> llocParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-            if (llocParams.isPresent() && llocParams.get().getAmountAfterAdvance() != null) {
-                BigDecimal proposedPrincipal = llocParams.get().getAmountAfterAdvance();
-                // Save current principal to restore later
-                savedPrincipalForRestore = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
-                log.info(
-                        "LOC Receivable loan {}: Setting principal to proposed principal {} (from approved principal {}) for charge recalculation",
-                        loan.getId(), proposedPrincipal, savedPrincipalForRestore);
-                // Temporarily set principal to proposed principal for charge recalculation
-                loan.getLoanRepaymentScheduleDetail().setPrincipal(proposedPrincipal);
-            }
+        if (isLocReceivable && llocParams.get().getAmountAfterAdvance() != null) {
+            BigDecimal proposedPrincipal = llocParams.get().getAmountAfterAdvance();
+            // Save current principal to restore later
+            savedPrincipalForRestore = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
+            log.info(
+                    "LOC Receivable loan {}: Setting principal to proposed principal {} (from approved principal {}) for charge recalculation",
+                    loan.getId(), proposedPrincipal, savedPrincipalForRestore);
+            // Temporarily set principal to proposed principal for charge recalculation
+            loan.getLoanRepaymentScheduleDetail().setPrincipal(proposedPrincipal);
         }
 
         loanChargeService.recalculateAllCharges(loan);
@@ -246,7 +251,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
         // Restore principal to approved amount for LOC Receivable loans after schedule regeneration
         // This ensures the loan state is correct after approval
-        if (loan.isReceivableLocLoan() && savedPrincipalForRestore != null) {
+        // Use the same isLocReceivable check we used earlier (via LoanLineOfCreditParams)
+        if (isLocReceivable && savedPrincipalForRestore != null) {
             log.info("LOC Receivable loan {}: Restoring principal to approved principal {} after schedule regeneration", loan.getId(),
                     savedPrincipalForRestore);
             loan.getLoanRepaymentScheduleDetail().setPrincipal(savedPrincipalForRestore);
