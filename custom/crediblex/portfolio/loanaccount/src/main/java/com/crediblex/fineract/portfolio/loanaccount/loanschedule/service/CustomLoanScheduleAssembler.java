@@ -7,6 +7,8 @@ import static org.apache.fineract.portfolio.loanaccount.domain.Loan.EXPECTED_DIS
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.LOCALE;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
@@ -17,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -60,6 +63,8 @@ import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRepository;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.useradministration.domain.AppUser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -67,7 +72,10 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
+    private static final Logger log = LoggerFactory.getLogger(CustomLoanScheduleAssembler.class);
+
     private final PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator;
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
 
     public CustomLoanScheduleAssembler(FromJsonHelper fromApiJsonHelper, LoanProductRepository loanProductRepository,
             ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository, LoanChargeAssembler loanChargeAssembler,
@@ -80,8 +88,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanDisbursementDetailsAssembler loanDisbursementDetailsAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDisbursementService loanDisbursementService, LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
-            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil,
-            PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator) {
+            LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil, PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(fromApiJsonHelper, loanProductRepository, applicationCurrencyRepository, loanChargeAssembler, loanScheduleFactory,
                 aprCalculator, calendarRepository, holidayRepository, configurationDomainService, clientRepository, groupRepository,
                 workingDaysRepository, floatingRatesReadPlatformService, variableLoanScheduleFromApiJsonValidator,
@@ -89,6 +97,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
                 defaultLoanLifecycleStateMachine, loanAccrualsProcessingService, loanDisbursementService, loanChargeService,
                 loanScheduleService, relatedDetailUpdateUtil);
         this.paymentPeriodsInOneYearCalculator = paymentPeriodsInOneYearCalculator;
+        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
     }
 
     @Override
@@ -167,6 +176,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         LocalDate expectedDisbursementDate = command.localDateValueOfParameterNamed(EXPECTED_DISBURSEMENT_DATE);
 
         BigDecimal approvedLoanAmount = command.bigDecimalValueOfParameterNamed(LoanApiConstants.approvedLoanAmountParameterName);
+        BigDecimal savedPrincipalForRestore = null;
         if (approvedLoanAmount != null) {
             /*
              * All the calculations are done based on the principal amount, so it is necessary to set principal amount
@@ -183,7 +193,28 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             }
         }
 
+        // For LOC Receivable loans, ensure charges are calculated using proposed principal (amountAfterAdvance)
+        // instead of approved principal during approval. This ensures consistent fee calculation:
+        // 10% of loan amount (81,000), not 10% of disbursed amount (66,194.31)
+        if (loan.isReceivableLocLoan()) {
+            Optional<LoanLineOfCreditParams> llocParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+            if (llocParams.isPresent() && llocParams.get().getAmountAfterAdvance() != null) {
+                BigDecimal proposedPrincipal = llocParams.get().getAmountAfterAdvance();
+                // Save current principal to restore later
+                savedPrincipalForRestore = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
+                log.info(
+                        "LOC Receivable loan {}: Setting principal to proposed principal {} (from approved principal {}) for charge recalculation",
+                        loan.getId(), proposedPrincipal, savedPrincipalForRestore);
+                // Temporarily set principal to proposed principal for charge recalculation
+                loan.getLoanRepaymentScheduleDetail().setPrincipal(proposedPrincipal);
+            }
+        }
+
         loanChargeService.recalculateAllCharges(loan);
+
+        // Note: Do NOT restore principal yet - keep it as proposed principal so that schedule regeneration
+        // uses the correct principal. The CustomLoanScheduleService.regenerateRepaymentSchedule() will
+        // handle setting it correctly during charge recalculation, and we'll restore it after schedule regeneration.
 
         loan.setApprovedOnDate(approvedOn);
         loan.setApprovedBy(currentUser);
@@ -206,9 +237,19 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         if (!actualChanges.isEmpty()) {
             if (actualChanges.containsKey(LoanApiConstants.approvedLoanAmountParameterName)
                     || actualChanges.containsKey("recalculateLoanSchedule") || actualChanges.containsKey("expectedDisbursementDate")) {
+                // Schedule regeneration is called with principal still set to proposed principal (81,000)
+                // This ensures the schedule is generated with correct charge amounts
                 loanScheduleService.regenerateRepaymentSchedule(loan, loanUtilService.buildScheduleGeneratorDTO(loan, null));
                 loanAccrualsProcessingService.reprocessExistingAccruals(loan);
             }
+        }
+
+        // Restore principal to approved amount for LOC Receivable loans after schedule regeneration
+        // This ensures the loan state is correct after approval
+        if (loan.isReceivableLocLoan() && savedPrincipalForRestore != null) {
+            log.info("LOC Receivable loan {}: Restoring principal to approved principal {} after schedule regeneration", loan.getId(),
+                    savedPrincipalForRestore);
+            loan.getLoanRepaymentScheduleDetail().setPrincipal(savedPrincipalForRestore);
         }
 
         return Pair.of(loan, actualChanges);
