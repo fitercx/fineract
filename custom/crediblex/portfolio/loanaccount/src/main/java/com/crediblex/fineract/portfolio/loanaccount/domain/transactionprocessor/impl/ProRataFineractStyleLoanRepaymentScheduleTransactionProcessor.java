@@ -152,11 +152,12 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
 
     /**
      * Override to fix issue where fully paid installments are not marked as complete after schedule regeneration.
-     * 
-     * When regenerateRepaymentSchedule() is called (e.g., during loan approval), it triggers reprocessLoanTransactions()
-     * which calls reprocessInstallments(). The parent implementation only sets obligationsMet = false for installments
-     * with outstanding balances, but doesn't set obligationsMet = true for fully paid installments.
-     * 
+     *
+     * When regenerateRepaymentSchedule() is called (e.g., during loan approval), it triggers
+     * reprocessLoanTransactions() which calls reprocessInstallments(). The parent implementation only sets
+     * obligationsMet = false for installments with outstanding balances, but doesn't set obligationsMet = true for
+     * fully paid installments.
+     *
      * This fix ensures that installments with zero outstanding balance are properly marked as complete.
      */
     @Override
@@ -170,7 +171,8 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
             if (installment.getTotalOutstanding(currency).isZero()) {
                 // Installment is fully paid - mark as complete if not already marked
                 if (!installment.isObligationsMet()) {
-                    // Find the latest repayment transaction date for this installment to set obligationsMetOnDate correctly
+                    // Find the latest repayment transaction date for this installment to set obligationsMetOnDate
+                    // correctly
                     LocalDate obligationsMetDate = findLatestRepaymentDateForInstallment(installment, transactions);
                     if (obligationsMetDate == null) {
                         // Fallback to installment due date if no repayment transaction found
@@ -184,8 +186,8 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
     }
 
     /**
-     * Finds the latest repayment transaction date for a given installment.
-     * This is used to correctly set obligationsMetOnDate when marking an installment as complete.
+     * Finds the latest repayment transaction date for a given installment. This is used to correctly set
+     * obligationsMetOnDate when marking an installment as complete.
      */
     private LocalDate findLatestRepaymentDateForInstallment(LoanRepaymentScheduleInstallment installment,
             List<LoanTransaction> transactions) {
@@ -193,8 +195,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         LocalDate dueDate = installment.getDueDate();
 
         // Find the latest repayment transaction that applies to this installment period
-        Optional<LoanTransaction> latestRepayment = transactions.stream()
-                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+        Optional<LoanTransaction> latestRepayment = transactions.stream().filter(t -> t.isRepaymentLikeType() && !t.isReversed())
                 .filter(t -> {
                     LocalDate txDate = t.getTransactionDate();
                     // Transaction applies to this installment if it's on or after the from date
@@ -202,8 +203,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
                     boolean afterFromDate = fromDate == null || !txDate.isBefore(fromDate);
                     boolean beforeDueDate = dueDate == null || !txDate.isAfter(dueDate);
                     return afterFromDate && beforeDueDate;
-                })
-                .max(Comparator.comparing(LoanTransaction::getTransactionDate));
+                }).max(Comparator.comparing(LoanTransaction::getTransactionDate));
 
         return latestRepayment.map(LoanTransaction::getTransactionDate).orElse(null);
     }
