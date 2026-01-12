@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.loanaccount.loanschedule.domain;
 
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeDecliningBalanceInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeFlatInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultLoanScheduleGeneratorFactory;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleGenerator;
@@ -15,14 +14,18 @@ import org.springframework.stereotype.Service;
 public class CustomLoanScheduleGeneratorFactory extends DefaultLoanScheduleGeneratorFactory {
 
     private final FactorRateLoanScheduleGenerator factorRateLoanScheduleGenerator;
+    private final CumulativeFlatInterestLoanScheduleGenerator cumulativeFlatInterestLoanScheduleGenerator;
+    private final CustomCumulativeDecliningBalanceLoanScheduleGenerator customCumulativeDecliningBalanceLoanScheduleGenerator;
 
     public CustomLoanScheduleGeneratorFactory(ProgressiveLoanScheduleGenerator progressiveLoanScheduleGenerator,
             CumulativeFlatInterestLoanScheduleGenerator cumulativeFlatInterestLoanScheduleGenerator,
-            CumulativeDecliningBalanceInterestLoanScheduleGenerator cumulativeDecliningBalanceInterestLoanScheduleGenerator,
+            CustomCumulativeDecliningBalanceLoanScheduleGenerator customCumulativeDecliningBalanceLoanScheduleGenerator,
             FactorRateLoanScheduleGenerator factorRateLoanScheduleGenerator) {
         super(progressiveLoanScheduleGenerator, cumulativeFlatInterestLoanScheduleGenerator,
-                cumulativeDecliningBalanceInterestLoanScheduleGenerator);
+                customCumulativeDecliningBalanceLoanScheduleGenerator);
         this.factorRateLoanScheduleGenerator = factorRateLoanScheduleGenerator;
+        this.cumulativeFlatInterestLoanScheduleGenerator = cumulativeFlatInterestLoanScheduleGenerator;
+        this.customCumulativeDecliningBalanceLoanScheduleGenerator = customCumulativeDecliningBalanceLoanScheduleGenerator;
     }
 
     @Override
@@ -31,6 +34,15 @@ public class CustomLoanScheduleGeneratorFactory extends DefaultLoanScheduleGener
             case CUMULATIVE -> cumulativeLoanScheduleGenerator(interestMethod);
             case PROGRESSIVE -> progressiveLoanScheduleGenerator(interestMethod);
             case FACTOR_RATE -> factorRateLoanScheduleGenerator;
+        };
+    }
+
+    @Override
+    protected LoanScheduleGenerator cumulativeLoanScheduleGenerator(final InterestMethod interestMethod) {
+        return switch (interestMethod) {
+            case FLAT -> cumulativeFlatInterestLoanScheduleGenerator;
+            case DECLINING_BALANCE -> customCumulativeDecliningBalanceLoanScheduleGenerator;
+            case INVALID -> null;
         };
     }
 }
