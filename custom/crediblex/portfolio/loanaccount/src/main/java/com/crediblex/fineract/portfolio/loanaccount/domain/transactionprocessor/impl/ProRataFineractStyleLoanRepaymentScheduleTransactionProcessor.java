@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
@@ -146,5 +148,63 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         }
 
         return transactionAmountRemaining;
+    }
+
+    /**
+     * Override to fix issue where fully paid installments are not marked as complete after schedule regeneration.
+     * 
+     * When regenerateRepaymentSchedule() is called (e.g., during loan approval), it triggers reprocessLoanTransactions()
+     * which calls reprocessInstallments(). The parent implementation only sets obligationsMet = false for installments
+     * with outstanding balances, but doesn't set obligationsMet = true for fully paid installments.
+     * 
+     * This fix ensures that installments with zero outstanding balance are properly marked as complete.
+     */
+    @Override
+    protected void reprocessInstallments(LocalDate disbursementDate, List<LoanTransaction> transactions,
+            List<LoanRepaymentScheduleInstallment> installments, MonetaryCurrency currency) {
+        // Call parent implementation first to handle waiver transactions and reset incomplete installments
+        super.reprocessInstallments(disbursementDate, transactions, installments, currency);
+
+        // Fix: Mark installments as complete if they are fully paid (outstanding is zero)
+        for (LoanRepaymentScheduleInstallment installment : installments) {
+            if (installment.getTotalOutstanding(currency).isZero()) {
+                // Installment is fully paid - mark as complete if not already marked
+                if (!installment.isObligationsMet()) {
+                    // Find the latest repayment transaction date for this installment to set obligationsMetOnDate correctly
+                    LocalDate obligationsMetDate = findLatestRepaymentDateForInstallment(installment, transactions);
+                    if (obligationsMetDate == null) {
+                        // Fallback to installment due date if no repayment transaction found
+                        obligationsMetDate = installment.getDueDate();
+                    }
+                    installment.updateObligationMet(true);
+                    installment.updateObligationMetOnDate(obligationsMetDate);
+                }
+            }
+        }
+    }
+
+    /**
+     * Finds the latest repayment transaction date for a given installment.
+     * This is used to correctly set obligationsMetOnDate when marking an installment as complete.
+     */
+    private LocalDate findLatestRepaymentDateForInstallment(LoanRepaymentScheduleInstallment installment,
+            List<LoanTransaction> transactions) {
+        LocalDate fromDate = installment.getFromDate();
+        LocalDate dueDate = installment.getDueDate();
+
+        // Find the latest repayment transaction that applies to this installment period
+        Optional<LoanTransaction> latestRepayment = transactions.stream()
+                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+                .filter(t -> {
+                    LocalDate txDate = t.getTransactionDate();
+                    // Transaction applies to this installment if it's on or after the from date
+                    // and if there's a due date, before or on the due date
+                    boolean afterFromDate = fromDate == null || !txDate.isBefore(fromDate);
+                    boolean beforeDueDate = dueDate == null || !txDate.isAfter(dueDate);
+                    return afterFromDate && beforeDueDate;
+                })
+                .max(Comparator.comparing(LoanTransaction::getTransactionDate));
+
+        return latestRepayment.map(LoanTransaction::getTransactionDate).orElse(null);
     }
 }
