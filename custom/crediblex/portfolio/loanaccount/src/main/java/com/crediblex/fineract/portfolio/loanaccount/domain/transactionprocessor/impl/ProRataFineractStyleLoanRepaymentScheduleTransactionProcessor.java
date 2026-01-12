@@ -199,18 +199,17 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
 
     /**
      * Finds the latest repayment transaction date for a given installment.
-     * 
+     *
      * First tries to find transactions that are explicitly mapped to this installment via
-     * LoanTransactionToRepaymentScheduleMapping. If none found, falls back to finding transactions
-     * that occurred within the installment's period.
-     * 
+     * LoanTransactionToRepaymentScheduleMapping. If none found, falls back to finding transactions that occurred within
+     * the installment's period.
+     *
      * This is used to correctly set obligationsMetOnDate when marking an installment as complete.
      */
     private LocalDate findLatestRepaymentDateForInstallment(LoanRepaymentScheduleInstallment installment,
             List<LoanTransaction> transactions) {
         // First, try to find transactions that are explicitly mapped to this installment
-        Optional<LocalDate> mappedDate = transactions.stream()
-                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+        Optional<LocalDate> mappedDate = transactions.stream().filter(t -> t.isRepaymentLikeType() && !t.isReversed())
                 .filter(t -> t.getLoanTransactionToRepaymentScheduleMappings() != null)
                 .flatMap(t -> t.getLoanTransactionToRepaymentScheduleMappings().stream()
                         .filter(mapping -> mapping.getLoanRepaymentScheduleInstallment() != null
@@ -226,8 +225,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         LocalDate fromDate = installment.getFromDate();
         LocalDate dueDate = installment.getDueDate();
 
-        Optional<LoanTransaction> latestRepayment = transactions.stream()
-                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+        Optional<LoanTransaction> latestRepayment = transactions.stream().filter(t -> t.isRepaymentLikeType() && !t.isReversed())
                 .filter(t -> {
                     LocalDate txDate = t.getTransactionDate();
                     // Transaction applies to this installment if it's on or after the from date
@@ -235,8 +233,7 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
                     boolean afterFromDate = fromDate == null || !txDate.isBefore(fromDate);
                     boolean onOrBeforeDueDate = dueDate == null || !txDate.isAfter(dueDate);
                     return afterFromDate && onOrBeforeDueDate;
-                })
-                .max(Comparator.comparing(LoanTransaction::getTransactionDate));
+                }).max(Comparator.comparing(LoanTransaction::getTransactionDate));
 
         return latestRepayment.map(LoanTransaction::getTransactionDate).orElse(null);
     }
