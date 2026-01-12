@@ -273,6 +273,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     loc.end_date as endDate,
                     loc.currency as currency,
                     loc.tenor_days as tenorDays,
+                    loc.annual_interest_rate as locAnnualInterestRate,
                     l.id as loanId,
                     l.account_no as loanAccountNo,
                     lp.name as loanProductName,
@@ -328,7 +329,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
                     mlcp.amount_in_facility_currency, mlcp.advance_percentage,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
-                    loc.tenor_days
+                    loc.tenor_days, loc.annual_interest_rate
                     """;
         }
 
@@ -376,6 +377,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String currency = rs.getString("currency");
             final Integer tenorDays = rs.getInt("tenorDays");
             final BigDecimal cashMarginValue = rs.getBigDecimal("locCashMarginValue");
+            final BigDecimal locAnnualInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "locAnnualInterestRate");
             final String buyerSupplier = rs.getString("buyerSupplierLoc");
             List<String> buyerSupplierList = buyerSupplier == null || buyerSupplier.isBlank() ? Collections.emptyList()
                     : Arrays.stream(buyerSupplier.split(",\\s*")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
@@ -383,7 +385,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             LineOfCreditData.LineOfCreditDataBuilder builder = LineOfCreditData.builder().id(id).productType(productType)
                     .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount)
                     .status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId).accountNumber(accountNumber)
-                    .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays);
+                    .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays)
+                    .annualInterestRate(locAnnualInterestRate);
 
             // Populate buyers vs suppliers based on product type
             if (LocProductType.PAYABLE.name().equalsIgnoreCase(productType)) {
