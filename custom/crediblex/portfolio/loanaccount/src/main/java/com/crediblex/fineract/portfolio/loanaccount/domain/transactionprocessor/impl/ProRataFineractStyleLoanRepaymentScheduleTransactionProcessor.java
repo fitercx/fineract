@@ -167,43 +167,76 @@ public class ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor exten
         super.reprocessInstallments(disbursementDate, transactions, installments, currency);
 
         // Fix: Mark installments as complete if they are fully paid (outstanding is zero)
+        // This addresses the issue where reprocessInstallments() only sets obligationsMet = false
+        // for installments with outstanding, but never sets obligationsMet = true for fully paid installments
         for (LoanRepaymentScheduleInstallment installment : installments) {
             if (installment.getTotalOutstanding(currency).isZero()) {
                 // Installment is fully paid - mark as complete if not already marked
                 if (!installment.isObligationsMet()) {
-                    // Find the latest repayment transaction date for this installment to set obligationsMetOnDate
-                    // correctly
-                    LocalDate obligationsMetDate = findLatestRepaymentDateForInstallment(installment, transactions);
+                    // Use existing obligationsMetOnDate if available, otherwise find from transactions
+                    LocalDate obligationsMetDate = installment.getObligationsMetOnDate();
                     if (obligationsMetDate == null) {
-                        // Fallback to installment due date if no repayment transaction found
-                        obligationsMetDate = installment.getDueDate();
+                        // Find the latest repayment transaction date that paid this installment
+                        obligationsMetDate = findLatestRepaymentDateForInstallment(installment, transactions);
+                        if (obligationsMetDate == null) {
+                            // Fallback to installment due date if no repayment transaction found
+                            obligationsMetDate = installment.getDueDate();
+                        }
                     }
                     installment.updateObligationMet(true);
                     installment.updateObligationMetOnDate(obligationsMetDate);
+                }
+            } else {
+                // Ensure incomplete installments are marked as incomplete (parent already does this,
+                // but being explicit for clarity)
+                if (installment.isObligationsMet()) {
+                    installment.updateObligationMet(false);
+                    installment.updateObligationMetOnDate(null);
                 }
             }
         }
     }
 
     /**
-     * Finds the latest repayment transaction date for a given installment. This is used to correctly set
-     * obligationsMetOnDate when marking an installment as complete.
+     * Finds the latest repayment transaction date for a given installment.
+     * 
+     * First tries to find transactions that are explicitly mapped to this installment via
+     * LoanTransactionToRepaymentScheduleMapping. If none found, falls back to finding transactions
+     * that occurred within the installment's period.
+     * 
+     * This is used to correctly set obligationsMetOnDate when marking an installment as complete.
      */
     private LocalDate findLatestRepaymentDateForInstallment(LoanRepaymentScheduleInstallment installment,
             List<LoanTransaction> transactions) {
+        // First, try to find transactions that are explicitly mapped to this installment
+        Optional<LocalDate> mappedDate = transactions.stream()
+                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+                .filter(t -> t.getLoanTransactionToRepaymentScheduleMappings() != null)
+                .flatMap(t -> t.getLoanTransactionToRepaymentScheduleMappings().stream()
+                        .filter(mapping -> mapping.getLoanRepaymentScheduleInstallment() != null
+                                && mapping.getLoanRepaymentScheduleInstallment().equals(installment))
+                        .map(mapping -> t.getTransactionDate()))
+                .max(LocalDate::compareTo);
+
+        if (mappedDate.isPresent()) {
+            return mappedDate.get();
+        }
+
+        // Fallback: find transactions that occurred within the installment's period
         LocalDate fromDate = installment.getFromDate();
         LocalDate dueDate = installment.getDueDate();
 
-        // Find the latest repayment transaction that applies to this installment period
-        Optional<LoanTransaction> latestRepayment = transactions.stream().filter(t -> t.isRepaymentLikeType() && !t.isReversed())
+        Optional<LoanTransaction> latestRepayment = transactions.stream()
+                .filter(t -> t.isRepaymentLikeType() && !t.isReversed())
                 .filter(t -> {
                     LocalDate txDate = t.getTransactionDate();
                     // Transaction applies to this installment if it's on or after the from date
-                    // and if there's a due date, before or on the due date
+                    // and if there's a due date, on or before the due date
                     boolean afterFromDate = fromDate == null || !txDate.isBefore(fromDate);
-                    boolean beforeDueDate = dueDate == null || !txDate.isAfter(dueDate);
-                    return afterFromDate && beforeDueDate;
-                }).max(Comparator.comparing(LoanTransaction::getTransactionDate));
+                    boolean onOrBeforeDueDate = dueDate == null || !txDate.isAfter(dueDate);
+                    return afterFromDate && onOrBeforeDueDate;
+                })
+                .max(Comparator.comparing(LoanTransaction::getTransactionDate));
 
         return latestRepayment.map(LoanTransaction::getTransactionDate).orElse(null);
     }
