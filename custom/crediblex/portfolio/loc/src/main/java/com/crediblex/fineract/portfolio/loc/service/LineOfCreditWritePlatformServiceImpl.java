@@ -769,4 +769,69 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     }
 
+    @Override
+    @Transactional
+    public CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Allow approved buyer management only for ACTIVE LOCs
+        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
+            throw new PlatformDataIntegrityException("error.msg.loc.manage.approved.buyers.not.allowed",
+                    "Approved buyers can only be managed when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
+        }
+
+        // Validate the input
+        this.dataValidator.validateForManageApprovedBuyers(command);
+
+        // Check if any existing approved buyers are referenced by loans
+        // This prevents FK constraint violations
+        boolean hasReferencedBuyers = lineOfCredit.getApprovedBuyers() != null && 
+            lineOfCredit.getApprovedBuyers().stream()
+                .anyMatch(buyer -> buyer.getId() != null); // If ID exists, it might be referenced
+
+        final Map<String, Object> changes = new LinkedHashMap<>();
+
+        // Process approved buyers if provided
+        if (command.hasParameter("approvedBuyers")) {
+            JsonElement root = fromJsonHelper.parse(command.json());
+            JsonArray approvedBuyersArray = fromJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
+            List<LineOfCreditApprovedBuyers> newApprovedBuyers = new ArrayList<>();
+            
+            if (approvedBuyersArray != null) {
+                approvedBuyersArray.forEach(buyerElement -> {
+                    if (buyerElement != null && !buyerElement.isJsonNull()) {
+                        String buyerName = buyerElement.getAsJsonObject().get("name").getAsString();
+                        
+                        LineOfCreditApprovedBuyers buyer = new LineOfCreditApprovedBuyers(buyerName, null);
+                        newApprovedBuyers.add(buyer);
+                    }
+                });
+            }
+            
+            if (hasReferencedBuyers && !newApprovedBuyers.isEmpty()) {
+                // If there are existing referenced buyers, we can only add new ones
+                // Use additive approach instead of replacement
+                lineOfCredit.addApprovedBuyers(newApprovedBuyers);
+                changes.put("approvedBuyersAdded", newApprovedBuyers.size());
+            } else {
+                // Safe to replace if no existing referenced buyers
+                lineOfCredit.replaceApprovedBuyers(newApprovedBuyers);
+                changes.put("approvedBuyersCount", newApprovedBuyers.size());
+            }
+        }
+
+        if (!changes.isEmpty()) {
+            this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+            
+            // Save note if provided
+            saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.LOC_APPROVED_BUYERS_UPDATED);
+        }
+
+        return new CommandProcessingResultBuilder()
+                .withCommandId(command.commandId())
+                .withEntityId(lineOfCreditId)
+                .with(changes)
+                .build();
+    }
+
 }
