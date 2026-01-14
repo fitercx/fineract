@@ -20,9 +20,9 @@ package com.crediblex.fineract.integration.job;
 
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
+import com.crediblex.fineract.integration.odoo.service.EntryProcessingResult;
 import com.crediblex.fineract.integration.odoo.service.JournalEntryOdooTrackingService;
 import com.crediblex.fineract.integration.odoo.service.OdooJournalEntryService;
-import com.crediblex.fineract.integration.odoo.service.EntryProcessingResult;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAudit;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAuditRepository;
 import java.math.BigDecimal;
@@ -118,18 +118,18 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                     // Post all journal entries for this loan (may create multiple moves for different journals)
                     EntryProcessingResult result = processJournalEntriesForLoan(loanId, loanEntries);
-                    
+
                     successCount += result.getSuccessCount();
                     failureCount += result.getFailureCount();
                     movesCreated += result.getMovesCreated();
-                    
+
                     if (result.getSuccessCount() > 0) {
                         log.info("Successfully posted {} out of {} journal entries for loan {} to Odoo across {} moves",
                                 result.getSuccessCount(), loanEntries.size(), loanId, result.getMovesCreated());
                     }
                     if (result.getFailureCount() > 0) {
-                        log.warn("Failed to post {} out of {} journal entries for loan {}",
-                                result.getFailureCount(), loanEntries.size(), loanId);
+                        log.warn("Failed to post {} out of {} journal entries for loan {}", result.getFailureCount(), loanEntries.size(),
+                                loanId);
                     }
 
                 } catch (Exception e) {
@@ -181,18 +181,18 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     // Post all journal entries for this business event (may create multiple moves for different
                     // journals)
                     EntryProcessingResult result = processJournalEntriesForBusinessEvent(businessEventType, cashMarginEntries);
-                    
+
                     successCount += result.getSuccessCount();
                     failureCount += result.getFailureCount();
                     movesCreated += result.getMovesCreated();
-                    
+
                     if (result.getSuccessCount() > 0) {
                         log.info("Successfully posted {} out of {} journal entries for business event {} to Odoo across {} moves",
                                 result.getSuccessCount(), cashMarginEntries.size(), businessEventType, result.getMovesCreated());
                     }
                     if (result.getFailureCount() > 0) {
-                        log.warn("Failed to post {} out of {} journal entries for business event {}",
-                                result.getFailureCount(), cashMarginEntries.size(), businessEventType);
+                        log.warn("Failed to post {} out of {} journal entries for business event {}", result.getFailureCount(),
+                                cashMarginEntries.size(), businessEventType);
                     }
 
                 } catch (Exception e) {
@@ -202,7 +202,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     String detailedErrorMsg = String.format("Failed to post journal entries for business event %s to Odoo: %s",
                             businessEventType, specificError);
 
-                    log.error("Failed to post journal entries for business event {} to Odoo - Error: {}", businessEventType, specificError, e);
+                    log.error("Failed to post journal entries for business event {} to Odoo - Error: {}", businessEventType, specificError,
+                            e);
 
                     // Mark all entries as failed (original behavior)
                     for (JournalEntryOdooSync sync : cashMarginEntries) {
@@ -598,20 +599,19 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
             // Mark individual entries as posted or failed based on the detailed result
             for (Long successfulEntryId : result.getSuccessfulEntryIds()) {
-                Long moveId = result.getJournalToMoveMap().isEmpty() ? 0L : 
-                    result.getJournalToMoveMap().values().iterator().next();
+                Long moveId = result.getJournalToMoveMap().isEmpty() ? 0L : result.getJournalToMoveMap().values().iterator().next();
                 journalEntryOdooTrackingService.markAsPosted(successfulEntryId, moveId);
             }
 
             for (Map.Entry<Long, String> failedEntry : result.getFailedEntryIds().entrySet()) {
                 journalEntryOdooTrackingService.markAsFailed(failedEntry.getKey(), failedEntry.getValue());
             }
-            
+
             return result;
         } catch (Exception e) {
             // If enhanced method fails, fall back to original method for consistency
             log.warn("Enhanced processing failed for loan {}, falling back to original method: {}", loanId, e.getMessage());
-            
+
             try {
                 // Use original method as fallback
                 Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForLoan(loanId, loanEntries);
@@ -623,11 +623,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
                     }
                     return new EntryProcessingResult(
-                        loanEntries.stream().map(sync -> sync.getJournalEntry().getId()).collect(Collectors.toList()),
-                        Map.of(),
-                        journalToMoveMap.size(),
-                        journalToMoveMap
-                    );
+                            loanEntries.stream().map(sync -> sync.getJournalEntry().getId()).collect(Collectors.toList()), Map.of(),
+                            journalToMoveMap.size(), journalToMoveMap);
                 } else {
                     // No moves created - this will be handled by the catch block above
                     throw new RuntimeException("Failed to create any moves in Odoo for loan " + loanId);
@@ -645,27 +642,29 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private EntryProcessingResult processJournalEntriesForBusinessEvent(String businessEventType, List<JournalEntryOdooSync> entries) {
         try {
             // Try the enhanced service method that provides individual entry tracking
-            EntryProcessingResult result = odooJournalEntryService.postJournalEntriesForBusinessEventWithTracking(businessEventType, entries);
+            EntryProcessingResult result = odooJournalEntryService.postJournalEntriesForBusinessEventWithTracking(businessEventType,
+                    entries);
 
             // Mark individual entries as posted or failed based on the detailed result
             for (Long successfulEntryId : result.getSuccessfulEntryIds()) {
-                Long moveId = result.getJournalToMoveMap().isEmpty() ? 0L : 
-                    result.getJournalToMoveMap().values().iterator().next();
+                Long moveId = result.getJournalToMoveMap().isEmpty() ? 0L : result.getJournalToMoveMap().values().iterator().next();
                 journalEntryOdooTrackingService.markAsPosted(successfulEntryId, moveId);
             }
 
             for (Map.Entry<Long, String> failedEntry : result.getFailedEntryIds().entrySet()) {
                 journalEntryOdooTrackingService.markAsFailed(failedEntry.getKey(), failedEntry.getValue());
             }
-            
+
             return result;
         } catch (Exception e) {
             // If enhanced method fails, fall back to original method for consistency
-            log.warn("Enhanced processing failed for business event {}, falling back to original method: {}", businessEventType, e.getMessage());
-            
+            log.warn("Enhanced processing failed for business event {}, falling back to original method: {}", businessEventType,
+                    e.getMessage());
+
             try {
                 // Use original method as fallback
-                Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForBusinessEvent(businessEventType, entries);
+                Map<Integer, Long> journalToMoveMap = odooJournalEntryService.postJournalEntriesForBusinessEvent(businessEventType,
+                        entries);
 
                 if (!journalToMoveMap.isEmpty()) {
                     // Mark all entries as posted (original behavior)
@@ -674,11 +673,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         journalEntryOdooTrackingService.markAsPosted(sync.getJournalEntry().getId(), firstMoveId);
                     }
                     return new EntryProcessingResult(
-                        entries.stream().map(sync -> sync.getJournalEntry().getId()).collect(Collectors.toList()),
-                        Map.of(),
-                        journalToMoveMap.size(),
-                        journalToMoveMap
-                    );
+                            entries.stream().map(sync -> sync.getJournalEntry().getId()).collect(Collectors.toList()), Map.of(),
+                            journalToMoveMap.size(), journalToMoveMap);
                 } else {
                     // No moves created - this will be handled by the catch block above
                     throw new RuntimeException("Failed to create any moves in Odoo for business event " + businessEventType);
