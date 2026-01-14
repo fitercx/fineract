@@ -27,18 +27,18 @@
 
     <!--
         Update cron expressions for loan-related jobs to prevent concurrent execution and deadlocks.
-        
+
         Problem: Multiple jobs were running at the same time (00:00:00 and 00:01:00), causing database
         deadlocks when updating the m_loan table and its associations.
-        
+
         Solution: Shift the execution TIMES only - frequency remains DAILY (unchanged). Jobs that were
         running at midnight (00:00:00) or 00:01:00 are now staggered across different hours to prevent
         concurrent execution. For large loan portfolios, Loan COB can take significant time (30-60+ minutes),
         so we provide ample buffer between jobs.
-        
+
         IMPORTANT: All jobs still run ONCE PER DAY - only the TIME of execution is changed.
         Example: If a job was running at 12:00 AM daily, it now runs at 4:00 AM daily (still daily, just different time).
-        
+
         Schedule (all jobs run daily, times shifted to prevent overlap):
         1. Loan COB: 00:00:00 (unchanged - runs first, most critical, can take 30-60+ min for large portfolios)
         2. Apply penalty to overdue loans: 01:00:00 (was 00:00:00, shifted to 1 AM - runs before arrears ageing so penalties are included in arrears calculation)
@@ -48,7 +48,7 @@
         6. Transfer Fee For Loans From Savings: 03:00:00 (was 00:01:00, shifted to 3 AM - independent operation)
         7. Add Accrual Transactions: 03:30:00 (was 00:01:00, shifted to 3:30 AM - depends on loan state)
         8. Add Accrual Transactions For Loans With Income Posted As Transactions: 04:00:00 (was 00:01:00, shifted to 4 AM - final accrual step)
-        
+
         Note: These intervals provide sufficient buffer for large loan portfolios. Frequency remains daily for all jobs.
     -->
 
