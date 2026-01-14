@@ -22,17 +22,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Result class to track individual journal entry processing outcomes
- * Provides detailed information about which specific entries succeeded or failed
+ * Result class to track individual journal entry processing outcomes Provides detailed information about which specific
+ * entries succeeded or failed
  */
 public class EntryProcessingResult {
+
     private final List<Long> successfulEntryIds;
     private final Map<Long, String> failedEntryIds;
     private final int movesCreated;
     private final Map<Integer, Long> journalToMoveMap;
 
-    public EntryProcessingResult(List<Long> successfulEntryIds, Map<Long, String> failedEntryIds, 
-                                int movesCreated, Map<Integer, Long> journalToMoveMap) {
+    public EntryProcessingResult(List<Long> successfulEntryIds, Map<Long, String> failedEntryIds, int movesCreated,
+            Map<Integer, Long> journalToMoveMap) {
         this.successfulEntryIds = successfulEntryIds;
         this.failedEntryIds = failedEntryIds;
         this.movesCreated = movesCreated;

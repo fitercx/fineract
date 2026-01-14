@@ -1028,8 +1028,8 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Enhanced version of postJournalEntriesForLoan with individual entry tracking
-     * This method provides granular success/failure tracking for each journal entry
+     * Enhanced version of postJournalEntriesForLoan with individual entry tracking This method provides granular
+     * success/failure tracking for each journal entry
      */
     public EntryProcessingResult postJournalEntriesForLoanWithTracking(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
         List<Long> successfulEntryIds = new ArrayList<>();
@@ -1049,11 +1049,11 @@ public class OdooJournalEntryService {
             }
 
             List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
-            
+
             // First pass: validate entries and separate valid from invalid
             Map<JournalEntry, String> validationErrors = new HashMap<>();
             List<JournalEntryOdooSync> validEntries = new ArrayList<>();
-            
+
             for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
                 JournalEntry entry = sync.getJournalEntry();
                 if (!canPostToOdoo(entry)) {
@@ -1082,8 +1082,8 @@ public class OdooJournalEntryService {
                 if (journalId != null) {
                     entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
                 } else {
-                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", 
-                        glCode, businessEventType, isDebit);
+                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", glCode,
+                            businessEventType, isDebit);
                     failedEntryIds.put(entry.getId(), error);
                 }
             }
@@ -1092,14 +1092,14 @@ public class OdooJournalEntryService {
             for (Map.Entry<Integer, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
                 Integer journalId = journalGroup.getKey();
                 List<JournalEntryOdooSync> groupEntries = journalGroup.getValue();
-                
+
                 try {
                     List<JournalEntry> entries = groupEntries.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
-                    
+
                     // Create the account move for this journal
                     Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
                     Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
-                    
+
                     if (odooMoveId == null) {
                         String error = String.format("Failed to create account move in Odoo for loan %d and journal %d", loanId, journalId);
                         for (JournalEntryOdooSync sync : groupEntries) {
@@ -1119,16 +1119,16 @@ public class OdooJournalEntryService {
                     for (JournalEntryOdooSync sync : groupEntries) {
                         successfulEntryIds.add(sync.getJournalEntry().getId());
                     }
-                    
-                    log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", 
-                        groupEntries.size(), loanId, journalId, odooMoveId);
-                        
+
+                    log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", groupEntries.size(),
+                            loanId, journalId, odooMoveId);
+
                 } catch (Exception e) {
                     // This specific journal group failed
-                    String error = String.format("Failed to post journal entries for loan %d, journal %d: %s", 
-                        loanId, journalId, e.getMessage());
+                    String error = String.format("Failed to post journal entries for loan %d, journal %d: %s", loanId, journalId,
+                            e.getMessage());
                     log.error("Journal group processing failed for loan {}, journal {}", loanId, journalId, e);
-                    
+
                     for (JournalEntryOdooSync sync : groupEntries) {
                         failedEntryIds.put(sync.getJournalEntry().getId(), error);
                     }
@@ -1139,7 +1139,7 @@ public class OdooJournalEntryService {
             // Unexpected error during processing
             String error = String.format("Unexpected error during loan %d processing: %s", loanId, e.getMessage());
             log.error("Unexpected error during loan {} processing", loanId, e);
-            
+
             // Mark any remaining entries that weren't already processed as failed
             for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
                 Long entryId = sync.getJournalEntry().getId();
@@ -1155,7 +1155,7 @@ public class OdooJournalEntryService {
     /**
      * Enhanced version of postJournalEntriesForBusinessEvent with individual entry tracking
      */
-    public EntryProcessingResult postJournalEntriesForBusinessEventWithTracking(String businessEventType, 
+    public EntryProcessingResult postJournalEntriesForBusinessEventWithTracking(String businessEventType,
             List<JournalEntryOdooSync> journalEntryOdooSyncs) {
         List<Long> successfulEntryIds = new ArrayList<>();
         Map<Long, String> failedEntryIds = new HashMap<>();
@@ -1173,14 +1173,15 @@ public class OdooJournalEntryService {
             }
 
             List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
-            
+
             // Validate entries and separate valid from invalid
             List<JournalEntryOdooSync> validEntries = new ArrayList<>();
-            
+
             for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
                 JournalEntry entry = sync.getJournalEntry();
                 if (!canPostToOdoo(entry)) {
-                    String error = String.format("Journal entry %d for business event %s failed validation", entry.getId(), businessEventType);
+                    String error = String.format("Journal entry %d for business event %s failed validation", entry.getId(),
+                            businessEventType);
                     failedEntryIds.put(entry.getId(), error);
                 } else {
                     validEntries.add(sync);
@@ -1203,8 +1204,8 @@ public class OdooJournalEntryService {
                 if (journalId != null) {
                     entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
                 } else {
-                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", 
-                        glCode, businessEventType, isDebit);
+                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", glCode,
+                            businessEventType, isDebit);
                     failedEntryIds.put(entry.getId(), error);
                 }
             }
@@ -1213,17 +1214,17 @@ public class OdooJournalEntryService {
             for (Map.Entry<Integer, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
                 Integer journalId = journalGroup.getKey();
                 List<JournalEntryOdooSync> groupEntries = journalGroup.getValue();
-                
+
                 try {
                     List<JournalEntry> entries = groupEntries.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
-                    
+
                     // Create the account move for this journal
                     Map<String, Object> moveValues = buildAccountMoveValuesForBusinessEvent(businessEventType, entries, journalId);
                     Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
-                    
+
                     if (odooMoveId == null) {
-                        String error = String.format("Failed to create account move in Odoo for business event %s and journal %d", 
-                            businessEventType, journalId);
+                        String error = String.format("Failed to create account move in Odoo for business event %s and journal %d",
+                                businessEventType, journalId);
                         for (JournalEntryOdooSync sync : groupEntries) {
                             failedEntryIds.put(sync.getJournalEntry().getId(), error);
                         }
@@ -1241,16 +1242,16 @@ public class OdooJournalEntryService {
                     for (JournalEntryOdooSync sync : groupEntries) {
                         successfulEntryIds.add(sync.getJournalEntry().getId());
                     }
-                    
-                    log.info("Successfully posted {} journal entries for business event {} to Odoo journal {} as move {}", 
-                        groupEntries.size(), businessEventType, journalId, odooMoveId);
-                        
+
+                    log.info("Successfully posted {} journal entries for business event {} to Odoo journal {} as move {}",
+                            groupEntries.size(), businessEventType, journalId, odooMoveId);
+
                 } catch (Exception e) {
                     // This specific journal group failed
-                    String error = String.format("Failed to post journal entries for business event %s, journal %d: %s", 
-                        businessEventType, journalId, e.getMessage());
+                    String error = String.format("Failed to post journal entries for business event %s, journal %d: %s", businessEventType,
+                            journalId, e.getMessage());
                     log.error("Journal group processing failed for business event {}, journal {}", businessEventType, journalId, e);
-                    
+
                     for (JournalEntryOdooSync sync : groupEntries) {
                         failedEntryIds.put(sync.getJournalEntry().getId(), error);
                     }
@@ -1261,7 +1262,7 @@ public class OdooJournalEntryService {
             // Unexpected error during processing
             String error = String.format("Unexpected error during business event %s processing: %s", businessEventType, e.getMessage());
             log.error("Unexpected error during business event {} processing", businessEventType, e);
-            
+
             // Mark any remaining entries that weren't already processed as failed
             for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
                 Long entryId = sync.getJournalEntry().getId();
