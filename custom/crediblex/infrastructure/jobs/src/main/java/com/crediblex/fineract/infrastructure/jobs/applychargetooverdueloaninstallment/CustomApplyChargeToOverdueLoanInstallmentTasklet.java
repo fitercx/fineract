@@ -298,8 +298,8 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     }
 
     /**
-     * Case-insensitive string contains check using regionMatches to avoid creating temporary lowercase strings.
-     * More efficient than toLowerCase().contains() for potentially large strings.
+     * Case-insensitive string contains check using regionMatches to avoid creating temporary lowercase strings. More
+     * efficient than toLowerCase().contains() for potentially large strings.
      */
     private boolean containsIgnoreCase(String text, String searchString) {
         if (text == null || searchString == null) {
