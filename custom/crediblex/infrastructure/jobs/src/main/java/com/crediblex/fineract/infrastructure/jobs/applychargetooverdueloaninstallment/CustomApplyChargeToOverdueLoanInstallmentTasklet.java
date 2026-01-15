@@ -292,13 +292,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             if (cause instanceof DeadlockLoserDataAccessException) {
                 return true;
             }
-            if (cause instanceof SQLException) {
-                final String message = cause.getMessage();
-                if (message != null && message.toLowerCase().contains("deadlock detected")) {
-                    return true;
-                }
-            }
-            // Also check message in any exception in the chain
+            // Check message in any exception in the chain
             final String message = cause.getMessage();
             if (message != null && message.toLowerCase().contains("deadlock detected")) {
                 return true;
