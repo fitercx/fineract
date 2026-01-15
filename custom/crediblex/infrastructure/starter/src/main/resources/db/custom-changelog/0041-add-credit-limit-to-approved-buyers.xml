@@ -32,7 +32,7 @@
                 <columnExists tableName="m_line_of_credit_approved_buyers" columnName="credit_limit"/>
             </not>
         </preConditions>
-        
+
         <addColumn tableName="m_line_of_credit_approved_buyers">
             <column name="credit_limit" type="DECIMAL(19,6)" defaultValueNumeric="0">
                 <constraints nullable="false"/>
