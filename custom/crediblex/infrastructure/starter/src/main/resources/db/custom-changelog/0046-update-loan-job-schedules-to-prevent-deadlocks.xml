@@ -33,7 +33,7 @@
 
         Solution: Shift the execution TIMES only - frequency remains DAILY (unchanged). Jobs that were
         running at midnight (00:00:00) or 00:01:00 are now staggered across different hours to prevent
-        concurrent execution. 
+        concurrent execution.
 
         IMPORTANT UPDATE: Based on actual processing times observed:
         - Apply penalty to overdue loans: Takes 2.5-3.5 hours for portfolios with high installment counts

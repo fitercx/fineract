@@ -34,43 +34,37 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * Configuration to override the core ApplyChargeToOverdueLoanInstallmentTasklet with
- * custom implementation that includes:
- * - Deadlock prevention through sorted processing
- * - Deadlock retry logic with exponential backoff
- * - Batch processing for better performance
- * - Enhanced logging and metrics
+ * Configuration to override the core ApplyChargeToOverdueLoanInstallmentTasklet with custom implementation that
+ * includes: - Deadlock prevention through sorted processing - Deadlock retry logic with exponential backoff - Batch
+ * processing for better performance - Enhanced logging and metrics
  */
 @Configuration
 public class CrediblexPenaltyJobOverrideConfiguration {
 
     /**
-     * Override the core tasklet bean with custom implementation.
-     * The @Primary annotation ensures Spring uses this bean instead of the core one.
-     * 
-     * Dependencies are injected directly via method parameters - Spring will automatically
-     * resolve them from the application context.
+     * Override the core tasklet bean with custom implementation. The @Primary annotation ensures Spring uses this bean
+     * instead of the core one.
+     *
+     * Dependencies are injected directly via method parameters - Spring will automatically resolve them from the
+     * application context.
      */
     @Bean
     @Primary
-    public Tasklet applyChargeToOverdueLoanInstallmentTasklet(
-            ConfigurationDomainService configurationDomainService,
-            LoanReadPlatformService loanReadPlatformService,
-            LoanChargeWritePlatformService loanChargeWritePlatformService,
+    public Tasklet applyChargeToOverdueLoanInstallmentTasklet(ConfigurationDomainService configurationDomainService,
+            LoanReadPlatformService loanReadPlatformService, LoanChargeWritePlatformService loanChargeWritePlatformService,
             PlatformTransactionManager transactionManager) {
         return new CustomApplyChargeToOverdueLoanInstallmentTasklet(configurationDomainService, loanReadPlatformService,
                 loanChargeWritePlatformService, transactionManager);
     }
 
     /**
-     * Override the Step bean to use our custom tasklet.
-     * This ensures the step uses our custom tasklet implementation and avoids type mismatch issues.
-     * Uses @Qualifier to specify the exact bean name since there are multiple @Primary Tasklet beans.
+     * Override the Step bean to use our custom tasklet. This ensures the step uses our custom tasklet implementation
+     * and avoids type mismatch issues. Uses @Qualifier to specify the exact bean name since there are multiple @Primary
+     * Tasklet beans.
      */
     @Bean
     @Primary
-    protected Step applyChargeToOverdueLoanInstallmentStep(JobRepository jobRepository,
-            PlatformTransactionManager transactionManager,
+    protected Step applyChargeToOverdueLoanInstallmentStep(JobRepository jobRepository, PlatformTransactionManager transactionManager,
             @Qualifier("applyChargeToOverdueLoanInstallmentTasklet") Tasklet applyChargeToOverdueLoanInstallmentTasklet) {
         return new StepBuilder(JobName.APPLY_CHARGE_TO_OVERDUE_LOAN_INSTALLMENT.name(), jobRepository)
                 .tasklet(applyChargeToOverdueLoanInstallmentTasklet, transactionManager).build();

@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.ACTUAL_DISBURSEMENT_DATE;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
@@ -35,16 +36,15 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanRefundService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
-import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 
 /**
  * Custom implementation of LoanDownPaymentHandlerService that fixes the multi-tranche validation bug.
- * 
- * The core implementation incorrectly applies multi-tranche validation to single-tranche loans
- * when the product is updated from single-disbursal to multi-disbursal after loan creation.
- * 
- * This custom implementation uses LoanTrancheValidationHelper.hasActualMultipleTranches() to
- * accurately determine if a loan actually has multiple tranches, regardless of product settings.
+ *
+ * The core implementation incorrectly applies multi-tranche validation to single-tranche loans when the product is
+ * updated from single-disbursal to multi-disbursal after loan creation.
+ *
+ * This custom implementation uses LoanTrancheValidationHelper.hasActualMultipleTranches() to accurately determine if a
+ * loan actually has multiple tranches, regardless of product settings.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -179,8 +179,8 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
     }
 
     /**
-     * Fixed version of validateTransactionAmountThreshold that uses hasActualMultipleTranches()
-     * instead of checking the product setting.
+     * Fixed version of validateTransactionAmountThreshold that uses hasActualMultipleTranches() instead of checking the
+     * product setting.
      */
     private void validateTransactionAmountThresholdFixed(final Loan loan, final LoanTransaction adjustedTransaction) {
         // Only apply validation if loan actually has multiple tranches

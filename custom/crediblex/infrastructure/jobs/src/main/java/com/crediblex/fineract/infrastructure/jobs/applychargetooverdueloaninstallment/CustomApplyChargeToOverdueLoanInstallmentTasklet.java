@@ -47,11 +47,9 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Custom implementation of ApplyChargeToOverdueLoanInstallmentTasklet with:
- * - Sorted processing (TreeMap by loan ID) to prevent deadlocks
- * - Deadlock retry logic with exponential backoff
- * - Batch processing for better performance and error isolation
- * - Enhanced logging and metrics
+ * Custom implementation of ApplyChargeToOverdueLoanInstallmentTasklet with: - Sorted processing (TreeMap by loan ID) to
+ * prevent deadlocks - Deadlock retry logic with exponential backoff - Batch processing for better performance and error
+ * isolation - Enhanced logging and metrics
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -101,8 +99,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
         // Use TreeMap to sort loans by ID - prevents deadlocks and improves cache locality
         final Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData = new TreeMap<>();
         for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduledInstallments) {
-            overdueScheduleData.computeIfAbsent(overdueInstallment.getLoanId(), k -> new ArrayList<>())
-                    .add(overdueInstallment);
+            overdueScheduleData.computeIfAbsent(overdueInstallment.getLoanId(), k -> new ArrayList<>()).add(overdueInstallment);
         }
 
         final int totalLoans = overdueScheduleData.size();
@@ -126,8 +123,8 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
         failureCount = exceptions.size();
 
         final long executionTime = System.currentTimeMillis() - startTime;
-        log.info("Penalty job execution completed - Total: {}, Success: {}, Failed: {}, Time: {}ms ({}s)", totalLoans,
-                successCount, failureCount, executionTime, executionTime / 1000.0);
+        log.info("Penalty job execution completed - Total: {}, Success: {}, Failed: {}, Time: {}ms ({}s)", totalLoans, successCount,
+                failureCount, executionTime, executionTime / 1000.0);
 
         if (!exceptions.isEmpty()) {
             log.error("Penalty job completed with {} failures out of {} loans processed", failureCount, processedCount);
@@ -140,12 +137,11 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     /**
      * Process loans in batches for better performance and error isolation
      */
-    private int processLoansInBatches(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData,
-            List<Throwable> exceptions, long startTime, int totalLoans) {
+    private int processLoansInBatches(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData, List<Throwable> exceptions,
+            long startTime, int totalLoans) {
         int processedCount = 0;
         int batchNumber = 0;
-        final List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> loanEntries = new ArrayList<>(
-                overdueScheduleData.entrySet());
+        final List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> loanEntries = new ArrayList<>(overdueScheduleData.entrySet());
 
         for (int i = 0; i < loanEntries.size(); i += batchSize) {
             batchNumber++;
@@ -165,9 +161,9 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                 final int remainingLoans = totalLoans - processedCount;
                 final double estimatedRemainingTime = remainingLoans * avgTimePerLoan;
 
-                log.info("Batch {} completed: {} loans in {}ms (avg {}ms/loan). Progress: {}/{} ({}%). "
-                        + "Estimated remaining time: {}s", batchNumber, batch.size(), batchTime, String.format("%.1f", avgTimePerLoan),
-                        processedCount, totalLoans, String.format("%.1f", (processedCount * 100.0 / totalLoans)),
+                log.info("Batch {} completed: {} loans in {}ms (avg {}ms/loan). Progress: {}/{} ({}%). " + "Estimated remaining time: {}s",
+                        batchNumber, batch.size(), batchTime, String.format("%.1f", avgTimePerLoan), processedCount, totalLoans,
+                        String.format("%.1f", (processedCount * 100.0 / totalLoans)),
                         String.format("%.1f", estimatedRemainingTime / 1000.0));
 
             } catch (Exception e) {
@@ -183,8 +179,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     /**
      * Process a batch of loans in a separate transaction
      */
-    private void processBatch(List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> batch,
-            List<Throwable> exceptions) {
+    private void processBatch(List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> batch, List<Throwable> exceptions) {
         final TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -199,8 +194,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     /**
      * Process loans sequentially (fallback mode when batch processing is disabled)
      */
-    private int processLoansSequentially(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData,
-            List<Throwable> exceptions) {
+    private int processLoansSequentially(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData, List<Throwable> exceptions) {
         int processedCount = 0;
         for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
             processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions);
@@ -240,8 +234,8 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
 
             } catch (final AbstractPlatformDomainRuleException e) {
                 // Don't retry business rule exceptions
-                log.error("Apply Charges due for overdue loans failed for account {} with message: {}", loanId,
-                        e.getDefaultUserMessage(), e);
+                log.error("Apply Charges due for overdue loans failed for account {} with message: {}", loanId, e.getDefaultUserMessage(),
+                        e);
                 exceptions.add(e);
                 return;
 
@@ -253,8 +247,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                     attempt++;
                     if (attempt <= maxRetries) {
                         final long delay = calculateRetryDelay(attempt);
-                        log.warn("Deadlock detected for loan {} (attempt {}/{}) - retrying after {}ms", loanId, attempt,
-                                maxRetries, delay);
+                        log.warn("Deadlock detected for loan {} (attempt {}/{}) - retrying after {}ms", loanId, attempt, maxRetries, delay);
                         try {
                             Thread.sleep(delay);
                         } catch (InterruptedException ie) {
@@ -264,15 +257,13 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                             return;
                         }
                     } else {
-                        log.error("Failed to process loan {} after {} retry attempts due to deadlock", loanId,
-                                maxRetries);
+                        log.error("Failed to process loan {} after {} retry attempts due to deadlock", loanId, maxRetries);
                         exceptions.add(e);
                         return;
                     }
                 } else {
                     // Not a deadlock - don't retry
-                    log.error("Apply Charges due for overdue loans failed for account {} with non-retryable error",
-                            loanId, e);
+                    log.error("Apply Charges due for overdue loans failed for account {} with non-retryable error", loanId, e);
                     exceptions.add(e);
                     return;
                 }
