@@ -159,7 +159,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                 final int remainingLoans = totalLoans - processedCount;
                 final double estimatedRemainingTime = remainingLoans * avgTimePerLoan;
 
-                log.info("Batch {} completed: {} loans in {}ms (avg {}ms/loan). Progress: {}/{} ({}%). " + "Estimated remaining time: {}s",
+                log.info("Batch {} completed: {} loans in {}ms (avg {}ms/loan). Progress: {}/{} ({}%). Estimated remaining time: {}s",
                         batchNumber, batch.size(), batchTime, String.format("%.1f", avgTimePerLoan), processedCount, totalLoans,
                         String.format("%.1f", (processedCount * 100.0 / totalLoans)),
                         String.format("%.1f", estimatedRemainingTime / 1000.0));
