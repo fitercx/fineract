@@ -18,7 +18,6 @@
  */
 package com.crediblex.fineract.infrastructure.jobs.applychargetooverdueloaninstallment;
 
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -26,7 +25,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
@@ -41,7 +39,6 @@ import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DeadlockLoserDataAccessException;
-import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -276,38 +273,25 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     }
 
     /**
-     * Check if an exception is a deadlock exception
+     * Check if an exception is a deadlock exception.
+     *
+     * Detects deadlocks by: 1. Checking for Spring's DeadlockLoserDataAccessException (most reliable) 2. Recursively
+     * checking exception chain for "deadlock detected" message 3. Checking the exception message itself
      */
     private boolean isDeadlockException(Exception e) {
-        // Check for DeadlockLoserDataAccessException
+        // Check for Spring's deadlock wrapper (most reliable indicator)
         if (e instanceof DeadlockLoserDataAccessException) {
             return true;
         }
 
-        // Check for JpaSystemException with SQLException containing "deadlock detected"
-        if (e instanceof JpaSystemException) {
-            final Throwable rootCause = ExceptionUtils.getRootCause(e);
-            if (rootCause instanceof SQLException) {
-                final String message = rootCause.getMessage();
-                if (message != null && message.toLowerCase().contains("deadlock detected")) {
-                    return true;
-                }
-            }
-        }
-
-        // Check exception chain recursively for deadlock messages
+        // Check exception chain recursively for deadlock indicators
         Throwable cause = e.getCause();
         while (cause != null) {
+            // Check for Spring's deadlock wrapper in the chain
             if (cause instanceof DeadlockLoserDataAccessException) {
                 return true;
             }
-            if (cause instanceof SQLException) {
-                final String message = cause.getMessage();
-                if (message != null && message.toLowerCase().contains("deadlock detected")) {
-                    return true;
-                }
-            }
-            // Also check message in any exception in the chain
+            // Check message for "deadlock detected" (covers SQLException, JpaSystemException, etc.)
             final String message = cause.getMessage();
             if (message != null && message.toLowerCase().contains("deadlock detected")) {
                 return true;
@@ -317,11 +301,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
 
         // Check exception message itself
         final String exceptionMessage = e.getMessage();
-        if (exceptionMessage != null && exceptionMessage.toLowerCase().contains("deadlock detected")) {
-            return true;
-        }
-
-        return false;
+        return exceptionMessage != null && exceptionMessage.toLowerCase().contains("deadlock detected");
     }
 
     /**
