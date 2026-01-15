@@ -1051,14 +1051,12 @@ public class OdooJournalEntryService {
             List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
 
             // First pass: validate entries and separate valid from invalid
-            Map<JournalEntry, String> validationErrors = new HashMap<>();
             List<JournalEntryOdooSync> validEntries = new ArrayList<>();
 
             for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
                 JournalEntry entry = sync.getJournalEntry();
                 if (!canPostToOdoo(entry)) {
                     String error = String.format("Journal entry %d for loan %d failed validation", entry.getId(), loanId);
-                    validationErrors.put(entry, error);
                     failedEntryIds.put(entry.getId(), error);
                 } else {
                     validEntries.add(sync);
