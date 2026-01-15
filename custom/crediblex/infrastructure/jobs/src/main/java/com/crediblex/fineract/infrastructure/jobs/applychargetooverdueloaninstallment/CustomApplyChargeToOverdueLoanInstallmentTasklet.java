@@ -144,7 +144,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                         String.format("%.1f", estimatedRemainingTime / 1000.0));
 
             } catch (Exception e) {
-                log.error("Error processing batch {}: {}", batchNumber, e.getMessage(), e);
+                log.error("Error processing batch {}", batchNumber, e);
                 // Continue processing next batch even if current batch fails
                 // Individual loan failures are already captured in exceptions list
             }
@@ -187,6 +187,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             List<Throwable> exceptions) {
         int attempt = 0;
         Exception lastException = null;
+        final int maxRetries = penaltyJobProperties.getMaxRetries();
 
         while (attempt <= maxRetries) {
             try {
@@ -222,7 +223,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                 // Check if this is a deadlock exception
                 if (isDeadlockException(e)) {
                     attempt++;
-                    final int maxRetries = penaltyJobProperties.getMaxRetries();
                     if (attempt <= maxRetries) {
                         final long delay = calculateRetryDelay(attempt);
                         log.warn("Deadlock detected for loan {} (attempt {}/{}) - retrying after {}ms", loanId, attempt, maxRetries, delay);
@@ -235,7 +235,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                             return;
                         }
                     } else {
-                        final int maxRetries = penaltyJobProperties.getMaxRetries();
                         log.error("Failed to process loan {} after {} retry attempts due to deadlock", loanId, maxRetries);
                         exceptions.add(e);
                         return;
