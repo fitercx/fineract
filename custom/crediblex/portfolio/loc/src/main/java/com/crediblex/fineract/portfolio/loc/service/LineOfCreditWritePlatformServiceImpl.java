@@ -848,10 +848,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             return;
         }
 
-        // Collect existing buyer IDs to check for loan references
-        List<Long> existingBuyerIds = existingBuyers.stream().filter(buyer -> buyer.getId() != null).map(LineOfCreditApprovedBuyers::getId)
-                .toList();
-
         // Check which buyers are being deleted (exist in current list but not in new list)
         List<LineOfCreditApprovedBuyers> buyersToDelete = existingBuyers.stream().filter(
                 existingBuyer -> newApprovedBuyers.stream().noneMatch(newBuyer -> newBuyer.getName().equals(existingBuyer.getName())))
