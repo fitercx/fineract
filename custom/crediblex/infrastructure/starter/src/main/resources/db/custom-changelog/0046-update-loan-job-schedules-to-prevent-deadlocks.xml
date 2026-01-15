@@ -33,23 +33,27 @@
 
         Solution: Shift the execution TIMES only - frequency remains DAILY (unchanged). Jobs that were
         running at midnight (00:00:00) or 00:01:00 are now staggered across different hours to prevent
-        concurrent execution. For large loan portfolios, Loan COB can take significant time (30-60+ minutes),
-        so we provide ample buffer between jobs.
+        concurrent execution. 
+
+        IMPORTANT UPDATE: Based on actual processing times observed:
+        - Apply penalty to overdue loans: Takes 2.5-3.5 hours for portfolios with high installment counts
+        - All dependent jobs must start AFTER penalty job completes to prevent overlap and deadlocks
 
         IMPORTANT: All jobs still run ONCE PER DAY - only the TIME of execution is changed.
         Example: If a job was running at 12:00 AM daily, it now runs at 4:00 AM daily (still daily, just different time).
 
         Schedule (all jobs run daily, times shifted to prevent overlap):
         1. Loan COB: 00:00:00 (unchanged - runs first, most critical, can take 30-60+ min for large portfolios)
-        2. Apply penalty to overdue loans: 01:00:00 (was 00:00:00, shifted to 1 AM - runs before arrears ageing so penalties are included in arrears calculation)
-        3. Update Loan Arrears Ageing: 01:30:00 (was 00:01:00, shifted to 1:30 AM - runs after penalties to include them in arrears calculation, provides data for other jobs)
-        4. Update Non Performing Assets: 02:00:00 (was 00:00:00, shifted to 2 AM - depends on arrears data)
-        5. Recalculate Interest For Loans: 02:30:00 (was 00:01:00, shifted to 2:30 AM - depends on arrears ageing)
-        6. Transfer Fee For Loans From Savings: 03:00:00 (was 00:01:00, shifted to 3 AM - independent operation)
-        7. Add Accrual Transactions: 03:30:00 (was 00:01:00, shifted to 3:30 AM - depends on loan state)
-        8. Add Accrual Transactions For Loans With Income Posted As Transactions: 04:00:00 (was 00:01:00, shifted to 4 AM - final accrual step)
+        2. Apply penalty to overdue loans: 01:00:00 (was 00:00:00, shifted to 1 AM - takes 2.5-3.5 hours, finishes ~04:30)
+        3. Update Loan Arrears Ageing: 04:30:00 (was 01:30:00, shifted to 4:30 AM - runs AFTER penalties complete, includes them in arrears calculation, provides data for other jobs)
+        4. Update Non Performing Assets: 05:00:00 (was 02:00:00, shifted to 5 AM - depends on arrears data, 30 min buffer after arrears ageing)
+        5. Recalculate Interest For Loans: 05:30:00 (was 02:30:00, shifted to 5:30 AM - depends on arrears ageing, 30 min buffer after NPA)
+        6. Transfer Fee For Loans From Savings: 06:00:00 (was 03:00:00, shifted to 6 AM - independent operation, 30 min buffer)
+        7. Add Accrual Transactions: 06:30:00 (was 03:30:00, shifted to 6:30 AM - depends on loan state, 30 min buffer)
+        8. Add Accrual Transactions For Loans With Income Posted As Transactions: 07:00:00 (was 04:00:00, shifted to 7 AM - final accrual step, 30 min buffer)
 
-        Note: These intervals provide sufficient buffer for large loan portfolios. Frequency remains daily for all jobs.
+        Note: Updated schedule accounts for actual penalty job processing time (2.5-3.5 hours) with 30-minute safety buffers.
+        Frequency remains daily for all jobs.
     -->
 
     <changeSet author="crediblex" id="update-loan-cob-schedule" context="postgresql,mysql">
@@ -69,49 +73,49 @@
     </changeSet>
 
     <changeSet author="crediblex" id="update-arrears-ageing-job-schedule" context="postgresql,mysql">
-        <comment>Update Update Loan Arrears Ageing job schedule to 01:30:00 (30 minutes after penalty job, runs AFTER penalties to include them in arrears calculation, provides data for other jobs)</comment>
+        <comment>Update Update Loan Arrears Ageing job schedule to 04:30:00 (runs AFTER penalty job completes - penalty job takes 2.5-3.5 hours and finishes ~04:30, includes penalties in arrears calculation, provides data for other jobs)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 30 1 * * ?"/>
+            <column name="cron_expression" value="0 30 4 * * ?"/>
             <where>name='Update Loan Arrears Ageing'</where>
         </update>
     </changeSet>
 
     <changeSet author="crediblex" id="update-npa-job-schedule" context="postgresql,mysql">
-        <comment>Update Update Non Performing Assets job schedule to 02:00:00 (30 minutes after arrears ageing, depends on arrears data)</comment>
+        <comment>Update Update Non Performing Assets job schedule to 05:00:00 (30 minutes after arrears ageing at 04:30, depends on arrears data)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 0 2 * * ?"/>
+            <column name="cron_expression" value="0 0 5 * * ?"/>
             <where>name='Update Non Performing Assets'</where>
         </update>
     </changeSet>
 
     <changeSet author="crediblex" id="update-recalculate-interest-job-schedule" context="postgresql,mysql">
-        <comment>Update Recalculate Interest For Loans job schedule to 02:30:00 (30 minutes after NPA, depends on arrears ageing)</comment>
+        <comment>Update Recalculate Interest For Loans job schedule to 05:30:00 (30 minutes after NPA at 05:00, depends on arrears ageing)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 30 2 * * ?"/>
+            <column name="cron_expression" value="0 30 5 * * ?"/>
             <where>name='Recalculate Interest For Loans'</where>
         </update>
     </changeSet>
 
     <changeSet author="crediblex" id="update-transfer-fee-job-schedule" context="postgresql,mysql">
-        <comment>Update Transfer Fee For Loans From Savings job schedule to 03:00:00 (30 minutes after interest recalculation, independent operation)</comment>
+        <comment>Update Transfer Fee For Loans From Savings job schedule to 06:00:00 (30 minutes after interest recalculation at 05:30, independent operation)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 0 3 * * ?"/>
+            <column name="cron_expression" value="0 0 6 * * ?"/>
             <where>name='Transfer Fee For Loans From Savings'</where>
         </update>
     </changeSet>
 
     <changeSet author="crediblex" id="update-accrual-entries-job-schedule" context="postgresql,mysql">
-        <comment>Update Add Accrual Transactions job schedule to 03:30:00 (30 minutes after transfer fee, depends on loan state)</comment>
+        <comment>Update Add Accrual Transactions job schedule to 06:30:00 (30 minutes after transfer fee at 06:00, depends on loan state)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 30 3 * * ?"/>
+            <column name="cron_expression" value="0 30 6 * * ?"/>
             <where>name='Add Accrual Transactions'</where>
         </update>
     </changeSet>
 
     <changeSet author="crediblex" id="update-accrual-entries-loans-income-job-schedule" context="postgresql,mysql">
-        <comment>Update Add Accrual Transactions For Loans With Income Posted As Transactions job schedule to 04:00:00 (30 minutes after accrual entries, final accrual step)</comment>
+        <comment>Update Add Accrual Transactions For Loans With Income Posted As Transactions job schedule to 07:00:00 (30 minutes after accrual entries at 06:30, final accrual step)</comment>
         <update tableName="job">
-            <column name="cron_expression" value="0 0 4 * * ?"/>
+            <column name="cron_expression" value="0 0 7 * * ?"/>
             <where>name='Add Accrual Transactions For Loans With Income Posted As Transactions'</where>
         </update>
     </changeSet>
