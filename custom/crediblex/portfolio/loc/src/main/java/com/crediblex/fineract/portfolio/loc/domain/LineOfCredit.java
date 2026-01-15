@@ -170,21 +170,20 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (this.approvedBuyers == null) {
             this.approvedBuyers = new ArrayList<>();
         }
-        
+
         // Approach: Don't delete existing buyers, instead deactivate them and add new ones
         // This preserves referential integrity for existing loans
-        
+
         // Step 1: Deactivate all existing buyers first
         // (In a proper implementation, we'd have an 'active' field in the table)
-        
+
         // Step 2: For this current implementation, we'll only add new buyers
         // and leave existing ones intact to avoid FK violations
         if (newApprovedBuyers != null) {
             for (LineOfCreditApprovedBuyers newBuyer : newApprovedBuyers) {
                 boolean alreadyExists = this.approvedBuyers.stream()
-                    .anyMatch(existing -> existing.getName() != null && 
-                             existing.getName().equals(newBuyer.getName()));
-                
+                        .anyMatch(existing -> existing.getName() != null && existing.getName().equals(newBuyer.getName()));
+
                 if (!alreadyExists) {
                     newBuyer.setLineOfCredit(this);
                     this.approvedBuyers.add(newBuyer);
@@ -197,13 +196,12 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (this.approvedBuyers == null) {
             this.approvedBuyers = new ArrayList<>();
         }
-        
+
         if (newApprovedBuyers != null) {
             for (LineOfCreditApprovedBuyers newBuyer : newApprovedBuyers) {
                 boolean alreadyExists = this.approvedBuyers.stream()
-                    .anyMatch(existing -> existing.getName() != null && 
-                             existing.getName().equals(newBuyer.getName()));
-                
+                        .anyMatch(existing -> existing.getName() != null && existing.getName().equals(newBuyer.getName()));
+
                 if (!alreadyExists) {
                     newBuyer.setLineOfCredit(this);
                     this.approvedBuyers.add(newBuyer);

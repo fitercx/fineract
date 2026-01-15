@@ -201,9 +201,9 @@ public class LineOfCreditApiResource {
         } else {
             // Create a default request if none provided for other actions
             try {
-                LineOfCreditActionRequest request = requestBody != null && !requestBody.trim().isEmpty() 
-                    ? new ObjectMapper().readValue(requestBody, LineOfCreditActionRequest.class)
-                    : new LineOfCreditActionRequest("yyyy-MM-dd", "en");
+                LineOfCreditActionRequest request = requestBody != null && !requestBody.trim().isEmpty()
+                        ? new ObjectMapper().readValue(requestBody, LineOfCreditActionRequest.class)
+                        : new LineOfCreditActionRequest("yyyy-MM-dd", "en");
                 jsonRequest = request.toJson();
             } catch (Exception e) {
                 // Fallback to default request

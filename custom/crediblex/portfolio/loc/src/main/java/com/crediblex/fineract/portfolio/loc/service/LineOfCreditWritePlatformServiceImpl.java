@@ -781,7 +781,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Allow approved buyer management only for ACTIVE LOCs
         if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
             throw new PlatformDataIntegrityException("error.msg.loc.manage.approved.buyers.not.allowed",
-                    "Approved buyers can only be managed when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
+                    "Approved buyers can only be managed when Line of Credit is ACTIVE. Current status: "
+                            + lineOfCredit.getStatus().name());
         }
 
         // Use enhanced validation with credit limit checking
@@ -793,9 +794,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         if (command.hasParameter("approvedBuyers")) {
             JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray approvedBuyersArray = fromJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
-            
+
             List<LineOfCreditApprovedBuyers> newApprovedBuyers = parseApprovedBuyersFromJson(approvedBuyersArray, lineOfCredit);
-            
+
             // Handle updating/replacing buyers
             replaceApprovedBuyersWithValidation(lineOfCredit, newApprovedBuyers);
             changes.put("approvedBuyersCount", newApprovedBuyers.size());
@@ -803,44 +804,40 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         if (!changes.isEmpty()) {
             this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
-            
+
             // Save note if provided
             saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.LOC_APPROVED_BUYERS_UPDATED);
         }
 
-        return new CommandProcessingResultBuilder()
-                .withCommandId(command.commandId())
-                .withEntityId(lineOfCreditId)
-                .with(changes)
-                .build();
+        return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(lineOfCreditId).with(changes).build();
     }
-    
+
     private List<LineOfCreditApprovedBuyers> parseApprovedBuyersFromJson(JsonArray approvedBuyersArray, LineOfCredit lineOfCredit) {
         List<LineOfCreditApprovedBuyers> newApprovedBuyers = new ArrayList<>();
-        
+
         if (approvedBuyersArray != null) {
             approvedBuyersArray.forEach(buyerElement -> {
                 if (buyerElement != null && !buyerElement.isJsonNull()) {
                     JsonObject buyerObj = buyerElement.getAsJsonObject();
                     String buyerName = buyerObj.get("name").getAsString();
-                    
+
                     BigDecimal creditLimit = BigDecimal.ZERO;
                     if (buyerObj.has("creditLimit")) {
                         creditLimit = buyerObj.get("creditLimit").getAsBigDecimal();
                     }
-                    
+
                     LineOfCreditApprovedBuyers buyer = new LineOfCreditApprovedBuyers(buyerName, creditLimit, lineOfCredit);
                     newApprovedBuyers.add(buyer);
                 }
             });
         }
-        
+
         return newApprovedBuyers;
     }
-    
+
     private void replaceApprovedBuyersWithValidation(LineOfCredit lineOfCredit, List<LineOfCreditApprovedBuyers> newApprovedBuyers) {
         List<LineOfCreditApprovedBuyers> existingBuyers = lineOfCredit.getApprovedBuyers();
-        
+
         if (existingBuyers == null || existingBuyers.isEmpty()) {
             // No existing buyers, safe to add new ones
             lineOfCredit.setApprovedBuyers(new ArrayList<>());
@@ -850,67 +847,52 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             }
             return;
         }
-        
+
         // Collect existing buyer IDs to check for loan references
-        List<Long> existingBuyerIds = existingBuyers.stream()
-                .filter(buyer -> buyer.getId() != null)
-                .map(LineOfCreditApprovedBuyers::getId)
+        List<Long> existingBuyerIds = existingBuyers.stream().filter(buyer -> buyer.getId() != null).map(LineOfCreditApprovedBuyers::getId)
                 .toList();
-        
+
         // Check which buyers are being deleted (exist in current list but not in new list)
-        List<LineOfCreditApprovedBuyers> buyersToDelete = existingBuyers.stream()
-                .filter(existingBuyer -> 
-                    newApprovedBuyers.stream().noneMatch(newBuyer -> 
-                        newBuyer.getName().equals(existingBuyer.getName())))
+        List<LineOfCreditApprovedBuyers> buyersToDelete = existingBuyers.stream().filter(
+                existingBuyer -> newApprovedBuyers.stream().noneMatch(newBuyer -> newBuyer.getName().equals(existingBuyer.getName())))
                 .toList();
-        
+
         // Check if any buyers to be deleted are referenced by active loans
         for (LineOfCreditApprovedBuyers buyerToDelete : buyersToDelete) {
             if (buyerToDelete.getId() != null) {
-                List<LoanStatus> activeStatuses = List.of(
-                    LoanStatus.ACTIVE, 
-                    LoanStatus.APPROVED, 
-                    LoanStatus.CLOSED_OBLIGATIONS_MET, 
-                    LoanStatus.CLOSED_WRITTEN_OFF
-                );
-                
-                List<LineOfCreditLoanBuyerSupplierDetail> referencingLoans = 
-                    loanBuyerSupplierDetailRepository.findByApprovedBuyersIdsWithActiveLoans(
-                        List.of(buyerToDelete.getId()), activeStatuses);
-                
+                List<LoanStatus> activeStatuses = List.of(LoanStatus.ACTIVE, LoanStatus.APPROVED, LoanStatus.CLOSED_OBLIGATIONS_MET,
+                        LoanStatus.CLOSED_WRITTEN_OFF);
+
+                List<LineOfCreditLoanBuyerSupplierDetail> referencingLoans = loanBuyerSupplierDetailRepository
+                        .findByApprovedBuyersIdsWithActiveLoans(List.of(buyerToDelete.getId()), activeStatuses);
+
                 if (!referencingLoans.isEmpty()) {
                     // Get loan IDs for error message
-                    String loanIds = referencingLoans.stream()
-                            .map(detail -> detail.getLoan().getId().toString())
-                            .distinct()
-                            .reduce((a, b) -> a + ", " + b)
-                            .orElse("unknown");
-                    
-                    throw new PlatformDataIntegrityException(
-                        "error.msg.buyer.linked.to.active.loans",
-                        String.format("Buyer '%s' is linked with active Line of Credit loans (ID: %s) and cannot be deleted", 
-                            buyerToDelete.getName(), loanIds),
-                        "buyer", buyerToDelete.getName(), "loanIds", loanIds);
+                    String loanIds = referencingLoans.stream().map(detail -> detail.getLoan().getId().toString()).distinct()
+                            .reduce((a, b) -> a + ", " + b).orElse("unknown");
+
+                    throw new PlatformDataIntegrityException("error.msg.buyer.linked.to.active.loans",
+                            String.format("Buyer '%s' is linked with active Line of Credit loans (ID: %s) and cannot be deleted",
+                                    buyerToDelete.getName(), loanIds),
+                            "buyer", buyerToDelete.getName(), "loanIds", loanIds);
                 }
             }
         }
-        
+
         // If we reach here, it's safe to update the buyers
         // Only remove buyers that are actually being deleted, preserve existing ones
-        
+
         // Step 1: Remove only the buyers that are being deleted (already validated above)
         for (LineOfCreditApprovedBuyers buyerToDelete : buyersToDelete) {
             lineOfCredit.getApprovedBuyers().remove(buyerToDelete);
         }
-        
+
         // Step 2: Update existing buyers or add new ones
         for (LineOfCreditApprovedBuyers newBuyer : newApprovedBuyers) {
             // Check if buyer with same name exists in original list
             LineOfCreditApprovedBuyers existingBuyerWithSameName = existingBuyers.stream()
-                    .filter(existing -> existing.getName().equals(newBuyer.getName()))
-                    .findFirst()
-                    .orElse(null);
-                    
+                    .filter(existing -> existing.getName().equals(newBuyer.getName())).findFirst().orElse(null);
+
             if (existingBuyerWithSameName != null) {
                 // Update existing buyer (keeping same ID to preserve foreign key references)
                 existingBuyerWithSameName.setName(newBuyer.getName());
