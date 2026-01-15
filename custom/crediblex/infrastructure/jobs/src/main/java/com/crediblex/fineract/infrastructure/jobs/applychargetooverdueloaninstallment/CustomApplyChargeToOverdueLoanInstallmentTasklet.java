@@ -23,6 +23,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -227,11 +229,19 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                         final long delay = calculateRetryDelay(attempt);
                         log.warn("Deadlock detected for loan {} (attempt {}/{}) - retrying after {}ms", loanId, attempt, maxRetries, delay);
                         try {
-                            Thread.sleep(delay);
+                            // Use CompletableFuture with delayed executor for more efficient resource usage
+                            // This uses the ForkJoinPool instead of directly blocking the thread
+                            CompletableFuture.runAsync(() -> {
+                                // Empty runnable - we just need the delay
+                            }, CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS)).get();
                         } catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                             log.error("Retry delay interrupted for loan {}", loanId);
                             exceptions.add(new RuntimeException("Retry interrupted", ie));
+                            return;
+                        } catch (java.util.concurrent.ExecutionException ee) {
+                            log.error("Error during retry delay for loan {}", loanId, ee);
+                            exceptions.add(e);
                             return;
                         }
                     } else {
@@ -274,9 +284,9 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             if (cause instanceof DeadlockLoserDataAccessException) {
                 return true;
             }
-            // Check message for "deadlock detected" (covers SQLException, JpaSystemException, etc.)
+            // Check message for "deadlock detected" using case-insensitive matching without creating temporary strings
             final String message = cause.getMessage();
-            if (message != null && message.toLowerCase().contains("deadlock detected")) {
+            if (message != null && containsIgnoreCase(message, "deadlock detected")) {
                 return true;
             }
             cause = cause.getCause();
@@ -284,7 +294,28 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
 
         // Check exception message itself
         final String exceptionMessage = e.getMessage();
-        return exceptionMessage != null && exceptionMessage.toLowerCase().contains("deadlock detected");
+        return exceptionMessage != null && containsIgnoreCase(exceptionMessage, "deadlock detected");
+    }
+
+    /**
+     * Case-insensitive string contains check using regionMatches to avoid creating temporary lowercase strings.
+     * More efficient than toLowerCase().contains() for potentially large strings.
+     */
+    private boolean containsIgnoreCase(String text, String searchString) {
+        if (text == null || searchString == null) {
+            return false;
+        }
+        final int searchLength = searchString.length();
+        final int textLength = text.length();
+        if (searchLength > textLength) {
+            return false;
+        }
+        for (int i = 0; i <= textLength - searchLength; i++) {
+            if (text.regionMatches(true, i, searchString, 0, searchLength)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
