@@ -183,7 +183,9 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
-        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) return "BNK5";
+        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
+            return "BNK5";
+        }
 
         // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
