@@ -286,17 +286,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             return true;
         }
 
-        // Check for JpaSystemException with SQLException containing "deadlock detected"
-        if (e instanceof JpaSystemException) {
-            final Throwable rootCause = ExceptionUtils.getRootCause(e);
-            if (rootCause instanceof SQLException) {
-                final String message = rootCause.getMessage();
-                if (message != null && message.toLowerCase().contains("deadlock detected")) {
-                    return true;
-                }
-            }
-        }
-
         // Check exception chain recursively for deadlock messages
         Throwable cause = e.getCause();
         while (cause != null) {
