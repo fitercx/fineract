@@ -52,9 +52,10 @@ public class CrediblexPenaltyJobOverrideConfiguration {
     @Primary
     public Tasklet applyChargeToOverdueLoanInstallmentTasklet(ConfigurationDomainService configurationDomainService,
             LoanReadPlatformService loanReadPlatformService, LoanChargeWritePlatformService loanChargeWritePlatformService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            com.crediblex.fineract.infrastructure.jobs.applychargetooverdueloaninstallment.PenaltyJobProperties penaltyJobProperties) {
         return new CustomApplyChargeToOverdueLoanInstallmentTasklet(configurationDomainService, loanReadPlatformService,
-                loanChargeWritePlatformService, transactionManager);
+                loanChargeWritePlatformService, transactionManager, penaltyJobProperties);
     }
 
     /**

@@ -37,7 +37,6 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -56,25 +55,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     private final LoanReadPlatformService loanReadPlatformService;
     private final LoanChargeWritePlatformService loanChargeWritePlatformService;
     private final PlatformTransactionManager transactionManager;
-
-    // Configuration properties with defaults - using field injection for @Value
-    @Value("${custom.penalty.job.batch-size:50}")
-    private int batchSize = 50;
-
-    @Value("${custom.penalty.job.max-retries:3}")
-    private int maxRetries = 3;
-
-    @Value("${custom.penalty.job.retry-initial-delay-ms:100}")
-    private long retryInitialDelayMs = 100;
-
-    @Value("${custom.penalty.job.retry-max-delay-ms:2000}")
-    private long retryMaxDelayMs = 2000;
-
-    @Value("${custom.penalty.job.retry-multiplier:2.0}")
-    private double retryMultiplier = 2.0;
-
-    @Value("${custom.penalty.job.enable-batch-processing:true}")
-    private boolean enableBatchProcessing = true;
+    private final PenaltyJobProperties penaltyJobProperties;
 
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
@@ -107,7 +88,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
         int successCount = 0;
         int failureCount = 0;
 
-        if (enableBatchProcessing && batchSize > 0) {
+        if (penaltyJobProperties.isEnableBatchProcessing() && penaltyJobProperties.getBatchSize() > 0) {
             // Process loans in batches for better performance and error isolation
             processedCount = processLoansInBatches(overdueScheduleData, exceptions, startTime, totalLoans);
         } else {
@@ -137,6 +118,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             long startTime, int totalLoans) {
         int processedCount = 0;
         int batchNumber = 0;
+        final int batchSize = penaltyJobProperties.getBatchSize();
         final List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> loanEntries = new ArrayList<>(overdueScheduleData.entrySet());
 
         for (int i = 0; i < loanEntries.size(); i += batchSize) {
@@ -240,6 +222,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                 // Check if this is a deadlock exception
                 if (isDeadlockException(e)) {
                     attempt++;
+                    final int maxRetries = penaltyJobProperties.getMaxRetries();
                     if (attempt <= maxRetries) {
                         final long delay = calculateRetryDelay(attempt);
                         log.warn("Deadlock detected for loan {} (attempt {}/{}) - retrying after {}ms", loanId, attempt, maxRetries, delay);
@@ -252,6 +235,7 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                             return;
                         }
                     } else {
+                        final int maxRetries = penaltyJobProperties.getMaxRetries();
                         log.error("Failed to process loan {} after {} retry attempts due to deadlock", loanId, maxRetries);
                         exceptions.add(e);
                         return;
@@ -308,6 +292,9 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
      * Calculate retry delay with exponential backoff
      */
     private long calculateRetryDelay(int attempt) {
+        final long retryInitialDelayMs = penaltyJobProperties.getRetryInitialDelayMs();
+        final double retryMultiplier = penaltyJobProperties.getRetryMultiplier();
+        final long retryMaxDelayMs = penaltyJobProperties.getRetryMaxDelayMs();
         final long delay = (long) (retryInitialDelayMs * Math.pow(retryMultiplier, attempt - 1));
         return Math.min(delay, retryMaxDelayMs);
     }
