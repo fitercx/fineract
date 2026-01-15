@@ -109,7 +109,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
         int processedCount = 0;
         int successCount = 0;
         int failureCount = 0;
-        int deadlockRetryCount = 0;
 
         if (enableBatchProcessing && batchSize > 0) {
             // Process loans in batches for better performance and error isolation
@@ -156,7 +155,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                 processedCount += batch.size();
 
                 final long batchTime = System.currentTimeMillis() - batchStartTime;
-                final long elapsedTime = System.currentTimeMillis() - startTime;
                 final double avgTimePerLoan = batchTime / (double) batch.size();
                 final int remainingLoans = totalLoans - processedCount;
                 final double estimatedRemainingTime = remainingLoans * avgTimePerLoan;
