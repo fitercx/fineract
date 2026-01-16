@@ -47,6 +47,8 @@ public class CredXUndoTransactionSavingsAccountCommandHandler extends UndoTransa
                     "Comment is mandatory to undo a savings transaction.", "comment");
             throw new PlatformApiDataValidationException(Collections.singletonList(error));
         }
+        // Rename comment to note for business logic
+        String note = comment;
         // Validate savingsId and transactionId presence before proceeding
         Long savingsId = command.getSavingsId();
         String transactionIdStr = command.getTransactionId();
@@ -66,18 +68,18 @@ public class CredXUndoTransactionSavingsAccountCommandHandler extends UndoTransa
         } catch (NumberFormatException e) {
             ApiParameterError error = ApiParameterError.parameterError("validation.msg.savings.transaction.undo.transactionId.invalid",
                     "Transaction ID must be a numeric identifier.", "transactionId");
-            throw new PlatformApiDataValidationException(Collections.singletonList(error));
+            throw new PlatformApiDataValidationException(Collections.singletonList(error), e); // Pass cause exception
         }
 
         CommandProcessingResult result = super.processCommand(command);
-        // Create a note against the savings transaction with the provided comment
+        // Create a note against the savings transaction with the provided note
         SavingsAccount savingsAccount = this.savingsAccountRepository.findById(savingsId)
                 .orElseThrow(() -> new org.apache.fineract.portfolio.savings.exception.SavingsAccountNotFoundException(savingsId));
         SavingsAccountTransaction savingsTransaction = this.savingsAccountTransactionRepository.findById(transactionEntityId)
                 .orElseThrow(() -> new org.apache.fineract.portfolio.savings.exception.SavingsAccountTransactionNotFoundException(savingsId,
                         transactionEntityId));
-        Note note = Note.savingsTransactionNote(savingsAccount, savingsTransaction, comment);
-        this.noteRepository.saveAndFlush(note);
+        Note noteEntity = Note.savingsTransactionNote(savingsAccount, savingsTransaction, note);
+        this.noteRepository.saveAndFlush(noteEntity);
         return result;
     }
 }
