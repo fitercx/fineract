@@ -38,9 +38,11 @@ import org.apache.fineract.portfolio.floatingrates.service.FloatingRatesReadPlat
 import org.apache.fineract.portfolio.group.domain.GroupRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanOfficerAssignmentHistory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -259,6 +261,21 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             // Update derived fields after principal restoration to ensure schedule status is correctly calculated
             loan.updateLoanScheduleDependentDerivedFields();
             loan.updateLoanSummaryDerivedFields();
+            
+            // Recalculate obligations for all installments after principal restoration
+            // This ensures that installments with zero outstanding are marked as obligationsMet = true
+            // which is required for the repayment schedule status to show as "paid"
+            // Note: This is safe to do here because outstanding amounts are based on the schedule amounts
+            // which were generated with the correct principal. After principal restoration, we need to
+            // ensure obligations reflect the current state.
+            LocalDate currentDate = DateUtils.getBusinessLocalDate();
+            for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+                // Use checkIfRepaymentPeriodObligationsAreMet to recalculate based on current outstanding
+                // This will correctly set obligationsMet = true if outstanding is zero, false otherwise
+                installment.checkIfRepaymentPeriodObligationsAreMet(currentDate, loan.getCurrency());
+            }
+            log.info("LOC Receivable loan {}: Recalculated obligations for {} installments after principal restoration", 
+                    loan.getId(), loan.getRepaymentScheduleInstallments().size());
         }
 
         return Pair.of(loan, actualChanges);
