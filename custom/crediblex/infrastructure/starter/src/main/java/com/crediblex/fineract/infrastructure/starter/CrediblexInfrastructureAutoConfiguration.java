@@ -25,5 +25,5 @@ import org.springframework.context.annotation.ComponentScans;
 
 @AutoConfiguration
 @ComponentScans({ @ComponentScan({ "com.crediblex.fineract.infrastructure.datatables", "com.crediblex.fineract.commands",
-        "com.crediblex.fineract.infrastructure.starter" }) })
+        "com.crediblex.fineract.infrastructure.starter", "com.crediblex.fineract.infrastructure.jobs" }) })
 public class CrediblexInfrastructureAutoConfiguration {}
