@@ -109,6 +109,9 @@ public class CustomLoanScheduleService extends LoanScheduleService {
             log.info("LOC Receivable loan {}: Restoring principal to approved principal {} after schedule regeneration", loan.getId(),
                     savedPrincipalForRestore);
             loan.getLoanRepaymentScheduleDetail().setPrincipal(savedPrincipalForRestore);
+            // Update derived fields after principal restoration to ensure schedule status is correctly calculated
+            loan.updateLoanScheduleDependentDerivedFields();
+            loan.updateLoanSummaryDerivedFields();
         }
     }
 
