@@ -1782,11 +1782,19 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         || (fromDate.equals(dueDate) && data.disbursementDate().equals(fromDate))
                         || canAddDisbursementData(data, isDueForDisbursement, excludePastUnDisbursed))
                         && !disbursementPeriodIds.contains(data.getId())) {
-                    disbursedAmount = disbursedAmount.add(data.getPrincipal());
+                    // FIX: Only count actually disbursed amounts in totalPrincipalDisbursed calculation
+                    // Undisbursed tranches should still appear in schedule periods for display purposes,
+                    // but should not be counted in the disbursed total
+                    if (data.isDisbursed()) {
+                        disbursedAmount = disbursedAmount.add(data.getPrincipal());
+                    }
                     LoanSchedulePeriodData periodData = createLoanSchedulePeriodData(data, disbursementChargeAmount, waivedChargeAmount,
                             totalOriginalPrincipal);
                     periods.add(periodData);
-                    this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    // Only add to outstanding balance if actually disbursed
+                    if (data.isDisbursed()) {
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    }
                     disbursementPeriodIds.add(data.getId());
                 }
             }

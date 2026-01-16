@@ -163,10 +163,35 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                     .orElseThrow(() -> new LoanProductNotFoundException(loanProductId));
             this.fromApiJsonDeserializer.validateForUpdate(command, product);
             validateInputDates(command);
-            if (anyChangeInCriticalFloatingRateLinkedParams(command, product)
-                    && this.loanRepositoryWrapper.doNonClosedLoanAccountsExistForProduct(product.getId())) {
+            // Cache result to avoid redundant database queries if multiple validations need it
+            final boolean hasNonClosedLoans = this.loanRepositoryWrapper.doNonClosedLoanAccountsExistForProduct(product.getId());
+
+            if (anyChangeInCriticalFloatingRateLinkedParams(command, product) && hasNonClosedLoans) {
                 throw new LoanProductCannotBeModifiedDueToNonClosedLoansException(product.getId());
             }
+
+            // Validate: Prevent changing from single-disbursal to multi-disbursal when active loans exist
+            // This prevents data inconsistency where single-disbursal loans would be treated as multi-disbursal
+            // for validation purposes, causing repayment validation errors
+            final boolean isCurrentlyMultiDisburse = product.isMultiDisburseLoan();
+            if (command.isChangeInBooleanParameterNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME,
+                    isCurrentlyMultiDisburse)) {
+                final boolean newValue = command
+                        .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME);
+
+                // If changing from single-disbursal (false) to multi-disbursal (true) and active loans exist
+                if (!isCurrentlyMultiDisburse && newValue && hasNonClosedLoans) {
+                    log.warn("Attempt to change loan product {} from single-disbursal to multi-disbursal when active loans exist",
+                            product.getId());
+                    throw new GeneralPlatformDomainRuleException(
+                            "error.msg.loanproduct.cannot.change.single.to.multi.disbursal.with.active.loans",
+                            "Loan product with identifier " + product.getId()
+                                    + " cannot be changed from single-disbursal to multi-disbursal because there are active (non-closed) loans associated with it. "
+                                    + "This change would cause data inconsistency and validation errors for existing single-disbursal loans.",
+                            product.getId());
+                }
+            }
+
             FloatingRate floatingRate = null;
             if (command.parameterExists("floatingRatesId")) {
                 floatingRate = this.floatingRateRepository
