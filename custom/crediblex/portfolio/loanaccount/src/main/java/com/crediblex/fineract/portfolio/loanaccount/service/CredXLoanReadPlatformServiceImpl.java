@@ -1682,12 +1682,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
                 final BigDecimal feeChargesDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
 
-                // Log all rows to understand the data structure
-                if (feeChargesDue.compareTo(BigDecimal.ZERO) > 0) {
-                    log.info("Row in result set - Period: {}, FromDate: {}, DueDate: {}, PrincipalDue: {}, FeeChargesDue: {}", period,
-                            fromDate, dueDate, principalDue, feeChargesDue);
-                }
-
                 // Identify disbursement periods: principalDue is null/zero AND feeChargesDue > 0
                 // Disbursement periods have charges but no principal due (principal is disbursed, not due)
                 boolean isDisbursementPeriod = (principalDue == null || principalDue.compareTo(BigDecimal.ZERO) == 0)
@@ -1695,8 +1689,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
                 if (isDisbursementPeriod && dueDate != null) {
                     disbursementChargesFromDB.put(dueDate, feeChargesDue);
-                    log.info("=== Disbursement period found in DB ===");
-                    log.info("DueDate: {}, PrincipalDue: {}, FeeChargesDueFromDB: {}", dueDate, principalDue, feeChargesDue);
                 }
 
                 BigDecimal disbursedAmount = BigDecimal.ZERO;
@@ -1882,15 +1874,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     // Use feeChargesDue from database map if available for this disbursement date
                     // This preserves the correct per-tranche charges calculated during schedule generation
                     BigDecimal chargesForThisTranche = disbursementChargesFromDB.get(data.disbursementDate());
-                    if (chargesForThisTranche != null && chargesForThisTranche.compareTo(BigDecimal.ZERO) > 0) {
-                        // Use the DB value - it matches this disbursement period
-                        log.info("✓ Using feeChargesDue from DB for tranche: Amount={}, Date={}, Charge={}", data.getPrincipal(),
-                                data.disbursementDate(), chargesForThisTranche);
-                    } else {
+                    if (chargesForThisTranche == null || chargesForThisTranche.compareTo(BigDecimal.ZERO) == 0) {
                         // Fallback: will use data.getChargeAmount() or recalculate
                         chargesForThisTranche = null;
-                        log.info("Not using DB value - DisbursementDate: {}, Available dates in map: {}", data.disbursementDate(),
-                                disbursementChargesFromDB.keySet());
                     }
                     LoanSchedulePeriodData periodData = createLoanSchedulePeriodData(data, disbursementChargeAmount, waivedChargeAmount,
                             totalOriginalPrincipal, chargesForThisTranche);
@@ -1919,26 +1905,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // Use the stored charge amount from schedule period (most accurate - includes correct per-tranche
                 // calculation)
                 chargesDueAtTimeOfDisbursementForTranche = feeChargesDueFromDB;
-                log.info("✓ Using feeChargesDueFromDB: {} for tranche {}", chargesDueAtTimeOfDisbursementForTranche, data.getPrincipal());
             } else if (loanCharges != null && !loanCharges.isEmpty() && disbursementData.size() > 1) {
                 // Multi-tranche loan: recalculate per-tranche charges using the same logic as schedule generation
                 chargesDueAtTimeOfDisbursementForTranche = recalculateDisbursementChargesForTranche(data.getPrincipal(),
                         totalOriginalPrincipal, disbursementChargeAmount);
-                log.info("✓ Recalculated per-tranche charge: {} for tranche {} (multi-tranche loan)",
-                        chargesDueAtTimeOfDisbursementForTranche, data.getPrincipal());
             } else if (data.getChargeAmount() != null) {
                 // Use the stored charge amount from disbursement charge table (may be incorrect for multi-tranche
                 // loans)
                 chargesDueAtTimeOfDisbursementForTranche = data.getChargeAmount();
-                log.info("Using data.getChargeAmount(): {} for tranche {}", chargesDueAtTimeOfDisbursementForTranche, data.getPrincipal());
             } else {
                 // Fallback: recalculate if charge amount not stored
                 BigDecimal chargeAmount = disbursementChargeAmount
                         .subtract(waivedChargeAmount != null ? waivedChargeAmount : BigDecimal.ZERO);
                 chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(totalOriginalPrincipal,
                         data.getPrincipal(), chargeAmount);
-                log.warn("⚠️ Fallback: Recalculated charge: {} for tranche {} (this shouldn't happen)",
-                        chargesDueAtTimeOfDisbursementForTranche, data.getPrincipal());
             }
             return LoanSchedulePeriodData.disbursementOnlyPeriod(data.disbursementDate(), data.getPrincipal(),
                     chargesDueAtTimeOfDisbursementForTranche, data.isDisbursed());

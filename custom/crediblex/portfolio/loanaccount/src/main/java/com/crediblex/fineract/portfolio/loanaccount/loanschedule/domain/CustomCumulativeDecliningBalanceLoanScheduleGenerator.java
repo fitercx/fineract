@@ -65,12 +65,20 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     /**
      * Override to fix multi-tranche loan schedule calculation.
      *
-     * For multi-disbursal loans: - If loan has disbursed amounts (existing loan), use only DISBURSED amount - If loan
-     * has no disbursed amounts but has expected tranches (pre-creation calculateLoanSchedule API), use ALL expected
-     * tranches (getTotalMultiDisbursedAmount)
+     * <p>
+     * For multi-disbursal loans:
+     * <ul>
+     * <li>If loan has disbursed amounts (existing loan), use only DISBURSED amount</li>
+     * <li>If loan has no disbursed amounts but has expected tranches (pre-creation calculateLoanSchedule API), use ALL
+     * expected tranches (getTotalMultiDisbursedAmount)</li>
+     * </ul>
      *
-     * This ensures: - Existing loans: schedules reflect only actual disbursed principal - Pre-creation API: schedules
-     * include all expected tranches for preview
+     * <p>
+     * This ensures:
+     * <ul>
+     * <li>Existing loans: schedules reflect only actual disbursed principal</li>
+     * <li>Pre-creation API: schedules include all expected tranches for preview</li>
+     * </ul>
      */
     @Override
     protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
@@ -100,13 +108,18 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     /**
      * Override to handle both existing loans and pre-creation schedule calculation.
      *
-     * For existing loans: Only process actually disbursed tranches For pre-creation (calculateLoanSchedule API):
-     * Process all expected tranches
+     * <p>
+     * For existing loans: Only process actually disbursed tranches.
+     * <p>
+     * For pre-creation (calculateLoanSchedule API): Process all expected tranches.
      *
+     * <p>
      * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones), which causes the
-     * schedule to include future tranches in principal calculations for existing loans. This fix ensures: - Existing
-     * loans: only actually disbursed tranches are added to outstanding balance - Pre-creation: all expected tranches
-     * are included in the schedule preview
+     * schedule to include future tranches in principal calculations for existing loans. This fix ensures:
+     * <ul>
+     * <li>Existing loans: only actually disbursed tranches are added to outstanding balance</li>
+     * <li>Pre-creation: all expected tranches are included in the schedule preview</li>
+     * </ul>
      */
     @Override
     protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
@@ -195,69 +208,54 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     /**
      * Calculate disbursement charges for a tranche, handling percentage-based and flat charges correctly.
      *
-     * For multi-tranche loans with disbursement charges: - Percentage-based charges: recalculate per tranche
-     * (percentage × trancheAmount) - Flat charges: split proportionally based on tranche size
+     * <p>
+     * For multi-tranche loans with disbursement charges:
+     * <ul>
+     * <li>Percentage-based charges: recalculate per tranche (percentage × trancheAmount)</li>
+     * <li>Flat charges: split proportionally based on tranche size</li>
+     * </ul>
      */
     private BigDecimal calculateDisbursementChargesForTranche(final LoanApplicationTerms loanApplicationTerms,
             final BigDecimal trancheAmount, final BigDecimal totalChargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
-        log.info("=== calculateDisbursementChargesForTranche called ===");
-        log.info("TrancheAmount: {}, TotalChargesDueAtDisbursement: {}, TotalOriginalPrincipal: {}, MultiDisburse: {}", trancheAmount,
-                totalChargesDueAtTimeOfDisbursement, totalOriginalPrincipal, loanApplicationTerms.isMultiDisburseLoan());
-
         if (totalChargesDueAtTimeOfDisbursement == null || totalChargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) == 0
                 || trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) == 0) {
-            log.info("Early return: Zero charges or tranche amount");
             return BigDecimal.ZERO;
         }
 
         // If not a multi-tranche loan, use standard proportional calculation
         if (!loanApplicationTerms.isMultiDisburseLoan()) {
-            log.info("Not a multi-tranche loan, using standard proportional calculation");
             return calculateChargesDueAtTimeOfDisbursementForTranche(totalOriginalPrincipal, trancheAmount,
                     totalChargesDueAtTimeOfDisbursement);
         }
 
         // Get loan charges from thread-local
         Set<LoanCharge> loanCharges = loanChargesThreadLocal.get();
-        log.info("Thread-local loanCharges: {}", loanCharges != null ? (loanCharges.size() + " charges") : "NULL");
         if (loanCharges == null || loanCharges.isEmpty()) {
-            log.warn("⚠️⚠️⚠️ Loan charges not available in thread-local for tranche: {}. Using fallback proportional calculation. "
-                    + "This may indicate charges are not being passed correctly during loan creation. ⚠️⚠️⚠️", trancheAmount);
             // Fallback to proportional calculation if charges not available
             Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
             BigDecimal principalForCalculation = totalMultiDisbursed.isGreaterThanZero() ? totalMultiDisbursed.getAmount()
                     : totalOriginalPrincipal;
-            BigDecimal fallbackResult = calculateChargesDueAtTimeOfDisbursementForTranche(principalForCalculation, trancheAmount,
+            return calculateChargesDueAtTimeOfDisbursementForTranche(principalForCalculation, trancheAmount,
                     totalChargesDueAtTimeOfDisbursement);
-            log.info("Fallback calculation result: {}", fallbackResult);
-            return fallbackResult;
         }
 
         // Calculate charges per tranche based on charge type
         BigDecimal totalTrancheCharges = BigDecimal.ZERO;
         Money trancheAmountMoney = Money.of(loanApplicationTerms.getCurrency(), trancheAmount);
 
-        log.info("Processing {} charges for tranche {}", loanCharges.size(), trancheAmount);
-
         for (LoanCharge loanCharge : loanCharges) {
             if (!loanCharge.isDueAtDisbursement()) {
-                log.info("Skipping charge {} - not due at disbursement", loanCharge.getCharge().getName());
                 continue;
             }
 
-            log.info("Processing disbursement charge: ID={}, Name={}, Percentage={}, Amount={}", loanCharge.getId(),
-                    loanCharge.getCharge().getName(), loanCharge.getPercentage(), loanCharge.amount());
-
             BigDecimal chargeAmount = BigDecimal.ZERO;
             boolean isPercentageBased = loanCharge.getChargeCalculation().isPercentageBased() && loanCharge.getPercentage() != null;
-            log.info("Charge type: PercentageBased={}, Percentage={}", isPercentageBased, loanCharge.getPercentage());
 
             // For percentage-based disbursement charges, recalculate per tranche
             if (isPercentageBased) {
                 // Calculate: percentage × trancheAmount
                 chargeAmount = trancheAmountMoney.getAmount().multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), 6,
                         java.math.RoundingMode.HALF_UP);
-                log.info("✓ Percentage-based charge calculated: {}% × {} = {}", loanCharge.getPercentage(), trancheAmount, chargeAmount);
             } else {
                 // For flat charges, split proportionally
                 // Use approved principal or total multi-disbursed amount as base
@@ -273,8 +271,6 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                     // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
                     chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount())
                             .divide(sanctionedAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
-                    log.info("✓ Flat charge calculated proportionally: ({} / {}) × {} = {}", trancheAmount, sanctionedAmount.getAmount(),
-                            totalChargeAmount.getAmount(), chargeAmount);
                 }
             }
 
@@ -284,7 +280,6 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                 Money totalTaxAmount = loanCharge.getTaxAmount(currency);
                 if (totalTaxAmount.isGreaterThanZero()) {
                     BigDecimal taxToAdd = BigDecimal.ZERO;
-                    BigDecimal chargeAmountBeforeTax = chargeAmount;
                     // For percentage-based charges, calculate tax proportionally based on charge ratio
                     if (loanCharge.getChargeCalculation().isPercentageBased()) {
                         Money totalChargeAmount = loanCharge.getAmount(currency);
@@ -312,10 +307,8 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
             }
 
             totalTrancheCharges = totalTrancheCharges.add(chargeAmount);
-            log.info("Charge amount after tax: {}, Total tranche charges so far: {}", chargeAmount, totalTrancheCharges);
         }
 
-        log.info("=== calculateDisbursementChargesForTranche result: {} ===", totalTrancheCharges);
         return totalTrancheCharges;
     }
 
