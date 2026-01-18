@@ -201,10 +201,9 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     private BigDecimal calculateDisbursementChargesForTranche(final LoanApplicationTerms loanApplicationTerms,
             final BigDecimal trancheAmount, final BigDecimal totalChargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
         log.info("=== calculateDisbursementChargesForTranche called ===");
-        log.info("TrancheAmount: {}, TotalChargesDueAtDisbursement: {}, TotalOriginalPrincipal: {}, MultiDisburse: {}", 
-                trancheAmount, totalChargesDueAtTimeOfDisbursement, totalOriginalPrincipal, 
-                loanApplicationTerms.isMultiDisburseLoan());
-        
+        log.info("TrancheAmount: {}, TotalChargesDueAtDisbursement: {}, TotalOriginalPrincipal: {}, MultiDisburse: {}", trancheAmount,
+                totalChargesDueAtTimeOfDisbursement, totalOriginalPrincipal, loanApplicationTerms.isMultiDisburseLoan());
+
         if (totalChargesDueAtTimeOfDisbursement == null || totalChargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) == 0
                 || trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) == 0) {
             log.info("Early return: Zero charges or tranche amount");
@@ -237,7 +236,7 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
         // Calculate charges per tranche based on charge type
         BigDecimal totalTrancheCharges = BigDecimal.ZERO;
         Money trancheAmountMoney = Money.of(loanApplicationTerms.getCurrency(), trancheAmount);
-        
+
         log.info("Processing {} charges for tranche {}", loanCharges.size(), trancheAmount);
 
         for (LoanCharge loanCharge : loanCharges) {
@@ -246,9 +245,9 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                 continue;
             }
 
-            log.info("Processing disbursement charge: ID={}, Name={}, Percentage={}, Amount={}", 
-                    loanCharge.getId(), loanCharge.getCharge().getName(), loanCharge.getPercentage(), loanCharge.amount());
-            
+            log.info("Processing disbursement charge: ID={}, Name={}, Percentage={}, Amount={}", loanCharge.getId(),
+                    loanCharge.getCharge().getName(), loanCharge.getPercentage(), loanCharge.amount());
+
             BigDecimal chargeAmount = BigDecimal.ZERO;
             boolean isPercentageBased = loanCharge.getChargeCalculation().isPercentageBased() && loanCharge.getPercentage() != null;
             log.info("Charge type: PercentageBased={}, Percentage={}", isPercentageBased, loanCharge.getPercentage());
@@ -274,8 +273,8 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                     // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
                     chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount())
                             .divide(sanctionedAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
-                    log.info("✓ Flat charge calculated proportionally: ({} / {}) × {} = {}", 
-                            trancheAmount, sanctionedAmount.getAmount(), totalChargeAmount.getAmount(), chargeAmount);
+                    log.info("✓ Flat charge calculated proportionally: ({} / {}) × {} = {}", trancheAmount, sanctionedAmount.getAmount(),
+                            totalChargeAmount.getAmount(), chargeAmount);
                 }
             }
 
