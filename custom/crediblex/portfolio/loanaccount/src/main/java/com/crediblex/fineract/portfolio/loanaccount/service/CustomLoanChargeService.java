@@ -1,16 +1,16 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import java.math.BigDecimal;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
-import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanTransactionProcessingService;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
-import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Primary
@@ -33,19 +33,20 @@ public class CustomLoanChargeService extends LoanChargeService {
         // Note: During loan submission, the loan might not have an ID yet, so check for null
         boolean isReceivableLocLoan = false;
         if (loan.getId() != null) {
-            Optional<com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams> locParams = 
-                    loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
-            isReceivableLocLoan = locParams.isPresent() 
-                    && locParams.get().getLineOfCredit().getProductType().isReceivable();
+            Optional<com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository
+                    .findByLoanId(loan.getId());
+            isReceivableLocLoan = locParams.isPresent() && locParams.get().getLineOfCredit().getProductType().isReceivable();
         } else {
             // If loan ID is null (during submission), fall back to the field value
             isReceivableLocLoan = loan.isReceivableLocLoan();
         }
-        
+
         BigDecimal approvedPrincipal = loan.getApprovedPrincipal();
-        // For LOC Receivable loans, preserve the original principal (proposed amount) instead of setting it to approved amount
+        // For LOC Receivable loans, preserve the original principal (proposed amount) instead of setting it to approved
+        // amount
         // This ensures charge calculations use the proposed principal (loan amount before interest deduction)
-        // The getDerivedAmountForCharge() method already handles LOC Receivable loans correctly by returning getProposedPrincipal()
+        // The getDerivedAmountForCharge() method already handles LOC Receivable loans correctly by returning
+        // getProposedPrincipal()
         // Use LOC params check instead of loan.isReceivableLocLoan() which might not be set yet
         if (!isReceivableLocLoan) {
             loan.setPrincipal(approvedPrincipal);
