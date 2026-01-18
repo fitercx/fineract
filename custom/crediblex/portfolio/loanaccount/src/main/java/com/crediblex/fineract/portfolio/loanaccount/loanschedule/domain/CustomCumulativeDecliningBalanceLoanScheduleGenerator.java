@@ -54,11 +54,25 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
         try {
             // Store loan charges in thread-local for use in processDisbursements
+            int chargeCount = loanCharges != null ? loanCharges.size() : 0;
+            log.info("=== CustomCumulativeDecliningBalanceLoanScheduleGenerator.generate() called ===");
+            log.info("Loan charges count: {}, Multi-disburse: {}, Principal: {}", chargeCount, 
+                    loanApplicationTerms.isMultiDisburseLoan(), loanApplicationTerms.getPrincipal().getAmount());
+            if (loanCharges != null && !loanCharges.isEmpty()) {
+                for (LoanCharge charge : loanCharges) {
+                    log.info("Charge: ID={}, Name={}, DueAtDisbursement={}, Percentage={}, Amount={}, Tax={}", 
+                            charge.getId(), charge.getCharge().getName(), charge.isDueAtDisbursement(), 
+                            charge.getPercentage(), charge.amount(), charge.getTaxAmount());
+                }
+            } else {
+                log.warn("WARNING: loanCharges is null or empty!");
+            }
             loanChargesThreadLocal.set(loanCharges);
             return super.generate(mc, loanApplicationTerms, loanCharges, holidayDetailDTO);
         } finally {
             // Clean up thread-local to prevent memory leaks
             loanChargesThreadLocal.remove();
+            log.info("=== CustomCumulativeDecliningBalanceLoanScheduleGenerator.generate() completed ===");
         }
     }
 
@@ -200,45 +214,65 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
      */
     private BigDecimal calculateDisbursementChargesForTranche(final LoanApplicationTerms loanApplicationTerms,
             final BigDecimal trancheAmount, final BigDecimal totalChargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
+        log.info("=== calculateDisbursementChargesForTranche called ===");
+        log.info("TrancheAmount: {}, TotalChargesDueAtDisbursement: {}, TotalOriginalPrincipal: {}, MultiDisburse: {}", 
+                trancheAmount, totalChargesDueAtTimeOfDisbursement, totalOriginalPrincipal, 
+                loanApplicationTerms.isMultiDisburseLoan());
+        
         if (totalChargesDueAtTimeOfDisbursement == null || totalChargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) == 0
                 || trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) == 0) {
+            log.info("Early return: Zero charges or tranche amount");
             return BigDecimal.ZERO;
         }
 
         // If not a multi-tranche loan, use standard proportional calculation
         if (!loanApplicationTerms.isMultiDisburseLoan()) {
+            log.info("Not a multi-tranche loan, using standard proportional calculation");
             return calculateChargesDueAtTimeOfDisbursementForTranche(totalOriginalPrincipal, trancheAmount,
                     totalChargesDueAtTimeOfDisbursement);
         }
 
         // Get loan charges from thread-local
         Set<LoanCharge> loanCharges = loanChargesThreadLocal.get();
+        log.info("Thread-local loanCharges: {}", loanCharges != null ? (loanCharges.size() + " charges") : "NULL");
         if (loanCharges == null || loanCharges.isEmpty()) {
+            log.warn("⚠️⚠️⚠️ Loan charges not available in thread-local for tranche: {}. Using fallback proportional calculation. "
+                    + "This may indicate charges are not being passed correctly during loan creation. ⚠️⚠️⚠️", trancheAmount);
             // Fallback to proportional calculation if charges not available
             Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
             BigDecimal principalForCalculation = totalMultiDisbursed.isGreaterThanZero() ? totalMultiDisbursed.getAmount()
                     : totalOriginalPrincipal;
-            return calculateChargesDueAtTimeOfDisbursementForTranche(principalForCalculation, trancheAmount,
+            BigDecimal fallbackResult = calculateChargesDueAtTimeOfDisbursementForTranche(principalForCalculation, trancheAmount,
                     totalChargesDueAtTimeOfDisbursement);
+            log.info("Fallback calculation result: {}", fallbackResult);
+            return fallbackResult;
         }
 
         // Calculate charges per tranche based on charge type
         BigDecimal totalTrancheCharges = BigDecimal.ZERO;
         Money trancheAmountMoney = Money.of(loanApplicationTerms.getCurrency(), trancheAmount);
+        
+        log.info("Processing {} charges for tranche {}", loanCharges.size(), trancheAmount);
 
         for (LoanCharge loanCharge : loanCharges) {
             if (!loanCharge.isDueAtDisbursement()) {
+                log.info("Skipping charge {} - not due at disbursement", loanCharge.getCharge().getName());
                 continue;
             }
 
+            log.info("Processing disbursement charge: ID={}, Name={}, Percentage={}, Amount={}", 
+                    loanCharge.getId(), loanCharge.getCharge().getName(), loanCharge.getPercentage(), loanCharge.amount());
+            
             BigDecimal chargeAmount = BigDecimal.ZERO;
             boolean isPercentageBased = loanCharge.getChargeCalculation().isPercentageBased() && loanCharge.getPercentage() != null;
+            log.info("Charge type: PercentageBased={}, Percentage={}", isPercentageBased, loanCharge.getPercentage());
 
             // For percentage-based disbursement charges, recalculate per tranche
             if (isPercentageBased) {
                 // Calculate: percentage × trancheAmount
                 chargeAmount = trancheAmountMoney.getAmount().multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), 6,
                         java.math.RoundingMode.HALF_UP);
+                log.info("✓ Percentage-based charge calculated: {}% × {} = {}", loanCharge.getPercentage(), trancheAmount, chargeAmount);
             } else {
                 // For flat charges, split proportionally
                 // Use approved principal or total multi-disbursed amount as base
@@ -254,6 +288,8 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                     // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
                     chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount())
                             .divide(sanctionedAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
+                    log.info("✓ Flat charge calculated proportionally: ({} / {}) × {} = {}", 
+                            trancheAmount, sanctionedAmount.getAmount(), totalChargeAmount.getAmount(), chargeAmount);
                 }
             }
 
@@ -291,8 +327,10 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
             }
 
             totalTrancheCharges = totalTrancheCharges.add(chargeAmount);
+            log.info("Charge amount after tax: {}, Total tranche charges so far: {}", chargeAmount, totalTrancheCharges);
         }
 
+        log.info("=== calculateDisbursementChargesForTranche result: {} ===", totalTrancheCharges);
         return totalTrancheCharges;
     }
 
