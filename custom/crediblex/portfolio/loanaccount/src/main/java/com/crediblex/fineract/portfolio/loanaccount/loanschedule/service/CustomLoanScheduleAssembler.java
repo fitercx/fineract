@@ -7,6 +7,7 @@ import static org.apache.fineract.portfolio.loanaccount.domain.Loan.EXPECTED_DIS
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.LOCALE;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -176,8 +177,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         if (approvedLoanAmount != null) {
             // Check if this is a LOC Receivable loan by checking LOC params directly
             // The isReceivableLocLoan field might not be set yet during approval
-            Optional<com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository
-                    .findByLoanId(loanId);
+            Optional<LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository.findByLoanId(loanId);
             boolean isReceivableLocLoan = locParams.isPresent() && locParams.get().getLineOfCredit().getProductType().isReceivable();
 
             /*

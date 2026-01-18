@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -33,8 +34,7 @@ public class CustomLoanChargeService extends LoanChargeService {
         // Note: During loan submission, the loan might not have an ID yet, so check for null
         boolean isReceivableLocLoan = false;
         if (loan.getId() != null) {
-            Optional<com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository
-                    .findByLoanId(loan.getId());
+            Optional<LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
             isReceivableLocLoan = locParams.isPresent() && locParams.get().getLineOfCredit().getProductType().isReceivable();
         } else {
             // If loan ID is null (during submission), fall back to the field value

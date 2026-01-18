@@ -49,8 +49,9 @@ public class CustomLoanScheduleService extends LoanScheduleService {
         }
 
         // For LOC Receivable loans, set principal to amountAfterAdvance BEFORE generating schedule model
-        // This ensures the schedule model is generated with the correct principal (proposed amount, not approved
-        // amount)
+        // Note: amountAfterAdvance represents the proposed principal (before interest deduction), calculated as
+        // Approved Receivable Amount * (Advance % / 100). This is the loan amount before interest is deducted,
+        // which is what charges should be calculated on, not the approved/disbursed amount.
         if (isReceivableLocLoan && locParams.isPresent()) {
             BigDecimal amountAfterAdvance = locParams.get().getAmountAfterAdvance();
             loan.getLoanRepaymentScheduleDetail().setPrincipal(amountAfterAdvance);
