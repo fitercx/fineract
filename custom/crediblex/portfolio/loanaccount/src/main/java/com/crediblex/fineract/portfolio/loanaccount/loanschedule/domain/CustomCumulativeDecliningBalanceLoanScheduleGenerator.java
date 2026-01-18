@@ -53,22 +53,26 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     /**
      * Override to fix multi-tranche loan schedule calculation.
      *
-     * For multi-disbursal loans, use only the total DISBURSED amount (not approved/all tranches) to calculate repayment
-     * schedule. This ensures schedules reflect actual disbursed principal, not approved principal that hasn't been
-     * disbursed yet.
+     * For multi-disbursal loans: - If loan has disbursed amounts (existing loan), use only DISBURSED amount - If loan
+     * has no disbursed amounts but has expected tranches (pre-creation calculateLoanSchedule API), use ALL expected
+     * tranches (getTotalMultiDisbursedAmount)
      *
-     * Fixes bug where schedule was calculated using getTotalMultiDisbursedAmount() (all tranches) instead of
-     * getTotalDisbursedAmount() (only disbursed tranches).
+     * This ensures: - Existing loans: schedules reflect only actual disbursed principal - Pre-creation API: schedules
+     * include all expected tranches for preview
      */
     @Override
     protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
         Money principalToBeScheduled;
         if (loanApplicationTerms.isMultiDisburseLoan()) {
             Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
 
             if (totalDisbursed.isGreaterThanZero()) {
-                // FIX: Use only disbursed amount, not all approved tranches
+                // Existing loan with disbursed amounts - use only disbursed amount
                 principalToBeScheduled = totalDisbursed;
+            } else if (totalMultiDisbursed.isGreaterThanZero()) {
+                // Pre-creation scenario (calculateLoanSchedule API) - use all expected tranches
+                principalToBeScheduled = totalMultiDisbursed;
             } else if (loanApplicationTerms.getApprovedPrincipal().isGreaterThanZero()) {
                 principalToBeScheduled = loanApplicationTerms.getApprovedPrincipal();
             } else {
@@ -82,51 +86,81 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
     }
 
     /**
-     * Override to exclude undisbursed tranches from outstanding balance calculation.
+     * Override to handle both existing loans and pre-creation schedule calculation.
+     *
+     * For existing loans: Only process actually disbursed tranches For pre-creation (calculateLoanSchedule API):
+     * Process all expected tranches
      *
      * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones), which causes the
-     * schedule to include future tranches in principal calculations. This fix ensures only actually disbursed tranches
-     * are added to outstanding balance.
+     * schedule to include future tranches in principal calculations for existing loans. This fix ensures: - Existing
+     * loans: only actually disbursed tranches are added to outstanding balance - Pre-creation: all expected tranches
+     * are included in the schedule preview
      */
     @Override
     protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
             LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate,
             final BigDecimal totalOriginalPrincipal) {
+        // Determine if this is a pre-creation scenario (no disbursed amounts but has expected tranches)
+        Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+        boolean isPreCreationScenario = totalDisbursed.isZero() && !loanApplicationTerms.getDisbursementDatas().isEmpty();
+
         for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
+            LocalDate disbursementDate = disburseDetail.getKey();
+            Money disbursementAmount = disburseDetail.getValue();
+
             // Check if all tranches on this date are actually disbursed
             // If multiple tranches share a date, they're summed in the map, so we need to check all of them
             List<DisbursementData> tranchesOnDate = loanApplicationTerms.getDisbursementDatas().stream()
-                    .filter(data -> data.disbursementDate().equals(disburseDetail.getKey())).toList();
+                    .filter(data -> data.disbursementDate().equals(disbursementDate)).toList();
 
-            // Only process if there are tranches on this date AND all of them are disbursed
-            boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
+            // For pre-creation scenario, include all expected tranches
+            // For existing loans, only include actually disbursed tranches
+            boolean shouldProcess;
+            if (isPreCreationScenario) {
+                // Pre-creation: include all expected tranches
+                shouldProcess = !tranchesOnDate.isEmpty();
+            } else {
+                // Existing loan: only include disbursed tranches
+                boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
+                shouldProcess = allDisbursed;
+            }
 
-            if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
-                    && !DateUtils.isAfter(disburseDetail.getKey(), scheduledDueDate) && allDisbursed) {
+            if (DateUtils.isAfter(disbursementDate, scheduleParams.getPeriodStartDate())
+                    && !DateUtils.isAfter(disbursementDate, scheduledDueDate) && shouldProcess) {
                 // validation check for amount not exceeds specified max
                 if (loanApplicationTerms.getMaxOutstandingBalance() != null) {
                     Money maxOutstandingBalance = loanApplicationTerms.getMaxOutstandingBalanceMoney();
-                    if (scheduleParams.getOutstandingBalance().plus(disburseDetail.getValue()).isGreaterThan(maxOutstandingBalance)) {
+                    if (scheduleParams.getOutstandingBalance().plus(disbursementAmount).isGreaterThan(maxOutstandingBalance)) {
                         String errorMsg = "Outstanding balance must not exceed the amount: " + maxOutstandingBalance;
                         throw new MultiDisbursementOutstandingAmoutException(errorMsg, maxOutstandingBalance.getAmount(),
-                                disburseDetail.getValue());
+                                disbursementAmount.getAmount());
                     }
                 }
 
                 // creates and add disbursement detail to the repayments period
                 final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
-                        totalOriginalPrincipal, disburseDetail.getValue().getAmount(), chargesDueAtTimeOfDisbursement);
+                        totalOriginalPrincipal, disbursementAmount.getAmount(), chargesDueAtTimeOfDisbursement);
                 final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
-                        .disbursement(disburseDetail.getKey(), disburseDetail.getValue(), chargesDueAtTimeOfDisbursementForTranche);
+                        .disbursement(disbursementDate, disbursementAmount, chargesDueAtTimeOfDisbursementForTranche);
                 periods.add(disbursementPeriod);
 
                 BigDecimal downPaymentAmt = BigDecimal.ZERO;
                 if (loanApplicationTerms.isDownPaymentEnabled()) {
-                    // get list of disbursements done on same date and create down payment periods
-                    List<DisbursementData> disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
-                            .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disburseDetail.getKey())
-                                    && disbursementData.isDisbursed())
-                            .toList();
+                    // get list of disbursements on same date
+                    // For pre-creation: include all expected tranches
+                    // For existing loans: only include disbursed tranches
+                    List<DisbursementData> disbursementsOnSameDate;
+                    if (isPreCreationScenario) {
+                        disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                                .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disbursementDate))
+                                .toList();
+                    } else {
+                        disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                                .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disbursementDate)
+                                        && disbursementData.isDisbursed())
+                                .toList();
+                    }
+
                     for (DisbursementData disbursementData : disbursementsOnSameDate) {
                         final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
                                 scheduleParams, disbursementData.disbursementDate(), disbursementData.getPrincipal());
@@ -134,8 +168,8 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                         downPaymentAmt = downPaymentAmt.add(downPaymentPeriod.principalDue());
                     }
                 }
-                // updates actual outstanding balance with new disbursement detail (only for disbursed tranches)
-                Money remainingPrincipal = disburseDetail.getValue().minus(downPaymentAmt);
+                // updates actual outstanding balance with new disbursement detail
+                Money remainingPrincipal = disbursementAmount.minus(downPaymentAmt);
                 scheduleParams.addOutstandingBalance(remainingPrincipal);
                 scheduleParams.addPrincipalToBeScheduled(remainingPrincipal);
                 loanApplicationTerms.setPrincipal(loanApplicationTerms.getPrincipal().plus(remainingPrincipal));
