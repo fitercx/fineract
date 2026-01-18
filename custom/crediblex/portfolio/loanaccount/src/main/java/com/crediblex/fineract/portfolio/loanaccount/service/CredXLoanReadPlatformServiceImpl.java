@@ -225,7 +225,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 result.getInMultiplesOf(), result.getCurrencyDisplaySymbol(), result.getCurrencyNameCode());
 
         final LoanTransactionEnumData transactionType = LoanEnumerations.transactionType(LoanTransactionType.REPAYMENT);
-        final LocalDate date = ((java.sql.Date) result.getTransactionDate()).toLocalDate();
+        // Handle null transaction date - default to current date if null (e.g., when loan is fully paid)
+        final LocalDate date = result.getTransactionDate() != null 
+                ? ((java.sql.Date) result.getTransactionDate()).toLocalDate() 
+                : DateUtils.getLocalDateOfTenant();
         final BigDecimal principalPortion = result.getPrincipalDue();
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
@@ -1646,9 +1649,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             Money totalOutstanding = Money.zero(monCurrency);
             Money totalCredits = Money.zero(monCurrency);
 
-            // update totals with details of fees charged during disbursement
-            totalFeeChargesCharged = totalFeeChargesCharged.plus(disbursementPeriod.getFeeChargesDue().subtract(waivedChargeAmount));
-            totalRepayment = totalRepayment.plus(disbursementPeriod.getFeeChargesPaid()).minus(waivedChargeAmount);
+            // Determine if this is a multi-tranche loan (will be used throughout the method)
+            final boolean isMultiTrancheLoan = this.disbursementData != null && this.disbursementData.size() > 1;
+            
+            // For multi-tranche loans, reset totals to zero to avoid double-counting
+            // We'll recalculate from actual periods at the end to ensure per-tranche accuracy
+            // For single disbursement loans, keep the initial values (they should be correct)
+            if (isMultiTrancheLoan) {
+                totalFeeChargesCharged = Money.zero(monCurrency);
+                totalRepayment = Money.zero(monCurrency);
+            } else {
+                // For single disbursement loans, initialize from the first disbursement period
+                totalFeeChargesCharged = totalFeeChargesCharged.plus(disbursementPeriod.getFeeChargesDue().subtract(waivedChargeAmount));
+                totalRepayment = totalRepayment.plus(disbursementPeriod.getFeeChargesPaid()).minus(waivedChargeAmount);
+            }
 
             Integer loanTermInDays = 0;
             Set<Long> disbursementPeriodIds = new HashSet<>();
@@ -1723,7 +1737,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal interestOutstanding = interestActualDue.subtract(interestPaid);
 
                 final BigDecimal feeChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
-                totalFeeChargesCharged = totalFeeChargesCharged.plus(feeChargesExpectedDue);
+                // For multi-tranche loans, skip accumulating fee charges for disbursement periods
+                // They're handled separately with correct per-tranche calculation
+                // For single disbursement loans, accumulate normally (DB values should be correct)
+                if (!isMultiTrancheLoan || !isDisbursementPeriod) {
+                    totalFeeChargesCharged = totalFeeChargesCharged.plus(feeChargesExpectedDue);
+                }
                 final BigDecimal feeChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesPaid");
                 final BigDecimal feeChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWaived");
                 final BigDecimal feeChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWrittenOff");
@@ -1801,6 +1820,39 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits, isDownPayment, accrualInterest);
 
                 periods.add(periodData);
+            }
+
+            // For multi-tranche loans, recalculate fee charge totals from actual periods
+            // This ensures totals match the per-tranche charges we calculated (580.25 + 369.25 = 949.50),
+            // not the DB values which may use the full loan amount calculation (1,055.00)
+            // For single disbursement loans, use the accumulated values (they should be correct)
+            if (isMultiTrancheLoan) {
+                Money recalculatedTotalFeeChargesCharged = Money.zero(monCurrency);
+                Money recalculatedTotalFeeChargesPaid = Money.zero(monCurrency);
+                for (LoanSchedulePeriodData period : periods) {
+                    if (period.getFeeChargesDue() != null) {
+                        recalculatedTotalFeeChargesCharged = recalculatedTotalFeeChargesCharged
+                                .plus(Money.of(monCurrency, period.getFeeChargesDue()));
+                    }
+                    if (period.getFeeChargesPaid() != null) {
+                        recalculatedTotalFeeChargesPaid = recalculatedTotalFeeChargesPaid
+                                .plus(Money.of(monCurrency, period.getFeeChargesPaid()));
+                    }
+                }
+                // Use recalculated totals instead of accumulated DB values for multi-tranche loans
+                totalFeeChargesCharged = recalculatedTotalFeeChargesCharged;
+                
+                // Recalculate totalRepayment from periods to ensure it matches the sum of all period payments
+                // This is safe because periods contain all the correct per-tranche values
+                Money recalculatedTotalRepayment = Money.zero(monCurrency);
+                for (LoanSchedulePeriodData period : periods) {
+                    if (period.getTotalPaidForPeriod() != null) {
+                        recalculatedTotalRepayment = recalculatedTotalRepayment
+                                .plus(Money.of(monCurrency, period.getTotalPaidForPeriod()));
+                    }
+                }
+                // Use recalculated totalRepayment to ensure it matches the sum of all period payments
+                totalRepayment = recalculatedTotalRepayment;
             }
 
             return new LoanScheduleData(this.currency, periods, loanTermInDays, totalPrincipalDisbursed, totalPrincipalExpected.getAmount(),

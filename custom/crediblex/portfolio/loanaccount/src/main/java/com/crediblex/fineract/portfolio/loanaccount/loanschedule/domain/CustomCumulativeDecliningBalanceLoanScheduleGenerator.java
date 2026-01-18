@@ -54,25 +54,11 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
         try {
             // Store loan charges in thread-local for use in processDisbursements
-            int chargeCount = loanCharges != null ? loanCharges.size() : 0;
-            log.info("=== CustomCumulativeDecliningBalanceLoanScheduleGenerator.generate() called ===");
-            log.info("Loan charges count: {}, Multi-disburse: {}, Principal: {}", chargeCount, 
-                    loanApplicationTerms.isMultiDisburseLoan(), loanApplicationTerms.getPrincipal().getAmount());
-            if (loanCharges != null && !loanCharges.isEmpty()) {
-                for (LoanCharge charge : loanCharges) {
-                    log.info("Charge: ID={}, Name={}, DueAtDisbursement={}, Percentage={}, Amount={}, Tax={}", 
-                            charge.getId(), charge.getCharge().getName(), charge.isDueAtDisbursement(), 
-                            charge.getPercentage(), charge.amount(), charge.getTaxAmount());
-                }
-            } else {
-                log.warn("WARNING: loanCharges is null or empty!");
-            }
             loanChargesThreadLocal.set(loanCharges);
             return super.generate(mc, loanApplicationTerms, loanCharges, holidayDetailDTO);
         } finally {
             // Clean up thread-local to prevent memory leaks
             loanChargesThreadLocal.remove();
-            log.info("=== CustomCumulativeDecliningBalanceLoanScheduleGenerator.generate() completed ===");
         }
     }
 
