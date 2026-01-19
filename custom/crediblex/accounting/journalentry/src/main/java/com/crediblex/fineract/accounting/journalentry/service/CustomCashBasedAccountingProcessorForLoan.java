@@ -259,9 +259,25 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
-                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
-                        AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
+                if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
+                    GLAccount earlySettlementFeeRevenue = glAccountRepository.findOneByGlCode("300002").orElse(null);
+                    if (earlySettlementFeeRevenue != null) {
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                feesAmount, earlySettlementFeeRevenue);
+                        log.info(
+                                "CustomCashBasedAccountingProcessorForLoan: Using GL 300002 (Early Settlement Fee Revenue) for RBF foreclosure fees");
+                    } else {
+                        log.warn("CustomCashBasedAccountingProcessorForLoan: GL 300002 not found, falling back to INCOME_FROM_FEES");
+                        this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                                AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
+                                transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                    }
+                } else {
+                    this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                            AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
+                            transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                }
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, feesAmount,
@@ -384,5 +400,32 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
             log.error("CustomCashBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Check if the transaction is a foreclosure charge
+     */
+    private boolean isForeclosureCharge(LoanTransactionDTO loanTransactionDTO) {
+        try {
+            if (loanTransactionDTO.getFeePayments() != null && !loanTransactionDTO.getFeePayments().isEmpty()) {
+                for (var feePayment : loanTransactionDTO.getFeePayments()) {
+                    Long chargeId = feePayment.getChargeId();
+                    if (chargeId != null) {
+                        String sql = "SELECT name FROM m_charge WHERE id = ?";
+                        String chargeName = this.jdbcTemplate.queryForObject(sql, String.class, chargeId);
+                        if (chargeName != null) {
+                            String lowerName = chargeName.toLowerCase();
+                            if (lowerName.contains("foreclosure") || lowerName.contains("early settlement")
+                                    || lowerName.contains("prepayment") || lowerName.contains("early closure")) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("CustomCashBasedAccountingProcessorForLoan: Error checking foreclosure charge: {}", e.getMessage());
+        }
+        return false;
     }
 }
