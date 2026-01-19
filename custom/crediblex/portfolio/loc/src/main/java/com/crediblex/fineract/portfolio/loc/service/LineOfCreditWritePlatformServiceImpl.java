@@ -56,6 +56,7 @@ import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -808,6 +809,19 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             // Save note if provided
             saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.LOC_APPROVED_BUYERS_UPDATED);
         }
+
+        // After processing, fetch and return all approved buyers with ID and name
+        List<Map<String, Object>> approvedBuyersList = new ArrayList<>();
+        if (lineOfCredit.getApprovedBuyers() != null) {
+            for (LineOfCreditApprovedBuyers buyer : lineOfCredit.getApprovedBuyers()) {
+                Map<String, Object> buyerMap = new HashMap<>();
+                buyerMap.put("id", buyer.getId());
+                buyerMap.put("name", buyer.getName());
+                buyerMap.put("creditLimit", buyer.getCreditLimit());
+                approvedBuyersList.add(buyerMap);
+            }
+        }
+        changes.put("approvedBuyers", approvedBuyersList);
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(lineOfCreditId).with(changes).build();
     }
