@@ -16,6 +16,8 @@ import org.apache.fineract.commands.service.AuditReadPlatformServiceImpl;
 import org.apache.fineract.infrastructure.core.data.PaginationParameters;
 import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.security.utils.SQLBuilder;
+import org.apache.fineract.portfolio.savings.data.SavingsAccountData;
+import org.apache.fineract.portfolio.savings.service.SavingsAccountReadPlatformService;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
     private final AuditReadPlatformServiceImpl originalAuditReadPlatformService;
     private final EzySqlLoanChargeWaiverRepository loanChargeWaiverRepository;
+    private final SavingsAccountReadPlatformService savingsAccountReadPlatformService;
 
     @Override
     public List<AuditData> retrieveAuditEntries(SQLBuilder extraCriteria, boolean includeJson) {
@@ -51,6 +54,10 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
         return "WAIVE".equals(data.getActionName()) && "LOANCHARGE".equals(data.getEntityName());
     }
 
+    private static boolean isSavingsUndo(AuditData data) {
+        return "UNDOTRANSACTION".equalsIgnoreCase(data.getActionName()) && "SAVINGSACCOUNT".equalsIgnoreCase(data.getEntityName());
+    }
+
     public List<AuditData> retrieveAllEntriesToBeChecked(SQLBuilder extraCriteria, boolean includeJson) {
         // the optimal solution for this would have been to modify the query downstream
         // however, to minimize changes, let us enhance the data after it has been fetched
@@ -61,12 +68,9 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
         List<Long> chargeIds = auditData.stream().filter(CredXAuditReadPlatformService::isWaiveCharge).map(AuditData::getResourceId)
                 .toList();
 
-        if (chargeIds.isEmpty()) {
-            return auditData; // Return original data if no charge waivers found
-        }
-
-        // Fetch all charge waiver details in a single query
-        List<LoanChargeWaiveDetails.Result> waiveDetails = loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(chargeIds);
+        // Fetch all charge waiver details in a single query (only if needed)
+        List<LoanChargeWaiveDetails.Result> waiveDetails = chargeIds.isEmpty() ? List.of()
+                : loanChargeWaiverRepository.fetchLoanChargeWaiverDetails(chargeIds);
 
         // Create a lookup map for quick access
         @SuppressWarnings("Convert2MethodRef")
@@ -74,25 +78,55 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
         // Enhance the audit data
         for (AuditData data : auditData) {
-            if (!isWaiveCharge(data)) {
-                enhancedAuditData.add(data);
+            // Case 1: LOANCHARGE WAIVE - use specialized query
+            if (isWaiveCharge(data)) {
+                Long chargeId = data.getResourceId();
+                LoanChargeWaiveDetails.Result details = detailsMap.get(chargeId);
+                if (details != null) {
+                    ExtendedAuditData enhancedData = ExtendedAuditData.from(data, details.getClientName(), details.getLoanId(),
+                            details.getWaiveOffAmount());
+                    enhancedAuditData.add(enhancedData);
+                } else {
+                    enhancedAuditData.add(data);
+                }
                 continue;
             }
 
-            Long chargeId = data.getResourceId();
-            LoanChargeWaiveDetails.Result details = detailsMap.get(chargeId);
-
-            if (details == null) {
-                enhancedAuditData.add(data);
+            // Case 2: SAVINGSACCOUNT UNDOTRANSACTION - enrich with clientName via savings account
+            if (isSavingsUndo(data)) {
+                enhancedAuditData.add(enrichSavingsUndoWithClient(data));
                 continue;
             }
 
-            ExtendedAuditData enhancedData = ExtendedAuditData.from(data, details.getClientName(), details.getLoanId(),
-                    details.getWaiveOffAmount());
-            enhancedAuditData.add(enhancedData);
+            // Default: no change
+            enhancedAuditData.add(data);
         }
 
         return enhancedAuditData;
+    }
+
+    private AuditData enrichSavingsUndoWithClient(AuditData data) {
+        try {
+            if (data.getClientName() != null && !data.getClientName().isBlank()) {
+                return data;
+            }
+            // Try to get savings account id from resourceId; if not, fallback to subresourceId
+            Long savingsId = data.getResourceId();
+            if (savingsId == null || savingsId <= 0) {
+                savingsId = data.getSubresourceId();
+            }
+            if (savingsId == null || savingsId <= 0) {
+                return data;
+            }
+            SavingsAccountData savings = savingsAccountReadPlatformService.retrieveOne(savingsId);
+            if (savings == null || savings.getClientName() == null || savings.getClientName().isBlank()) {
+                return data;
+            }
+            return ExtendedAuditData.from(data, savings.getClientName(), null, null);
+        } catch (Exception e) {
+            // Be defensive: never break the audit listing
+            return data;
+        }
     }
 
 }
