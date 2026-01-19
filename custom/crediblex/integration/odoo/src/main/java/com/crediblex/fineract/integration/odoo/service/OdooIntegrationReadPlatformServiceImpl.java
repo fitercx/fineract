@@ -188,7 +188,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
-        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("210003", "100003").contains(glCode)) {
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
             return "BNK6";
         }
 
