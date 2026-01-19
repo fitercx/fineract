@@ -342,10 +342,19 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
 
         // For multi-tranche loans, handle first disbursement (on period start date)
         if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
+            final Long disbursementId = 1L;
+            final LocalDate expectedDisbursementDate = loanApplicationTerms.getExpectedDisbursementDate();
+            final LocalDate actualDisbursementDate = loanApplicationTerms.getExpectedDisbursementDate();
+            final BigDecimal principal = loanApplicationTerms.getPrincipal().getAmount();
+            final BigDecimal netDisbursalAmount = null;
+            final BigDecimal factorRateLoanAmount = null;
+            final String loanChargeId = null;
+            final BigDecimal chargeAmount = null;
+            final BigDecimal waivedChargeAmount = null;
+
             loanApplicationTerms.getDisbursementDatas()
-                    .add(new DisbursementData(1L, loanApplicationTerms.getExpectedDisbursementDate(),
-                            loanApplicationTerms.getExpectedDisbursementDate(), loanApplicationTerms.getPrincipal().getAmount(), null, null,
-                            null, null, null));
+                    .add(new DisbursementData(disbursementId, expectedDisbursementDate, actualDisbursementDate, principal,
+                            netDisbursalAmount, factorRateLoanAmount, loanChargeId, chargeAmount, waivedChargeAmount));
         }
 
         for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {

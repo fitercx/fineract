@@ -46,8 +46,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -1562,7 +1564,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 loan.getNextPossibleRepaymentDateForRescheduling(), appCurrency.toData());
     }
 
-    private final class LoanScheduleResultSetExtractor implements ResultSetExtractor<LoanScheduleData> {
+    private static final class LoanScheduleResultSetExtractor implements ResultSetExtractor<LoanScheduleData> {
 
         private final CurrencyData currency;
         private final DisbursementData disbursement;
@@ -1668,7 +1670,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             // Collect disbursement period charges from result set as we iterate
             // Store them in a map keyed by disbursement date for use when processing disbursements
-            java.util.Map<LocalDate, BigDecimal> disbursementChargesFromDB = new java.util.HashMap<>();
+            Map<LocalDate, BigDecimal> disbursementChargesFromDB = new HashMap<>();
 
             while (rs.next()) {
 
@@ -1854,8 +1856,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         private BigDecimal processDisbursementData(LoanScheduleType loanScheduleType, Collection<DisbursementData> disbursementData,
                 LocalDate fromDate, LocalDate dueDate, Set<Long> disbursementPeriodIds, BigDecimal disbursementChargeAmount,
-                BigDecimal waivedChargeAmount, List<LoanSchedulePeriodData> periods,
-                java.util.Map<LocalDate, BigDecimal> disbursementChargesFromDB) {
+                BigDecimal waivedChargeAmount, List<LoanSchedulePeriodData> periods, Map<LocalDate, BigDecimal> disbursementChargesFromDB) {
             BigDecimal disbursedAmount = BigDecimal.ZERO;
             final BigDecimal totalOriginalPrincipal = this.disbursementData.stream().map(DisbursementData::getPrincipal)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
