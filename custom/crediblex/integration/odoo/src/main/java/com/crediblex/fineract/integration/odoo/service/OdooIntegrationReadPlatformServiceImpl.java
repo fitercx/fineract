@@ -238,8 +238,13 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK7";
         }
 
-        // BNK8 journal for DISBURSEMENT business events with specific GL codes
+        // BNK8 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
             return "BNK8";
         }
 

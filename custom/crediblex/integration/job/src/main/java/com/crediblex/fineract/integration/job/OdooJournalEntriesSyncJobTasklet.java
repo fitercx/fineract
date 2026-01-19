@@ -113,9 +113,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         continue;
                     }
 
-                    // Check for early closure entries first
-                    processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
-
                     // Post all journal entries for this loan (may create multiple moves for different journals)
                     EntryProcessingResult result = processJournalEntriesForLoan(loanId, loanEntries);
 
@@ -591,9 +588,6 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
      */
     private EntryProcessingResult processJournalEntriesForLoan(Long loanId, List<JournalEntryOdooSync> loanEntries) {
         try {
-            // Check for early closure entries first
-            processEarlyClosureJournalEntriesForLoan(loanId, loanEntries);
-
             // Try the enhanced service method that provides individual entry tracking
             EntryProcessingResult result = odooJournalEntryService.postJournalEntriesForLoanWithTracking(loanId, loanEntries);
 
