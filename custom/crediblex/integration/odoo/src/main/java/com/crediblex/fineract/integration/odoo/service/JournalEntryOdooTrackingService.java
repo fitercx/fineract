@@ -110,12 +110,12 @@ public class JournalEntryOdooTrackingService {
 
             // Skip creating tracking records for ACCRUAL business events
             // Reason: Accrual journal entry posting depends on "Generate Loan Monthly Accrual Summations" job.
-            // When this job runs, it creates monthly accrual entries and we use those records for creating 
+            // When this job runs, it creates monthly accrual entries and we use those records for creating
             // journal lines manually by using the accrued values from that job and post to Odoo.
             // Therefore, there's no reason to create tracking records here for individual accrual entries.
             if ("ACCRUAL".equals(businessEventType)) {
-                log.debug("Skipping tracking record creation for journal entry ID: {} - ACCRUAL business event type not tracked", 
-                    journalEntry.getId());
+                log.debug("Skipping tracking record creation for journal entry ID: {} - ACCRUAL business event type not tracked",
+                        journalEntry.getId());
                 return;
             }
 
