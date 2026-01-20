@@ -132,6 +132,15 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder manageApprovedBuyers(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "UPDATE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/manageapprovedbuyers";
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder withJson(final String json) {
         this.json = json;
         return this;
