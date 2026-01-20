@@ -188,7 +188,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
-        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("210003", "100003").contains(glCode)) {
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200040", "100003").contains(glCode)) {
             return "BNK6";
         }
 
@@ -238,8 +238,13 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK7";
         }
 
-        // BNK8 journal for DISBURSEMENT business events with specific GL codes
+        // BNK8 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
             return "BNK8";
         }
 

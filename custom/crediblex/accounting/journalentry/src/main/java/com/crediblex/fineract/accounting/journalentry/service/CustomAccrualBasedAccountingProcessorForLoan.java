@@ -277,13 +277,34 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
-                GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
-                        AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), paymentTypeId);
-                if (accountMap.containsKey(account)) {
-                    BigDecimal amount = accountMap.get(account).add(feesAmount);
-                    accountMap.put(account, amount);
+                // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
+                if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
+                    GLAccount earlySettlementFeeRevenue = glAccountRepository.findOneByGlCode("300002").orElse(null);
+                    if (earlySettlementFeeRevenue != null) {
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                feesAmount, earlySettlementFeeRevenue);
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300002 (Early Settlement Fee Revenue) for RBF foreclosure fees");
+                    } else {
+                        log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 300002 not found, falling back to FEES_RECEIVABLE");
+                        GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), paymentTypeId);
+                        if (accountMap.containsKey(account)) {
+                            BigDecimal amount = accountMap.get(account).add(feesAmount);
+                            accountMap.put(account, amount);
+                        } else {
+                            accountMap.put(account, feesAmount);
+                        }
+                    }
                 } else {
-                    accountMap.put(account, feesAmount);
+                    GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                            AccountingConstants.AccrualAccountsForLoan.FEES_RECEIVABLE.getValue(), paymentTypeId);
+                    if (accountMap.containsKey(account)) {
+                        BigDecimal amount = accountMap.get(account).add(feesAmount);
+                        accountMap.put(account, amount);
+                    } else {
+                        accountMap.put(account, feesAmount);
+                    }
                 }
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
@@ -518,5 +539,32 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Check if the transaction is a foreclosure charge
+     */
+    private boolean isForeclosureCharge(LoanTransactionDTO loanTransactionDTO) {
+        try {
+            if (loanTransactionDTO.getFeePayments() != null && !loanTransactionDTO.getFeePayments().isEmpty()) {
+                for (var feePayment : loanTransactionDTO.getFeePayments()) {
+                    Long chargeId = feePayment.getChargeId();
+                    if (chargeId != null) {
+                        String sql = "SELECT name FROM m_charge WHERE id = ?";
+                        String chargeName = this.jdbcTemplate.queryForObject(sql, String.class, chargeId);
+                        if (chargeName != null) {
+                            String lowerName = chargeName.toLowerCase();
+                            if (lowerName.contains("foreclosure") || lowerName.contains("early settlement")
+                                    || lowerName.contains("prepayment") || lowerName.contains("early closure")) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("CustomAccrualBasedAccountingProcessorForLoan: Error checking foreclosure charge: {}", e.getMessage());
+        }
+        return false;
     }
 }

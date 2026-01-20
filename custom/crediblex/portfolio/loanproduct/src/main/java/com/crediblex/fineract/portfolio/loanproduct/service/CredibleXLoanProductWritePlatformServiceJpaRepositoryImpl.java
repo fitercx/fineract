@@ -170,9 +170,10 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                 throw new LoanProductCannotBeModifiedDueToNonClosedLoansException(product.getId());
             }
 
-            // Validate: Prevent changing from single-disbursal to multi-disbursal when active loans exist
-            // This prevents data inconsistency where single-disbursal loans would be treated as multi-disbursal
-            // for validation purposes, causing repayment validation errors
+            // VALIDATION RELAXED: Allow changing from single-disbursal to multi-disbursal even with active loans
+            // This is now safe because we've implemented LoanTrancheValidationHelper.hasActualMultipleTranches()
+            // which checks the loan's actual structure (not just product setting) for repayment validation
+            // Single-disbursal loans will continue to work correctly even if product is updated to multi-disbursal
             final boolean isCurrentlyMultiDisburse = product.isMultiDisburseLoan();
             if (command.isChangeInBooleanParameterNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME,
                     isCurrentlyMultiDisburse)) {
@@ -181,14 +182,11 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
 
                 // If changing from single-disbursal (false) to multi-disbursal (true) and active loans exist
                 if (!isCurrentlyMultiDisburse && newValue && hasNonClosedLoans) {
-                    log.warn("Attempt to change loan product {} from single-disbursal to multi-disbursal when active loans exist",
+                    log.info("Allowing change of loan product {} from single-disbursal to multi-disbursal with active loans. "
+                            + "This is safe because repayment validation now checks actual loan structure, not just product setting.",
                             product.getId());
-                    throw new GeneralPlatformDomainRuleException(
-                            "error.msg.loanproduct.cannot.change.single.to.multi.disbursal.with.active.loans",
-                            "Loan product with identifier " + product.getId()
-                                    + " cannot be changed from single-disbursal to multi-disbursal because there are active (non-closed) loans associated with it. "
-                                    + "This change would cause data inconsistency and validation errors for existing single-disbursal loans.",
-                            product.getId());
+                    // Validation removed - allow the change
+                    // The repayment validation fix ensures single-disbursal loans won't be incorrectly validated
                 }
             }
 
