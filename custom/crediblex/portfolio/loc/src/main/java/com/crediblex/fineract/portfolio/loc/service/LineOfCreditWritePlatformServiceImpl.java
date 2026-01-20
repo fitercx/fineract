@@ -934,8 +934,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         try {
             request = new ObjectMapper().readValue(requestBody, AddVendorRequest.class);
         } catch (Exception e) {
-            throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid",
-                    "Invalid request body: " + e.getMessage(), List.of());
+            throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
+                    List.of());
         }
 
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
@@ -943,14 +943,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Allow vendor addition only for ACTIVE LOCs
         if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
             throw new PlatformDataIntegrityException("error.msg.loc.add.vendor.not.allowed",
-                    "Vendors can only be added when Line of Credit is ACTIVE. Current status: "
-                            + lineOfCredit.getStatus().name());
+                    "Vendors can only be added when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
         }
 
         // Validate request
         if (request.getName() == null || request.getName().trim().isEmpty()) {
-            throw new PlatformDataIntegrityException("error.msg.vendor.name.required",
-                    "Vendor name is required");
+            throw new PlatformDataIntegrityException("error.msg.vendor.name.required", "Vendor name is required");
         }
 
         // Check if vendor with same name already exists
@@ -966,17 +964,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Validate credit limit
         BigDecimal creditLimit = request.getCreditLimit() != null ? request.getCreditLimit() : BigDecimal.ZERO;
         if (creditLimit.compareTo(BigDecimal.ZERO) < 0) {
-            throw new PlatformDataIntegrityException("error.msg.vendor.credit.limit.invalid",
-                    "Credit limit cannot be negative");
+            throw new PlatformDataIntegrityException("error.msg.vendor.credit.limit.invalid", "Credit limit cannot be negative");
         }
 
         // Create new vendor
-        LineOfCreditApprovedBuyers vendor = new LineOfCreditApprovedBuyers(
-                request.getName().trim(), 
-                creditLimit, 
-                request.getLosExternalId(), 
-                lineOfCredit
-        );
+        LineOfCreditApprovedBuyers vendor = new LineOfCreditApprovedBuyers(request.getName().trim(), creditLimit,
+                request.getLosExternalId(), lineOfCredit);
 
         // Add to line of credit
         if (lineOfCredit.getApprovedBuyers() == null) {
@@ -988,13 +981,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
         // Return response with all vendor details
-        return new VendorResponse(
-                vendor.getId(),
-                vendor.getName(),
-                vendor.getCreditLimit(),
-                vendor.getLosExternalId(),
-                lineOfCredit.getId()
-        );
+        return new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(), vendor.getLosExternalId(),
+                lineOfCredit.getId());
     }
 
 }

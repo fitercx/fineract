@@ -58,7 +58,6 @@ import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
-import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
@@ -315,9 +314,9 @@ public class LineOfCreditApiResource {
             @Parameter(hidden = true) final String requestBody) {
 
         this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
-        
+
         VendorResponse response = this.writePlatformService.addVendor(lineOfCreditId, requestBody);
-        
+
         return this.vendorResponseSerializer.serialize(response);
     }
 }
