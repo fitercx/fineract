@@ -935,7 +935,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             request = new ObjectMapper().readValue(requestBody, AddVendorRequest.class);
         } catch (Exception e) {
             throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
-                    List.of());
+                    List.of(), e);
         }
 
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
