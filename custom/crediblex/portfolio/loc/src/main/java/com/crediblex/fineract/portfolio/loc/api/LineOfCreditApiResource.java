@@ -20,13 +20,16 @@
 package com.crediblex.fineract.portfolio.loc.api;
 
 import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperBuilder;
+import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditTransactionReadPlatformService;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -55,6 +58,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
+import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
@@ -75,10 +79,12 @@ public class LineOfCreditApiResource {
 
     private final PlatformSecurityContext context;
     private final LineOfCreditReadPlatformService readPlatformService;
+    private final LineOfCreditWritePlatformService writePlatformService;
     private final LineOfCreditTransactionReadPlatformService transactionReadPlatformService;
     private final DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditTransactionData> transactionToApiJsonSerializer;
+    private final DefaultToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
@@ -294,5 +300,24 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return this.transactionToApiJsonSerializer.serialize(settings, transaction);
+    }
+
+    @POST
+    @Path("{clientId}/creditlines/{lineOfCreditId}/vendors")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Add Vendor to Line of Credit", description = "Adds a new vendor/supplier to the approved buyers list for a line of credit")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = AddVendorRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = VendorResponse.class))) })
+    public String addVendor(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @Parameter(hidden = true) final String requestBody) {
+
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+        
+        VendorResponse response = this.writePlatformService.addVendor(lineOfCreditId, requestBody);
+        
+        return this.vendorResponseSerializer.serialize(response);
     }
 }
