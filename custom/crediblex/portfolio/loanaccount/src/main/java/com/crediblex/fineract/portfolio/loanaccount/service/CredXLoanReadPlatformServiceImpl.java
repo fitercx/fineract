@@ -1856,13 +1856,21 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // Update outstanding balance based on whether we have actual or expected disbursements
                 // Only subtract principal due for scheduled repayment periods (principalDue > 0)
                 // Disbursement periods have principalDue = 0, so no subtraction needed
-                if (isPositive(this.outstandingLoanPrincipalBalance) && isPositive(principalDue)) {
-                    // Loan has actual disbursements - update actual outstanding balance
-                    this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
-                } else if (isPositive(this.expectedDisbursementsRunningBalance) && isPositive(principalDue)) {
-                    // Loan is approved but not yet disbursed - update expected disbursements running balance
-                    // This maintains the running balance for preview purposes
-                    this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                if (isPositive(principalDue)) {
+                    if (isPositive(this.outstandingLoanPrincipalBalance)) {
+                        // Loan has actual disbursements - update actual outstanding balance
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    } else if (isPositive(this.expectedDisbursementsRunningBalance)) {
+                        // Loan is approved but not yet disbursed - update expected disbursements running balance
+                        // This maintains the running balance for preview purposes
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                    } else {
+                        // Edge case: Both balances are zero but we have principal due
+                        // Update outstandingLoanPrincipalBalance as fallback to track the principal due
+                        // This handles cases where balances have been fully paid off but schedule still has principal
+                        // due
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    }
                 }
 
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
