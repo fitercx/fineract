@@ -223,14 +223,18 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
         // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
         // summary.
+        // Extract values as BigDecimal immediately to avoid entity state issues before collection modifications
         if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
-            Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
-            Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+            if (loanSummary != null) {
+                BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
+                BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
 
-            // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
-            feePayable = feeOutstanding;
-            taxPayable = taxOutstanding;
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+                // Create new Money objects from extracted BigDecimal values to avoid entity references
+                feePayable = Money.of(currency, feeOutstandingAmount);
+                taxPayable = Money.of(currency, taxOutstandingAmount);
+            }
         }
         updateInstallmentsPostDate(loan, foreClosureDate);
 

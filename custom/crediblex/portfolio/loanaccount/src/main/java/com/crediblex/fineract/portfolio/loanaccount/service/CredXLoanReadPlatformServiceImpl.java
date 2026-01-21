@@ -2048,14 +2048,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
         // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
         // summary.
+        // Extract values as BigDecimal immediately to avoid entity state issues
         if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
-            Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
-            Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+            if (loanSummary != null) {
+                BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
+                BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
 
-            // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
-            feeChargesAmount = feeOutstanding;
-            taxChargesAmount = taxOutstanding;
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+                // Create new Money objects from extracted BigDecimal values to avoid entity references
+                feeChargesAmount = Money.of(currency, feeOutstandingAmount);
+                taxChargesAmount = Money.of(currency, taxOutstandingAmount);
+            }
         }
 
         // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
