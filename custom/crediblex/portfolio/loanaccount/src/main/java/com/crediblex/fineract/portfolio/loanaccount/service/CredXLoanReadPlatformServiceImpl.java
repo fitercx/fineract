@@ -1595,7 +1595,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         /**
          * Helper method to check if a BigDecimal value is positive (greater than zero).
          *
-         * @param value the BigDecimal value to check
+         * @param value
+         *            the BigDecimal value to check
          * @return true if value is greater than zero, false otherwise
          */
         private static boolean isPositive(BigDecimal value) {
@@ -1603,11 +1604,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         /**
-         * Determines if the expected disbursement balance should be used for calculating outstanding balance.
-         * This is true when the loan is approved but not yet disbursed, and we're processing a scheduled repayment period.
+         * Determines if the expected disbursement balance should be used for calculating outstanding balance. This is
+         * true when the loan is approved but not yet disbursed, and we're processing a scheduled repayment period.
          *
-         * @param isDisbursementPeriod whether this is a disbursement period
-         * @param principalDue the principal due for this period
+         * @param isDisbursementPeriod
+         *            whether this is a disbursement period
+         * @param principalDue
+         *            the principal due for this period
          * @return true if expected disbursement balance should be used, false otherwise
          */
         private boolean shouldUseExpectedDisbursementBalance(boolean isDisbursementPeriod, BigDecimal principalDue) {
