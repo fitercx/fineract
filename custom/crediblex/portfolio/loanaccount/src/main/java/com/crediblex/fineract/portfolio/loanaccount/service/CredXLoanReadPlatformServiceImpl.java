@@ -1574,6 +1574,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         private final Set<LoanCharge> loanCharges;
         private LocalDate lastDueDate;
         private BigDecimal outstandingLoanPrincipalBalance;
+        private BigDecimal expectedDisbursementsRunningBalance;
         private boolean excludePastUnDisbursed;
 
         LoanScheduleResultSetExtractor(final RepaymentScheduleRelatedLoanData repaymentScheduleRelatedLoanData,
@@ -1584,6 +1585,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             this.totalFeeChargesDueAtDisbursement = repaymentScheduleRelatedLoanData.getTotalFeeChargesAtDisbursement();
             this.lastDueDate = this.disbursement.disbursementDate();
             this.outstandingLoanPrincipalBalance = this.disbursement.getPrincipal();
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
             this.disbursementData = disbursementData;
             this.excludePastUnDisbursed = isInterestRecalculationEnabled;
             this.loanScheduleType = loanScheduleType;
@@ -1667,6 +1669,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             Integer loanTermInDays = 0;
             Set<Long> disbursementPeriodIds = new HashSet<>();
+
+            // Reset expected disbursements running balance for each schedule extraction
+            // This allows us to show correct outstanding balances in the schedule preview
+            // We maintain a running balance similar to outstandingLoanPrincipalBalance
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
 
             // Collect disbursement period charges from result set as we iterate
             // Store them in a map keyed by disbursement date for use when processing disbursements
@@ -1795,11 +1802,36 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     fromDate = this.lastDueDate;
                 }
 
-                final BigDecimal outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // For scheduled periods (not disbursement periods), calculate outstanding balance
+                // If no actual disbursements have occurred but we have expected disbursements,
+                // use expected disbursements to show correct balance in schedule preview
+                BigDecimal outstandingPrincipalBalanceOfLoan;
+                if (!isDisbursementPeriod && principalDue.compareTo(BigDecimal.ZERO) > 0) {
+                    // This is a scheduled repayment period
+                    if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) == 0
+                            && this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0) {
+                        // Loan is approved but not yet disbursed - use expected disbursements running balance for preview
+                        outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                    } else {
+                        // Loan has actual disbursements - use actual outstanding balance
+                        outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    }
+                } else {
+                    // Disbursement period or no principal due - use standard calculation
+                    outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                }
 
                 // update based on current period values
                 this.lastDueDate = dueDate;
-                this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // Update outstanding balance based on whether we have actual or expected disbursements
+                if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) > 0) {
+                    // Loan has actual disbursements - update actual outstanding balance
+                    this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                } else if (this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0 && !isDisbursementPeriod) {
+                    // Loan is approved but not yet disbursed - update expected disbursements running balance
+                    // This maintains the running balance for preview purposes
+                    this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                }
 
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
 
@@ -1885,6 +1917,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     // Only add to outstanding balance if actually disbursed
                     if (data.isDisbursed()) {
                         this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    } else {
+                        // Track expected disbursements for loans that are approved but not yet disbursed
+                        // This allows us to calculate correct outstanding balances in schedule preview
+                        // Maintain a running balance similar to outstandingLoanPrincipalBalance
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.add(periodData.getPrincipalDisbursed());
                     }
                     disbursementPeriodIds.add(data.getId());
                 }
