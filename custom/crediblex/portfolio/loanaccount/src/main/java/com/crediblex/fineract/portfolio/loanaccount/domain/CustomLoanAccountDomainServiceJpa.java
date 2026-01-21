@@ -218,27 +218,19 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
 
-        // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
-        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding
-        // amounts
-        // Note: Outer condition checks if ANY needs updating (efficient loanSummary access), inner conditions ensure
-        // only zero values are updated (non-zero values remain unchanged)
-        if (loan.isFactorRateEnabled() && (feePayable.isZero() || taxPayable.isZero())) {
+        // For Factor Rate loans, always use loan summary totals for fees and taxes
+        // The installment-based calculation (retrieveIncomeOutstandingTillDate) only includes fees from installments
+        // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
+        // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
+        // summary.
+        if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
-            // Only update fees if installment amount is zero (inner condition protects non-zero values)
-            if (feePayable.isZero()) {
-                Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
-                if (feeOutstanding.isGreaterThanZero()) {
-                    feePayable = feeOutstanding;
-                }
-            }
-            // Only update taxes if installment amount is zero (inner condition protects non-zero values)
-            if (taxPayable.isZero()) {
-                Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
-                if (taxOutstanding.isGreaterThanZero()) {
-                    taxPayable = taxOutstanding;
-                }
-            }
+            Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
+            Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+
+            // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+            feePayable = feeOutstanding;
+            taxPayable = taxOutstanding;
         }
         updateInstallmentsPostDate(loan, foreClosureDate);
 

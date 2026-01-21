@@ -2043,31 +2043,23 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
         Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
 
-        // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
-        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding
-        // amounts
-        // Note: Outer condition checks if ANY needs updating (efficient loanSummary access), inner conditions ensure
-        // only zero values are updated (non-zero values remain unchanged)
-        if (loan.isFactorRateEnabled() && (feeChargesAmount.isZero() || taxChargesAmount.isZero())) {
+        // For Factor Rate loans, always use loan summary totals for fees and taxes
+        // The installment-based calculation (retrieveIncomeOutstandingTillDate) only includes fees from installments
+        // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
+        // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
+        // summary.
+        if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
-            // Only update fees if installment amount is zero (inner condition protects non-zero values)
-            if (feeChargesAmount.isZero()) {
-                Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
-                if (feeOutstanding.isGreaterThanZero()) {
-                    feeChargesAmount = feeOutstanding;
-                }
-            }
-            // Only update taxes if installment amount is zero (inner condition protects non-zero values)
-            if (taxChargesAmount.isZero()) {
-                Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
-                if (taxOutstanding.isGreaterThanZero()) {
-                    taxChargesAmount = taxOutstanding;
-                }
-            }
+            Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
+            Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
+
+            // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+            feeChargesAmount = feeOutstanding;
+            taxChargesAmount = taxOutstanding;
         }
 
         // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
-        // This ensures the total amount includes fees/taxes from loan summary when installment amounts are zero
+        // This ensures the total amount includes all outstanding fees/taxes from loan summary for Factor Rate loans
         Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
         Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
         Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
