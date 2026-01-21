@@ -1574,6 +1574,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         private final Set<LoanCharge> loanCharges;
         private LocalDate lastDueDate;
         private BigDecimal outstandingLoanPrincipalBalance;
+        private BigDecimal expectedDisbursementsRunningBalance;
         private boolean excludePastUnDisbursed;
 
         LoanScheduleResultSetExtractor(final RepaymentScheduleRelatedLoanData repaymentScheduleRelatedLoanData,
@@ -1584,10 +1585,48 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             this.totalFeeChargesDueAtDisbursement = repaymentScheduleRelatedLoanData.getTotalFeeChargesAtDisbursement();
             this.lastDueDate = this.disbursement.disbursementDate();
             this.outstandingLoanPrincipalBalance = this.disbursement.getPrincipal();
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
             this.disbursementData = disbursementData;
             this.excludePastUnDisbursed = isInterestRecalculationEnabled;
             this.loanScheduleType = loanScheduleType;
             this.loanCharges = loanCharges;
+        }
+
+        /**
+         * Helper method to check if a BigDecimal value is positive (greater than zero).
+         *
+         * @param value
+         *            the BigDecimal value to check
+         * @return true if value is greater than zero, false otherwise
+         */
+        private static boolean isPositive(BigDecimal value) {
+            return value != null && value.compareTo(BigDecimal.ZERO) > 0;
+        }
+
+        /**
+         * Helper method to check if a BigDecimal value is zero.
+         *
+         * @param value
+         *            the BigDecimal value to check
+         * @return true if value is zero, false otherwise
+         */
+        private static boolean isZero(BigDecimal value) {
+            return value != null && value.compareTo(BigDecimal.ZERO) == 0;
+        }
+
+        /**
+         * Determines if the expected disbursement balance should be used for calculating outstanding balance. This is
+         * true when the loan is approved but not yet disbursed, and we're processing a scheduled repayment period.
+         *
+         * @param isDisbursementPeriod
+         *            whether this is a disbursement period
+         * @param principalDue
+         *            the principal due for this period
+         * @return true if expected disbursement balance should be used, false otherwise
+         */
+        private boolean shouldUseExpectedDisbursementBalance(boolean isDisbursementPeriod, BigDecimal principalDue) {
+            return !isDisbursementPeriod && isPositive(principalDue) && isZero(this.outstandingLoanPrincipalBalance)
+                    && isPositive(this.expectedDisbursementsRunningBalance);
         }
 
         public String schema() {
@@ -1668,6 +1707,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             Integer loanTermInDays = 0;
             Set<Long> disbursementPeriodIds = new HashSet<>();
 
+            // Reset expected disbursements running balance for each schedule extraction
+            // This allows us to show correct outstanding balances in the schedule preview
+            // We maintain a running balance similar to outstandingLoanPrincipalBalance
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
+
             // Collect disbursement period charges from result set as we iterate
             // Store them in a map keyed by disbursement date for use when processing disbursements
             Map<LocalDate, BigDecimal> disbursementChargesFromDB = new HashMap<>();
@@ -1687,7 +1731,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // Identify disbursement periods: principalDue is null/zero AND feeChargesDue > 0
                 // Disbursement periods have charges but no principal due (principal is disbursed, not due)
                 boolean isDisbursementPeriod = (principalDue == null || principalDue.compareTo(BigDecimal.ZERO) == 0)
-                        && feeChargesDue.compareTo(BigDecimal.ZERO) > 0;
+                        && isPositive(feeChargesDue);
 
                 if (isDisbursementPeriod && dueDate != null) {
                     disbursementChargesFromDB.put(dueDate, feeChargesDue);
@@ -1795,11 +1839,39 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     fromDate = this.lastDueDate;
                 }
 
-                final BigDecimal outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // For scheduled periods (not disbursement periods), calculate outstanding balance
+                // If no actual disbursements have occurred but we have expected disbursements,
+                // use expected disbursements to show correct balance in schedule preview
+                BigDecimal outstandingPrincipalBalanceOfLoan;
+                if (shouldUseExpectedDisbursementBalance(isDisbursementPeriod, principalDue)) {
+                    // Special case: Loan is approved but not yet disbursed - use expected disbursements for preview
+                    outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                } else {
+                    // Default case: use actual outstanding balance (for disbursed loans or disbursement periods)
+                    outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                }
 
                 // update based on current period values
                 this.lastDueDate = dueDate;
-                this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // Update outstanding balance based on whether we have actual or expected disbursements
+                // Only subtract principal due for scheduled repayment periods (principalDue > 0)
+                // Disbursement periods have principalDue = 0, so no subtraction needed
+                if (isPositive(principalDue)) {
+                    if (isPositive(this.outstandingLoanPrincipalBalance)) {
+                        // Loan has actual disbursements - update actual outstanding balance
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    } else if (isPositive(this.expectedDisbursementsRunningBalance)) {
+                        // Loan is approved but not yet disbursed - update expected disbursements running balance
+                        // This maintains the running balance for preview purposes
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                    } else {
+                        // Edge case: Both balances are zero but we have principal due
+                        // Update outstandingLoanPrincipalBalance as fallback to track the principal due
+                        // This handles cases where balances have been fully paid off but schedule still has principal
+                        // due
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    }
+                }
 
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
 
@@ -1875,7 +1947,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     // Use feeChargesDue from database map if available for this disbursement date
                     // This preserves the correct per-tranche charges calculated during schedule generation
                     BigDecimal chargesForThisTranche = disbursementChargesFromDB.get(data.disbursementDate());
-                    if (chargesForThisTranche == null || chargesForThisTranche.compareTo(BigDecimal.ZERO) == 0) {
+                    if (!isPositive(chargesForThisTranche)) {
                         // Fallback: will use data.getChargeAmount() or recalculate
                         chargesForThisTranche = null;
                     }
@@ -1885,6 +1957,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     // Only add to outstanding balance if actually disbursed
                     if (data.isDisbursed()) {
                         this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    } else {
+                        // Track expected disbursements for loans that are approved but not yet disbursed
+                        // This allows us to calculate correct outstanding balances in schedule preview
+                        // Maintain a running balance similar to outstandingLoanPrincipalBalance
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance
+                                .add(periodData.getPrincipalDisbursed());
                     }
                     disbursementPeriodIds.add(data.getId());
                 }
@@ -1902,7 +1980,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             // multi-tranche)
             // 4. Fallback: recalculate using proportional method
             BigDecimal chargesDueAtTimeOfDisbursementForTranche;
-            if (feeChargesDueFromDB != null && feeChargesDueFromDB.compareTo(BigDecimal.ZERO) > 0) {
+            if (isPositive(feeChargesDueFromDB)) {
                 // Use the stored charge amount from schedule period (most accurate - includes correct per-tranche
                 // calculation)
                 chargesDueAtTimeOfDisbursementForTranche = feeChargesDueFromDB;
@@ -1964,7 +2042,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 } else {
                     // For flat charges, split proportionally
                     Money totalChargeAmount = loanCharge.getAmount(currency);
-                    if (totalMultiDisbursed.compareTo(BigDecimal.ZERO) > 0 && totalChargeAmount.isGreaterThanZero()) {
+                    if (isPositive(totalMultiDisbursed) && totalChargeAmount.isGreaterThanZero()) {
                         // Calculate proportional fee: (trancheAmount / totalMultiDisbursed) * totalChargeAmount
                         chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount()).divide(totalMultiDisbursed, 6,
                                 java.math.RoundingMode.HALF_UP);
@@ -1987,7 +2065,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                             }
                         } else {
                             // For flat charges, split tax proportionally
-                            if (totalMultiDisbursed.compareTo(BigDecimal.ZERO) > 0) {
+                            if (isPositive(totalMultiDisbursed)) {
                                 taxToAdd = totalTaxAmount.getAmount().multiply(trancheAmountMoney.getAmount()).divide(totalMultiDisbursed,
                                         6, java.math.RoundingMode.HALF_UP);
                                 chargeAmount = chargeAmount.add(taxToAdd);
@@ -2043,31 +2121,28 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
         Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
 
-        // For Factor Rate loans, fees/taxes might not be properly reflected in individual installments
-        // Update each independently from loan summary if installment amount is zero but loan summary has outstanding
-        // amounts
-        // Note: Outer condition checks if ANY needs updating (efficient loanSummary access), inner conditions ensure
-        // only zero values are updated (non-zero values remain unchanged)
-        if (loan.isFactorRateEnabled() && (feeChargesAmount.isZero() || taxChargesAmount.isZero())) {
+        // For Factor Rate loans, always use loan summary totals for fees and taxes
+        // The installment-based calculation (retrieveIncomeOutstandingTillDate) only includes fees from installments
+        // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
+        // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
+        // summary.
+        // Extract values as BigDecimal immediately to avoid entity state issues
+        if (loan.isFactorRateEnabled()) {
             final LoanSummary loanSummary = loan.getSummary();
-            // Only update fees if installment amount is zero (inner condition protects non-zero values)
-            if (feeChargesAmount.isZero()) {
-                Money feeOutstanding = Money.of(currency, loanSummary.getTotalFeeChargesOutstanding());
-                if (feeOutstanding.isGreaterThanZero()) {
-                    feeChargesAmount = feeOutstanding;
-                }
-            }
-            // Only update taxes if installment amount is zero (inner condition protects non-zero values)
-            if (taxChargesAmount.isZero()) {
-                Money taxOutstanding = Money.of(currency, loanSummary.getTotalTaxChargesOutstanding());
-                if (taxOutstanding.isGreaterThanZero()) {
-                    taxChargesAmount = taxOutstanding;
-                }
+            if (loanSummary != null) {
+                BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
+                BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
+
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are
+                // included
+                // Create new Money objects from extracted BigDecimal values to avoid entity references
+                feeChargesAmount = Money.of(currency, feeOutstandingAmount);
+                taxChargesAmount = Money.of(currency, taxOutstandingAmount);
             }
         }
 
         // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
-        // This ensures the total amount includes fees/taxes from loan summary when installment amounts are zero
+        // This ensures the total amount includes all outstanding fees/taxes from loan summary for Factor Rate loans
         Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
         Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
         Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
