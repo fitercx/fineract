@@ -230,7 +230,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
                 BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
 
-                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are
+                // included
                 // Create new Money objects from extracted BigDecimal values to avoid entity references
                 feePayable = Money.of(currency, feeOutstandingAmount);
                 taxPayable = Money.of(currency, taxOutstandingAmount);

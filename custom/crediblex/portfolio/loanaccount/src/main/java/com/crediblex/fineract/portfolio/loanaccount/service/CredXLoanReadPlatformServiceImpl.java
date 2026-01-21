@@ -1810,7 +1810,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     // This is a scheduled repayment period
                     if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) == 0
                             && this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0) {
-                        // Loan is approved but not yet disbursed - use expected disbursements running balance for preview
+                        // Loan is approved but not yet disbursed - use expected disbursements running balance for
+                        // preview
                         outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
                     } else {
                         // Loan has actual disbursements - use actual outstanding balance
@@ -1921,7 +1922,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         // Track expected disbursements for loans that are approved but not yet disbursed
                         // This allows us to calculate correct outstanding balances in schedule preview
                         // Maintain a running balance similar to outstandingLoanPrincipalBalance
-                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.add(periodData.getPrincipalDisbursed());
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance
+                                .add(periodData.getPrincipalDisbursed());
                     }
                     disbursementPeriodIds.add(data.getId());
                 }
@@ -2092,7 +2094,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
                 BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
 
-                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are included
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are
+                // included
                 // Create new Money objects from extracted BigDecimal values to avoid entity references
                 feeChargesAmount = Money.of(currency, feeOutstandingAmount);
                 taxChargesAmount = Money.of(currency, taxOutstandingAmount);
