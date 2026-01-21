@@ -1806,19 +1806,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // If no actual disbursements have occurred but we have expected disbursements,
                 // use expected disbursements to show correct balance in schedule preview
                 BigDecimal outstandingPrincipalBalanceOfLoan;
-                if (!isDisbursementPeriod && principalDue.compareTo(BigDecimal.ZERO) > 0) {
-                    // This is a scheduled repayment period
-                    if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) == 0
-                            && this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0) {
-                        // Loan is approved but not yet disbursed - use expected disbursements running balance for
-                        // preview
-                        outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
-                    } else {
-                        // Loan has actual disbursements - use actual outstanding balance
-                        outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
-                    }
+                // Special case: Loan is approved but not yet disbursed - use expected disbursements for preview
+                if (!isDisbursementPeriod && principalDue.compareTo(BigDecimal.ZERO) > 0
+                        && this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) == 0
+                        && this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0) {
+                    outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
                 } else {
-                    // Disbursement period or no principal due - use standard calculation
+                    // Default case: use actual outstanding balance (for disbursed loans or disbursement periods)
                     outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
                 }
 
