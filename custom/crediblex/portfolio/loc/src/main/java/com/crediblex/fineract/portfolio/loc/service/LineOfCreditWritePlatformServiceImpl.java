@@ -28,8 +28,10 @@ import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepo
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetail;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetailRepository;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeDomainService;
+import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
@@ -50,6 +52,7 @@ import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditIncreasedBusinessEvent;
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditReactivatedBusinessEvent;
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditUpdatedBusinessEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -818,6 +821,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 buyerMap.put("id", buyer.getId());
                 buyerMap.put("name", buyer.getName());
                 buyerMap.put("creditLimit", buyer.getCreditLimit());
+                buyerMap.put("losExternalId", buyer.getLosExternalId());
                 approvedBuyersList.add(buyerMap);
             }
         }
@@ -840,7 +844,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         creditLimit = buyerObj.get("creditLimit").getAsBigDecimal();
                     }
 
-                    LineOfCreditApprovedBuyers buyer = new LineOfCreditApprovedBuyers(buyerName, creditLimit, lineOfCredit);
+                    String losExternalId = null;
+                    if (buyerObj.has("losExternalId") && !buyerObj.get("losExternalId").isJsonNull()) {
+                        losExternalId = buyerObj.get("losExternalId").getAsString();
+                    }
+
+                    LineOfCreditApprovedBuyers buyer = new LineOfCreditApprovedBuyers(buyerName, creditLimit, losExternalId, lineOfCredit);
                     newApprovedBuyers.add(buyer);
                 }
             });
@@ -907,6 +916,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 // Update existing buyer (keeping same ID to preserve foreign key references)
                 existingBuyerWithSameName.setName(newBuyer.getName());
                 existingBuyerWithSameName.setCreditLimit(newBuyer.getCreditLimit());
+                existingBuyerWithSameName.setLosExternalId(newBuyer.getLosExternalId());
                 // Note: existingBuyerWithSameName is already in the collection, no need to add again
             } else {
                 // New buyer - add to collection
@@ -914,6 +924,65 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 lineOfCredit.getApprovedBuyers().add(newBuyer);
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public VendorResponse addVendor(Long lineOfCreditId, String requestBody) {
+        // Parse JSON request body
+        AddVendorRequest request;
+        try {
+            request = new ObjectMapper().readValue(requestBody, AddVendorRequest.class);
+        } catch (Exception e) {
+            throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
+                    List.of(), e);
+        }
+
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Allow vendor addition only for ACTIVE LOCs
+        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
+            throw new PlatformDataIntegrityException("error.msg.loc.add.vendor.not.allowed",
+                    "Vendors can only be added when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
+        }
+
+        // Validate request
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.name.required", "Vendor name is required");
+        }
+
+        // Check if vendor with same name already exists
+        if (lineOfCredit.getApprovedBuyers() != null) {
+            boolean vendorExists = lineOfCredit.getApprovedBuyers().stream()
+                    .anyMatch(buyer -> buyer.getName().equals(request.getName().trim()));
+            if (vendorExists) {
+                throw new PlatformDataIntegrityException("error.msg.vendor.name.duplicate",
+                        "A vendor with name '" + request.getName().trim() + "' already exists for this Line of Credit");
+            }
+        }
+
+        // Validate credit limit
+        BigDecimal creditLimit = request.getCreditLimit() != null ? request.getCreditLimit() : BigDecimal.ZERO;
+        if (creditLimit.compareTo(BigDecimal.ZERO) < 0) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.credit.limit.invalid", "Credit limit cannot be negative");
+        }
+
+        // Create new vendor
+        LineOfCreditApprovedBuyers vendor = new LineOfCreditApprovedBuyers(request.getName().trim(), creditLimit,
+                request.getLosExternalId(), lineOfCredit);
+
+        // Add to line of credit
+        if (lineOfCredit.getApprovedBuyers() == null) {
+            lineOfCredit.setApprovedBuyers(new ArrayList<>());
+        }
+        lineOfCredit.getApprovedBuyers().add(vendor);
+
+        // Save and flush to get the generated ID
+        this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+
+        // Return response with all vendor details
+        return new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(), vendor.getLosExternalId(),
+                lineOfCredit.getId());
     }
 
 }

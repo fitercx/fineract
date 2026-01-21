@@ -24,6 +24,9 @@ public class LineOfCreditApprovedBuyers extends AbstractPersistableCustom<Long> 
     @Column(name = "credit_limit", nullable = false)
     private BigDecimal creditLimit;
 
+    @Column(name = "los_external_id")
+    private String losExternalId;
+
     @ManyToOne
     @JoinColumn(name = "line_of_credit_id", referencedColumnName = "id")
     private LineOfCredit lineOfCredit;
@@ -37,6 +40,13 @@ public class LineOfCreditApprovedBuyers extends AbstractPersistableCustom<Long> 
     public LineOfCreditApprovedBuyers(String name, BigDecimal creditLimit, LineOfCredit lineOfCredit) {
         this.name = name;
         this.creditLimit = creditLimit != null ? creditLimit : BigDecimal.ZERO;
+        this.lineOfCredit = lineOfCredit;
+    }
+
+    public LineOfCreditApprovedBuyers(String name, BigDecimal creditLimit, String losExternalId, LineOfCredit lineOfCredit) {
+        this.name = name;
+        this.creditLimit = creditLimit != null ? creditLimit : BigDecimal.ZERO;
+        this.losExternalId = losExternalId;
         this.lineOfCredit = lineOfCredit;
     }
 }
