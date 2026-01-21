@@ -1825,10 +1825,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 // update based on current period values
                 this.lastDueDate = dueDate;
                 // Update outstanding balance based on whether we have actual or expected disbursements
-                if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) > 0) {
+                // Only subtract principal due for scheduled repayment periods (principalDue > 0)
+                // Disbursement periods have principalDue = 0, so no subtraction needed
+                if (this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) > 0 && principalDue.compareTo(BigDecimal.ZERO) > 0) {
                     // Loan has actual disbursements - update actual outstanding balance
                     this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
-                } else if (this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0 && !isDisbursementPeriod) {
+                } else if (this.expectedDisbursementsRunningBalance.compareTo(BigDecimal.ZERO) > 0
+                        && principalDue.compareTo(BigDecimal.ZERO) > 0) {
                     // Loan is approved but not yet disbursed - update expected disbursements running balance
                     // This maintains the running balance for preview purposes
                     this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
