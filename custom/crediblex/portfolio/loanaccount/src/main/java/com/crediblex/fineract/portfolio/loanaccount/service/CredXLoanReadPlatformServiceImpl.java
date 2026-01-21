@@ -1604,6 +1604,17 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         /**
+         * Helper method to check if a BigDecimal value is zero.
+         *
+         * @param value
+         *            the BigDecimal value to check
+         * @return true if value is zero, false otherwise
+         */
+        private static boolean isZero(BigDecimal value) {
+            return value != null && value.compareTo(BigDecimal.ZERO) == 0;
+        }
+
+        /**
          * Determines if the expected disbursement balance should be used for calculating outstanding balance. This is
          * true when the loan is approved but not yet disbursed, and we're processing a scheduled repayment period.
          *
@@ -1614,7 +1625,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
          * @return true if expected disbursement balance should be used, false otherwise
          */
         private boolean shouldUseExpectedDisbursementBalance(boolean isDisbursementPeriod, BigDecimal principalDue) {
-            return !isDisbursementPeriod && isPositive(principalDue) && this.outstandingLoanPrincipalBalance.compareTo(BigDecimal.ZERO) == 0
+            return !isDisbursementPeriod && isPositive(principalDue) && isZero(this.outstandingLoanPrincipalBalance)
                     && isPositive(this.expectedDisbursementsRunningBalance);
         }
 
