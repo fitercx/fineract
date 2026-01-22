@@ -68,9 +68,9 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
 
     public static final String IDEMPOTENCY_KEY_ATTRIBUTE = "IdempotencyKeyAttribute";
     public static final String COMMAND_SOURCE_ID = "commandSourceId";
-    private final PlatformSecurityContext context;
-    private final ApplicationContext applicationContext;
-    private final ToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer;
+    protected final PlatformSecurityContext context;
+    protected final ApplicationContext applicationContext;
+    protected final ToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer;
     private final ToApiJsonSerializer<CommandProcessingResult> toApiResultJsonSerializer;
     private final ConfigurationDomainService configurationDomainService;
     private final CommandHandlerProvider commandHandlerProvider;

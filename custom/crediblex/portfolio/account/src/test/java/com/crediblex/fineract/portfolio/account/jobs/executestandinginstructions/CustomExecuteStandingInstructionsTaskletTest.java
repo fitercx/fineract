@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.MonthDay;
@@ -68,7 +68,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private CustomExecuteStandingInstructionsTasklet tasklet;
     private PlatformTransactionManager platformTransactionManager;
     private SavingsAccountAssembler savingsAccountAssembler;
-    private CustomCommandProcessingService customCommandProcessingService;
+    private CredXSynchronousCommandProcessingService customCommandProcessingService;
     private FromJsonHelper fromApiJsonHelper;
 
     @BeforeEach

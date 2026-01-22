@@ -18,8 +18,8 @@
  */
 package com.crediblex.fineract.portfolio.starter;
 
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
 import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions.CustomExecuteStandingInstructionsTasklet;
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
@@ -40,7 +40,7 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     private SavingsAccountAssembler savingsAccountAssembler;
 
     @Autowired
-    private CustomCommandProcessingService customCommandProcessingService;
+    public CredXSynchronousCommandProcessingService customCommandProcessingService;
 
     @Autowired
     private FromJsonHelper fromApiJsonHelper;
