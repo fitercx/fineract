@@ -30,6 +30,8 @@ import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.data.LocReviewPeriods;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -72,6 +74,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private final ClientReadPlatformService clientReadPlatformService;
     private final LineOfCreditChargeReadService chargeReadService;
     private final StaffReadPlatformService staffReadPlatformService;
+    private final LineOfCreditRepository lineOfCreditRepository;
 
     private static final class LineOfCreditExtractor implements ResultSetExtractor<LineOfCreditData> {
 
@@ -640,4 +643,29 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             return map.values().stream().toList();
         });
     }
+
+    @Override
+    public Collection<VendorResponse> retrieveAllVendors(Long lineOfCreditId) {
+        final var lineOfCredit = this.lineOfCreditRepository.findById(lineOfCreditId)
+                .orElseThrow(() -> new RuntimeException("Line of Credit not found with id: " + lineOfCreditId));
+
+        if (lineOfCredit.getApprovedBuyers() == null || lineOfCredit.getApprovedBuyers().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return lineOfCredit.getApprovedBuyers().stream()
+                .map(vendor -> new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(),
+                        vendor.getLosExternalId(), lineOfCreditId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public VendorResponse retrieveVendorByLosExternalId(String losExternalId) {
+        final String sql = "SELECT ab.id, ab.name, ab.credit_limit, ab.los_external_id, ab.line_of_credit_id "
+                + "FROM m_line_of_credit_approved_buyers ab " + "WHERE ab.los_external_id = ?";
+
+        return this.jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new VendorResponse(rs.getLong("id"), rs.getString("name"),
+                rs.getBigDecimal("credit_limit"), rs.getString("los_external_id"), rs.getLong("line_of_credit_id")), losExternalId);
+    }
 }
+
