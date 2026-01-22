@@ -1246,19 +1246,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
 
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema())
-                // Exclude installments that already have overdue charges applied
-                .append(" left join m_loan_charge lc on lc.loan_id = ml.id and lc.charge_id = mc.id and lc.is_active = true ")
-                .append(" left join m_loan_overdue_installment_charge loic on loic.loan_charge_id = lc.id and loic.loan_schedule_id = ls.id ")
-                .append(" where " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
+        sqlBuilder.append("select ").append(rm.schema()).append(" where ")
+                .append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
-                                                                                                                      // installments
-                                                                                                                      // with
-                                                                                                                      // existing
-                                                                                                                      // overdue
-                                                                                                                      // charges
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ")
+                // Exclude installments that already have overdue charges applied
+                .append("""
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM m_loan_charge lc
+                            INNER JOIN m_loan_overdue_installment_charge loic ON (loic.loan_charge_id = lc.id AND loic.loan_schedule_id = ls.id)
+                            WHERE lc.loan_id = ml.id AND lc.is_active = TRUE
+                         )
+                        """);
 
         if (backdatePenalties) {
             return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod);
