@@ -196,10 +196,15 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "term_period_frequency_enum", nullable = false)
     private PeriodFrequencyType termPeriodFrequencyType;
 
-    @Setter(AccessLevel.PACKAGE)
+    @Setter(AccessLevel.PUBLIC)
     @Column(name = "loan_status_id", nullable = false)
     @Convert(converter = LoanStatusConverter.class)
-    private LoanStatus loanStatus;
+    public LoanStatus loanStatus;
+
+    @Setter(AccessLevel.PACKAGE)
+    @Column(name = "custom_loan_status_id")
+    @Convert(converter = CustomLoanStatusConverter.class)
+    private CustomLoanStatus customLoanStatus;
 
     @Setter()
     @Column(name = "sync_disbursement_with_meeting")
@@ -1650,6 +1655,40 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public boolean isOpen() {
         return getStatus().isActive();
+    }
+
+    public CustomLoanStatus getCustomStatus() {
+        return this.customLoanStatus;
+    }
+
+    // Add a public updater to allow services in other packages to set the custom status
+    public void updateCustomLoanStatus(CustomLoanStatus status) {
+        this.customLoanStatus = status;
+    }
+
+    // Null-safe helpers for customLoanStatus to avoid NPEs during JPA initialization or runtime
+    public boolean hasCustomStatus() {
+        return this.customLoanStatus != null;
+    }
+
+    public CustomLoanStatus getCustomLoanStatusOrDefault(CustomLoanStatus defaultStatus) {
+        return this.customLoanStatus != null ? this.customLoanStatus : defaultStatus;
+    }
+
+    public boolean isCustomPastDue() {
+        return this.customLoanStatus != null && this.customLoanStatus.isPastDue();
+    }
+
+    public boolean isCustomPastMaturity() {
+        return this.customLoanStatus != null && this.customLoanStatus.isPastMaturity();
+    }
+
+    public boolean isCustomEarlyClosure() {
+        return this.customLoanStatus != null && this.customLoanStatus.isEarlyClosure();
+    }
+
+    public boolean isCustomForcedClosure() {
+        return this.customLoanStatus != null && this.customLoanStatus.isForcedClosure();
     }
 
     public boolean isAllTranchesNotDisbursed() {
