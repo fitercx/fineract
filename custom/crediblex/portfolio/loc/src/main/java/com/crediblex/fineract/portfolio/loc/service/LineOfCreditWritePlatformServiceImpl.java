@@ -31,7 +31,7 @@ import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeDom
 import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
-import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
+import com.crediblex.fineract.portfolio.loc.data.UpdateVendorRequest;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
@@ -88,6 +88,7 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRep
 import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanceException;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -114,6 +115,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
     private final LineOfCreditTransactionRepository lineOfCreditTransactionRepository;
     private final BusinessEventNotifierService businessEventNotifierService;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * Helper method to save a note for LOC actions if provided in the command
@@ -928,11 +930,11 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     @Override
     @Transactional
-    public VendorResponse addVendor(Long lineOfCreditId, String requestBody) {
+    public CommandProcessingResult addVendor(Long lineOfCreditId, JsonCommand command) {
         // Parse JSON request body
         AddVendorRequest request;
         try {
-            request = new ObjectMapper().readValue(requestBody, AddVendorRequest.class);
+            request = new ObjectMapper().readValue(command.json(), AddVendorRequest.class);
         } catch (Exception e) {
             throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
                     List.of(), e);
@@ -980,9 +982,85 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Save and flush to get the generated ID
         this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-        // Return response with all vendor details
-        return new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(), vendor.getLosExternalId(),
-                lineOfCredit.getId());
+        // Return command processing result with vendor ID and resource ID
+        return new CommandProcessingResultBuilder().withEntityId(vendor.getId()).withResourceIdAsString(String.valueOf(vendor.getId()))
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult updateVendor(Long lineOfCreditId, Long vendorId, JsonCommand command) {
+        // Parse JSON request body
+        UpdateVendorRequest request;
+        try {
+            request = new ObjectMapper().readValue(command.json(), UpdateVendorRequest.class);
+        } catch (Exception e) {
+            throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
+                    List.of(), e);
+        }
+
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Find the vendor
+        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId))
+                .findFirst()
+                .orElseThrow(() -> new PlatformDataIntegrityException("error.msg.vendor.not.found",
+                        "Vendor with id " + vendorId + " not found for this Line of Credit"));
+
+        // Validate request
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.name.required", "Vendor name is required");
+        }
+
+        // Check if another vendor with same name already exists (excluding current vendor)
+        boolean duplicateExists = lineOfCredit.getApprovedBuyers().stream()
+                .anyMatch(v -> !v.getId().equals(vendorId) && v.getName().equals(request.getName().trim()));
+
+        if (duplicateExists) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.name.duplicate",
+                    "A vendor with name '" + request.getName().trim() + "' already exists for this Line of Credit");
+        }
+
+        // Update vendor name only
+        vendor.setName(request.getName().trim());
+
+        // Save changes
+        this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+
+        return new CommandProcessingResultBuilder().withEntityId(vendorId).withResourceIdAsString(String.valueOf(vendorId)).build();
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult deleteVendor(Long lineOfCreditId, Long vendorId) {
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Find the vendor
+        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId))
+                .findFirst()
+                .orElseThrow(() -> new PlatformDataIntegrityException("error.msg.vendor.not.found",
+                        "Vendor with id " + vendorId + " not found for this Line of Credit"));
+
+        // Check if vendor is associated with any active drawdowns (loans)
+        Long activeDrawdownCount = this.jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM m_loan_approver_buyers_suppliers lbsd "
+                        + "INNER JOIN m_loan l ON lbsd.loan_id = l.id "
+                        + "WHERE lbsd.buyer_supplier_id = ? AND l.loan_status_id IN (300, 600, 700)", // ACTIVE, OVERPAID, WRITTENOFF
+                Long.class, vendorId);
+
+        if (activeDrawdownCount != null && activeDrawdownCount > 0) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.has.active.drawdowns",
+                    "Cannot delete vendor. It is associated with " + activeDrawdownCount + " active drawdown(s)");
+        }
+
+        // Remove vendor from collection
+        lineOfCredit.getApprovedBuyers().remove(vendor);
+
+        // Save changes
+        this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+
+        return new CommandProcessingResultBuilder().withEntityId(vendorId).build();
     }
 
 }
+
