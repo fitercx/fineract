@@ -26,6 +26,7 @@ import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -68,6 +69,10 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "activation_status", length = 20, nullable = false)
     @Enumerated(EnumType.STRING)
     private LocStatus status;
+
+    @Column(name = "custom_loc_status_id")
+    @Convert(converter = CustomLocStatusConverter.class)
+    private CustomLocStatus customLocStatus;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -425,5 +430,41 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.lineOfCreditStateChange.setClosedOnDate(null);
         }
 
+    }
+
+    public boolean hasCustomLocStatus() {
+        return this.customLocStatus != null;
+    }
+
+    public CustomLocStatus getCustomLocStatusOrDefault(CustomLocStatus defaultStatus) {
+        return this.customLocStatus != null ? this.customLocStatus : defaultStatus;
+    }
+
+    public boolean isCustomPastDue() {
+        return this.customLocStatus != null && this.customLocStatus.isPastDue();
+    }
+
+    public boolean isCustomPastMaturity() {
+        return this.customLocStatus != null && this.customLocStatus.isPastMaturity();
+    }
+
+    public boolean isCustomEarlyClosure() {
+        return this.customLocStatus != null && this.customLocStatus.isEarlyClosure();
+    }
+
+    public boolean isCustomForcedClosure() {
+        return this.customLocStatus != null && this.customLocStatus.isForcedClosure();
+    }
+
+    public boolean isCustomInactive() {
+        return this.customLocStatus != null && this.customLocStatus.isInactive();
+    }
+
+    public boolean isCustomClosed() {
+        return this.customLocStatus != null && this.customLocStatus.isClosed();
+    }
+
+    public boolean isCustomExpired() {
+        return this.customLocStatus != null && this.customLocStatus.isExpired();
     }
 }
