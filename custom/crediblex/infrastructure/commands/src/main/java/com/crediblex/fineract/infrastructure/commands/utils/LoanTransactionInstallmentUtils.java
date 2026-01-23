@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -123,38 +124,22 @@ public final class LoanTransactionInstallmentUtils {
      * @return The current status of the installment
      */
     private static InstallmentStatus resolveInstallmentStatus(LoanRepaymentScheduleInstallment installment, Loan loan) {
-        // Check if installment is fully paid (obligations met)
-        if (installment.isObligationsMet()) {
-            return InstallmentStatus.PAID;
-        }
+        // Delegate to generic resolver for consistency
+        LoanStatusAggregationUtils.InstallmentStatus status = LoanStatusAggregationUtils.resolveInstallmentStatus(installment, loan);
+        // Map resolver enum to local enum (same names)
+        return InstallmentStatus.valueOf(status.name());
+    }
 
-        // Check if penalty charges are due (late fee applied)
-        if (installment.getPenaltyChargesOutstanding(loan.getCurrency()).isGreaterThanZero()) {
-            return InstallmentStatus.LATE_FEE_APPLIED;
-        }
-
-        // Check if partially paid (has outstanding but also has some payment)
-        boolean hasOutstanding = installment.getTotalOutstanding(loan.getCurrency()).isGreaterThanZero();
-        boolean hasPaidAmount = installment.getPrincipalCompleted(loan.getCurrency()).isGreaterThanZero()
-                || installment.getInterestPaid(loan.getCurrency()).isGreaterThanZero()
-                || installment.getFeeChargesPaid(loan.getCurrency()).isGreaterThanZero();
-
-        if (hasOutstanding && hasPaidAmount) {
-            return InstallmentStatus.PARTIAL_PAID;
-        }
-
-        // Check if overdue (due date has passed)
-        LocalDate currentDate = DateUtils.getLocalDateOfTenant();
-        if (installment.getDueDate().isBefore(currentDate)) {
-            return InstallmentStatus.OVERDUE;
-        }
-
-        // Check if due today
-        if (installment.getDueDate().equals(currentDate)) {
-            return InstallmentStatus.DUE;
-        }
-
-        // Default to scheduled (future installment)
-        return InstallmentStatus.SCHEDULED;
+    /**
+     * Compute aggregate custom loan status from ALL installments of the loan.
+     * This accounts for installments not affected by the current transaction.
+     * Precedence:
+     * - If any installment is LATE_FEE_APPLIED => PAST_MATURITY
+     * - Else if any installment is OVERDUE => PAST_DUE
+     * - Else => INVALID
+     */
+    public static CustomLoanStatus computeCustomLoanStatusForLoan(Loan loan) {
+        // Delegate to generic resolver
+        return LoanStatusAggregationUtils.computeCustomLoanStatusForLoan(loan);
     }
 }
