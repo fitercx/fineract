@@ -23,7 +23,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.springframework.stereotype.Component;
-import com.crediblex.fineract.commands.repository.LoanLocLookupRepository;
+import com.crediblex.fineract.commands.repository.EzySqlLoanLocLookupRepository;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -37,45 +37,44 @@ public class LoanStatusWebhookPublisher {
     private static final String ACTION = "STATUS_CHANGED";
 
     private final CredXSynchronousCommandProcessingService credxSyncCommandService;
-    private final LoanLocLookupRepository loanLocLookupRepository;
+    private final EzySqlLoanLocLookupRepository ezyloanLocLookupRepository;
 
     // Publish with full loan context and both default/custom old statuses
-    public void publish(Loan loan, LoanStatus oldDefaultStatus, CustomLoanStatus oldCustomStatus) {
+    public void publish(Loan loan, CustomLoanStatus oldCustomStatus) {
         if (loan == null || loan.getStatus() == null) {
             return;
         }
-        Map<String, Object> response = new HashMap<>();
+
+        Map<String, Object> customStatus = new HashMap<>();
         Map<String, Object> changes = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
+        Map<String, Object> payload = new HashMap<>();
 
-        // Root-level enrichment: isDrawdown
-        boolean isDrawdown = loanLocLookupRepository.existsByLoanId(loan.getId());
-        response.put("isDrawdown", isDrawdown);
+        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
+        customStatus.put("oldStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
 
-        // Basic identifiers
+        changes.put("customStatus", customStatus);
+        changes.put("defaultStatus", loan.getStatus().toString());
+        changes.put("loanId", loan.getId());
         changes.put("clientId", loan.getClientId());
         changes.put("officeId", loan.getOfficeId());
-        changes.put("loanId", loan.getId());
         changes.put("statusChanged", true);
 
-        // Status info
-        changes.put("defaultStatus", loan.getStatus().toString());
-        changes.put("oldDefaultStatus", oldDefaultStatus == null ? null : oldDefaultStatus.toString());
-        changes.put("customStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
-        changes.put("oldCustomStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
+        boolean isDrawdown = ezyloanLocLookupRepository.existsByLoanId(loan.getId());
 
         // Optional LOC id when drawdown
         if (isDrawdown) {
-            loanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
+            ezyloanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
         }
 
         response.put("changes", changes);
+        response.put("isDrawdown", isDrawdown);
 
-        Map<String, Object> payload = new HashMap<>();
+        payload.put("response", response);
         payload.put("entityName", ENTITY);
         payload.put("actionName", ACTION);
         payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
-        payload.put("response", response);
 
         credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
     }
@@ -84,38 +83,39 @@ public class LoanStatusWebhookPublisher {
     public void publish(Loan loan, String oldDefaultStatus, String oldCustomStatus) {
         LoanStatus oldDefault = oldDefaultStatus == null ? null : LoanStatus.valueOf(oldDefaultStatus);
         CustomLoanStatus oldCustom = oldCustomStatus == null ? null : CustomLoanStatus.valueOf(oldCustomStatus);
-        publish(loan, oldDefault, oldCustom);
+        publish(loan, oldCustom);
     }
 
     // New overload to publish without repository access (use precomputed flags)
-    public void publish(Loan loan, LoanStatus oldDefaultStatus, CustomLoanStatus oldCustomStatus, boolean isDrawdown, Optional<Long> locIdOpt) {
+    public void publish(Loan loan, CustomLoanStatus oldCustomStatus, boolean isDrawdown, Optional<Long> locIdOpt) {
         if (loan == null || loan.getStatus() == null) {
             return;
         }
-        Map<String, Object> response = new HashMap<>();
+        Map<String, Object> customStatus = new HashMap<>();
         Map<String, Object> changes = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
+        Map<String, Object> payload = new HashMap<>();
 
-        response.put("isDrawdown", isDrawdown);
+        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
+        customStatus.put("oldStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
 
+        changes.put("customStatus", customStatus);
+        changes.put("defaultStatus", loan.getStatus().toString());
+        changes.put("loanId", loan.getId());
         changes.put("clientId", loan.getClientId());
         changes.put("officeId", loan.getOfficeId());
-        changes.put("loanId", loan.getId());
         changes.put("statusChanged", true);
-        changes.put("defaultStatus", loan.getStatus().toString());
-        changes.put("oldDefaultStatus", oldDefaultStatus == null ? null : oldDefaultStatus.toString());
-        changes.put("customStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
-        changes.put("oldCustomStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
 
         locIdOpt.ifPresent(locId -> changes.put("locId", locId));
 
         response.put("changes", changes);
+        response.put("isDrawdown", isDrawdown);
 
-        Map<String, Object> payload = new HashMap<>();
+        payload.put("response", response);
         payload.put("entityName", ENTITY);
         payload.put("actionName", ACTION);
         payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
-        payload.put("response", response);
 
         credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
     }
