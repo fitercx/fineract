@@ -42,8 +42,14 @@ import org.springframework.stereotype.Service;
 @Primary
 @Service
 public class CredXSynchronousCommandProcessingService extends SynchronousCommandProcessingService {
-    public CredXSynchronousCommandProcessingService(PlatformSecurityContext context, ApplicationContext applicationContext, ToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer, ToApiJsonSerializer<CommandProcessingResult> toApiResultJsonSerializer, ConfigurationDomainService configurationDomainService, CommandHandlerProvider commandHandlerProvider, IdempotencyKeyResolver idempotencyKeyResolver, CommandSourceService commandSourceService, FineractRequestContextHolder fineractRequestContextHolder) {
-        super(context, applicationContext, toApiJsonSerializer, toApiResultJsonSerializer, configurationDomainService, commandHandlerProvider, idempotencyKeyResolver, commandSourceService, fineractRequestContextHolder);
+
+    public CredXSynchronousCommandProcessingService(PlatformSecurityContext context, ApplicationContext applicationContext,
+            ToApiJsonSerializer<Map<String, Object>> toApiJsonSerializer,
+            ToApiJsonSerializer<CommandProcessingResult> toApiResultJsonSerializer, ConfigurationDomainService configurationDomainService,
+            CommandHandlerProvider commandHandlerProvider, IdempotencyKeyResolver idempotencyKeyResolver,
+            CommandSourceService commandSourceService, FineractRequestContextHolder fineractRequestContextHolder) {
+        super(context, applicationContext, toApiJsonSerializer, toApiResultJsonSerializer, configurationDomainService,
+                commandHandlerProvider, idempotencyKeyResolver, commandSourceService, fineractRequestContextHolder);
     }
 
     @Override

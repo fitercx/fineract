@@ -19,12 +19,10 @@
 package com.crediblex.fineract.infrastructure.commands.utils;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -131,12 +129,9 @@ public final class LoanTransactionInstallmentUtils {
     }
 
     /**
-     * Compute aggregate custom loan status from ALL installments of the loan.
-     * This accounts for installments not affected by the current transaction.
-     * Precedence:
-     * - If any installment is LATE_FEE_APPLIED => PAST_MATURITY
-     * - Else if any installment is OVERDUE => PAST_DUE
-     * - Else => INVALID
+     * Compute aggregate custom loan status from ALL installments of the loan. This accounts for installments not
+     * affected by the current transaction. Precedence: - If any installment is LATE_FEE_APPLIED => PAST_MATURITY - Else
+     * if any installment is OVERDUE => PAST_DUE - Else => INVALID
      */
     public static CustomLoanStatus computeCustomLoanStatusForLoan(Loan loan) {
         // Delegate to generic resolver

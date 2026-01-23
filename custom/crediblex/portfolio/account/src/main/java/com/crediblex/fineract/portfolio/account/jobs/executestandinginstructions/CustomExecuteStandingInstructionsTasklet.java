@@ -93,10 +93,11 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final EzySqlLoanLocRepository ezySqlLoanLocRepository;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
-                                                    JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
-                                                    AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-                                                    PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
-                                                    FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher, TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository) {
+            JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
+            AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
+            PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
+            FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -365,6 +366,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
                     // Schedule webhook publish after successful commit, in a new transaction
                     TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
                         @Override
                         public void afterCommit() {
                             transactionTemplate.execute(status -> {

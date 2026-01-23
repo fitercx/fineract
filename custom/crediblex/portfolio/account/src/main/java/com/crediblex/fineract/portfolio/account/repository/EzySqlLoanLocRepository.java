@@ -19,14 +19,14 @@
 
 package com.crediblex.fineract.portfolio.account.repository;
 
+import java.util.Optional;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
-
 @Repository
 public class EzySqlLoanLocRepository {
+
     private final JdbcTemplate jdbcTemplate;
 
     public EzySqlLoanLocRepository(JdbcTemplate jdbcTemplate) {
@@ -34,15 +34,15 @@ public class EzySqlLoanLocRepository {
     }
 
     public boolean existsByLoanId(Long loanId) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM m_loan_line_of_credit_params WHERE loan_id = ?", Integer.class, loanId);
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM m_loan_line_of_credit_params WHERE loan_id = ?", Integer.class,
+                loanId);
         return count != null && count > 0;
     }
 
     public Optional<Long> findLocIdByLoanId(Long loanId) {
         try {
-            Long locId = jdbcTemplate.queryForObject(
-                    "SELECT line_of_credit_id FROM m_loan_line_of_credit_params WHERE loan_id = ? LIMIT 1", Long.class, loanId);
+            Long locId = jdbcTemplate.queryForObject("SELECT line_of_credit_id FROM m_loan_line_of_credit_params WHERE loan_id = ? LIMIT 1",
+                    Long.class, loanId);
             return Optional.ofNullable(locId);
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();

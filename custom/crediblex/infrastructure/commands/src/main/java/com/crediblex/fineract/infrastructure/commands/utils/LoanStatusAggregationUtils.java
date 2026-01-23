@@ -7,10 +7,11 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 
 /**
- * LoanStatusAggregationUtils:
- * - resolveInstallmentStatus: derives the status for a single installment (used by LoanTransactionInstallmentUtils when building affectedInstallments payloads).
- * - computeCustomLoanStatusForLoan: aggregates all installments of a loan to derive a loan-level custom status (used by repayment and disbursement flows in CustomLoanWritePlatformServiceJpaRepositoryImpl).
- * This utility is transaction-agnostic and safe to use anywhere the schedule exists (repayment, disbursement, schedule updates).
+ * LoanStatusAggregationUtils: - resolveInstallmentStatus: derives the status for a single installment (used by
+ * LoanTransactionInstallmentUtils when building affectedInstallments payloads). - computeCustomLoanStatusForLoan:
+ * aggregates all installments of a loan to derive a loan-level custom status (used by repayment and disbursement flows
+ * in CustomLoanWritePlatformServiceJpaRepositoryImpl). This utility is transaction-agnostic and safe to use anywhere
+ * the schedule exists (repayment, disbursement, schedule updates).
  */
 public final class LoanStatusAggregationUtils {
 
@@ -48,12 +49,10 @@ public final class LoanStatusAggregationUtils {
     }
 
     /**
-     * Compute aggregate custom loan status from ALL installments of the loan which are due on or before today.
-     * Future installments (due date after today) are ignored to avoid false PAST_MATURITY from future penalties.
-     * Precedence:
-     * - If any installment is LATE_FEE_APPLIED => PAST_MATURITY
-     * - Else if any installment is OVERDUE => PAST_DUE
-     * - Else => INVALID
+     * Compute aggregate custom loan status from ALL installments of the loan which are due on or before today. Future
+     * installments (due date after today) are ignored to avoid false PAST_MATURITY from future penalties. Precedence: -
+     * If any installment is LATE_FEE_APPLIED => PAST_MATURITY - Else if any installment is OVERDUE => PAST_DUE - Else
+     * => INVALID
      */
     public static CustomLoanStatus computeCustomLoanStatusForLoan(Loan loan) {
         if (loan == null || loan.getRepaymentScheduleInstallments() == null) {

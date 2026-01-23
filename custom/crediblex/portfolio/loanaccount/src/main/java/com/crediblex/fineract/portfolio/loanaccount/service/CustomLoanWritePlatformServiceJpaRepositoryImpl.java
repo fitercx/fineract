@@ -1,8 +1,8 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
-import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanStatusAggregationUtils;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
@@ -33,8 +33,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import jakarta.ws.rs.NotFoundException;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
@@ -101,7 +99,6 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
@@ -154,10 +151,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -180,48 +177,48 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final TransactionTemplate transactionTemplate;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
-                                                           LoanTransactionValidator loanTransactionValidator,
-                                                           LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper,
-                                                           LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository,
-                                                           LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository,
-                                                           LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService,
-                                                           CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService,
-                                                           HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService,
-                                                           WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-                                                           AccountTransfersReadPlatformService accountTransfersReadPlatformService,
-                                                           AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService,
-                                                           FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository,
-                                                           LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService,
-                                                           LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository,
-                                                           AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService,
-                                                           GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService,
-                                                           EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService,
-                                                           CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator,
-                                                           GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository,
-                                                           RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler,
-                                                           PostDatedChecksRepository postDatedChecksRepository,
-                                                           LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository,
-                                                           LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService,
-                                                           ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
-                                                           ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
-                                                           LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService,
-                                                           LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
-                                                           LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService,
-                                                           LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService,
-                                                           ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService,
-                                                           LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
-                                                           LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
-                                                           LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
-                                                           CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
-                                                           CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
-                                                           LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
-                                                           @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
-                                                           LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, JournalEntryRepository journalEntryRepository,
-                                                           SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
-                                                           LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
-                                                           com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
-                                                           LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
-                                                           PlatformTransactionManager platformTransactionManager) {
+            LoanTransactionValidator loanTransactionValidator,
+            LoanUpdateCommandFromApiJsonDeserializer loanUpdateCommandFromApiJsonDeserializer, LoanRepositoryWrapper loanRepositoryWrapper,
+            LoanAccountDomainService loanAccountDomainService, NoteRepository noteRepository,
+            LoanTransactionRepository loanTransactionRepository, LoanTransactionRelationRepository loanTransactionRelationRepository,
+            LoanAssembler loanAssembler, JournalEntryWritePlatformService journalEntryWritePlatformService,
+            CalendarInstanceRepository calendarInstanceRepository, PaymentDetailWritePlatformService paymentDetailWritePlatformService,
+            HolidayRepositoryWrapper holidayRepository, ConfigurationDomainService configurationDomainService,
+            WorkingDaysRepositoryWrapper workingDaysRepository, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
+            AccountTransfersReadPlatformService accountTransfersReadPlatformService,
+            AccountAssociationsReadPlatformService accountAssociationsReadPlatformService, LoanReadPlatformService loanReadPlatformService,
+            FromJsonHelper fromApiJsonHelper, CalendarRepository calendarRepository,
+            LoanScheduleHistoryWritePlatformService loanScheduleHistoryWritePlatformService,
+            LoanApplicationValidator loanApplicationValidator, AccountAssociationsRepository accountAssociationRepository,
+            AccountTransferDetailRepository accountTransferDetailRepository, BusinessEventNotifierService businessEventNotifierService,
+            GuarantorDomainService guarantorDomainService, LoanUtilService loanUtilService,
+            EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService,
+            CodeValueRepositoryWrapper codeValueRepository, CashierTransactionDataValidator cashierTransactionDataValidator,
+            GLIMAccountInfoRepository glimRepository, LoanRepository loanRepository,
+            RepaymentWithPostDatedChecksAssembler repaymentWithPostDatedChecksAssembler,
+            PostDatedChecksRepository postDatedChecksRepository,
+            LoanRepaymentScheduleInstallmentRepository loanRepaymentScheduleInstallmentRepository,
+            LoanLifecycleStateMachine loanLifecycleStateMachine, LoanAccountLockService loanAccountLockService,
+            ExternalIdFactory externalIdFactory, LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService,
+            ErrorHandler errorHandler, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
+            LoanTransactionAssembler loanTransactionAssembler, LoanAccrualsProcessingService loanAccrualsProcessingService,
+            LoanOfficerValidator loanOfficerValidator, LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator,
+            LoanDisbursementService loanDisbursementService, LoanScheduleService loanScheduleService,
+            LoanChargeValidator loanChargeValidator, LoanOfficerService loanOfficerService,
+            ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountService loanAccountService,
+            LoanJournalEntryPoster journalEntryPoster, LoanAdjustmentService loanAdjustmentService,
+            LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanMapper loanMapper,
+            LoanTransactionProcessingService loanTransactionProcessingService, FineractProperties fineractProperties,
+            CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformService,
+            CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService, CustomLoanChargeRepository loanChargeRepository,
+            LoanRepaymentsSummaryDAO loanRepaymentsSummaryDAO,
+            @Lazy CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, JournalEntryRepository journalEntryRepository,
+            SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
+            LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
+            com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
+            LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            PlatformTransactionManager platformTransactionManager) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -477,7 +474,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
             // Compute and persist initial custom loan status based on full schedule after disbursement
-            CustomLoanStatus oldCustomLoanStatusStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+            CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
             CustomLoanStatus newCustomLoanStatus = LoanStatusAggregationUtils.computeCustomLoanStatusForLoan(loan);
             loan.setCustomLoanStatus(newCustomLoanStatus);
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
@@ -485,21 +482,22 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // Precompute drawdown flags for webhook payload
             Optional<LoanLineOfCreditParams> locParamsOptOnDisburse = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
             boolean isDrawdownOnDisburse = locParamsOptOnDisburse.isPresent();
-            Optional<Long> locIdOptOnDisburse = locParamsOptOnDisburse.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+            Optional<Long> locIdOptOnDisburse = locParamsOptOnDisburse
+                    .map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
 
-            // Schedule webhook publish after successful commit, in a new transaction; ensure single registration in this flow
+            // Schedule webhook publish after successful commit, in a new transaction; ensure single registration in
+            // this flow
             Loan finalLoan = loan;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
                 @Override
                 public void afterCommit() {
                     transactionTemplate.execute(status -> {
-                        loanStatusWebhookPublisher.publish(finalLoan, oldCustomLoanStatusStatus, isDrawdownOnDisburse, locIdOptOnDisburse);
+                        loanStatusWebhookPublisher.publish(finalLoan, oldCustomLoanStatus, isDrawdownOnDisburse, locIdOptOnDisburse);
                         return null;
                     });
                 }
             });
-
-
 
             createNote(loan, command, changes);
             // auto create standing instruction only if one doesn't already exist
@@ -901,6 +899,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Schedule webhook publish after successful commit, in a new transaction
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
             @Override
             public void afterCommit() {
                 transactionTemplate.execute(status -> {
@@ -968,8 +967,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
 
                         // Compute and update the custom loan status based on affected installments
-                        CustomLoanStatus newCustomLoanstatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
-                        updatedLoan.setCustomLoanStatus(newCustomLoanstatus);
+                        CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
+                        updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
 
                         // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
                         Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
@@ -978,6 +977,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                         // Schedule webhook publish after successful commit, in a new transaction
                         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
                             @Override
                             public void afterCommit() {
                                 transactionTemplate.execute(status -> {

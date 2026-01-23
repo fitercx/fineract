@@ -18,13 +18,10 @@
  */
 package org.apache.fineract.portfolio.loanaccount.domain;
 
-import java.util.Arrays;
 import lombok.Getter;
-import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 
 @Getter
 public enum CustomLoanStatus {
-
 
     // Note: 0 is reserved for INVALID to represent null/unmapped values from the DB or client input.
     // Custom loan statuses are assigned codes in the 9000+ range to avoid clashing with core loan

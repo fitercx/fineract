@@ -33,19 +33,18 @@ public class EzySqlLoanLocLookupRepository {
     }
 
     public boolean existsByLoanId(Long loanId) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM m_loan_line_of_credit_params WHERE loan_id = ?", Integer.class, loanId);
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM m_loan_line_of_credit_params WHERE loan_id = ?", Integer.class,
+                loanId);
         return count != null && count > 0;
     }
 
     public Optional<Long> findLocIdByLoanId(Long loanId) {
         try {
-            Long locId = jdbcTemplate.queryForObject(
-                    "SELECT line_of_credit_id FROM m_loan_line_of_credit_params WHERE loan_id = ? LIMIT 1", Long.class, loanId);
+            Long locId = jdbcTemplate.queryForObject("SELECT line_of_credit_id FROM m_loan_line_of_credit_params WHERE loan_id = ? LIMIT 1",
+                    Long.class, loanId);
             return Optional.ofNullable(locId);
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
     }
 }
-

@@ -1658,11 +1658,6 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return getStatus().isActive();
     }
 
-    // Add a public updater to allow services in other packages to set the custom status
-//    public void updateCustomLoanStatus(CustomLoanStatus status) {
-//        this.customLoanStatus = status;
-//    }
-
     // Null-safe helpers for customLoanStatus to avoid NPEs during JPA initialization or runtime
     public boolean hasCustomStatus() {
         return this.customLoanStatus != null;

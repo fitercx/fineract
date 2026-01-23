@@ -18,16 +18,15 @@
  */
 package com.crediblex.fineract.commands;
 
+import com.crediblex.fineract.commands.repository.EzySqlLoanLocLookupRepository;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.springframework.stereotype.Component;
-import com.crediblex.fineract.commands.repository.EzySqlLoanLocLookupRepository;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor

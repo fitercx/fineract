@@ -32,6 +32,6 @@ public class CustomLoanStatusConverter implements AttributeConverter<CustomLoanS
 
     @Override
     public CustomLoanStatus convertToEntityAttribute(Integer dbData) {
-            return CustomLoanStatus.fromInt(dbData);
+        return CustomLoanStatus.fromInt(dbData);
     }
 }

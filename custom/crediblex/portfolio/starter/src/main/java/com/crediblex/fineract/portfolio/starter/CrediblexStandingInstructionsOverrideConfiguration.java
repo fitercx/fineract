@@ -53,7 +53,8 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     public ExecuteStandingInstructionsTasklet executeStandingInstructionsTasklet(
             StandingInstructionReadPlatformService standingInstructionReadPlatformService, JdbcTemplate jdbcTemplate,
             DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            PlatformTransactionManager transactionManager, LoanStatusWebhookPublisher loanStatusWebhookPublisher, TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository) {
+            PlatformTransactionManager transactionManager, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService,
