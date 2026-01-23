@@ -48,7 +48,8 @@ public final class LoanStatusAggregationUtils {
     }
 
     /**
-     * Compute aggregate custom loan status from ALL installments of the loan.
+     * Compute aggregate custom loan status from ALL installments of the loan which are due on or before today.
+     * Future installments (due date after today) are ignored to avoid false PAST_MATURITY from future penalties.
      * Precedence:
      * - If any installment is LATE_FEE_APPLIED => PAST_MATURITY
      * - Else if any installment is OVERDUE => PAST_DUE
@@ -58,8 +59,13 @@ public final class LoanStatusAggregationUtils {
         if (loan == null || loan.getRepaymentScheduleInstallments() == null) {
             return CustomLoanStatus.INVALID;
         }
+        LocalDate today = DateUtils.getLocalDateOfTenant();
         boolean hasOverdue = false;
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            // Only consider installments due on or before today
+            if (installment.getDueDate().isAfter(today)) {
+                continue;
+            }
             InstallmentStatus status = resolveInstallmentStatus(installment, loan);
             if (status == InstallmentStatus.LATE_FEE_APPLIED) {
                 return CustomLoanStatus.PAST_MATURITY;
