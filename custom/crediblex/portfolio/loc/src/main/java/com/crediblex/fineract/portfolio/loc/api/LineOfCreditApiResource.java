@@ -20,13 +20,17 @@
 package com.crediblex.fineract.portfolio.loc.api;
 
 import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperBuilder;
+import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditTransactionReadPlatformService;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -74,10 +78,12 @@ public class LineOfCreditApiResource {
 
     private final PlatformSecurityContext context;
     private final LineOfCreditReadPlatformService readPlatformService;
+    private final LineOfCreditWritePlatformService writePlatformService;
     private final LineOfCreditTransactionReadPlatformService transactionReadPlatformService;
     private final DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditTransactionData> transactionToApiJsonSerializer;
+    private final DefaultToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
@@ -182,32 +188,48 @@ public class LineOfCreditApiResource {
     @Path("{clientId}/creditlines/{lineOfCreditId}/{action}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Perform Action on Line of Credit", description = "Performs various actions on a line of credit: approve, activate, close, deactivate")
+    @Operation(summary = "Perform Action on Line of Credit", description = "Performs various actions on a line of credit: approve, activate, close, deactivate, manageapprovedbuyers")
     @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String performAction(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("action") @Parameter(description = "action", schema = @Schema(allowableValues = { "approve", "activate", "close",
-                    "deactivate" })) final String action,
-            @Parameter(hidden = true) final LineOfCreditActionRequest lineOfCreditActionRequest) {
+                    "deactivate", "manageapprovedbuyers" })) final String action,
+            @Parameter(hidden = true) final String requestBody) {
 
-        // Create a default request if none provided
-        LineOfCreditActionRequest request = lineOfCreditActionRequest != null ? lineOfCreditActionRequest
-                : new LineOfCreditActionRequest("yyyy-MM-dd", "en");
+        // Handle different request types based on action
+        String jsonRequest;
+        if ("manageapprovedbuyers".equalsIgnoreCase(action)) {
+            // For manage approved buyers, use the request body directly (ManageApprovedBuyersRequest)
+            jsonRequest = requestBody != null ? requestBody : "{}";
+        } else {
+            // Create a default request if none provided for other actions
+            try {
+                LineOfCreditActionRequest request = requestBody != null && !requestBody.trim().isEmpty()
+                        ? new ObjectMapper().readValue(requestBody, LineOfCreditActionRequest.class)
+                        : new LineOfCreditActionRequest("yyyy-MM-dd", "en");
+                jsonRequest = request.toJson();
+            } catch (Exception e) {
+                // Fallback to default request
+                LineOfCreditActionRequest defaultRequest = new LineOfCreditActionRequest("yyyy-MM-dd", "en");
+                jsonRequest = defaultRequest.toJson();
+            }
+        }
 
         CommandWrapper commandRequest;
         LineOfCreditCommandWrapperBuilder builder = new LineOfCreditCommandWrapperBuilder();
 
         commandRequest = switch (action.toLowerCase()) {
-            case "approve" -> builder.approveLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "activate" -> builder.activateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "close" -> builder.closeLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "deactivate" -> builder.deactivateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "increasecreditlimit" -> builder.increaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "decreasecreditlimit" -> builder.decreaseCreditLimit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "undoclose" -> builder.undoCloseLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
-            case "reactivate" -> builder.reactivateLineOfCredit(lineOfCreditId, clientId).withJson(request.toJson()).build();
+            case "approve" -> builder.approveLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "activate" -> builder.activateLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "close" -> builder.closeLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "deactivate" -> builder.deactivateLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "increasecreditlimit" -> builder.increaseCreditLimit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "decreasecreditlimit" -> builder.decreaseCreditLimit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "undoclose" -> builder.undoCloseLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "reactivate" -> builder.reactivateLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "manageapprovedbuyers" -> builder.manageApprovedBuyers(lineOfCreditId, clientId).withJson(jsonRequest).build();
             default -> throw new PlatformApiDataValidationException("error.msg.lineofcredit.invalid.action",
                     "The action `" + action + "` is not valid for line of credit " + lineOfCreditId, List.of());
         };
@@ -277,5 +299,24 @@ public class LineOfCreditApiResource {
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return this.transactionToApiJsonSerializer.serialize(settings, transaction);
+    }
+
+    @POST
+    @Path("{clientId}/creditlines/{lineOfCreditId}/vendors")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Add Vendor to Line of Credit", description = "Adds a new vendor/supplier to the approved buyers list for a line of credit")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = AddVendorRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = VendorResponse.class))) })
+    public String addVendor(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @Parameter(hidden = true) final String requestBody) {
+
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+
+        VendorResponse response = this.writePlatformService.addVendor(lineOfCreditId, requestBody);
+
+        return this.vendorResponseSerializer.serialize(response);
     }
 }

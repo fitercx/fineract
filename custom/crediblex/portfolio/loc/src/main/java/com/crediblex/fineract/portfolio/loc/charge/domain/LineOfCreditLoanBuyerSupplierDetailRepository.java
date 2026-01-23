@@ -18,11 +18,25 @@
  */
 package com.crediblex.fineract.portfolio.loc.charge.domain;
 
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface LineOfCreditLoanBuyerSupplierDetailRepository extends JpaRepository<LineOfCreditLoanBuyerSupplierDetail, Long> {
 
     List<LineOfCreditLoanBuyerSupplierDetail> findByLoan(Loan loan);
+
+    List<LineOfCreditLoanBuyerSupplierDetail> findByApprovedBuyers(LineOfCreditApprovedBuyers approvedBuyers);
+
+    @Query("SELECT lbsd FROM LineOfCreditLoanBuyerSupplierDetail lbsd WHERE lbsd.approvedBuyers.id IN :buyerIds")
+    List<LineOfCreditLoanBuyerSupplierDetail> findByApprovedBuyersIds(@Param("buyerIds") List<Long> buyerIds);
+
+    @Query("SELECT lbsd FROM LineOfCreditLoanBuyerSupplierDetail lbsd " + "WHERE lbsd.approvedBuyers.id IN :buyerIds "
+            + "AND lbsd.loan.loanStatus IN :activeStatuses")
+    List<LineOfCreditLoanBuyerSupplierDetail> findByApprovedBuyersIdsWithActiveLoans(@Param("buyerIds") List<Long> buyerIds,
+            @Param("activeStatuses") List<LoanStatus> activeStatuses);
 }

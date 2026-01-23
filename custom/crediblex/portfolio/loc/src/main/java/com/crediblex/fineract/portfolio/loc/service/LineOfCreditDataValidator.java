@@ -24,6 +24,9 @@ import static com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants.
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
 import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -157,6 +160,115 @@ public class LineOfCreditDataValidator {
 
         BigDecimal creditLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
         baseDataValidator.reset().parameter(ADJUSTED_CREDIT_LIMIT).value(creditLimit).notNull().longGreaterThanNumber(0L);
+
+        if (command.hasParameter("note")) {
+            String note = command.stringValueOfParameterNamed("note");
+            baseDataValidator.reset().parameter("note").value(note).notExceedingLengthOf(500);
+        }
+
+        throwExceptionIfValidationWarningsExist(dataValidationErrors);
+    }
+
+    public void validateForManageApprovedBuyers(JsonCommand command) {
+        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
+        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors)
+                .resource("line.of.credit.approved.buyers");
+
+        if (command.hasParameter("approvedBuyers")) {
+            JsonElement root = fromApiJsonHelper.parse(command.json());
+            JsonArray approvedBuyersArray = fromApiJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
+
+            if (approvedBuyersArray == null || approvedBuyersArray.isEmpty()) {
+                baseDataValidator.reset().parameter("approvedBuyers").failWithCode("cannot.be.empty");
+            } else {
+                // Validate each approved buyer/supplier
+                for (int i = 0; i < approvedBuyersArray.size(); i++) {
+                    JsonElement buyerElement = approvedBuyersArray.get(i);
+                    if (buyerElement != null && !buyerElement.isJsonNull()) {
+                        JsonObject buyerObj = buyerElement.getAsJsonObject();
+
+                        // Validate name
+                        if (buyerObj.has("name")) {
+                            String name = buyerObj.get("name").getAsString();
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].name").value(name).notBlank()
+                                    .notExceedingLengthOf(100);
+                        } else {
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].name").failWithCode("cannot.be.null");
+                        }
+
+                        // Validate credit limit if provided
+                        if (buyerObj.has("creditLimit")) {
+                            BigDecimal creditLimit = buyerObj.get("creditLimit").getAsBigDecimal();
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].creditLimit").value(creditLimit).notNull()
+                                    .zeroOrPositiveAmount();
+                        }
+                    }
+                }
+            }
+        } else {
+            baseDataValidator.reset().parameter("approvedBuyers").failWithCode("cannot.be.null");
+        }
+
+        if (command.hasParameter("note")) {
+            String note = command.stringValueOfParameterNamed("note");
+            baseDataValidator.reset().parameter("note").value(note).notExceedingLengthOf(500);
+        }
+
+        throwExceptionIfValidationWarningsExist(dataValidationErrors);
+    }
+
+    public void validateForManageApprovedBuyersWithCreditLimit(JsonCommand command, BigDecimal totalCreditLimit) {
+        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
+        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors)
+                .resource("line.of.credit.approved.buyers");
+
+        if (command.hasParameter("approvedBuyers")) {
+            JsonElement root = fromApiJsonHelper.parse(command.json());
+            JsonArray approvedBuyersArray = fromApiJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
+
+            if (approvedBuyersArray == null || approvedBuyersArray.isEmpty()) {
+                baseDataValidator.reset().parameter("approvedBuyers").failWithCode("cannot.be.empty");
+            } else {
+                BigDecimal totalAssignedCreditLimit = BigDecimal.ZERO;
+
+                // Validate each approved buyer/supplier
+                for (int i = 0; i < approvedBuyersArray.size(); i++) {
+                    JsonElement buyerElement = approvedBuyersArray.get(i);
+                    if (buyerElement != null && !buyerElement.isJsonNull()) {
+                        JsonObject buyerObj = buyerElement.getAsJsonObject();
+
+                        // Validate name
+                        if (buyerObj.has("name")) {
+                            String name = buyerObj.get("name").getAsString();
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].name").value(name).notBlank()
+                                    .notExceedingLengthOf(100);
+                        } else {
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].name").failWithCode("cannot.be.null");
+                        }
+
+                        // Validate credit limit if provided
+                        if (buyerObj.has("creditLimit")) {
+                            BigDecimal creditLimit = buyerObj.get("creditLimit").getAsBigDecimal();
+                            baseDataValidator.reset().parameter("approvedBuyers[" + i + "].creditLimit").value(creditLimit).notNull()
+                                    .zeroOrPositiveAmount();
+
+                            if (creditLimit != null) {
+                                totalAssignedCreditLimit = totalAssignedCreditLimit.add(creditLimit);
+                            }
+                        }
+                    }
+                }
+
+                // Validate that total assigned credit limits don't exceed overall credit line
+                if (totalCreditLimit != null && totalAssignedCreditLimit.compareTo(totalCreditLimit) > 0) {
+                    baseDataValidator.reset().parameter("approvedBuyers")
+                            .failWithCodeNoParameterAddedToErrorCode("total.credit.limit.exceeded", "Total assigned credit limits ("
+                                    + totalAssignedCreditLimit + ") exceed the overall credit facility amount (" + totalCreditLimit + ")");
+                }
+            }
+        } else {
+            baseDataValidator.reset().parameter("approvedBuyers").failWithCode("cannot.be.null");
+        }
 
         if (command.hasParameter("note")) {
             String note = command.stringValueOfParameterNamed("note");

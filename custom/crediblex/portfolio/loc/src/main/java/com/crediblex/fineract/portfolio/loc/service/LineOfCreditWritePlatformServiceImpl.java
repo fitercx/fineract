@@ -25,9 +25,13 @@ import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCharge;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidBy;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargePaidByRepository;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditChargeRepository;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetail;
+import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetailRepository;
 import com.crediblex.fineract.portfolio.loc.charge.service.LineOfCreditChargeDomainService;
+import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyers;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
@@ -48,12 +52,14 @@ import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditIncreasedBusinessEvent;
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditReactivatedBusinessEvent;
 import com.crediblex.fineract.portfolio.loc.infrastructure.event.business.domain.LineOfCreditUpdatedBusinessEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -74,6 +80,7 @@ import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
@@ -96,6 +103,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     private final LineOfCreditChargeRepository locChargeRepository;
     private final LineOfCreditChargePaidByRepository locChargePaidByRepository;
     private final LineOfCreditChargeDomainService locChargeDomainService;
+    private final LineOfCreditLoanBuyerSupplierDetailRepository loanBuyerSupplierDetailRepository;
     private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
     private final ChargeRepositoryWrapper chargeRepository;
     private final FromJsonHelper fromJsonHelper;
@@ -275,7 +283,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 approvedBuyersArray.forEach(buyerElement -> {
                     if (buyerElement != null && !buyerElement.isJsonNull()) {
                         String buyerName = buyerElement.getAsJsonObject().get("name").getAsString();
-                        newApprovedBuyers.add(new LineOfCreditApprovedBuyers(buyerName, null));
+                        newApprovedBuyers.add(new LineOfCreditApprovedBuyers(buyerName, lineOfCredit));
                     }
                 });
             }
@@ -767,6 +775,214 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         }
 
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Allow approved buyer management only for ACTIVE LOCs
+        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
+            throw new PlatformDataIntegrityException("error.msg.loc.manage.approved.buyers.not.allowed",
+                    "Approved buyers can only be managed when Line of Credit is ACTIVE. Current status: "
+                            + lineOfCredit.getStatus().name());
+        }
+
+        // Use enhanced validation with credit limit checking
+        this.dataValidator.validateForManageApprovedBuyersWithCreditLimit(command, lineOfCredit.getMaximumAmount());
+
+        final Map<String, Object> changes = new LinkedHashMap<>();
+
+        // Process approved buyers if provided
+        if (command.hasParameter("approvedBuyers")) {
+            JsonElement root = fromJsonHelper.parse(command.json());
+            JsonArray approvedBuyersArray = fromJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
+
+            List<LineOfCreditApprovedBuyers> newApprovedBuyers = parseApprovedBuyersFromJson(approvedBuyersArray, lineOfCredit);
+
+            // Handle updating/replacing buyers
+            replaceApprovedBuyersWithValidation(lineOfCredit, newApprovedBuyers);
+            changes.put("approvedBuyersCount", newApprovedBuyers.size());
+        }
+
+        if (!changes.isEmpty()) {
+            this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+
+            // Save note if provided
+            saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.LOC_APPROVED_BUYERS_UPDATED);
+        }
+
+        // After processing, fetch and return all approved buyers with ID and name
+        List<Map<String, Object>> approvedBuyersList = new ArrayList<>();
+        if (lineOfCredit.getApprovedBuyers() != null) {
+            for (LineOfCreditApprovedBuyers buyer : lineOfCredit.getApprovedBuyers()) {
+                Map<String, Object> buyerMap = new HashMap<>();
+                buyerMap.put("id", buyer.getId());
+                buyerMap.put("name", buyer.getName());
+                buyerMap.put("creditLimit", buyer.getCreditLimit());
+                buyerMap.put("losExternalId", buyer.getLosExternalId());
+                approvedBuyersList.add(buyerMap);
+            }
+        }
+        changes.put("approvedBuyers", approvedBuyersList);
+
+        return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    private List<LineOfCreditApprovedBuyers> parseApprovedBuyersFromJson(JsonArray approvedBuyersArray, LineOfCredit lineOfCredit) {
+        List<LineOfCreditApprovedBuyers> newApprovedBuyers = new ArrayList<>();
+
+        if (approvedBuyersArray != null) {
+            approvedBuyersArray.forEach(buyerElement -> {
+                if (buyerElement != null && !buyerElement.isJsonNull()) {
+                    JsonObject buyerObj = buyerElement.getAsJsonObject();
+                    String buyerName = buyerObj.get("name").getAsString();
+
+                    BigDecimal creditLimit = BigDecimal.ZERO;
+                    if (buyerObj.has("creditLimit")) {
+                        creditLimit = buyerObj.get("creditLimit").getAsBigDecimal();
+                    }
+
+                    String losExternalId = null;
+                    if (buyerObj.has("losExternalId") && !buyerObj.get("losExternalId").isJsonNull()) {
+                        losExternalId = buyerObj.get("losExternalId").getAsString();
+                    }
+
+                    LineOfCreditApprovedBuyers buyer = new LineOfCreditApprovedBuyers(buyerName, creditLimit, losExternalId, lineOfCredit);
+                    newApprovedBuyers.add(buyer);
+                }
+            });
+        }
+
+        return newApprovedBuyers;
+    }
+
+    private void replaceApprovedBuyersWithValidation(LineOfCredit lineOfCredit, List<LineOfCreditApprovedBuyers> newApprovedBuyers) {
+        List<LineOfCreditApprovedBuyers> existingBuyers = lineOfCredit.getApprovedBuyers();
+
+        if (existingBuyers == null || existingBuyers.isEmpty()) {
+            // No existing buyers, safe to add new ones
+            lineOfCredit.setApprovedBuyers(new ArrayList<>());
+            for (LineOfCreditApprovedBuyers buyer : newApprovedBuyers) {
+                buyer.setLineOfCredit(lineOfCredit);
+                lineOfCredit.getApprovedBuyers().add(buyer);
+            }
+            return;
+        }
+
+        // Check which buyers are being deleted (exist in current list but not in new list)
+        List<LineOfCreditApprovedBuyers> buyersToDelete = existingBuyers.stream().filter(
+                existingBuyer -> newApprovedBuyers.stream().noneMatch(newBuyer -> newBuyer.getName().equals(existingBuyer.getName())))
+                .toList();
+
+        // Check if any buyers to be deleted are referenced by active loans
+        for (LineOfCreditApprovedBuyers buyerToDelete : buyersToDelete) {
+            if (buyerToDelete.getId() != null) {
+                List<LoanStatus> activeStatuses = List.of(LoanStatus.ACTIVE, LoanStatus.APPROVED, LoanStatus.CLOSED_OBLIGATIONS_MET,
+                        LoanStatus.CLOSED_WRITTEN_OFF);
+
+                List<LineOfCreditLoanBuyerSupplierDetail> referencingLoans = loanBuyerSupplierDetailRepository
+                        .findByApprovedBuyersIdsWithActiveLoans(List.of(buyerToDelete.getId()), activeStatuses);
+
+                if (!referencingLoans.isEmpty()) {
+                    // Get loan IDs for error message
+                    String loanIds = referencingLoans.stream().map(detail -> detail.getLoan().getId().toString()).distinct()
+                            .reduce((a, b) -> a + ", " + b).orElse("unknown");
+
+                    throw new PlatformDataIntegrityException("error.msg.buyer.linked.to.active.loans",
+                            String.format("Buyer '%s' is linked with active Line of Credit loans (ID: %s) and cannot be deleted",
+                                    buyerToDelete.getName(), loanIds),
+                            "buyer", buyerToDelete.getName(), "loanIds", loanIds);
+                }
+            }
+        }
+
+        // If we reach here, it's safe to update the buyers
+        // Only remove buyers that are actually being deleted, preserve existing ones
+
+        // Step 1: Remove only the buyers that are being deleted (already validated above)
+        for (LineOfCreditApprovedBuyers buyerToDelete : buyersToDelete) {
+            lineOfCredit.getApprovedBuyers().remove(buyerToDelete);
+        }
+
+        // Step 2: Update existing buyers or add new ones
+        for (LineOfCreditApprovedBuyers newBuyer : newApprovedBuyers) {
+            // Check if buyer with same name exists in original list
+            LineOfCreditApprovedBuyers existingBuyerWithSameName = existingBuyers.stream()
+                    .filter(existing -> existing.getName().equals(newBuyer.getName())).findFirst().orElse(null);
+
+            if (existingBuyerWithSameName != null) {
+                // Update existing buyer (keeping same ID to preserve foreign key references)
+                existingBuyerWithSameName.setName(newBuyer.getName());
+                existingBuyerWithSameName.setCreditLimit(newBuyer.getCreditLimit());
+                existingBuyerWithSameName.setLosExternalId(newBuyer.getLosExternalId());
+                // Note: existingBuyerWithSameName is already in the collection, no need to add again
+            } else {
+                // New buyer - add to collection
+                newBuyer.setLineOfCredit(lineOfCredit);
+                lineOfCredit.getApprovedBuyers().add(newBuyer);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public VendorResponse addVendor(Long lineOfCreditId, String requestBody) {
+        // Parse JSON request body
+        AddVendorRequest request;
+        try {
+            request = new ObjectMapper().readValue(requestBody, AddVendorRequest.class);
+        } catch (Exception e) {
+            throw new PlatformApiDataValidationException("error.msg.vendor.request.invalid", "Invalid request body: " + e.getMessage(),
+                    List.of(), e);
+        }
+
+        final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Allow vendor addition only for ACTIVE LOCs
+        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
+            throw new PlatformDataIntegrityException("error.msg.loc.add.vendor.not.allowed",
+                    "Vendors can only be added when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
+        }
+
+        // Validate request
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.name.required", "Vendor name is required");
+        }
+
+        // Check if vendor with same name already exists
+        if (lineOfCredit.getApprovedBuyers() != null) {
+            boolean vendorExists = lineOfCredit.getApprovedBuyers().stream()
+                    .anyMatch(buyer -> buyer.getName().equals(request.getName().trim()));
+            if (vendorExists) {
+                throw new PlatformDataIntegrityException("error.msg.vendor.name.duplicate",
+                        "A vendor with name '" + request.getName().trim() + "' already exists for this Line of Credit");
+            }
+        }
+
+        // Validate credit limit
+        BigDecimal creditLimit = request.getCreditLimit() != null ? request.getCreditLimit() : BigDecimal.ZERO;
+        if (creditLimit.compareTo(BigDecimal.ZERO) < 0) {
+            throw new PlatformDataIntegrityException("error.msg.vendor.credit.limit.invalid", "Credit limit cannot be negative");
+        }
+
+        // Create new vendor
+        LineOfCreditApprovedBuyers vendor = new LineOfCreditApprovedBuyers(request.getName().trim(), creditLimit,
+                request.getLosExternalId(), lineOfCredit);
+
+        // Add to line of credit
+        if (lineOfCredit.getApprovedBuyers() == null) {
+            lineOfCredit.setApprovedBuyers(new ArrayList<>());
+        }
+        lineOfCredit.getApprovedBuyers().add(vendor);
+
+        // Save and flush to get the generated ID
+        this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
+
+        // Return response with all vendor details
+        return new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(), vendor.getLosExternalId(),
+                lineOfCredit.getId());
     }
 
 }

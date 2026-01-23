@@ -40,6 +40,12 @@ public class LineOfCreditUpdateCommandHandler implements NewCommandSourceHandler
     @Override
     @Transactional
     public CommandProcessingResult processCommand(JsonCommand command) {
-        return this.writePlatformService.updateLineOfCredit(command.entityId(), command);
+        // Check if this is a manage approved buyers request by looking at the JSON content
+        String jsonContent = command.json();
+        if (jsonContent != null && jsonContent.contains("approvedBuyers")) {
+            return this.writePlatformService.manageApprovedBuyers(command.entityId(), command);
+        } else {
+            return this.writePlatformService.updateLineOfCredit(command.entityId(), command);
+        }
     }
 }

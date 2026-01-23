@@ -834,15 +834,22 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     @Transactional
     @Override
     public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
+        final Long processingStartTime = System.currentTimeMillis();
         Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
                 .sorted(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).toList();
         if (overdueLoanScheduleDataOrderedList.isEmpty()) {
+            final Long processingEndTime = System.currentTimeMillis();
+            log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                    (processingEndTime - processingStartTime) / 1000);
             return;
         }
         Loan loan = this.loanAssembler.assembleFrom(loanId);
         final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
         if (loan.isChargedOff()) {
             log.warn("Adding charge to Loan: {} is not allowed. Loan Account is Charged-off", loanId);
+            final Long processingEndTime = System.currentTimeMillis();
+            log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                    (processingEndTime - processingStartTime) / 1000);
             return;
         }
         if (!isPenaltyChargeApplicableForLoan(loan)) {
@@ -861,6 +868,9 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             if (totalOutstandingForLoan.compareTo(BigDecimal.ZERO) <= 0) {
                 log.info("No total outstanding (principal + fees + taxes) for factor rate loan: {}. Hence not adding overdue charge.",
                         loanId);
+                final Long processingEndTime = System.currentTimeMillis();
+                log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                        (processingEndTime - processingStartTime) / 1000);
                 return;
             }
             lastInstallmentOverdueLoanScheduleData.setPrincipalOverdue(totalOutstandingForLoan);
@@ -869,6 +879,9 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
                 .filter((e) -> ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(e.getChargeTimeType()) && e.isLoanCharge()).findFirst();
         if (optPenaltyCharge.isEmpty()) {
+            final Long processingEndTime = System.currentTimeMillis();
+            log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                    (processingEndTime - processingStartTime) / 1000);
             return;
         }
         final List<Long> existingTransactionIds = loan.findExistingTransactionIds();
@@ -928,6 +941,9 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
             postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
         }
+        final Long processingEndTime = System.currentTimeMillis();
+        log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                (processingEndTime - processingStartTime) / 1000);
     }
 
     private boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
