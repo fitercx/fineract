@@ -653,10 +653,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             return Collections.emptyList();
         }
 
-        return lineOfCredit.getApprovedBuyers().stream()
-                .map(vendor -> new VendorResponse(vendor.getId(), vendor.getName(), vendor.getCreditLimit(),
-                        vendor.getLosExternalId(), lineOfCreditId))
-                .collect(Collectors.toList());
+        return lineOfCredit.getApprovedBuyers().stream().map(vendor -> new VendorResponse(vendor.getId(), vendor.getName(),
+                vendor.getCreditLimit(), vendor.getLosExternalId(), lineOfCreditId)).collect(Collectors.toList());
     }
 
     @Override
@@ -668,4 +666,3 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 rs.getBigDecimal("credit_limit"), rs.getString("los_external_id"), rs.getLong("line_of_credit_id")), losExternalId);
     }
 }
-

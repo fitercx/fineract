@@ -1002,8 +1002,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
         // Find the vendor
-        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId))
-                .findFirst()
+        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId)).findFirst()
                 .orElseThrow(() -> new PlatformDataIntegrityException("error.msg.vendor.not.found",
                         "Vendor with id " + vendorId + " not found for this Line of Credit"));
 
@@ -1036,17 +1035,17 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
         // Find the vendor
-        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId))
-                .findFirst()
+        LineOfCreditApprovedBuyers vendor = lineOfCredit.getApprovedBuyers().stream().filter(v -> v.getId().equals(vendorId)).findFirst()
                 .orElseThrow(() -> new PlatformDataIntegrityException("error.msg.vendor.not.found",
                         "Vendor with id " + vendorId + " not found for this Line of Credit"));
 
         // Check if vendor is associated with any active drawdowns (loans)
+        // We prevent deletion if the vendor has loans that are ACTIVE, OVERPAID, or have closed but obligations are met
         Long activeDrawdownCount = this.jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM m_loan_approver_buyers_suppliers lbsd "
-                        + "INNER JOIN m_loan l ON lbsd.loan_id = l.id "
-                        + "WHERE lbsd.buyer_supplier_id = ? AND l.loan_status_id IN (300, 600, 700)", // ACTIVE, OVERPAID, WRITTENOFF
-                Long.class, vendorId);
+                "SELECT COUNT(*) FROM m_loan_approver_buyers_suppliers lbsd " + "INNER JOIN m_loan l ON lbsd.loan_id = l.id "
+                        + "WHERE lbsd.buyer_supplier_id = ? AND l.loan_status_id IN (?, ?, ?)",
+                Long.class, vendorId, LoanStatus.ACTIVE.getValue(), LoanStatus.CLOSED_OBLIGATIONS_MET.getValue(),
+                LoanStatus.OVERPAID.getValue());
 
         if (activeDrawdownCount != null && activeDrawdownCount > 0) {
             throw new PlatformDataIntegrityException("error.msg.vendor.has.active.drawdowns",
@@ -1063,4 +1062,3 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     }
 
 }
-

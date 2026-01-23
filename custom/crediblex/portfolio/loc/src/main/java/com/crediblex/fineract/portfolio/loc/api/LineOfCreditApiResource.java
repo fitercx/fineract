@@ -372,8 +372,8 @@ public class LineOfCreditApiResource {
             @PathParam("vendorId") @Parameter(description = "vendorId") final Long vendorId,
             @Parameter(hidden = true) final String requestBody) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder()
-                .updateVendor(lineOfCreditId, vendorId, clientId).withJson(requestBody).build();
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateVendor(lineOfCreditId, vendorId, clientId)
+                .withJson(requestBody).build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
@@ -391,8 +391,8 @@ public class LineOfCreditApiResource {
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("vendorId") @Parameter(description = "vendorId") final Long vendorId) {
 
-        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder()
-                .deleteVendor(lineOfCreditId, vendorId, clientId).build();
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deleteVendor(lineOfCreditId, vendorId, clientId)
+                .build();
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
