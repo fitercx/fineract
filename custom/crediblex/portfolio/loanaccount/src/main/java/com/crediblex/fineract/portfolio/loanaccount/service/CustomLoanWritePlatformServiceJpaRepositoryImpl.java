@@ -964,6 +964,29 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils
                                 .extractAffectedInstallments(updatedLoan, transaction);
 
+                        // Capture old custom loan status before update
+                        CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomStatus() : null;
+
+                        // Compute and update the custom loan status based on affected installments
+                        CustomLoanStatus newCustomLoanstatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
+                        updatedLoan.updateCustomLoanStatus(newCustomLoanstatus);
+
+                        // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
+                        Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
+                        boolean isDrawdown = locParamsOpt.isPresent();
+                        Optional<Long> locIdOpt = locParamsOpt.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+                        // Schedule webhook publish after successful commit, in a new transaction
+                        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                transactionTemplate.execute(status -> {
+                                    loanStatusWebhookPublisher.publish(updatedLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+                                    return null;
+                                });
+                            }
+                        });
+
                         LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
                         // Add the affected installments to the result for webhook payload
