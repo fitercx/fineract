@@ -30,6 +30,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
@@ -58,6 +61,7 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class CustomExecuteStandingInstructionsTaskletTest {
 
@@ -70,6 +74,9 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private SavingsAccountAssembler savingsAccountAssembler;
     private CredXSynchronousCommandProcessingService customCommandProcessingService;
     private FromJsonHelper fromApiJsonHelper;
+    private LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private TransactionTemplate transactionTemplate;
+    private EzySqlLoanLocRepository ezySqlLoanLocRepository;
 
     @BeforeEach
     void setUp() {
@@ -79,6 +86,11 @@ class CustomExecuteStandingInstructionsTaskletTest {
         accountTransfersWritePlatformService = mock(AccountTransfersWritePlatformService.class);
         savingsAccountAssembler = mock(SavingsAccountAssembler.class);
         platformTransactionManager = mock(PlatformTransactionManager.class);
+        customCommandProcessingService = mock(CredXSynchronousCommandProcessingService.class);
+        fromApiJsonHelper = mock(FromJsonHelper.class);
+        loanStatusWebhookPublisher = mock(LoanStatusWebhookPublisher.class);
+        transactionTemplate = new TransactionTemplate(platformTransactionManager);
+        ezySqlLoanLocRepository = mock(EzySqlLoanLocRepository.class);
 
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, DateUtils.parseLocalDate("2025-05-20"))));
@@ -87,7 +99,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService,
-                fromApiJsonHelper);
+                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, ezySqlLoanLocRepository);
     }
 
     @Test

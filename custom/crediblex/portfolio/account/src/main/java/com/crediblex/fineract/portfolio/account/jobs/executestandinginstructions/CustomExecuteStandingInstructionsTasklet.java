@@ -18,8 +18,10 @@
  */
 package com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions;
 
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -28,6 +30,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -49,6 +52,7 @@ import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.Ex
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -65,6 +69,8 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
@@ -78,16 +84,19 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final SavingsAccountAssembler savingsAccountAssembler;
     private final PlatformTransactionManager transactionManager;
-    private final CustomCommandProcessingService customCommandProcessingService;
+    private final CredXSynchronousCommandProcessingService customCommandProcessingService;
     private final FromJsonHelper fromApiJsonHelper;
     private ApplicationContext applicationContext;
     private LoanRepositoryWrapper loanRepositoryWrapper;
+    private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private final TransactionTemplate transactionTemplate;
+    private final EzySqlLoanLocRepository ezySqlLoanLocRepository;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
-            JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
-            AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService,
-            FromJsonHelper fromApiJsonHelper) {
+                                                    JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
+                                                    AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
+                                                    PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
+                                                    FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher, TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -98,6 +107,9 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.savingsAccountAssembler = savingsAccountAssembler;
         this.customCommandProcessingService = customCommandProcessingService;
         this.fromApiJsonHelper = fromApiJsonHelper;
+        this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
+        this.transactionTemplate = transactionTemplate;
+        this.ezySqlLoanLocRepository = ezySqlLoanLocRepository;
     }
 
     @Override
@@ -339,6 +351,29 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     // Extract affected installments using the shared utility method (same logic as UI repayment)
                     List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
                             recentTransaction);
+
+                    // Capture custom old statuse before update
+                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomStatus() : null;
+
+                    // Compute and update the custom loan status based on affected installments
+                    CustomLoanStatus customLoanstatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
+                    loan.updateCustomLoanStatus(customLoanstatus);
+
+                    // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
+//                    Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+                    boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
+                    Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
+
+                    // Schedule webhook publish after successful commit, in a new transaction
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            transactionTemplate.execute(status -> {
+                                loanStatusWebhookPublisher.publish(loan, oldCustomStatus, isDrawdown, locIdOpt);
+                                return null;
+                            });
+                        }
+                    });
 
                     // Add affected installments and transaction details - SAME AS UI
                     if (!affectedInstallments.isEmpty()) {
