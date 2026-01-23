@@ -882,6 +882,34 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final Boolean isForcedClosure = command.booleanObjectValueOfParameterNamed("isForcedClosure");
         final Boolean isRestructured = command.booleanObjectValueOfParameterNamed("isRestructured");
 
+        Loan loan = this.loanAssembler.assembleFrom(loanId);
+
+        // Capture old custom loan status before update
+        CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomStatus() : null;
+
+        // Update custom loan status based on closure type
+        if (Boolean.TRUE.equals(isForcedClosure)) {
+            loan.updateCustomLoanStatus(CustomLoanStatus.FORCED_CLOSURE);
+        } else {
+            loan.updateCustomLoanStatus(CustomLoanStatus.EARLY_CLOSURE);
+        }
+
+        // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
+        Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        boolean isDrawdown = locParamsOpt.isPresent();
+        Optional<Long> locIdOpt = locParamsOpt.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+        // Schedule webhook publish after successful commit, in a new transaction
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                transactionTemplate.execute(status -> {
+                    loanStatusWebhookPublisher.publish(loan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+                    return null;
+                });
+            }
+        });
+
         JsonElement parsedJson = command.parsedJson();
         if (parsedJson != null && parsedJson.isJsonObject()) {
             parsedJson.getAsJsonObject().remove("isForcedClosure");
@@ -894,15 +922,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
-            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
             BigDecimal amount = loan.getProposedPrincipal();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
             loan.setIsRestructured(Boolean.TRUE.equals(isRestructured));
             loan.setIsForcedClosure(Boolean.TRUE.equals(isForcedClosure));
-
-            loanRepositoryWrapper.save(loan);
         }
 
         return result;
