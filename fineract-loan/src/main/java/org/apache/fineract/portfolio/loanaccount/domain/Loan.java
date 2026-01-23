@@ -196,10 +196,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "term_period_frequency_enum", nullable = false)
     private PeriodFrequencyType termPeriodFrequencyType;
 
-    @Setter(AccessLevel.PUBLIC)
+    @Setter()
     @Column(name = "loan_status_id", nullable = false)
     @Convert(converter = LoanStatusConverter.class)
-    public LoanStatus loanStatus;
+    private LoanStatus loanStatus;
 
     @Setter
     @Getter

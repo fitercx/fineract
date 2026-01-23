@@ -471,7 +471,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
         if (!changes.isEmpty()) {
             loan.updateLoanScheduleDependentDerivedFields();
-            loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
             // Compute and persist initial custom loan status based on full schedule after disbursement
             CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;

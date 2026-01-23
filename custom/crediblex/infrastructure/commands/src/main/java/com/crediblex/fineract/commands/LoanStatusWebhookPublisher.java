@@ -25,7 +25,6 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -76,13 +75,6 @@ public class LoanStatusWebhookPublisher {
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
         credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
-    }
-
-    // Backward-compatible overloads
-    public void publish(Loan loan, String oldDefaultStatus, String oldCustomStatus) {
-        LoanStatus oldDefault = oldDefaultStatus == null ? null : LoanStatus.valueOf(oldDefaultStatus);
-        CustomLoanStatus oldCustom = oldCustomStatus == null ? null : CustomLoanStatus.valueOf(oldCustomStatus);
-        publish(loan, oldCustom);
     }
 
     // New overload to publish without repository access (use precomputed flags)
