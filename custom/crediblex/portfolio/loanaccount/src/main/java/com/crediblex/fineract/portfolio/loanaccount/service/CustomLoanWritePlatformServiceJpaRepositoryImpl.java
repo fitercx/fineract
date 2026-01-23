@@ -477,9 +477,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
             // Compute and persist initial custom loan status based on full schedule after disbursement
-            CustomLoanStatus oldCustomLoanStatusStatus = loan.hasCustomStatus() ? loan.getCustomStatus() : null;
+            CustomLoanStatus oldCustomLoanStatusStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
             CustomLoanStatus newCustomLoanStatus = LoanStatusAggregationUtils.computeCustomLoanStatusForLoan(loan);
-            loan.updateCustomLoanStatus(newCustomLoanStatus);
+            loan.setCustomLoanStatus(newCustomLoanStatus);
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
             // Precompute drawdown flags for webhook payload
@@ -885,13 +885,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Loan loan = this.loanAssembler.assembleFrom(loanId);
 
         // Capture old custom loan status before update
-        CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomStatus() : null;
+        CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
 
         // Update custom loan status based on closure type
         if (Boolean.TRUE.equals(isForcedClosure)) {
-            loan.updateCustomLoanStatus(CustomLoanStatus.FORCED_CLOSURE);
+            loan.setCustomLoanStatus(CustomLoanStatus.FORCED_CLOSURE);
         } else {
-            loan.updateCustomLoanStatus(CustomLoanStatus.EARLY_CLOSURE);
+            loan.setCustomLoanStatus(CustomLoanStatus.EARLY_CLOSURE);
         }
 
         // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
@@ -965,11 +965,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                                 .extractAffectedInstallments(updatedLoan, transaction);
 
                         // Capture old custom loan status before update
-                        CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomStatus() : null;
+                        CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
 
                         // Compute and update the custom loan status based on affected installments
                         CustomLoanStatus newCustomLoanstatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
-                        updatedLoan.updateCustomLoanStatus(newCustomLoanstatus);
+                        updatedLoan.setCustomLoanStatus(newCustomLoanstatus);
 
                         // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
                         Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());

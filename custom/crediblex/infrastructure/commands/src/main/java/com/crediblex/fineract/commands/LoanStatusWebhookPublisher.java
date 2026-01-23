@@ -37,7 +37,7 @@ public class LoanStatusWebhookPublisher {
     private static final String ACTION = "STATUS_CHANGED";
 
     private final CredXSynchronousCommandProcessingService credxSyncCommandService;
-    private final EzySqlLoanLocLookupRepository ezyloanLocLookupRepository;
+    private final EzySqlLoanLocLookupRepository ezyLoanLocLookupRepository;
 
     // Publish with full loan context and both default/custom old statuses
     public void publish(Loan loan, CustomLoanStatus oldCustomStatus) {
@@ -50,7 +50,7 @@ public class LoanStatusWebhookPublisher {
         Map<String, Object> response = new HashMap<>();
         Map<String, Object> payload = new HashMap<>();
 
-        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
+        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomLoanStatus().toString() : null);
         customStatus.put("oldStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
 
         changes.put("customStatus", customStatus);
@@ -60,11 +60,11 @@ public class LoanStatusWebhookPublisher {
         changes.put("officeId", loan.getOfficeId());
         changes.put("statusChanged", true);
 
-        boolean isDrawdown = ezyloanLocLookupRepository.existsByLoanId(loan.getId());
+        boolean isDrawdown = ezyLoanLocLookupRepository.existsByLoanId(loan.getId());
 
         // Optional LOC id when drawdown
         if (isDrawdown) {
-            ezyloanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
+            ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
         }
 
         response.put("changes", changes);
@@ -96,7 +96,7 @@ public class LoanStatusWebhookPublisher {
         Map<String, Object> response = new HashMap<>();
         Map<String, Object> payload = new HashMap<>();
 
-        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomStatus().toString() : null);
+        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomLoanStatus().toString() : null);
         customStatus.put("oldStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
 
         changes.put("customStatus", customStatus);

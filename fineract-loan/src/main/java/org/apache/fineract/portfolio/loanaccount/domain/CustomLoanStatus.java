@@ -25,6 +25,10 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 @Getter
 public enum CustomLoanStatus {
 
+
+    // Note: 0 is reserved for INVALID to represent null/unmapped values from the DB or client input.
+    // Custom loan statuses are assigned codes in the 9000+ range to avoid clashing with core loan
+    // status codes defined elsewhere in the system and persisted in the database.
     INVALID(0), PAST_DUE(9000), PAST_MATURITY(9001), EARLY_CLOSURE(9002), FORCED_CLOSURE(9003);
 
     private final int value;

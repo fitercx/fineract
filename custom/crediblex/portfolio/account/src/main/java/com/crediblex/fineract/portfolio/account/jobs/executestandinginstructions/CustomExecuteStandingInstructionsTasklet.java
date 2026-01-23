@@ -352,15 +352,14 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
                             recentTransaction);
 
-                    // Capture custom old statuse before update
-                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomStatus() : null;
+                    // Capture custom old status before update
+                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
 
                     // Compute and update the custom loan status based on affected installments
-                    CustomLoanStatus customLoanstatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
-                    loan.updateCustomLoanStatus(customLoanstatus);
+                    CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
+                    loan.setCustomLoanStatus(customLoanStatus);
 
                     // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
-//                    Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
                     boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
                     Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
 
