@@ -53,20 +53,18 @@ public class LoanStatusWebhookPublisher {
 
         changes.put("customStatus", customStatus);
         changes.put("defaultStatus", loan.getStatus().toString());
-        changes.put("loanId", loan.getId());
-        changes.put("clientId", loan.getClientId());
-        changes.put("officeId", loan.getOfficeId());
-        changes.put("statusChanged", true);
 
         boolean isDrawdown = ezyLoanLocLookupRepository.existsByLoanId(loan.getId());
 
-        // Optional LOC id when drawdown
-        if (isDrawdown) {
-            ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
-        }
-
         response.put("changes", changes);
+        response.put("loanId", loan.getId());
+        response.put("clientId", loan.getClientId());
+        response.put("officeId", loan.getOfficeId());
         response.put("isDrawdown", isDrawdown);
+
+        if (isDrawdown) {
+            ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> response.put("locId", locId));
+        }
 
         payload.put("response", response);
         payload.put("entityName", ENTITY);
@@ -92,15 +90,13 @@ public class LoanStatusWebhookPublisher {
 
         changes.put("customStatus", customStatus);
         changes.put("defaultStatus", loan.getStatus().toString());
-        changes.put("loanId", loan.getId());
-        changes.put("clientId", loan.getClientId());
-        changes.put("officeId", loan.getOfficeId());
-        changes.put("statusChanged", true);
-
-        locIdOpt.ifPresent(locId -> changes.put("locId", locId));
 
         response.put("changes", changes);
+        response.put("loanId", loan.getId());
+        response.put("clientId", loan.getClientId());
+        response.put("officeId", loan.getOfficeId());
         response.put("isDrawdown", isDrawdown);
+        locIdOpt.ifPresent(locId -> response.put("locId", locId));
 
         payload.put("response", response);
         payload.put("entityName", ENTITY);
