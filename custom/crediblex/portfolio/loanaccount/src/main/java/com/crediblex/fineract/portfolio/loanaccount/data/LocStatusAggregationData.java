@@ -21,10 +21,8 @@ package com.crediblex.fineract.portfolio.loanaccount.data;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.domain.CustomLocStatus;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
 @Getter
-@RequiredArgsConstructor
 public class LocStatusAggregationData {
 
     private LocStatus defaultLocStatus;

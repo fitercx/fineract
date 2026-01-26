@@ -35,8 +35,8 @@ public class LineOfCreditStatusWebhookPublisher {
     private static final String ENTITY = "LINE_OF_CREDIT";
     private static final String ACTION = "STATUS_CHANGED";
 
-    private final CredXSynchronousCommandProcessingService credxSyncCommandService;
-    private final EzySqlLoanLocLookupRepository ezyloanLocLookupRepository;
+    private final CredXSynchronousCommandProcessingService credXSyncCommandService;
+    private final EzySqlLoanLocLookupRepository ezyLoanLocLookupRepository;
 
     // Publish with full loan context and both default/custom old statuses
     public void publish(Loan loan, CustomLoanStatus oldCustomStatus) {
@@ -63,11 +63,11 @@ public class LineOfCreditStatusWebhookPublisher {
         changes.put("officeId", loan.getOfficeId());
         changes.put("statusChanged", true);
 
-        boolean isDrawdown = ezyloanLocLookupRepository.existsByLoanId(loan.getId());
+        boolean isDrawdown = ezyLoanLocLookupRepository.existsByLoanId(loan.getId());
 
         // Optional LOC id when drawdown
         if (isDrawdown) {
-            ezyloanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
+            ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
         }
 
         response.put("changes", changes);
@@ -78,7 +78,7 @@ public class LineOfCreditStatusWebhookPublisher {
         payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
-        credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
+        credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
     }
 
     // New overload to publish without repository access (use precomputed flags)
@@ -114,6 +114,6 @@ public class LineOfCreditStatusWebhookPublisher {
         payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
-        credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
+        credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
     }
 }
