@@ -21,6 +21,7 @@ package com.crediblex.fineract.commands;
 import com.crediblex.fineract.commands.repository.EzySqlLoanLocLookupRepository;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
@@ -40,6 +41,10 @@ public class LoanStatusWebhookPublisher {
     // Publish with full loan context and both default/custom old statuses
     public void publish(Loan loan, CustomLoanStatus oldCustomStatus) {
         if (loan == null || loan.getStatus() == null) {
+            return;
+        }
+        // Skip if custom status did not change
+        if (Objects.equals(oldCustomStatus, loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null)) {
             return;
         }
 
@@ -78,6 +83,10 @@ public class LoanStatusWebhookPublisher {
     // New overload to publish without repository access (use precomputed flags)
     public void publish(Loan loan, CustomLoanStatus oldCustomStatus, boolean isDrawdown, Optional<Long> locIdOpt) {
         if (loan == null || loan.getStatus() == null) {
+            return;
+        }
+        // Skip if custom status did not change
+        if (Objects.equals(oldCustomStatus, loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null)) {
             return;
         }
         Map<String, Object> customStatus = new HashMap<>();
