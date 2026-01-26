@@ -28,7 +28,6 @@ dependencies {
     implementation(project(':fineract-accounting'))
     implementation(project(':fineract-rates'))
     implementation project(':fineract-progressive-loan')
-    implementation(project(":custom:crediblex:portfolio:account"))
     implementation(project(":custom:crediblex:infrastructure:commands"))
     implementation(project(":custom:crediblex:portfolio:loc"))
     implementation(project(":custom:crediblex:portfolio:loanproduct"))

@@ -19,9 +19,14 @@
 package com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions;
 
 import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
+import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -64,6 +69,7 @@ import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanc
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -91,13 +97,20 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
     private final TransactionTemplate transactionTemplate;
     private final EzySqlLoanLocRepository ezySqlLoanLocRepository;
+    private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+
+    @Autowired(required = false)
+    private LineOfCreditRepository lineOfCreditRepository;
+    @Autowired(required = false)
+    private LocStatusAggregationUtils locStatusAggregationUtils;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
             PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
             FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
-            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository) {
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository,
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -111,6 +124,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
         this.transactionTemplate = transactionTemplate;
         this.ezySqlLoanLocRepository = ezySqlLoanLocRepository;
+        this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
     }
 
     @Override
@@ -360,17 +374,42 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
                     loan.setCustomLoanStatus(customLoanStatus);
 
-                    // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
+                    // Precompute drawdown flags before commit using LOC lookup repository
                     boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
                     Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
 
+                    // If drawdown, compute LOC status aggregation data and persist only if changed
+                    LocStatusAggregationData locStatusAggregationData;
+                    if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null && locStatusAggregationUtils != null) {
+                        Optional<LineOfCredit> locOpt = lineOfCreditRepository.findById(locIdOpt.get());
+                        if (locOpt.isPresent()) {
+                            LineOfCredit loc = locOpt.get();
+                            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
+                            if (locStatusAggregationData != null) {
+                                lineOfCreditRepository.save(loc);
+                            }
+                        } else {
+                            locStatusAggregationData = null;
+                        }
+                    } else {
+                        locStatusAggregationData = null;
+                    }
+
                     // Schedule webhook publish after successful commit, in a new transaction
+                    final LocStatusAggregationData finalLocStatusAggregationData = locStatusAggregationData;
                     TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 
                         @Override
                         public void afterCommit() {
                             transactionTemplate.execute(status -> {
                                 loanStatusWebhookPublisher.publish(loan, oldCustomStatus, isDrawdown, locIdOpt);
+                                // Publish LOC status webhook if applicable
+                                if (finalLocStatusAggregationData != null) {
+                                    lineOfCreditStatusWebhookPublisher.publish(loan,
+                                            finalLocStatusAggregationData.getDefaultLocStatus().name(),
+                                            finalLocStatusAggregationData.getOldLocCustomStatus().name(),
+                                            finalLocStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                                }
                                 return null;
                             });
                         }

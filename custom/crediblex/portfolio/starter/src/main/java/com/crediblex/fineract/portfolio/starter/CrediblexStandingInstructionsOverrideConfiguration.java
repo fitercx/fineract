@@ -19,6 +19,7 @@
 package com.crediblex.fineract.portfolio.starter;
 
 import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions.CustomExecuteStandingInstructionsTasklet;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
@@ -54,10 +55,12 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
             StandingInstructionReadPlatformService standingInstructionReadPlatformService, JdbcTemplate jdbcTemplate,
             DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
             PlatformTransactionManager transactionManager, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
-            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository) {
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository,
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService,
-                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, loanLocLookupRepository);
+                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, loanLocLookupRepository,
+                lineOfCreditStatusWebhookPublisher);
     }
 }
