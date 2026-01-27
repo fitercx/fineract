@@ -177,7 +177,7 @@ public class LineOfCreditBalanceUpdateService {
                         LOC ID: %d, Loan ID: %s, Consumed amount: %s.
                         Reconciliation attempt failed: %s
                         """.formatted(lineOfCredit.getId(), loanId, lineOfCredit.getSummary().getConsumedAmount(), e.getMessage()),
-                        "consumedAmount", lineOfCredit.getSummary().getConsumedAmount());
+                        "consumedAmount", e, lineOfCredit.getSummary().getConsumedAmount());
             }
         }
     }
