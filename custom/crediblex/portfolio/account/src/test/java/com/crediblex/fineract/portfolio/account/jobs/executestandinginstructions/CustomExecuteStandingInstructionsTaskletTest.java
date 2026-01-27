@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
@@ -253,6 +254,114 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         verify(jdbcTemplate, times(3)).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
 
+    }
+
+    @Test
+    void testLocBalanceValidationErrorHandling() throws Exception {
+        // Arrange: Standing instruction that will trigger LOC balance validation error
+        Long fromAccountId = 1L;
+        Long toAccountId = 2L;
+        BigDecimal transactionAmount = new BigDecimal("100.00");
+        StandingInstructionData instruction = realStandingInstructionData(50L, "LOC Error SI", transactionAmount,
+                PortfolioAccountType.SAVINGS, fromAccountId, PortfolioAccountType.LOAN, toAccountId, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId, false)).thenReturn(savingsAccount);
+
+        // Mock: LOC-related PlatformApiDataValidationException
+        PlatformApiDataValidationException locError = new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
+                "Consumed amount cannot be negative after transaction", "consumedAmount", new BigDecimal("-50.00"));
+        doThrow(locError).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+
+        // Act
+        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
+                .isInstanceOf(JobExecutionException.class);
+
+        // Assert: Error should be logged and job should fail with context
+        verify(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
+    }
+
+    @Test
+    void testNonLocValidationErrorHandling() throws Exception {
+        // Arrange: Standing instruction with non-LOC validation error
+        Long fromAccountId = 1L;
+        Long toAccountId = 2L;
+        BigDecimal transactionAmount = new BigDecimal("100.00");
+        StandingInstructionData instruction = realStandingInstructionData(51L, "Non-LOC Error SI", transactionAmount,
+                PortfolioAccountType.SAVINGS, fromAccountId, PortfolioAccountType.LOAN, toAccountId, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId, false)).thenReturn(savingsAccount);
+
+        // Mock: Non-LOC PlatformApiDataValidationException
+        PlatformApiDataValidationException nonLocError = new PlatformApiDataValidationException("error.msg.account.transfer.invalid",
+                "Invalid account transfer", "transferType", "INVALID");
+        doThrow(nonLocError).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+
+        // Act
+        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
+                .isInstanceOf(JobExecutionException.class);
+
+        // Assert: Error should be logged and job should fail
+        verify(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
+    }
+
+    @Test
+    void testJobCompletionErrorSummary() throws Exception {
+        // Arrange: Multiple standing instructions, some with errors
+        Long fromAccountId1 = 1L;
+        Long fromAccountId2 = 3L;
+        Long toAccountId1 = 2L;
+        Long toAccountId2 = 4L;
+
+        StandingInstructionData successfulInstruction = realStandingInstructionData(60L, "Successful SI", new BigDecimal("50.00"),
+                PortfolioAccountType.SAVINGS, fromAccountId1, PortfolioAccountType.LOAN, toAccountId1, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+
+        StandingInstructionData failingInstruction = realStandingInstructionData(61L, "Failing SI", new BigDecimal("100.00"),
+                PortfolioAccountType.SAVINGS, fromAccountId2, PortfolioAccountType.LOAN, toAccountId2, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Arrays.asList(successfulInstruction, failingInstruction));
+
+        doAnswer(invocation -> {
+            AccountTransferDTO dto = invocation.getArgument(0);
+            if (dto.getFromAccountId().equals(fromAccountId2)) {
+                throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
+                        "Consumed amount cannot be negative after transaction", "consumedAmount", new BigDecimal("-50.00"));
+            }
+            return null; // First succeeds
+        }).when(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+
+        SavingsAccount savingsAccount1 = mock(SavingsAccount.class);
+        when(savingsAccount1.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId1, false)).thenReturn(savingsAccount1);
+
+        SavingsAccount savingsAccount2 = mock(SavingsAccount.class);
+        when(savingsAccount2.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(fromAccountId2, false)).thenReturn(savingsAccount2);
+
+        // Act
+        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
+                .isInstanceOf(JobExecutionException.class).hasMessageContaining("Standing instruction job completed with")
+                .hasMessageContaining("error(s)");
+
+        // Assert: Both instructions processed, one succeeded, one failed
+        verify(accountTransfersWritePlatformService, times(2)).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(60L));
+        verify(jdbcTemplate, times(2)).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
     }
 
     private EnumOptionData enumOptionData(int id, String code) {
