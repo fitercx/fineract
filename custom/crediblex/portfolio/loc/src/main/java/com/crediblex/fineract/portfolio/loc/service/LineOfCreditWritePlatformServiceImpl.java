@@ -983,15 +983,12 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         LineOfCredit savedLineOfCredit = this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
         // Get the vendor ID from the saved entity (it should now have an ID)
-        Long vendorId = savedLineOfCredit.getApprovedBuyers().stream()
-                .filter(v -> v.getName().equals(vendor.getName()))
-                .findFirst()
-                .map(LineOfCreditApprovedBuyers::getId)
-                .orElse(null);
+        Long vendorId = savedLineOfCredit.getApprovedBuyers().stream().filter(v -> v.getName().equals(vendor.getName())).findFirst()
+                .map(LineOfCreditApprovedBuyers::getId).orElse(null);
 
         // Return command processing result with vendor ID, client ID, office ID, and resource ID
-        return new CommandProcessingResultBuilder().withEntityId(vendorId)
-                .withClientId(lineOfCredit.getClient().getId()).withOfficeId(lineOfCredit.getClient().getOffice().getId())
+        return new CommandProcessingResultBuilder().withEntityId(vendorId).withClientId(lineOfCredit.getClient().getId())
+                .withOfficeId(lineOfCredit.getClient().getOffice().getId())
                 .withResourceIdAsString(vendorId != null ? String.valueOf(vendorId) : null).build();
     }
 
@@ -1034,9 +1031,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Save changes
         this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-        return new CommandProcessingResultBuilder().withEntityId(vendorId)
-                .withClientId(lineOfCredit.getClient().getId()).withOfficeId(lineOfCredit.getClient().getOffice().getId())
-                .withResourceIdAsString(String.valueOf(vendorId)).build();
+        return new CommandProcessingResultBuilder().withEntityId(vendorId).withClientId(lineOfCredit.getClient().getId())
+                .withOfficeId(lineOfCredit.getClient().getOffice().getId()).withResourceIdAsString(String.valueOf(vendorId)).build();
     }
 
     @Override
@@ -1068,9 +1064,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Save changes
         this.lineOfCreditRepository.saveAndFlush(lineOfCredit);
 
-        return new CommandProcessingResultBuilder().withEntityId(vendorId)
-                .withClientId(lineOfCredit.getClient().getId()).withOfficeId(lineOfCredit.getClient().getOffice().getId())
-                .withResourceIdAsString(String.valueOf(vendorId)).build();
+        return new CommandProcessingResultBuilder().withEntityId(vendorId).withClientId(lineOfCredit.getClient().getId())
+                .withOfficeId(lineOfCredit.getClient().getOffice().getId()).withResourceIdAsString(String.valueOf(vendorId)).build();
     }
 
 }
