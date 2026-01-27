@@ -139,25 +139,25 @@ import org.springframework.util.CollectionUtils;
 public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements SavingsAccountWritePlatformService {
 
     private final PlatformSecurityContext context;
-    private final SavingsAccountDataValidator fromApiJsonDeserializer;
-    private final SavingsAccountRepositoryWrapper savingAccountRepositoryWrapper;
+    protected final SavingsAccountDataValidator fromApiJsonDeserializer;
+    protected final SavingsAccountRepositoryWrapper savingAccountRepositoryWrapper;
     private final StaffRepositoryWrapper staffRepository;
-    private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
-    private final SavingsAccountAssembler savingAccountAssembler;
-    private final SavingsAccountTransactionDataValidator savingsAccountTransactionDataValidator;
+    protected final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
+    protected final SavingsAccountAssembler savingAccountAssembler;
+    protected final SavingsAccountTransactionDataValidator savingsAccountTransactionDataValidator;
     private final SavingsAccountChargeDataValidator savingsAccountChargeDataValidator;
     private final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final SavingsAccountDomainService savingsAccountDomainService;
     private final NoteRepository noteRepository;
-    private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
+    protected final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
     private final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
-    private final ChargeRepositoryWrapper chargeRepository;
+    protected final ChargeRepositoryWrapper chargeRepository;
     private final SavingsAccountChargeRepositoryWrapper savingsAccountChargeRepository;
     private final HolidayRepositoryWrapper holidayRepository;
     private final WorkingDaysRepositoryWrapper workingDaysRepository;
-    private final ConfigurationDomainService configurationDomainService;
-    private final DepositAccountOnHoldTransactionRepository depositAccountOnHoldTransactionRepository;
+    protected final ConfigurationDomainService configurationDomainService;
+    protected final DepositAccountOnHoldTransactionRepository depositAccountOnHoldTransactionRepository;
     private final EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService;
     private final AppUserRepositoryWrapper appuserRepository;
     private final StandingInstructionRepository standingInstructionRepository;
@@ -842,7 +842,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     /**
      *
      */
-    private void throwValidationForActiveStatus(final String actionName) {
+    protected void throwValidationForActiveStatus(final String actionName) {
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors)
                 .resource(SAVINGS_ACCOUNT_RESOURCE_NAME + actionName);
@@ -850,7 +850,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         throw new PlatformApiDataValidationException(dataValidationErrors);
     }
 
-    private void checkClientOrGroupActive(final SavingsAccount account) {
+    protected void checkClientOrGroupActive(final SavingsAccount account) {
         final Client client = account.getClient();
         if (client != null) {
             if (client.isNotActive()) {
@@ -1437,7 +1437,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         return chargeTransaction;
     }
 
-    private void updateExistingTransactionsDetails(SavingsAccount account, Set<Long> existingTransactionIds,
+    protected void updateExistingTransactionsDetails(SavingsAccount account, Set<Long> existingTransactionIds,
             Set<Long> existingReversedTransactionIds) {
         existingTransactionIds.addAll(account.findExistingTransactionIds());
         existingReversedTransactionIds.addAll(account.findExistingReversedTransactionIds());
@@ -1455,7 +1455,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         existingReversedTransactionIds.addAll(account.findCurrentReversedTransactionIdsWithPivotDateConfig());
     }
 
-    private void postJournalEntries(final SavingsAccount savingsAccount, final Set<Long> existingTransactionIds,
+    protected void postJournalEntries(final SavingsAccount savingsAccount, final Set<Long> existingTransactionIds,
             final Set<Long> existingReversedTransactionIds, final boolean backdatedTxnsAllowedTill) {
 
         boolean isAccountTransfer = false;

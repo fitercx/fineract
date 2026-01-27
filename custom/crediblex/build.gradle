@@ -43,6 +43,8 @@ subprojects {
         implementation(project(':fineract-provider'))
         implementation(project(':fineract-accounting'))
         implementation(project(':fineract-rates'))
+        implementation(project(':fineract-charge'))
+        implementation(project(':fineract-savings'))
         implementation(project(':fineract-progressive-loan'))
         implementation("org.springframework.boot:spring-boot-starter:${springBootVersion}")
         implementation("org.springframework.boot:spring-boot-starter-batch:${springBootVersion}")
