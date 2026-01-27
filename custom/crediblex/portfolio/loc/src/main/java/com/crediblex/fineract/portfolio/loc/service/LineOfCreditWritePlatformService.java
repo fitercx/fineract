@@ -19,7 +19,6 @@
 
 package com.crediblex.fineract.portfolio.loc.service;
 
-import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 
@@ -49,5 +48,9 @@ public interface LineOfCreditWritePlatformService {
 
     CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command);
 
-    VendorResponse addVendor(Long lineOfCreditId, String requestBody);
+    CommandProcessingResult addVendor(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult updateVendor(Long lineOfCreditId, Long vendorId, JsonCommand command);
+
+    CommandProcessingResult deleteVendor(Long lineOfCreditId, Long vendorId);
 }
