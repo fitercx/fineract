@@ -284,8 +284,8 @@ public class LineOfCreditBalanceUpdateService {
                             Current consumed amount: {}, Repayment amount: {}, Excess amount: {}, Transaction type: {}.
                             Capping consumed amount at zero. Excess repayment amount ({}) cannot be applied to available balance
                             as it would exceed maximum LOC limit. This may indicate a data inconsistency.
-                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, repaymentAmount, excessAmount, type,
-                            excessAmount);
+                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, repaymentAmount, excessAmount,
+                            type, excessAmount);
 
                     // Graceful handling: Cap consumed amount at zero
                     // Set available balance using constraint: available = maximum - consumed = maximum - 0 = maximum

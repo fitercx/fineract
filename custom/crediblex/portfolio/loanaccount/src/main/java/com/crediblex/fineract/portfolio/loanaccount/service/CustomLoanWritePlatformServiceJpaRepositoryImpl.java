@@ -1219,9 +1219,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     // Null check before dereferencing loanTransaction
                     if (loanTransaction == null) {
-                        throw new GeneralPlatformDomainRuleException("account.transfer.loan.transaction.not.found", String.format(
-                                "Loan transaction not found for transfer from savings account id: %d to loan account id: %d",
-                                fromSavingsAccountId, loanId));
+                        throw new GeneralPlatformDomainRuleException("account.transfer.loan.transaction.not.found",
+                                String.format("Loan transaction not found for transfer from savings account id: %d to loan account id: %d",
+                                        fromSavingsAccountId, loanId));
                     }
 
                     BigDecimal amount;
