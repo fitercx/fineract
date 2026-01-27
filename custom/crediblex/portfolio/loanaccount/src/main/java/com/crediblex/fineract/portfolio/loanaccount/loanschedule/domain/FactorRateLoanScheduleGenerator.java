@@ -28,6 +28,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
@@ -102,8 +104,8 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
             factorRateTaxAmount = factorRateFeeAmount.multipliedBy(taxPercentage).dividedBy(100, mc);
         }
 
-        final Money factorRateFeePerInstallment = factorRateFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
-        final Money factorRateTaxPerInstallment = factorRateTaxAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
+        Money factorRateFeePerInstallment = factorRateFeeAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
+        Money factorRateTaxPerInstallment = factorRateTaxAmount.dividedBy(loanApplicationTerms.getNumberOfRepayments(), mc);
 
         // generate list of proposed schedule due dates
         LocalDate loanEndDate = getScheduledDateGenerator().getLastRepaymentDate(loanApplicationTerms, holidayDetailDTO);
@@ -368,6 +370,20 @@ public class FactorRateLoanScheduleGenerator extends AbstractCumulativeLoanSched
 
             if (!isNextRepaymentAvailable) {
                 scheduleParams.getDisburseDetailMap().clear();
+            }
+
+            // Adjust factor rate fee and tax for last installment
+            final boolean isLastInstallment = scheduleParams.getInstalmentNumber() >= loanApplicationTerms.getNumberOfRepayments()
+                    && scheduleParams.getOutstandingBalance().isZero();
+            if (isLastInstallment) {
+                final BigDecimal totalExistingTaxCharges = scheduleParams.getInstallments().stream()
+                        .map(LoanRepaymentScheduleInstallment::getTaxChargesCharged).filter(Objects::nonNull).reduce(BigDecimal::add)
+                        .orElse(BigDecimal.ZERO);
+                factorRateTaxPerInstallment = factorRateTaxAmount.minus(totalExistingTaxCharges);
+                final BigDecimal totalExistingFeeCharges = scheduleParams.getInstallments().stream()
+                        .map(LoanRepaymentScheduleInstallment::getFeeChargesCharged).filter(Objects::nonNull).reduce(BigDecimal::add)
+                        .orElse(BigDecimal.ZERO);
+                factorRateFeePerInstallment = factorRateFeeAmount.minus(totalExistingFeeCharges);
             }
 
             // applies charges for the period

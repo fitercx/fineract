@@ -237,7 +237,10 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 taxPayable = Money.of(currency, taxOutstandingAmount);
             }
         }
-        updateInstallmentsPostDate(loan, foreClosureDate);
+
+        if (!loan.isFactorRateEnabled()) {
+            updateInstallmentsPostDate(loan, foreClosureDate);
+        }
 
         LoanTransaction payment = null;
         List<Long> transactionIds = new ArrayList<>();
