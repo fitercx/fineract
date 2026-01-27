@@ -269,21 +269,22 @@ public class LineOfCreditBalanceUpdateService {
             }
         } else if (type.isIncrementTransaction()) {
             // Repayments, refunds, and foreclosures increase available balance
+            BigDecimal repaymentAmount = amount;
             // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
             // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
             // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
             // increase
             if (!type.isBalanceIncrement()) {
                 // PREVENTIVE VALIDATION: Check if repayment amount exceeds current consumed amount
-                if (amount.compareTo(currentConsumedAmount) > 0) {
-                    BigDecimal excessAmount = amount.subtract(currentConsumedAmount);
+                if (repaymentAmount.compareTo(currentConsumedAmount) > 0) {
+                    BigDecimal excessAmount = repaymentAmount.subtract(currentConsumedAmount);
                     log.warn("""
                             LOC consumed amount would go negative.
                             LOC ID: {}, Loan ID: {}, Loan Transaction ID: {},
                             Current consumed amount: {}, Repayment amount: {}, Excess amount: {}, Transaction type: {}.
                             Capping consumed amount at zero. Excess repayment amount ({}) cannot be applied to available balance
                             as it would exceed maximum LOC limit. This may indicate a data inconsistency.
-                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, amount, excessAmount, type,
+                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, repaymentAmount, excessAmount, type,
                             excessAmount);
 
                     // Graceful handling: Cap consumed amount at zero
@@ -294,10 +295,10 @@ public class LineOfCreditBalanceUpdateService {
                     lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
                 } else {
                     // Normal case: consumed amount can be reduced without going negative
-                    BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
+                    BigDecimal newConsumedAmount = currentConsumedAmount.subtract(repaymentAmount);
                     lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
                     // Increase available balance by the repayment amount
-                    BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
+                    BigDecimal newAvailableBalance = currentAvailableBalance.add(repaymentAmount);
                     lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
                 }
             } else {

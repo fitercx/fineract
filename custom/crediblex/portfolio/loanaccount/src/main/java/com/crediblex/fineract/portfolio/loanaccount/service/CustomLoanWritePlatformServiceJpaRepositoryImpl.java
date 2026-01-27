@@ -1210,18 +1210,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                             .stream().findFirst();
 
                     if (acctTransferTransaction.isEmpty()) {
-                        throw new GeneralPlatformDomainRuleException("account.transfer.transaction.not.found",
-                                "Account transfer transaction not found for transfer from savings account id: " + fromSavingsAccountId
-                                        + " to loan account id: " + loanId);
+                        throw new GeneralPlatformDomainRuleException("account.transfer.transaction.not.found", String.format(
+                                "Account transfer transaction not found for transfer from savings account id: %d to loan account id: %d",
+                                fromSavingsAccountId, loanId));
                     }
 
                     LoanTransaction loanTransaction = acctTransferTransaction.get().getToLoanTransaction();
 
                     // Null check before dereferencing loanTransaction
                     if (loanTransaction == null) {
-                        throw new GeneralPlatformDomainRuleException("account.transfer.loan.transaction.not.found",
-                                "Loan transaction not found for transfer from savings account id: " + fromSavingsAccountId
-                                        + " to loan account id: " + loanId);
+                        throw new GeneralPlatformDomainRuleException("account.transfer.loan.transaction.not.found", String.format(
+                                "Loan transaction not found for transfer from savings account id: %d to loan account id: %d",
+                                fromSavingsAccountId, loanId));
                     }
 
                     BigDecimal amount;
