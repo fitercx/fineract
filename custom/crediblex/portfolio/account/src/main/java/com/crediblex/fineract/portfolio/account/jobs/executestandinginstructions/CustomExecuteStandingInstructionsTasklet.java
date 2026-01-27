@@ -206,7 +206,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             log.error("Standing instruction job completed with {} error(s). Details:", errors.size());
             for (int i = 0; i < errors.size(); i++) {
                 Throwable error = errors.get(i);
-                log.error("Error {} of {}: {}", i + 1, errors.size(), error.getMessage(), error);
+                log.error("Error {} of {}:", i + 1, errors.size(), error);
             }
 
             // Create a more informative exception with summary using text block
