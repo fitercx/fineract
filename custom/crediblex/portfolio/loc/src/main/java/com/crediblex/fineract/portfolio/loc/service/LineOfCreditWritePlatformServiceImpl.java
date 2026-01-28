@@ -942,12 +942,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
-        // Allow vendor addition only for ACTIVE LOCs
-        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
-            throw new PlatformDataIntegrityException("error.msg.loc.add.vendor.not.allowed",
-                    "Vendors can only be added when Line of Credit is ACTIVE. Current status: " + lineOfCredit.getStatus().name());
-        }
-
         // Validate request
         if (request.getName() == null || request.getName().trim().isEmpty()) {
             throw new PlatformDataIntegrityException("error.msg.vendor.name.required", "Vendor name is required");
