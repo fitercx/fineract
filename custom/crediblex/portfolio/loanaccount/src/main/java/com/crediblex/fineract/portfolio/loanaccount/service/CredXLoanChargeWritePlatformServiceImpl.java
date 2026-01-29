@@ -792,8 +792,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                                 totalAmountPaid);
                     }
                 } catch (Exception depositException) {
-                    log.error("Exception during deposit creation for account {}: {}", linkedSavingsAccount.getId(),
-                            depositException.getMessage(), depositException);
+                    log.error("Exception during deposit creation for account {}", linkedSavingsAccount.getId(),
+                            depositException);
                     throw depositException;
                 }
 
@@ -849,7 +849,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         loanId);
             }
         } catch (Exception e) {
-            log.error("Failed to create savings deposit for loan {}: {} (cause: {})", loanId, e.getMessage(), e.getCause(), e);
+            log.error("Failed to create savings deposit for loan {}", loanId, e);
             // Don't fail the entire operation if deposit fails - the charge reversal is still valid
             // Admin can manually deposit funds if needed
         }
@@ -1182,7 +1182,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         } catch (Exception e) {
             // Log the error but don't fail the entire operation
             // The charge reversal and savings refund are still valid
-            log.error("Failed to create GL reversal entries for charge {}: {}", loanCharge.getId(), e.getMessage(), e);
+            log.error("Failed to create GL reversal entries for charge {}", loanCharge.getId(), e);
         }
     }
 
