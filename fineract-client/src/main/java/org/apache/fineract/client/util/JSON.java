@@ -284,6 +284,15 @@ public class JSON {
             this.gsonConverterFactory = GsonConverterFactory.create(gson);
         }
 
+        /**
+         * Empty finalizer to prevent finalizer attacks. See SEI CERT Rule OBJ-11: Defend against finalizer attacks.
+         */
+        @SuppressWarnings("all")
+        @Override
+        protected void finalize() {
+            // Empty finalizer prevents attackers from exploiting partially initialized objects
+        }
+
         @Override
         public Converter<ResponseBody, ?> responseBodyConverter(Type type, Annotation[] annotations, Retrofit retrofit) {
             if (type.equals(String.class)) {
