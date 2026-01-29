@@ -46,8 +46,8 @@ public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Lo
     List<LoanCharge> findActiveByLoanIdWithOrder(@Param("loanId") Long loanId);
 
     /**
-     * Find all loan charges (including inactive ones) for a loan, ordered by due date and charge time.
-     * This method is used when we need to display reversed charges or all charges regardless of active status.
+     * Find all loan charges (including inactive ones) for a loan, ordered by due date and charge time. This method is
+     * used when we need to display reversed charges or all charges regardless of active status.
      */
     @Query("""
                 SELECT lc FROM LoanCharge lc

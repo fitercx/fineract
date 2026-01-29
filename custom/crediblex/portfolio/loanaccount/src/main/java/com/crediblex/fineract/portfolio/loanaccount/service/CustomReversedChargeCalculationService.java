@@ -25,9 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Service for calculating reversed charges for loan repayment schedule periods.
- * This service handles the calculation of reversed fee and penalty charges
- * that fall within a specific period.
+ * Service for calculating reversed charges for loan repayment schedule periods. This service handles the calculation of
+ * reversed fee and penalty charges that fall within a specific period.
  */
 @Service
 public class CustomReversedChargeCalculationService {
@@ -39,29 +38,32 @@ public class CustomReversedChargeCalculationService {
     }
 
     /**
-     * Calculates reversed charges for a specific period.
-     * This method queries the database for inactive charges that fall within the given period.
+     * Calculates reversed charges for a specific period. This method queries the database for inactive charges that
+     * fall within the given period.
      *
-     * @param loanId The loan ID
-     * @param fromDate The start date of the period
-     * @param dueDate The end date of the period
-     * @param isPenalty true for penalty charges, false for fee charges
+     * @param loanId
+     *            The loan ID
+     * @param fromDate
+     *            The start date of the period
+     * @param dueDate
+     *            The end date of the period
+     * @param isPenalty
+     *            true for penalty charges, false for fee charges
      * @return The sum of reversed charges for the period, or BigDecimal.ZERO if none found
      */
     public BigDecimal calculateReversedCharges(Long loanId, LocalDate fromDate, LocalDate dueDate, boolean isPenalty) {
         // This method calculates reversed charges for a specific period
         // We need to query the database for inactive charges that fall within this period
-        final String sql = "SELECT COALESCE(SUM(lc.amount), 0) FROM m_loan_charge lc " +
-                "WHERE lc.loan_id = ? AND lc.is_active = false AND lc.is_penalty = ? " +
-                "AND ((lc.charge_time_enum = 4 AND lc.due_for_collection_as_of_date >= ? AND lc.due_for_collection_as_of_date <= ?) " +
-                "OR (lc.charge_time_enum = 2 AND ? <= ? AND ? >= ?))";
+        final String sql = "SELECT COALESCE(SUM(lc.amount), 0) FROM m_loan_charge lc "
+                + "WHERE lc.loan_id = ? AND lc.is_active = false AND lc.is_penalty = ? "
+                + "AND ((lc.charge_time_enum = 4 AND lc.due_for_collection_as_of_date >= ? AND lc.due_for_collection_as_of_date <= ?) "
+                + "OR (lc.charge_time_enum = 2 AND ? <= ? AND ? >= ?))";
 
         try {
-            return jdbcTemplate.queryForObject(sql, BigDecimal.class,
-                    loanId, isPenalty, fromDate, dueDate, fromDate, fromDate, dueDate, fromDate);
+            return jdbcTemplate.queryForObject(sql, BigDecimal.class, loanId, isPenalty, fromDate, dueDate, fromDate, fromDate, dueDate,
+                    fromDate);
         } catch (Exception e) {
             return BigDecimal.ZERO;
         }
     }
 }
-

@@ -86,10 +86,10 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
 import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
+import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
-import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
@@ -522,21 +522,16 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     if (deactivatedChargeIds.contains(deactivatedCharge.getId())) {
                         if (deactivatedCharge.isOverdueInstallmentCharge() && deactivatedCharge.getDueLocalDate() != null) {
                             // Find the installment matching this charge's due date
-                            LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments()
-                                    .stream()
-                                    .filter(inst -> inst.getDueDate().equals(deactivatedCharge.getDueLocalDate()))
-                                    .findFirst()
-                                    .orElse(null);
+                            LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
+                                    .filter(inst -> inst.getDueDate().equals(deactivatedCharge.getDueLocalDate())).findFirst().orElse(null);
 
                             if (affectedInstallment != null) {
                                 affectedInstallments.add(affectedInstallment);
                                 log.info("Installment {} (due: {}) is affected by deactivated charge {}",
-                                        affectedInstallment.getInstallmentNumber(),
-                                        affectedInstallment.getDueDate(),
+                                        affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(),
                                         deactivatedCharge.getId());
                             } else {
-                                log.warn("Could not find installment for deactivated charge {} with due date {}",
-                                        deactivatedCharge.getId(),
+                                log.warn("Could not find installment for deactivated charge {} with due date {}", deactivatedCharge.getId(),
                                         deactivatedCharge.getDueLocalDate());
                             }
                         }
@@ -548,8 +543,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     log.info("Recalculating charges for {} affected installments after bulk removal", affectedInstallments.size());
                     for (LoanRepaymentScheduleInstallment affectedInstallment : affectedInstallments) {
                         recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-                        log.info("Recalculated charges for installment {} (due: {})",
-                                affectedInstallment.getInstallmentNumber(),
+                        log.info("Recalculated charges for installment {} (due: {})", affectedInstallment.getInstallmentNumber(),
                                 affectedInstallment.getDueDate());
                     }
                 } else {
@@ -648,8 +642,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         loan.updateLoanSummaryAndStatus();
         final BigDecimal overpaidBefore = loan.getTotalOverpaid() != null ? loan.getTotalOverpaid() : BigDecimal.ZERO;
         final String statusBefore = loan.getStatus() != null ? loan.getStatus().getCode() : "null";
-        log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore,
-                overpaidBefore, loanChargeId, totalAmountPaid);
+        log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore, overpaidBefore,
+                loanChargeId, totalAmountPaid);
 
         // Mark the charge as INACTIVE and reset paid amounts.
         // This will naturally reduce the loan's overpaid balance when we update the loan summary,
@@ -667,25 +661,22 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
             // Find the installment that matches the reversed charge's due date
             LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
-                    .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate()))
-                    .findFirst()
-                    .orElse(null);
-            
+                    .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate())).findFirst().orElse(null);
+
             if (affectedInstallment != null) {
                 // Only recalculate the affected installment
                 recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-                log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}", 
+                log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
                         affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
             } else {
-                log.warn("Could not find installment with due date {} for reversed charge {}", 
-                        loanCharge.getDueLocalDate(), loanChargeId);
+                log.warn("Could not find installment with due date {} for reversed charge {}", loanCharge.getDueLocalDate(), loanChargeId);
             }
         }
         // For non-overdue charges, recalculate all installments (shouldn't happen for our use case)
         else {
             recalculateInstallmentChargesFromActiveLoanCharges(loan);
         }
-        
+
         loan.updateLoanScheduleDependentDerivedFields();
         loan.updateLoanSummaryAndStatus();
         loanRepositoryWrapper.saveAndFlush(loan);
@@ -695,7 +686,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // IMPORTANT: This transaction should NOT have journal entries - journal entries will only be created
         // when the savings deposit is created.
         final ExternalId externalId = externalIdFactory.create();
-        LoanTransaction chargeAdjustmentTransaction = LoanTransaction.chargeAdjustment(loan, BigDecimal.ZERO, // Zero amount to avoid schedule impact
+        LoanTransaction chargeAdjustmentTransaction = LoanTransaction.chargeAdjustment(loan, BigDecimal.ZERO, // Zero
+                                                                                                              // amount
+                                                                                                              // to
+                                                                                                              // avoid
+                                                                                                              // schedule
+                                                                                                              // impact
                 reversalDate, externalId, null // No payment detail
         );
 
@@ -738,7 +734,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         final BigDecimal overpaidReduction = overpaidBefore.subtract(overpaidAfter);
         log.info("AFTER reversal - Loan {} status: {}, totalOverpaid: {} (reduced by {}), expected reduction: {}", loanId, statusAfter,
                 overpaidAfter, overpaidReduction, totalAmountPaid);
-        
+
         if (overpaidReduction.compareTo(totalAmountPaid) != 0) {
             log.warn("Overpaid reduction ({}) does not match reversed charge amount ({}). Loan may still be overpaid.", overpaidReduction,
                     totalAmountPaid);
@@ -780,9 +776,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 final com.google.gson.JsonElement parsedCommand = fromJsonHelper.parse(json);
                 log.debug("Deposit command JSON: {}", json);
 
-                final JsonCommand depositCommand = JsonCommand.fromExistingCommand(command.commandId(), json, parsedCommand,
-                        fromJsonHelper, "savingsaccounts", null, null, null, null, linkedSavingsAccount.getId(), null, null, null, null,
-                        null, null, null, null);
+                final JsonCommand depositCommand = JsonCommand.fromExistingCommand(command.commandId(), json, parsedCommand, fromJsonHelper,
+                        "savingsaccounts", null, null, null, null, linkedSavingsAccount.getId(), null, null, null, null, null, null, null,
+                        null);
 
                 try {
                     final CommandProcessingResult depositResult = savingsAccountWritePlatformService.deposit(linkedSavingsAccount.getId(),
@@ -819,23 +815,21 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                                 log.warn("Failed to update transaction type via reflection: {}. Will rely on note-based detection.",
                                         reflectionException.getMessage());
                             }
-                            
+
                             SavingsAccount savingsAccount = savingsTransaction.getSavingsAccount();
                             if (savingsAccount != null) {
-                                final String chargeReversalNote = "Refund for reversed charge: " + loanCharge.name()
-                                        + " (Loan Charge ID: " + loanChargeId + ")";
+                                final String chargeReversalNote = "Refund for reversed charge: " + loanCharge.name() + " (Loan Charge ID: "
+                                        + loanChargeId + ")";
                                 final Note savingsTransactionNote = Note.savingsTransactionNote(savingsAccount, savingsTransaction,
                                         chargeReversalNote);
                                 this.noteRepository.save(savingsTransactionNote);
-                                log.info(
-                                        "Created note on savings transaction {} for charge reversal detection: {}",
+                                log.info("Created note on savings transaction {} for charge reversal detection: {}",
                                         savingsDepositTransactionId, chargeReversalNote);
                             }
                         }
                     }
                 } catch (Exception noteException) {
-                    log.warn("Failed to update transaction type or create note on savings transaction: {}",
-                            noteException.getMessage());
+                    log.warn("Failed to update transaction type or create note on savings transaction: {}", noteException.getMessage());
                     // Don't fail the entire operation if note creation fails
                 }
 
@@ -847,15 +841,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // - DR: 300015 (Over Due Interest - LPI - RBF)
                 // - CR: 210003 (Working Capital Loan / SAVINGS_CONTROL)
                 // The accounting processor detects charge reversals via notes and uses GL 300015.
-                log.info("GL entries for charge reversal will be automatically created by savings deposit transaction {}", savingsDepositTransactionId);
+                log.info("GL entries for charge reversal will be automatically created by savings deposit transaction {}",
+                        savingsDepositTransactionId);
             } else {
                 log.warn(
                         "No linked savings account found for loan {}. Cannot create deposit. Charge reversal completed but funds remain in loan.",
                         loanId);
             }
         } catch (Exception e) {
-            log.error("Failed to create savings deposit for loan {}: {} (cause: {})", loanId, e.getMessage(), e.getCause(),
-                    e);
+            log.error("Failed to create savings deposit for loan {}: {} (cause: {})", loanId, e.getMessage(), e.getCause(), e);
             // Don't fail the entire operation if deposit fails - the charge reversal is still valid
             // Admin can manually deposit funds if needed
         }
@@ -906,12 +900,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 .withEntityId(loanChargeId) //
                 .withEntityExternalId(loan.getExternalId()) //
                 .with(changes);
-        
+
         // Include CHARGE_ADJUSTMENT transaction ID as sub-entity (for audit trail)
         if (chargeAdjustmentTransaction != null) {
             resultBuilder = resultBuilder.withSubEntityId(chargeAdjustmentTransaction.getId());
         }
-        
+
         return resultBuilder.build();
     }
 
@@ -1101,13 +1095,19 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
      * Creates GL entries to reverse the fee/penalty income when a charge is reversed. For late payment fees, this
      * creates hardcoded GL entries: - Credit 210003 (Working Capital Loan) - Debit 300015 (Over Due Interest - LPI -
      * RBF)
-     * 
-     * @param loan The loan account
-     * @param loanCharge The charge being reversed
-     * @param transaction The CHARGE_ADJUSTMENT transaction (for reference, but journal entries are not linked to it)
-     * @param amount The amount being reversed
-     * @param reversalDate The reversal date
-     * @param glTransactionId The transaction ID to use for GL entries (typically the savings deposit transaction ID)
+     *
+     * @param loan
+     *            The loan account
+     * @param loanCharge
+     *            The charge being reversed
+     * @param transaction
+     *            The CHARGE_ADJUSTMENT transaction (for reference, but journal entries are not linked to it)
+     * @param amount
+     *            The amount being reversed
+     * @param reversalDate
+     *            The reversal date
+     * @param glTransactionId
+     *            The transaction ID to use for GL entries (typically the savings deposit transaction ID)
      */
     private void createGLEntriesForChargeReversal(Loan loan, LoanCharge loanCharge, LoanTransaction transaction, BigDecimal amount,
             LocalDate reversalDate, String glTransactionId) {
@@ -1140,12 +1140,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         loanCharge.getId());
 
                 // Create CREDIT entry for 210003 (Working Capital Loan)
-                // Note: These GL entries are created when savings deposit is credited, not for the loan CHARGE_ADJUSTMENT transaction
+                // Note: These GL entries are created when savings deposit is credited, not for the loan
+                // CHARGE_ADJUSTMENT transaction
                 final JournalEntry creditEntry = JournalEntry.createNew(office, null, // No payment detail
                         creditAccount, currencyCode, transactionId, false, // Not manual entry
                         reversalDate, JournalEntryType.CREDIT, amount, description, 1, // Entity type: 1 = Loan
                         loan.getId(), null, // No reference number
-                        null, // No loan transaction ID (journal entries are not linked to CHARGE_ADJUSTMENT transaction)
+                        null, // No loan transaction ID (journal entries are not linked to CHARGE_ADJUSTMENT
+                              // transaction)
                         null, // No savings transaction ID (will be linked via transactionId format "S{id}")
                         null, // No client transaction
                         null // No share transaction
@@ -1156,7 +1158,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         debitAccount, currencyCode, transactionId, false, // Not manual entry
                         reversalDate, JournalEntryType.DEBIT, amount, description, 1, // Entity type: 1 = Loan
                         loan.getId(), null, // No reference number
-                        null, // No loan transaction ID (journal entries are not linked to CHARGE_ADJUSTMENT transaction)
+                        null, // No loan transaction ID (journal entries are not linked to CHARGE_ADJUSTMENT
+                              // transaction)
                         null, // No savings transaction ID (will be linked via transactionId format "S{id}")
                         null, // No client transaction
                         null // No share transaction
@@ -1169,7 +1172,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 log.info("Created GL reversal entries for late payment fee charge {}: Dr {} ({}), Cr {} ({}), Amount: {}",
                         loanCharge.getId(), debitAccount.getGlCode(), debitAccount.getName(), creditAccount.getGlCode(),
                         creditAccount.getName(), amount);
-                
+
                 // Ensure only 2 entries are created (one debit, one credit)
                 // This prevents duplicate entries from being created
             } else {
@@ -1194,14 +1197,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 }
                 for (LoanChargePaidBy chargePaidBy : chargesPaid) {
                     if (chargePaidBy.getLoanCharge() != null && loanChargeId.equals(chargePaidBy.getLoanCharge().getId())) {
-                        log.warn("Found existing CHARGE_ADJUSTMENT transaction {} for charge {} in loan's in-memory transactions", 
+                        log.warn("Found existing CHARGE_ADJUSTMENT transaction {} for charge {} in loan's in-memory transactions",
                                 transaction.getId(), loanChargeId);
                         return true;
                     }
                 }
             }
         }
-        
+
         // Also check in database to catch any transactions that were saved but not yet loaded
         // Reload the loan to get the latest transactions from database
         Loan freshLoan = loanRepositoryWrapper.findOneWithNotFoundDetection(loan.getId());
@@ -1213,14 +1216,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 }
                 for (LoanChargePaidBy chargePaidBy : chargesPaid) {
                     if (chargePaidBy.getLoanCharge() != null && loanChargeId.equals(chargePaidBy.getLoanCharge().getId())) {
-                        log.warn("Found existing CHARGE_ADJUSTMENT transaction {} for charge {} in database", 
-                                transaction.getId(), loanChargeId);
+                        log.warn("Found existing CHARGE_ADJUSTMENT transaction {} for charge {} in database", transaction.getId(),
+                                loanChargeId);
                         return true;
                     }
                 }
             }
         }
-        
+
         return false;
     }
 
@@ -1280,7 +1283,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
      * Updates the repayment schedule to reflect the reversed charge. The charge is already marked inactive, so
      * recalculation will exclude it. The UI should show the reversed overdue interest with strikethrough since the
      * charge is inactive.
-     * 
+     *
      * NOTE: This method is currently not used - schedule recalculation is done directly in reversePaidLoanCharge.
      * Keeping it for potential future use.
      */
@@ -1291,24 +1294,22 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         // Find the installment that matches the reversed charge's due date
         LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
-                .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate()))
-                .findFirst()
-                .orElse(null);
-        
+                .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate())).findFirst().orElse(null);
+
         if (affectedInstallment != null) {
             // Only recalculate the affected installment to prevent affecting other periods
             recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
             log.info("Updated repayment schedule for reversed charge {} - installment {} (due: {}) will show reduced penalty amount",
                     loanCharge.getId(), affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate());
         } else {
-            log.warn("Could not find installment with due date {} for reversed charge {}", 
-                    loanCharge.getDueLocalDate(), loanCharge.getId());
+            log.warn("Could not find installment with due date {} for reversed charge {}", loanCharge.getDueLocalDate(),
+                    loanCharge.getId());
         }
     }
 
     /**
-     * Recalculates charge portions for a specific installment based on currently active loan charges.
-     * This ensures only the affected installment is updated, preventing removal of charges from other periods.
+     * Recalculates charge portions for a specific installment based on currently active loan charges. This ensures only
+     * the affected installment is updated, preventing removal of charges from other periods.
      */
     private void recalculateInstallmentChargesForSpecificInstallment(Loan loan, LoanRepaymentScheduleInstallment installment) {
         MonetaryCurrency currency = loan.getCurrency();
@@ -1358,16 +1359,16 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         installment.updateChargePortion(totalFee, feeWaived, feeWrittenOff, totalPenalty, penaltyWaived, penaltyWrittenOff,
                 Money.zero(currency), Money.zero(currency), Money.zero(currency));
 
-        log.debug("Updated installment {} (due: {}) - Fee: {}, Penalty: {}", 
-                installment.getInstallmentNumber(), installment.getDueDate(), totalFee, totalPenalty);
+        log.debug("Updated installment {} (due: {}) - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), installment.getDueDate(),
+                totalFee, totalPenalty);
     }
 
     /**
      * Recalculates installment charge portions based on currently active loan charges. This ensures the repayment
      * schedule reflects the correct charge amounts after charges are removed. NO date validation is performed.
-     * 
-     * WARNING: This method recalculates ALL installments. Use recalculateInstallmentChargesForSpecificInstallment
-     * when possible to avoid affecting other periods.
+     *
+     * WARNING: This method recalculates ALL installments. Use recalculateInstallmentChargesForSpecificInstallment when
+     * possible to avoid affecting other periods.
      */
     private void recalculateInstallmentChargesFromActiveLoanCharges(Loan loan) {
         MonetaryCurrency currency = loan.getCurrency();

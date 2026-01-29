@@ -197,8 +197,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             ConfigurationDomainService configurationDomainService1,
             CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl,
             LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            AccountAssociationsRepository accountAssociationsRepository,
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, AccountAssociationsRepository accountAssociationsRepository,
             CustomReversedChargeCalculationService customReversedChargeCalculationService) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
@@ -275,15 +274,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             CurrencyData currency = loanScheduleData.getCurrency();
             Collection<LoanSchedulePeriodData> periods = loanScheduleData.getPeriods();
-            
+
             // Get loan to calculate reversed charges per period
             Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
 
-            Collection<ExtendedLoanSchedulePeriodData> periodDataWithStatus = periods.stream()
-                    .map(p -> {
-                        BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
-                        return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
-                    }).toList();
+            Collection<ExtendedLoanSchedulePeriodData> periodDataWithStatus = periods.stream().map(p -> {
+                BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
+                return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
+            }).toList();
 
             Collection<LoanSchedulePeriodData> periodDataCollection = new ArrayList<>(periodDataWithStatus);
             return loanScheduleData.withPeriods(periodDataCollection);
@@ -293,9 +291,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     /**
-     * Calculates the total amount of reversed penalty charges for a specific repayment schedule period.
-     * This includes only inactive charges that were reversed (have a CHARGE_ADJUSTMENT transaction).
-     * 
+     * Calculates the total amount of reversed penalty charges for a specific repayment schedule period. This includes
+     * only inactive charges that were reversed (have a CHARGE_ADJUSTMENT transaction).
+     *
      * IMPORTANT: A reversed charge should appear ONLY in the period where its due date matches the period's due date.
      * This prevents a charge due on 26 Jan from appearing in both period 1 (due 26 Jan) and period 2 (due 24 Feb).
      */
@@ -324,34 +322,34 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             if (loanCharge.isPenaltyCharge() && !loanCharge.isActive()) {
                 // Check if this charge has a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
                 boolean hasChargeAdjustment = loan.getLoanTransactions().stream()
-                        .anyMatch(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment()
-                                && tx.getLoanChargesPaid().stream()
-                                        .anyMatch(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())));
+                        .anyMatch(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment() && tx.getLoanChargesPaid().stream()
+                                .anyMatch(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())));
 
                 if (hasChargeAdjustment) {
                     boolean appliesToPeriod = false;
-                    
+
                     // For overdue charges, match by exact due date match
                     if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
                         LocalDate chargeDueDate = loanCharge.getDueLocalDate();
                         // CRITICAL: Match ONLY if the charge due date exactly equals the period's due date
-                        // This ensures a charge due on 26 Jan matches ONLY period 1 (due 26 Jan), not period 2 (due 24 Feb)
+                        // This ensures a charge due on 26 Jan matches ONLY period 1 (due 26 Jan), not period 2 (due 24
+                        // Feb)
                         appliesToPeriod = chargeDueDate.equals(periodDueDate);
-                        
+
                         if (appliesToPeriod) {
-                            log.debug("Matched reversed overdue charge {} (due: {}) to period {} (due: {})", 
-                                    loanCharge.getId(), chargeDueDate, installmentNumber, periodDueDate);
+                            log.debug("Matched reversed overdue charge {} (due: {}) to period {} (due: {})", loanCharge.getId(),
+                                    chargeDueDate, installmentNumber, periodDueDate);
                         }
                     } else {
                         // For installment fees, match by installment number via LoanInstallmentCharge
                         LoanInstallmentCharge installmentCharge = loanCharge.getInstallmentLoanCharge(installmentNumber);
                         appliesToPeriod = (installmentCharge != null);
                         if (appliesToPeriod) {
-                            log.debug("Matched reversed installment fee charge {} to period {} via LoanInstallmentCharge", 
+                            log.debug("Matched reversed installment fee charge {} to period {} via LoanInstallmentCharge",
                                     loanCharge.getId(), installmentNumber);
                         }
                     }
-                    
+
                     if (appliesToPeriod) {
                         // Get the original paid amount from the CHARGE_ADJUSTMENT transaction
                         // Note: LoanChargePaidBy stores the positive amount, not negative
@@ -360,16 +358,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                                 .flatMap(tx -> tx.getLoanChargesPaid().stream())
                                 .filter(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId()))
                                 .map(cpb -> cpb.getAmount()) // Amount is already positive in LoanChargePaidBy
-                                .findFirst()
-                                .orElse(BigDecimal.ZERO);
-                        
+                                .findFirst().orElse(BigDecimal.ZERO);
+
                         if (originalPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
                             reversedAmount = reversedAmount.add(originalPaidAmount);
-                            log.info("Added reversed charge {} (due: {}) amount {} to period {} (due: {}), total reversed: {}", 
-                                    loanCharge.getId(), loanCharge.getDueLocalDate(), originalPaidAmount, 
-                                    installmentNumber, periodDueDate, reversedAmount);
+                            log.info("Added reversed charge {} (due: {}) amount {} to period {} (due: {}), total reversed: {}",
+                                    loanCharge.getId(), loanCharge.getDueLocalDate(), originalPaidAmount, installmentNumber, periodDueDate,
+                                    reversedAmount);
                         } else {
-                            log.warn("Reversed charge {} (due: {}) matched period {} but has zero amount in CHARGE_ADJUSTMENT", 
+                            log.warn("Reversed charge {} (due: {}) matched period {} but has zero amount in CHARGE_ADJUSTMENT",
                                     loanCharge.getId(), loanCharge.getDueLocalDate(), installmentNumber);
                         }
                     }
@@ -1264,12 +1261,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // Get loan to calculate reversed charges per period
         Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
-        
-        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
-                .map(p -> {
-                    BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
-                    return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
-                }).toList();
+
+        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream().map(p -> {
+            BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
+            return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
+        }).toList();
 
         // All loans now allow early repayments before the first installment due date
         final boolean isDrawdownLoan = true;
@@ -1987,10 +1983,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
 
                 // Calculate reversed charges for this period
-                BigDecimal feeChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(
-                        rs.getLong("loanId"), fromDate, dueDate, false);
-                BigDecimal penaltyChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(
-                        rs.getLong("loanId"), fromDate, dueDate, true);
+                BigDecimal feeChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
+                        fromDate, dueDate, false);
+                BigDecimal penaltyChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
+                        fromDate, dueDate, true);
 
                 final LoanSchedulePeriodData periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate,
                         obligationsMetOnDate, complete, principalDue, principalPaid, principalWrittenOff, principalOutstanding,
@@ -2000,8 +1996,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         taxChargesOutstanding, penaltyChargesExpectedDue, penaltyChargesPaid, penaltyChargesWaived,
                         penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod, totalPaidInAdvanceForPeriod,
                         totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits, isDownPayment, accrualInterest,
-                        feeChargesReversed, penaltyChargesReversed
-                );
+                        feeChargesReversed, penaltyChargesReversed);
 
                 periods.add(periodData);
             }
