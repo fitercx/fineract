@@ -209,6 +209,79 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                             final String updateQuery = "UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?";
                             jdbcTemplate.update(updateQuery, transactionDate, data.getId());
                             successCount.getAndIncrement();
+
+                            // Begin: Custom loan status + LOC aggregation + publish (moved from
+                            // triggerRepaymentWebhook)
+                            try {
+                                Long loanId = data.getToAccount().getId();
+                                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+                                // Find the most recent repayment transaction matching amount/date
+                                LoanTransaction recentTransaction = loan.getLoanTransactions().stream()
+                                        .filter(t -> t.isRepayment() && t.getAmount().compareTo(finalTransactionAmount) == 0
+                                                && t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
+                                        .max((t1, t2) -> t1.getId().compareTo(t2.getId())).orElse(null);
+
+                                if (recentTransaction != null) {
+                                    // Capture custom old status before update
+                                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+
+                                    // Compute and update the custom loan status based on affected installments
+                                    CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils
+                                            .computeCustomLoanStatusForLoan(loan);
+                                    loan.setCustomLoanStatus(customLoanStatus);
+
+                                    // Precompute drawdown flags before commit using LOC lookup repository
+                                    boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
+                                    Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
+
+                                    // If drawdown, compute LOC status aggregation data and persist only if changed
+                                    LocStatusAggregationData locStatusAggregationData;
+                                    if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null
+                                            && locStatusAggregationUtils != null) {
+                                        Optional<LineOfCredit> locOpt = lineOfCreditRepository.findById(locIdOpt.get());
+                                        if (locOpt.isPresent()) {
+                                            LineOfCredit loc = locOpt.get();
+                                            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc,
+                                                    loan);
+                                            if (locStatusAggregationData != null) {
+                                                lineOfCreditRepository.save(loc);
+                                            }
+                                        } else {
+                                            locStatusAggregationData = null;
+                                        }
+                                    } else {
+                                        locStatusAggregationData = null;
+                                    }
+
+                                    // Schedule webhook publish after successful commit, in a new transaction
+                                    final LocStatusAggregationData finalLocStatusAggregationData = locStatusAggregationData;
+                                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                                        @Override
+                                        public void afterCommit() {
+                                            transactionTemplate.execute(innerStatus -> {
+                                                loanStatusWebhookPublisher.publish(loan, oldCustomStatus, isDrawdown, locIdOpt);
+                                                if (finalLocStatusAggregationData != null) {
+                                                    lineOfCreditStatusWebhookPublisher.publish(loan,
+                                                            finalLocStatusAggregationData.getDefaultLocStatus().name(),
+                                                            finalLocStatusAggregationData.getOldLocCustomStatus().name(),
+                                                            finalLocStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown,
+                                                            locIdOpt);
+                                                }
+                                                return null;
+                                            });
+                                        }
+                                    });
+                                } else {
+                                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}",
+                                            data.getId(), finalTransactionAmount);
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to compute/publish loan/LOC status for standing instruction {}: {}", data.getId(),
+                                        e.getMessage());
+                            }
+                            // End: Custom loan status + LOC aggregation + publish
                         } else {
                             failureCount.getAndIncrement();
                         }
@@ -404,54 +477,6 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                     // Extract affected installments using the shared utility method (same logic as UI repayment)
                     List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils.extractAffectedInstallments(loan,
                             recentTransaction);
-
-                    // Capture custom old status before update
-                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
-
-                    // Compute and update the custom loan status based on affected installments
-                    CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
-                    loan.setCustomLoanStatus(customLoanStatus);
-
-                    // Precompute drawdown flags before commit using LOC lookup repository
-                    boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
-                    Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
-
-                    // If drawdown, compute LOC status aggregation data and persist only if changed
-                    LocStatusAggregationData locStatusAggregationData;
-                    if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null && locStatusAggregationUtils != null) {
-                        Optional<LineOfCredit> locOpt = lineOfCreditRepository.findById(locIdOpt.get());
-                        if (locOpt.isPresent()) {
-                            LineOfCredit loc = locOpt.get();
-                            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
-                            if (locStatusAggregationData != null) {
-                                lineOfCreditRepository.save(loc);
-                            }
-                        } else {
-                            locStatusAggregationData = null;
-                        }
-                    } else {
-                        locStatusAggregationData = null;
-                    }
-
-                    // Schedule webhook publish after successful commit, in a new transaction
-                    final LocStatusAggregationData finalLocStatusAggregationData = locStatusAggregationData;
-                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-
-                        @Override
-                        public void afterCommit() {
-                            transactionTemplate.execute(status -> {
-                                loanStatusWebhookPublisher.publish(loan, oldCustomStatus, isDrawdown, locIdOpt);
-                                // Publish LOC status webhook if applicable
-                                if (finalLocStatusAggregationData != null) {
-                                    lineOfCreditStatusWebhookPublisher.publish(loan,
-                                            finalLocStatusAggregationData.getDefaultLocStatus().name(),
-                                            finalLocStatusAggregationData.getOldLocCustomStatus().name(),
-                                            finalLocStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
-                                }
-                                return null;
-                            });
-                        }
-                    });
 
                     // Add affected installments and transaction details - SAME AS UI
                     if (!affectedInstallments.isEmpty()) {
