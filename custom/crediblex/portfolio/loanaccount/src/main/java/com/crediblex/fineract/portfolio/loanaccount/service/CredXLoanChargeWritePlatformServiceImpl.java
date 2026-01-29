@@ -792,8 +792,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                                 totalAmountPaid);
                     }
                 } catch (Exception depositException) {
-                    log.error("Exception during deposit creation for account {}", linkedSavingsAccount.getId(),
-                            depositException);
+                    log.error("Exception during deposit creation for account {}", linkedSavingsAccount.getId(), depositException);
                     throw depositException;
                 }
 
