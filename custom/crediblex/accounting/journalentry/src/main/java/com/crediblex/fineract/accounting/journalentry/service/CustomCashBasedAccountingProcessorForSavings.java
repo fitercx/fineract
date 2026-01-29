@@ -26,8 +26,8 @@ import org.springframework.stereotype.Component;
  * Hardcoded RBF logic: For RBF savings products, uses GL 200040 instead of LIABILITY_TRANSFER when loan is disbursed to
  * savings.
  *
- * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers
- * (handled on loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
+ * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
  */
 @Slf4j
 @Primary
@@ -40,9 +40,12 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
 
     // Hardcoded LOC Receivable Configuration
     private static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL"; // LOC Receivable loan product short_name
-    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current Asset
-    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current Liability
-    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting - Receivable - Current Liability
+    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
+                                                                         // Asset
+    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current
+                                                                          // Liability
+    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
+                                                                                // Receivable - Current Liability
 
     // Payment Type IDs
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
@@ -103,7 +106,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         FinancialActivity.LIABILITY_TRANSFER.getValue(), CashAccountsForSavings.SAVINGS_CONTROL.getValue(),
                         savingsProductId, paymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal);
             }
-            // Custom logic: Handle RBF and LOC Receivable withdrawals with account transfer (loan repayment from savings)
+            // Custom logic: Handle RBF and LOC Receivable withdrawals with account transfer (loan repayment from
+            // savings)
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
                 // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
@@ -128,9 +132,9 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 // Check if this is a LOC Receivable linked savings account
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086 (Invoice Discounting Clearing)
-                    log.info(
-                            "CustomCashBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
+                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086
+                    // (Invoice Discounting Clearing)
+                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
                     GLAccount debitAccount = getLOCReceivableDebitGLAccount();
                     GLAccount creditAccount = getLOCReceivableCreditGLAccount();
                     if (debitAccount != null && creditAccount != null) {
@@ -144,7 +148,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     }
                     continue;
                 }
-                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL 100062
+                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
+                // 100062
                 Long effectivePaymentTypeId = paymentTypeId;
                 if (paymentTypeId != null && paymentTypeId == 5L) {
                     // Payment type 5 is for loan disbursements, not normal deposits
@@ -159,10 +164,11 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), CashAccountsForSavings.SAVINGS_CONTROL.getValue(),
                         savingsProductId, effectivePaymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal);
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) || paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID))) {
+                    && paymentTypeId != null
+                    && (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) || paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID))) {
                 // Manual withdrawal with payment_type=5 (RBF) or payment_type=73 (LOC Receivable)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
-                
+
                 if (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) && linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
                     // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
                     GLAccount rbfGLAccount = getRBFGLAccount();
@@ -177,8 +183,10 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         log.error("RBF GL Account 200040 or Bank Account not found, using default logic");
                         super.createJournalEntriesForSavings(savingsDTO);
                     }
-                } else if (paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID) && linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR 100003 (Bank)
+                } else if (paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID) && linkedLoanProductId != null
+                        && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
+                    // 100003 (Bank)
                     log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");
                     GLAccount locLoanPayableAccount = getLOCReceivableLoanPayableGLAccount();
                     GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
@@ -276,23 +284,22 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
             return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
-            log.debug(
-                    "CustomCashBasedAccountingProcessorForSavings: Error checking LOC Receivable loan product for loanProductId {}: {}",
+            log.debug("CustomCashBasedAccountingProcessorForSavings: Error checking LOC Receivable loan product for loanProductId {}: {}",
                     loanProductId, e.getMessage());
             return false;
         }
     }
 
     /**
-     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by
-     * GL code to avoid hardcoding account ID
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by GL
+     * code to avoid hardcoding account ID
      */
     private GLAccount getLOCReceivableDebitGLAccount() {
         try {
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_DEBIT_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_RECEIVABLE_DEBIT_GL_CODE, e.getMessage());
+            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_DEBIT_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }
@@ -305,8 +312,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
         try {
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_CREDIT_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_RECEIVABLE_CREDIT_GL_CODE, e.getMessage());
+            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_CREDIT_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }
@@ -319,8 +326,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
         try {
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE, e.getMessage());
+            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }

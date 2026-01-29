@@ -23,8 +23,8 @@ import org.springframework.stereotype.Component;
  * Hardcoded RBF logic: For RBF savings products, uses GL 200040 instead of LIABILITY_TRANSFER when loan is disbursed to
  * savings.
  *
- * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers
- * (handled on loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
+ * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
  */
 @Slf4j
 @Primary
@@ -39,9 +39,12 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     // Hardcoded LOC Receivable Configuration
     private static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL"; // LOC Receivable loan product short_name
     private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable withdrawal payment type
-    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current Asset
-    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current Liability
-    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting - Receivable - Current Liability
+    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
+                                                                         // Asset
+    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current
+                                                                          // Liability
+    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
+                                                                                // Receivable - Current Liability
 
     private final AccountingProcessorHelper helper;
     private final GLAccountRepository glAccountRepository;
@@ -93,7 +96,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // Non-RBF/Non-LOC Receivable: Use default parent logic
                 super.createJournalEntriesForSavings(savingsDTO);
             }
-            // Custom logic: Handle RBF and LOC Receivable withdrawals with account transfer (loan repayment from savings)
+            // Custom logic: Handle RBF and LOC Receivable withdrawals with account transfer (loan repayment from
+            // savings)
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
                 // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
@@ -116,9 +120,9 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // Check if this is a LOC Receivable linked savings account
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086 (Invoice Discounting Clearing)
-                    log.info(
-                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
+                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086
+                    // (Invoice Discounting Clearing)
+                    log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
                     GLAccount debitAccount = getLOCReceivableDebitGLAccount();
                     GLAccount creditAccount = getLOCReceivableCreditGLAccount();
                     if (debitAccount != null && creditAccount != null) {
@@ -132,7 +136,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     }
                     continue;
                 }
-                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL 100062
+                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
+                // 100062
                 if (paymentTypeId != null && paymentTypeId == 5L) {
                     // Payment type 5 is for loan disbursements, not normal deposits
                     // Use NULL to get the default ASSET account (100062) instead of 100003
@@ -175,7 +180,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // LOC Receivable Manual withdrawal with payment_type=73
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR 100003 (Bank)
+                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
+                    // 100003 (Bank)
                     log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");
                     GLAccount locLoanPayableAccount = getLOCReceivableLoanPayableGLAccount();
                     GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
@@ -281,15 +287,15 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     }
 
     /**
-     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by
-     * GL code to avoid hardcoding account ID
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by GL
+     * code to avoid hardcoding account ID
      */
     private GLAccount getLOCReceivableDebitGLAccount() {
         try {
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_DEBIT_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_RECEIVABLE_DEBIT_GL_CODE, e.getMessage());
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_DEBIT_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }
@@ -302,8 +308,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
         try {
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_CREDIT_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_RECEIVABLE_CREDIT_GL_CODE, e.getMessage());
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_CREDIT_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }
