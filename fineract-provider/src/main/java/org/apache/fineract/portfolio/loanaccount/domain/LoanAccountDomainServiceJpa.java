@@ -136,9 +136,9 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
     private final JournalEntryWritePlatformService journalEntryWritePlatformService;
     protected final NoteRepository noteRepository;
     protected final BusinessEventNotifierService businessEventNotifierService;
-    private final LoanUtilService loanUtilService;
+    protected final LoanUtilService loanUtilService;
     private final StandingInstructionRepository standingInstructionRepository;
-    private final PostDatedChecksRepository postDatedChecksRepository;
+    protected final PostDatedChecksRepository postDatedChecksRepository;
     private final LoanCollateralManagementRepository loanCollateralManagementRepository;
     private final DelinquencyWritePlatformService delinquencyWritePlatformService;
     protected final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
@@ -326,7 +326,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         return newRepaymentTransaction;
     }
 
-    private LoanBusinessEvent getLoanRepaymentTypeBusinessEvent(LoanTransactionType repaymentTransactionType, boolean isRecoveryRepayment,
+    protected LoanBusinessEvent getLoanRepaymentTypeBusinessEvent(LoanTransactionType repaymentTransactionType, boolean isRecoveryRepayment,
             Loan loan) {
         LoanBusinessEvent repaymentEvent = null;
         if (repaymentTransactionType.isRepayment()) {
@@ -351,7 +351,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         return repaymentEvent;
     }
 
-    private LoanTransactionBusinessEvent getTransactionRepaymentTypeBusinessEvent(LoanTransactionType repaymentTransactionType,
+    protected LoanTransactionBusinessEvent getTransactionRepaymentTypeBusinessEvent(LoanTransactionType repaymentTransactionType,
             boolean isRecoveryRepayment, LoanTransaction transaction) {
         LoanTransactionBusinessEvent repaymentEvent = null;
         if (repaymentTransactionType.isRepayment()) {
@@ -447,7 +447,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
         postJournalEntries(loanAccount, existingTransactionIds, existingReversedTransactionIds, isAccountTransfer, false);
     }
 
-    private void postJournalEntries(final Loan loanAccount, final List<Long> existingTransactionIds,
+    protected void postJournalEntries(final Loan loanAccount, final List<Long> existingTransactionIds,
             final List<Long> existingReversedTransactionIds, boolean isAccountTransfer, boolean isLoanToLoanTransfer) {
 
         final MonetaryCurrency currency = loanAccount.getCurrency();
@@ -1062,7 +1062,7 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
     }
 
     @SuppressWarnings("null")
-    private void makeRepayment(final Loan loan, final LoanTransaction repaymentTransaction,
+    protected void makeRepayment(final Loan loan, final LoanTransaction repaymentTransaction,
             final LoanLifecycleStateMachine loanLifecycleStateMachine, final List<Long> existingTransactionIds,
             final List<Long> existingReversedTransactionIds, final ScheduleGeneratorDTO scheduleGeneratorDTO) {
         loanChargeValidator.validateRepaymentTypeTransactionNotBeforeAChargeRefund(loan, repaymentTransaction, "created");
