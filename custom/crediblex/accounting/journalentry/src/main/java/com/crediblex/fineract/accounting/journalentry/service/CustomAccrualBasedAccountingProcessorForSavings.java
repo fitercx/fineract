@@ -144,16 +144,17 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
             }
 
             if (!unprocessedTransactions.isEmpty()) {
-                log.debug("CustomAccrualBasedAccountingProcessorForSavings: {} transactions were handled by custom logic, delegating {} unprocessed transactions to parent processor",
+                log.debug(
+                        "CustomAccrualBasedAccountingProcessorForSavings: {} transactions were handled by custom logic, delegating {} unprocessed transactions to parent processor",
                         processedTransactionIndices.size(), unprocessedTransactions.size());
 
                 // Call parent's processing logic for handled transactions that use default logic
                 for (int i = 0; i < savingsDTO.getNewSavingsTransactions().size(); i++) {
                     if (processedTransactionIndices.contains(i)) {
                         SavingsTransactionDTO tx = savingsDTO.getNewSavingsTransactions().get(i);
-                        if ((tx.getTransactionType().isDeposit() && tx.isAccountTransfer()) ||
-                            (tx.getTransactionType().isWithdrawal() && tx.isAccountTransfer()) ||
-                            (tx.getTransactionType().isDeposit() && !tx.isAccountTransfer())) {
+                        if ((tx.getTransactionType().isDeposit() && tx.isAccountTransfer())
+                                || (tx.getTransactionType().isWithdrawal() && tx.isAccountTransfer())
+                                || (tx.getTransactionType().isDeposit() && !tx.isAccountTransfer())) {
                             // These need parent logic
                             unprocessedTransactions.add(tx);
                         }

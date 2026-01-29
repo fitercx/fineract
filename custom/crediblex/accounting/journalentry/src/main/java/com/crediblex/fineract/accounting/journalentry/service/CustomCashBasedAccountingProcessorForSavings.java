@@ -17,7 +17,6 @@ import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHe
 import org.apache.fineract.accounting.journalentry.service.CashBasedAccountingProcessorForSavings;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
-import org.apache.fineract.portfolio.savings.data.SavingsAccountTransactionDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -113,18 +112,21 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
                 // Check if this is a charge reversal deposit
                 // Charge reversals use transaction type CHARGE_REVERSAL
-                // For charge reversals: DR 100062, CR 210003 (same as normal deposits, but we need to prevent duplicates)
+                // For charge reversals: DR 100062, CR 210003 (same as normal deposits, but we need to prevent
+                // duplicates)
                 boolean isChargeReversalDeposit = isChargeReversalTransaction(savingsTransactionDTO);
 
                 if (isChargeReversalDeposit) {
                     // Charge reversal deposit: Use GL 100062 and 210003 (same as normal deposits)
                     // DR: 100062 (Client Receivable Clearing Acc)
                     // CR: 210003 (Working Capital Loan / SAVINGS_CONTROL)
-                    log.info("CustomCashBasedAccountingProcessorForSavings: Charge reversal deposit detected for transaction {}, using GL 100062 and 210003", transactionId);
-                    
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: Charge reversal deposit detected for transaction {}, using GL 100062 and 210003",
+                            transactionId);
+
                     GLAccount debitAccount = glAccountRepository.findOneByGlCode("100062")
                             .orElseThrow(() -> new RuntimeException("GL Account 100062 (Client Receivable Clearing Acc) not found"));
-                    
+
                     // Get SAVINGS_CONTROL account (should be 210003 for RBF)
                     GLAccount creditAccount = getSavingsControlAccount(savingsProductId, paymentTypeId);
                     if (creditAccount == null) {
@@ -132,13 +134,14 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         creditAccount = glAccountRepository.findOneByGlCode("210003")
                                 .orElseThrow(() -> new RuntimeException("GL Account 210003 (Working Capital Loan) not found"));
                     }
-                    
+
                     // Create manual journal entries: DR 100062, CR 210003 (only once, no duplicates)
                     this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
                             transactionDate, amount);
                     this.helper.createCreditJournalEntryForSavings(office, currencyCode, creditAccount, savingsId, transactionId,
                             transactionDate, amount);
-                    // IMPORTANT: Mark as processed to prevent calling parent/default logic which would create duplicates
+                    // IMPORTANT: Mark as processed to prevent calling parent/default logic which would create
+                    // duplicates
                     processedTransactionIndices.add(i);
                 } else {
                     // Normal deposits (not account transfers) - use default GL 100062
@@ -194,11 +197,13 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             }
 
             if (!unprocessedTransactions.isEmpty()) {
-                log.debug("CustomCashBasedAccountingProcessorForSavings: {} transactions were handled by custom logic, delegating {} unprocessed transactions to parent processor",
+                log.debug(
+                        "CustomCashBasedAccountingProcessorForSavings: {} transactions were handled by custom logic, delegating {} unprocessed transactions to parent processor",
                         processedTransactionIndices.size(), unprocessedTransactions.size());
 
                 // Create a temporary wrapper to pass only unprocessed transactions to parent
-                // We'll call parent's helper methods directly for each unprocessed transaction to avoid passing entire DTO
+                // We'll call parent's helper methods directly for each unprocessed transaction to avoid passing entire
+                // DTO
                 for (SavingsTransactionDTO unprocessedTx : unprocessedTransactions) {
                     final LocalDate transactionDate = unprocessedTx.getTransactionDate();
                     final String transactionId = unprocessedTx.getTransactionId();
@@ -215,7 +220,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         this.helper.createCashBasedJournalEntriesAndReversalsForSavings(office, currencyCode,
                                 CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), CashAccountsForSavings.SAVINGS_CONTROL.getValue(),
                                 savingsProductId, paymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal);
-                        if (unprocessedTx.getTransactionType().isChargeTransaction() && penaltyPayments != null && !penaltyPayments.isEmpty()) {
+                        if (unprocessedTx.getTransactionType().isChargeTransaction() && penaltyPayments != null
+                                && !penaltyPayments.isEmpty()) {
                             this.helper.createCashBasedJournalEntriesAndReversalsForSavingsCharges(office, currencyCode,
                                     CashAccountsForSavings.SAVINGS_CONTROL, CashAccountsForSavings.INCOME_FROM_PENALTIES, savingsProductId,
                                     paymentTypeId, savingsId, transactionId, transactionDate, amount.subtract(overdraftAmount), isReversal,
@@ -328,32 +334,37 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Check if a savings transaction is a charge reversal by transaction type or note.
-     * Charge reversals use transaction type CHARGE_REVERSAL to distinguish them from regular deposits.
-     * For charge reversals, we use GL 100062 and 210003 (same as normal deposits, but we handle them explicitly to prevent duplicates).
-     * 
-     * Note: We check both transaction type and notes because the transaction type might be updated AFTER GL entries are created.
+     * Check if a savings transaction is a charge reversal by transaction type or note. Charge reversals use transaction
+     * type CHARGE_REVERSAL to distinguish them from regular deposits. For charge reversals, we use GL 100062 and 210003
+     * (same as normal deposits, but we handle them explicitly to prevent duplicates).
+     *
+     * Note: We check both transaction type and notes because the transaction type might be updated AFTER GL entries are
+     * created.
      */
     private boolean isChargeReversalTransaction(SavingsTransactionDTO savingsTransactionDTO) {
         try {
-            // Primary check: Check if the transaction type is CHARGE_REVERSAL (using enum constant instead of hardcoded ID)
+            // Primary check: Check if the transaction type is CHARGE_REVERSAL (using enum constant instead of hardcoded
+            // ID)
             if (savingsTransactionDTO.getTransactionType() != null) {
                 Integer transactionTypeId = savingsTransactionDTO.getTransactionType().getId().intValue();
                 SavingsAccountTransactionType transactionType = SavingsAccountTransactionType.fromInt(transactionTypeId);
-                
+
                 if (transactionType == SavingsAccountTransactionType.CHARGE_REVERSAL) {
-                    log.info("CustomCashBasedAccountingProcessorForSavings: Detected charge reversal transaction (CHARGE_REVERSAL) - will use GL 100062 and 210003");
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: Detected charge reversal transaction (CHARGE_REVERSAL) - will use GL 100062 and 210003");
                     return true;
                 }
             }
 
-            // Fallback: Check notes if transaction type is not CHARGE_REVERSAL yet (transaction type might be updated after GL creation)
+            // Fallback: Check notes if transaction type is not CHARGE_REVERSAL yet (transaction type might be updated
+            // after GL creation)
             // This handles the case where transaction type is updated AFTER the deposit is created
             String transactionId = savingsTransactionDTO.getTransactionId();
             if (transactionId != null) {
                 boolean isChargeReversalByNote = isChargeReversalDeposit(transactionId, null);
                 if (isChargeReversalByNote) {
-                    log.info("CustomCashBasedAccountingProcessorForSavings: Detected charge reversal transaction via note - will use GL 100062 and 210003");
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: Detected charge reversal transaction via note - will use GL 100062 and 210003");
                     return true;
                 }
             }
@@ -366,9 +377,9 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Check if a savings deposit transaction is for a charge reversal by querying the transaction note.
-     * This is a fallback method for backwards compatibility if deposits were created without the CHARGE_REVERSAL transaction type.
-     * Charge reversal deposits have a note containing "Refund for reversed charge".
+     * Check if a savings deposit transaction is for a charge reversal by querying the transaction note. This is a
+     * fallback method for backwards compatibility if deposits were created without the CHARGE_REVERSAL transaction
+     * type. Charge reversal deposits have a note containing "Refund for reversed charge".
      *
      * Notes are stored in the m_note table, linked by savings_account_transaction_id.
      */
@@ -377,23 +388,26 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             // Extract numeric transaction ID from string like "S14119"
             String numericId = transactionId.replace("S", "").trim();
             Long transactionNumericId = Long.parseLong(numericId);
-            
+
             // Query the m_note table for notes related to this savings transaction
             String sql = "SELECT note FROM m_note WHERE savings_account_transaction_id = ? LIMIT 1";
             try {
                 String note = jdbcTemplate.queryForObject(sql, String.class, transactionNumericId);
                 boolean isChargeReversal = note != null && note.contains("Refund for reversed charge");
                 if (isChargeReversal) {
-                    log.info("CustomCashBasedAccountingProcessorForSavings: Transaction {} is a charge reversal deposit (note: {}) - will use GL 300015 instead of 100062",
-                        transactionId, note);
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: Transaction {} is a charge reversal deposit (note: {}) - will use GL 300015 instead of 100062",
+                            transactionId, note);
                 }
                 return isChargeReversal;
             } catch (org.springframework.dao.EmptyResultDataAccessException e) {
-                log.debug("CustomCashBasedAccountingProcessorForSavings: No note found for savings transaction ID {}", transactionNumericId);
+                log.debug("CustomCashBasedAccountingProcessorForSavings: No note found for savings transaction ID {}",
+                        transactionNumericId);
                 return false;
             }
         } catch (Exception e) {
-            log.warn("CustomCashBasedAccountingProcessorForSavings: Error checking if transaction {} is charge reversal: {}", transactionId, e.getMessage());
+            log.warn("CustomCashBasedAccountingProcessorForSavings: Error checking if transaction {} is charge reversal: {}", transactionId,
+                    e.getMessage());
             return false;
         }
     }

@@ -1,5 +1,10 @@
 package com.crediblex.fineract.accounting.journalentry.service;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.data.JournalEntryAssociationParametersData;
 import org.apache.fineract.accounting.journalentry.data.JournalEntryData;
@@ -14,21 +19,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.LocalDate;
-import java.util.Objects;
-
 /**
  * Custom Journal Entry Read Platform Service to fix duplicate rows issue.
- * 
- * The issue: When transactionDetails=true, the LEFT JOIN with m_note table can create
- * duplicate rows if a transaction has multiple notes. This causes the same Entry ID
- * to appear multiple times in the UI.
- * 
- * Fix: Use a subquery to get only the first/most recent note per transaction,
- * preventing duplicate rows in the result set.
+ *
+ * The issue: When transactionDetails=true, the LEFT JOIN with m_note table can create duplicate rows if a transaction
+ * has multiple notes. This causes the same Entry ID to appear multiple times in the UI.
+ *
+ * Fix: Use a subquery to get only the first/most recent note per transaction, preventing duplicate rows in the result
+ * set.
  */
 @Slf4j
 @Service
@@ -40,8 +38,7 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
     private final org.apache.fineract.infrastructure.core.service.PaginationHelper paginationHelper;
     private final org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator sqlGenerator;
 
-    public CustomJournalEntryReadPlatformServiceImpl(
-            JdbcTemplate jdbcTemplate,
+    public CustomJournalEntryReadPlatformServiceImpl(JdbcTemplate jdbcTemplate,
             org.apache.fineract.accounting.glaccount.service.GLAccountReadPlatformService glAccountReadPlatformService,
             org.apache.fineract.organisation.office.service.OfficeReadPlatformService officeReadPlatformService,
             org.apache.fineract.infrastructure.security.utils.ColumnValidator columnValidator,
@@ -56,8 +53,8 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
     }
 
     /**
-     * Custom GLJournalEntryMapper that fixes the duplicate note issue by using a subquery
-     * to get only one note per transaction.
+     * Custom GLJournalEntryMapper that fixes the duplicate note issue by using a subquery to get only one note per
+     * transaction.
      */
     private static final class CustomGLJournalEntryMapper implements RowMapper<JournalEntryData> {
 
@@ -70,8 +67,7 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
 
         public String schema() {
             StringBuilder sb = new StringBuilder();
-            sb.append(" journalEntry.id as id, glAccount.classification_enum as classification ,")
-                    .append("journalEntry.transaction_id,")
+            sb.append(" journalEntry.id as id, glAccount.classification_enum as classification ,").append("journalEntry.transaction_id,")
                     .append(" glAccount.name as glAccountName, glAccount.gl_code as glAccountCode,glAccount.id as glAccountId, ")
                     .append(" journalEntry.office_id as officeId, office.name as officeName, journalEntry.ref_num as referenceNumber, ")
                     .append(" journalEntry.manual_entry as manualEntry,journalEntry.entry_date as transactionDate, ")
@@ -104,28 +100,19 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
                         .append(" left join m_savings_account_transaction as st on journalEntry.savings_transaction_id = st.id ")
                         .append(" left join m_payment_detail as pd on lt.payment_detail_id = pd.id or st.payment_detail_id = pd.id or journalEntry.payment_details_id = pd.id")
                         .append(" left join m_payment_type as pt on pt.id = pd.payment_type_id ");
-                
+
                 // FIX: Use a subquery to get only the most recent note per transaction to prevent duplicates
                 // This ensures each journal entry appears only once, even if there are multiple notes
                 // The subquery gets the note with the maximum ID (most recent) for each transaction
                 // This works for both PostgreSQL and MySQL
                 // We use separate subqueries for loan and savings transactions to handle NULLs correctly
-                sb.append(" left join (")
-                        .append("   SELECT id, note, loan_transaction_id, savings_account_transaction_id")
-                        .append("   FROM m_note n1")
-                        .append("   WHERE n1.id IN (")
-                        .append("     SELECT MAX(id)")
-                        .append("     FROM m_note")
+                sb.append(" left join (").append("   SELECT id, note, loan_transaction_id, savings_account_transaction_id")
+                        .append("   FROM m_note n1").append("   WHERE n1.id IN (").append("     SELECT MAX(id)").append("     FROM m_note")
                         .append("     WHERE (loan_transaction_id IS NOT NULL OR savings_account_transaction_id IS NOT NULL)")
-                        .append("     GROUP BY ")
-                        .append("       COALESCE(loan_transaction_id, -1),")
-                        .append("       COALESCE(savings_account_transaction_id, -1)")
-                        .append("   )")
-                        .append(" ) as note on (")
-                        .append("   (lt.id IS NOT NULL AND lt.id = note.loan_transaction_id)")
-                        .append("   OR")
-                        .append("   (st.id IS NOT NULL AND st.id = note.savings_account_transaction_id)")
-                        .append(" ) ");
+                        .append("     GROUP BY ").append("       COALESCE(loan_transaction_id, -1),")
+                        .append("       COALESCE(savings_account_transaction_id, -1)").append("   )").append(" ) as note on (")
+                        .append("   (lt.id IS NOT NULL AND lt.id = note.loan_transaction_id)").append("   OR")
+                        .append("   (st.id IS NOT NULL AND st.id = note.savings_account_transaction_id)").append(" ) ");
             }
             return sb.toString();
         }
@@ -141,12 +128,14 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
             final String glAccountName = rs.getString("glAccountName");
             final Long glAccountId = rs.getLong("glAccountId");
             final int accountTypeId = JdbcSupport.getInteger(rs, "classification");
-            final org.apache.fineract.infrastructure.core.data.EnumOptionData accountType = org.apache.fineract.accounting.common.AccountingEnumerations.gLAccountType(accountTypeId);
+            final org.apache.fineract.infrastructure.core.data.EnumOptionData accountType = org.apache.fineract.accounting.common.AccountingEnumerations
+                    .gLAccountType(accountTypeId);
             final LocalDate transactionDate = JdbcSupport.getLocalDate(rs, "transactionDate");
             final Boolean manualEntry = rs.getBoolean("manualEntry");
             final BigDecimal amount = rs.getBigDecimal("amount");
             final int entryTypeId = JdbcSupport.getInteger(rs, "entryType");
-            final org.apache.fineract.infrastructure.core.data.EnumOptionData entryType = org.apache.fineract.accounting.common.AccountingEnumerations.journalEntryType(entryTypeId);
+            final org.apache.fineract.infrastructure.core.data.EnumOptionData entryType = org.apache.fineract.accounting.common.AccountingEnumerations
+                    .journalEntryType(entryTypeId);
             final String transactionId = rs.getString("transactionId");
             final Integer entityTypeId = JdbcSupport.getInteger(rs, "entityType");
             org.apache.fineract.infrastructure.core.data.EnumOptionData entityType = null;
@@ -171,8 +160,8 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
             final String currencyDisplaySymbol = rs.getString("currencyDisplaySymbol");
             final Integer currencyDigits = JdbcSupport.getInteger(rs, "currencyDigits");
             final Integer inMultiplesOf = JdbcSupport.getInteger(rs, "inMultiplesOf");
-            final org.apache.fineract.organisation.monetary.data.CurrencyData currency = new org.apache.fineract.organisation.monetary.data.CurrencyData(currencyCode, currencyName, currencyDigits, inMultiplesOf, currencyDisplaySymbol,
-                    currencyNameCode);
+            final org.apache.fineract.organisation.monetary.data.CurrencyData currency = new org.apache.fineract.organisation.monetary.data.CurrencyData(
+                    currencyCode, currencyName, currencyDigits, inMultiplesOf, currencyDisplaySymbol, currencyNameCode);
 
             if (associationParametersData.isRunningBalanceRequired()) {
                 officeRunningBalance = rs.getBigDecimal("officeRunningBalance");
@@ -186,14 +175,15 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
                 final Long paymentTypeId = JdbcSupport.getLong(rs, "paymentTypeId");
                 if (paymentTypeId != null) {
                     final String typeName = rs.getString("paymentTypeName");
-                    final org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData paymentType = org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData.instance(paymentTypeId, typeName);
+                    final org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData paymentType = org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData
+                            .instance(paymentTypeId, typeName);
                     final String accountNumber = rs.getString("accountNumber");
                     final String checkNumber = rs.getString("checkNumber");
                     final String routingCode = rs.getString("routingCode");
                     final String receiptNumber = rs.getString("receiptNumber");
                     final String bankNumber = rs.getString("bankNumber");
-                    paymentDetailData = new org.apache.fineract.portfolio.paymentdetail.data.PaymentDetailData(id, paymentType, accountNumber, checkNumber, routingCode, receiptNumber,
-                            bankNumber);
+                    paymentDetailData = new org.apache.fineract.portfolio.paymentdetail.data.PaymentDetailData(id, paymentType,
+                            accountNumber, checkNumber, routingCode, receiptNumber, bankNumber);
                 }
                 org.apache.fineract.portfolio.note.data.NoteData noteData = null;
                 final Long noteId = JdbcSupport.getLong(rs, "noteId");
@@ -214,16 +204,17 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
                 if (org.apache.fineract.portfolio.account.PortfolioAccountType.fromInt(entityTypeId).isLoanAccount()) {
                     final org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData loanTransactionType = org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations
                             .transactionType(JdbcSupport.getInteger(rs, "loanTransactionType"));
-                    transactionTypeEnumData = new org.apache.fineract.accounting.journalentry.data.TransactionTypeEnumData(loanTransactionType.getId(), loanTransactionType.getCode(),
-                            loanTransactionType.getValue());
+                    transactionTypeEnumData = new org.apache.fineract.accounting.journalentry.data.TransactionTypeEnumData(
+                            loanTransactionType.getId(), loanTransactionType.getCode(), loanTransactionType.getValue());
                 } else if (org.apache.fineract.portfolio.account.PortfolioAccountType.fromInt(entityTypeId).isSavingsAccount()) {
                     final org.apache.fineract.portfolio.savings.data.SavingsAccountTransactionEnumData savingsTransactionType = org.apache.fineract.portfolio.savings.service.SavingsEnumerations
                             .transactionType(JdbcSupport.getInteger(rs, "savingsTransactionType"));
-                    transactionTypeEnumData = new org.apache.fineract.accounting.journalentry.data.TransactionTypeEnumData(savingsTransactionType.getId(), savingsTransactionType.getCode(),
-                            savingsTransactionType.getValue());
+                    transactionTypeEnumData = new org.apache.fineract.accounting.journalentry.data.TransactionTypeEnumData(
+                            savingsTransactionType.getId(), savingsTransactionType.getCode(), savingsTransactionType.getValue());
                 }
 
-                transactionDetailData = new org.apache.fineract.accounting.journalentry.data.TransactionDetailData(transaction, paymentDetailData, noteData, transactionTypeEnumData);
+                transactionDetailData = new org.apache.fineract.accounting.journalentry.data.TransactionDetailData(transaction,
+                        paymentDetailData, noteData, transactionTypeEnumData);
             }
             return new JournalEntryData(id, officeId, officeName, glAccountName, glAccountId, glCode, accountType, transactionDate,
                     entryType, amount, transactionId, manualEntry, entityType, entityId, createdByUserId, submittedOnDate,
@@ -351,4 +342,3 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
         }
     }
 }
-
