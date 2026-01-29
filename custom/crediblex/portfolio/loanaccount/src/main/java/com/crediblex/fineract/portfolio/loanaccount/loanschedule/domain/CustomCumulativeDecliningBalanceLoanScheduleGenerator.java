@@ -129,6 +129,9 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
         Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
         boolean isPreCreationScenario = totalDisbursed.isZero() && !loanApplicationTerms.getDisbursementDatas().isEmpty();
 
+        // Collect dates to remove from map (undisbursed tranches for existing loans)
+        List<LocalDate> datesToRemove = new ArrayList<>();
+
         for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
             LocalDate disbursementDate = disburseDetail.getKey();
             Money disbursementAmount = disburseDetail.getValue();
@@ -148,6 +151,11 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                 // Existing loan: only include disbursed tranches
                 boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
                 shouldProcess = allDisbursed;
+
+                // If not all disbursed, mark for removal from map
+                if (!shouldProcess && !tranchesOnDate.isEmpty()) {
+                    datesToRemove.add(disbursementDate);
+                }
             }
 
             if (DateUtils.isAfter(disbursementDate, scheduleParams.getPeriodStartDate())
@@ -202,6 +210,14 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
                 scheduleParams.addPrincipalToBeScheduled(remainingPrincipal);
                 loanApplicationTerms.setPrincipal(loanApplicationTerms.getPrincipal().plus(remainingPrincipal));
             }
+        }
+
+        // Remove undisbursed tranches from disburseDetailMap to prevent them from being included in outstanding balance
+        // calculations
+        // This is critical - calculateOutstandingBalanceAsPerRest uses this map and will add ALL entries to outstanding
+        // balance
+        for (LocalDate dateToRemove : datesToRemove) {
+            scheduleParams.getDisburseDetailMap().remove(dateToRemove);
         }
     }
 
@@ -378,6 +394,51 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
         return periods;
     }
 
+    /**
+     * Override to fix EMI calculation for multi-disburse loans.
+     *
+     * <p>
+     * For multi-disburse loans with existing disbursements, the EMI should be calculated using the total disbursed
+     * amount, not the approved principal. This ensures equal installments are calculated correctly based on actual
+     * disbursed principal.
+     */
+    @Override
+    protected void updateAmortization(final MathContext mc, final LoanApplicationTerms loanApplicationTerms, int periodNumber,
+            Money outstandingBalance) {
+        // For multi-disburse loans with existing disbursements, use total disbursed amount for EMI calculation
+        if (loanApplicationTerms.isMultiDisburseLoan() && loanApplicationTerms.getAmortizationMethod().isEqualInstallment()) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+
+            if (totalDisbursed.isGreaterThanZero()) {
+                // Use total disbursed amount instead of outstandingBalance (which might be approved principal)
+                Money principalForEmiCalculation = totalDisbursed.minus(loanApplicationTerms.getDownPaymentAmount());
+                super.updateAmortization(mc, loanApplicationTerms, periodNumber, principalForEmiCalculation);
+                return;
+            } else if (totalMultiDisbursed.isGreaterThanZero()) {
+                // Pre-creation scenario - use total multi-disbursed
+                Money principalForEmiCalculation = totalMultiDisbursed.minus(loanApplicationTerms.getDownPaymentAmount());
+                super.updateAmortization(mc, loanApplicationTerms, periodNumber, principalForEmiCalculation);
+                return;
+            }
+        }
+
+        // For non-multi-disburse or pre-creation scenarios, use parent implementation
+        super.updateAmortization(mc, loanApplicationTerms, periodNumber, outstandingBalance);
+    }
+
+    /**
+     * Override to fix last installment adjustment for multi-disburse loans.
+     *
+     * <p>
+     * The parent's adjustPrincipalIfLastRepaymentPeriod uses loanApplicationTerms.getPrincipal() which for
+     * multi-disburse loans may be the approved principal (150,000) instead of the actual disbursed principal (65,000).
+     * This causes the last installment to be incorrectly inflated.
+     *
+     * <p>
+     * This fix ensures that for multi-disburse loans with existing disbursements, the last installment adjustment uses
+     * the total disbursed amount instead of the approved principal.
+     */
     @Override
     public PrincipalInterest calculatePrincipalInterestComponentsForPeriod(final PaymentPeriodsInOneYearCalculator calculator,
             final BigDecimal interestCalculationGraceOnRepaymentPeriodFraction, final Money totalCumulativePrincipal,
@@ -385,9 +446,57 @@ public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends Cumul
             final Money outstandingBalance, final LoanApplicationTerms loanApplicationTerms, final int periodNumber, final MathContext mc,
             final TreeMap<LocalDate, Money> principalVariation, final Map<LocalDate, Money> compoundingMap, final LocalDate periodStartDate,
             final LocalDate periodEndDate, final Collection<LoanTermVariationsData> termVariations) {
-        return super.calculatePrincipalInterestComponentsForPeriod(calculator, interestCalculationGraceOnRepaymentPeriodFraction,
-                totalCumulativePrincipal, totalCumulativeInterest, totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace,
-                outstandingBalance, loanApplicationTerms, periodNumber, mc, principalVariation, compoundingMap, periodStartDate,
-                periodEndDate, termVariations);
+
+        PrincipalInterest result = super.calculatePrincipalInterestComponentsForPeriod(calculator,
+                interestCalculationGraceOnRepaymentPeriodFraction, totalCumulativePrincipal, totalCumulativeInterest,
+                totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace, outstandingBalance, loanApplicationTerms, periodNumber, mc,
+                principalVariation, compoundingMap, periodStartDate, periodEndDate, termVariations);
+
+        // Fix last installment adjustment for multi-disburse loans
+        if (loanApplicationTerms.isMultiDisburseLoan() && loanApplicationTerms.isLastRepaymentPeriod(periodNumber)) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+
+            // Only adjust if we have disbursed amounts (existing loan scenario)
+            if (totalDisbursed.isGreaterThanZero()) {
+                Money originalPrincipal = result.principal();
+                Money originalInterest = result.interest();
+                Money cumulativePrincipalBeforeThisPeriod = totalCumulativePrincipal;
+                Money remainingPrincipalToPay = totalDisbursed.minus(cumulativePrincipalBeforeThisPeriod);
+
+                // For the last period, we should clear the remaining balance exactly
+                // This may result in a slightly different total than EMI (due to rounding), which is acceptable
+                Money fixedEmiAmount = loanApplicationTerms.getFixedEmiAmount() != null
+                        ? Money.of(loanApplicationTerms.getCurrency(), loanApplicationTerms.getFixedEmiAmount())
+                        : null;
+
+                // Calculate what the installment would be if we use remaining principal
+                Money totalInstallmentWithRemainingPrincipal = remainingPrincipalToPay.plus(originalInterest);
+
+                // Check if using remaining principal keeps us close to EMI (within 1% tolerance)
+                Money tolerance = fixedEmiAmount != null ? fixedEmiAmount.multipliedBy(BigDecimal.valueOf(0.01)) // 1%
+                                                                                                                 // of
+                                                                                                                 // EMI
+                        : Money.of(loanApplicationTerms.getCurrency(), BigDecimal.valueOf(100)); // Default tolerance
+
+                if (fixedEmiAmount != null && fixedEmiAmount.isGreaterThanZero()) {
+                    Money differenceFromEmi = totalInstallmentWithRemainingPrincipal.minus(fixedEmiAmount).abs();
+
+                    // If the difference is within tolerance, use remaining principal to clear balance exactly
+                    // This matches the single-tranche loan behavior where Period 6 is slightly higher
+                    if (differenceFromEmi.isLessThan(tolerance)) {
+                        return new PrincipalInterest(remainingPrincipalToPay, result.interest(), result.interestPaymentDueToGrace());
+                    } else {
+                        // Difference is significant - use EMI-based calculation
+                        Money principalForEqualInstallment = fixedEmiAmount.minus(originalInterest);
+                        return new PrincipalInterest(principalForEqualInstallment, result.interest(), result.interestPaymentDueToGrace());
+                    }
+                } else {
+                    // No fixed EMI - use remaining principal to clear balance exactly
+                    return new PrincipalInterest(remainingPrincipalToPay, result.interest(), result.interestPaymentDueToGrace());
+                }
+            }
+        }
+
+        return result;
     }
 }

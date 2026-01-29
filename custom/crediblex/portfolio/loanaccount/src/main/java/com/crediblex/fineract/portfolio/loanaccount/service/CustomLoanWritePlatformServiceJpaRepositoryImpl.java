@@ -1512,7 +1512,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (accountTransferDetails.fromSavingsAccount() != null && accountTransferDetails.toLoanAccount() != null) {
 
                 Long loanId = accountTransferDetails.toLoanAccount().getId();
+                Long fromSavingsAccountId = accountTransferDetails.fromSavingsAccount().getId();
                 Optional<LoanLineOfCreditParams> lineOfCreditParams = loanLineOfCreditParamsRepository.findByLoanId(loanId);
+
                 if (lineOfCreditParams.isPresent()) {
                     LineOfCredit lineOfCredit = lineOfCreditParams.get().getLineOfCredit();
 
@@ -1520,15 +1522,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                             .stream().findFirst();
 
                     if (acctTransferTransaction.isEmpty()) {
-                        throw new GeneralPlatformDomainRuleException("account.transfer.transaction.not.found",
-                                "Account transfer transaction not found for transfer from savings account id: "
-                                        + accountTransferDetails.fromSavingsAccount().getId() + " to loan account id: "
-                                        + accountTransferDetails.toLoanAccount().getId());
+                        throw new GeneralPlatformDomainRuleException("account.transfer.transaction.not.found", String.format(
+                                "Account transfer transaction not found for transfer from savings account id: %d to loan account id: %d",
+                                fromSavingsAccountId, loanId));
                     }
 
                     LoanTransaction loanTransaction = acctTransferTransaction.get().getToLoanTransaction();
-                    BigDecimal amount;
 
+                    // Null check before dereferencing loanTransaction
+                    if (loanTransaction == null) {
+                        throw new GeneralPlatformDomainRuleException("account.transfer.loan.transaction.not.found",
+                                String.format("Loan transaction not found for transfer from savings account id: %d to loan account id: %d",
+                                        fromSavingsAccountId, loanId));
+                    }
+
+                    BigDecimal amount;
                     if (lineOfCredit.getProductType().isReceivable()) {
                         amount = loanTransaction.getAmount();
                     } else {
@@ -1536,9 +1544,49 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     }
 
                     // Pass loan transaction ID for better traceability
-                    Long loanTransactionId = loanTransaction != null ? loanTransaction.getId() : null;
-                    lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, lineOfCredit,
-                            loanTransaction.getTransactionDate(), LineOfCreditTransactionType.REPAYMENT);
+                    Long loanTransactionId = loanTransaction.getId();
+                    LocalDate transactionDate = loanTransaction.getTransactionDate();
+
+                    try {
+                        log.debug(
+                                "Updating LOC balance for Savings → Loan transfer. LOC ID: {}, Loan ID: {}, "
+                                        + "Loan Transaction ID: {}, From Savings Account ID: {}, Amount: {}, Transaction Date: {}",
+                                lineOfCredit.getId(), loanId, loanTransactionId, fromSavingsAccountId, amount, transactionDate);
+
+                        lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, lineOfCredit, transactionDate,
+                                LineOfCreditTransactionType.REPAYMENT);
+
+                        log.debug("Successfully updated LOC balance. LOC ID: {}, Loan ID: {}, Consumed Amount: {}, Available Balance: {}",
+                                lineOfCredit.getId(), loanId, lineOfCredit.getSummary().getConsumedAmount(),
+                                lineOfCredit.getSummary().getAvailableBalance());
+                    } catch (PlatformApiDataValidationException e) {
+                        // Wrap with additional context for better error reporting
+                        log.error("""
+                                Failed to update LOC balance for Savings → Loan transfer.
+                                LOC ID: {}, Loan ID: {}, Loan Transaction ID: {}, From Savings Account ID: {},
+                                Amount: {}, Current LOC Consumed Amount: {}, Current LOC Available Balance: {},
+                                Error: {}
+                                """, lineOfCredit.getId(), loanId, loanTransactionId, fromSavingsAccountId, amount,
+                                lineOfCredit.getSummary().getConsumedAmount(), lineOfCredit.getSummary().getAvailableBalance(),
+                                e.getMessage());
+
+                        // Re-throw with enhanced context using text block
+                        throw new PlatformApiDataValidationException("error.msg.loc.balance.update.failed", """
+                                Failed to update LOC balance for Savings → Loan transfer.
+                                LOC ID: %d, Loan ID: %d, From Savings Account ID: %d, Amount: %s,
+                                Current LOC Consumed Amount: %s, Error: %s
+                                """.formatted(lineOfCredit.getId(), loanId, fromSavingsAccountId, amount,
+                                lineOfCredit.getSummary().getConsumedAmount(), e.getDefaultUserMessage()), "locBalanceUpdate", e);
+                    } catch (Exception e) {
+                        log.error("""
+                                Unexpected error updating LOC balance for Savings → Loan transfer.
+                                LOC ID: {}, Loan ID: {}, Loan Transaction ID: {}, From Savings Account ID: {}, Amount: {}
+                                """, lineOfCredit.getId(), loanId, loanTransactionId, fromSavingsAccountId, amount, e);
+                        throw new GeneralPlatformDomainRuleException("error.msg.loc.balance.update.unexpected.error", """
+                                Unexpected error updating LOC balance.
+                                LOC ID: %d, Loan ID: %d, From Savings Account ID: %d, Amount: %s, Error: %s
+                                """.formatted(lineOfCredit.getId(), loanId, fromSavingsAccountId, amount, e.getMessage()), e);
+                    }
                 }
 
             }

@@ -11,12 +11,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class LineOfCreditBalanceUpdateService {
@@ -121,13 +123,19 @@ public class LineOfCreditBalanceUpdateService {
             // Validate balance consistency before processing using the already fetched latest transaction
             validateBalanceConsistency(lineOfCredit.getId(), currentAvailableBalance, latestTransaction);
 
-            updateLocSummaryBalances(lineOfCredit, amount, lineOfCreditTransactionType);
+            // For increment transactions (repayments), check if reconciliation is needed before updating
+            if (lineOfCreditTransactionType.isIncrementTransaction() && !lineOfCreditTransactionType.isBalanceIncrement()) {
+                validateAndReconcileIfNeeded(lineOfCredit, amount, loanId);
+            }
 
-            BigDecimal transactionAvailableBalanceAfter = calculateTransactionBalanceAfter(currentAvailableBalance, amount,
-                    lineOfCreditTransactionType);
+            updateLocSummaryBalances(lineOfCredit, amount, lineOfCreditTransactionType, loanId, loanTransactionId);
+
+            // Use the actual updated balance from LOC summary (which may have been capped at maximum)
+            // instead of calculating from the old balance, to ensure transaction record matches actual state
+            BigDecimal actualAvailableBalanceAfter = lineOfCredit.getSummary().getAvailableBalance();
 
             LineOfCreditTransaction transaction = createTransactionRecord(lineOfCredit, loanId, loanTransactionId, amount,
-                    currentAvailableBalance, transactionAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType);
+                    currentAvailableBalance, actualAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType);
 
             // Set backdated flag for auditing
             transaction.setIsBackdatedEntry(false);
@@ -151,16 +159,95 @@ public class LineOfCreditBalanceUpdateService {
             recomputeLocSummaryFromDate(transactionDate, lineOfCredit);
         }
 
+        // Final validation: Ensure consumed amount is never negative (defensive check)
         if (lineOfCredit.getSummary().getConsumedAmount().compareTo(BigDecimal.ZERO) < 0) {
-            throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative", "Consumed amount cannot be negative",
-                    "consumedAmount", lineOfCredit.getSummary().getConsumedAmount());
+            log.error(
+                    "LOC consumed amount is negative after transaction. LOC ID: {}, Loan ID: {}, Loan Transaction ID: {}, "
+                            + "Consumed amount: {}. This should not happen after graceful handling. Attempting reconciliation.",
+                    lineOfCredit.getId(), loanId, loanTransactionId, lineOfCredit.getSummary().getConsumedAmount());
+
+            // Attempt reconciliation as a last resort
+            try {
+                reconcileConsumedAmountFromLoanData(lineOfCredit);
+                log.info("Successfully reconciled LOC consumed amount for LOC ID: {}", lineOfCredit.getId());
+            } catch (Exception e) {
+                log.error("Failed to reconcile LOC consumed amount for LOC ID: {}", lineOfCredit.getId(), e);
+                throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative", """
+                        Consumed amount cannot be negative.
+                        LOC ID: %d, Loan ID: %s, Consumed amount: %s.
+                        Reconciliation attempt failed: %s
+                        """.formatted(lineOfCredit.getId(), loanId, lineOfCredit.getSummary().getConsumedAmount(), e.getMessage()),
+                        "consumedAmount", e, lineOfCredit.getSummary().getConsumedAmount());
+            }
         }
     }
 
     /**
-     * Updates LOC summary balances based on transaction type
+     * Validates and reconciles LOC consumed amount if needed before processing a repayment transaction. This preventive
+     * check helps avoid negative consumed amount errors by ensuring data consistency.
+     *
+     * @param lineOfCredit
+     *            The line of credit to validate
+     * @param repaymentAmount
+     *            The repayment amount being processed
+     * @param loanId
+     *            The loan ID for context (can be null)
      */
-    private void updateLocSummaryBalances(LineOfCredit lineOfCredit, BigDecimal amount, LineOfCreditTransactionType type) {
+    private void validateAndReconcileIfNeeded(LineOfCredit lineOfCredit, BigDecimal repaymentAmount, Long loanId) {
+        BigDecimal currentConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
+
+        // If repayment amount exceeds current consumed amount, check if reconciliation is needed
+        if (repaymentAmount.compareTo(currentConsumedAmount) > 0) {
+            log.warn("""
+                    Repayment amount ({}) exceeds current LOC consumed amount ({}) for LOC ID: {}, Loan ID: {}.
+                    Attempting reconciliation to ensure data consistency.
+                    """, repaymentAmount, currentConsumedAmount, lineOfCredit.getId(), loanId);
+
+            try {
+                BigDecimal reconciledConsumedAmount = reconcileConsumedAmountFromLoanData(lineOfCredit);
+                log.info("Reconciled LOC consumed amount. LOC ID: {}, Loan ID: {}, Old consumed: {}, New consumed: {}",
+                        lineOfCredit.getId(), loanId, currentConsumedAmount, reconciledConsumedAmount);
+
+                // After reconciliation, check again if repayment would still cause negative balance
+                if (repaymentAmount.compareTo(reconciledConsumedAmount) > 0) {
+                    log.warn("""
+                            After reconciliation, repayment amount ({}) still exceeds LOC consumed amount ({})
+                            for LOC ID: {}, Loan ID: {}. This will be handled gracefully by capping at zero.
+                            """, repaymentAmount, reconciledConsumedAmount, lineOfCredit.getId(), loanId);
+                }
+            } catch (Exception e) {
+                log.error("""
+                        Failed to reconcile LOC consumed amount before repayment.
+                        LOC ID: {}, Loan ID: {}. Will proceed with graceful handling.
+                        """, lineOfCredit.getId(), loanId, e);
+                // Don't throw - let the graceful handling in updateLocSummaryBalances deal with it
+            }
+        }
+    }
+
+    /**
+     * Updates LOC summary balances based on transaction type.
+     *
+     * <p>
+     * This method includes preventive validation and graceful handling to prevent negative consumed amounts. If a
+     * repayment would cause consumed amount to go negative, it will: 1. Log a warning with detailed context 2. Cap the
+     * consumed amount at zero (graceful degradation) 3. Adjust the available balance accordingly to maintain data
+     * consistency
+     * </p>
+     *
+     * @param lineOfCredit
+     *            The line of credit to update
+     * @param amount
+     *            The transaction amount
+     * @param type
+     *            The transaction type
+     * @param loanId
+     *            The loan ID (for logging context, can be null)
+     * @param loanTransactionId
+     *            The loan transaction ID (for logging context, can be null)
+     */
+    private void updateLocSummaryBalances(LineOfCredit lineOfCredit, BigDecimal amount, LineOfCreditTransactionType type, Long loanId,
+            Long loanTransactionId) {
         BigDecimal currentAvailableBalance = lineOfCredit.getSummary().getAvailableBalance();
         BigDecimal currentConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
 
@@ -182,23 +269,43 @@ public class LineOfCreditBalanceUpdateService {
             }
         } else if (type.isIncrementTransaction()) {
             // Repayments, refunds, and foreclosures increase available balance
-            BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
-
+            BigDecimal repaymentAmount = amount;
             // Decrease consumed amount to maintain constraint: available_balance + consumed_amount = maximum_amount
             // This applies to: repayments, reversals, refunds, undo disbursements, write-offs, and foreclosures
             // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
             // increase
             if (!type.isBalanceIncrement()) {
-                BigDecimal newConsumedAmount = currentConsumedAmount.subtract(amount);
-                // Ensure consumed amount doesn't go negative
-                if (newConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
-                    throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
-                            "Consumed amount cannot be negative after transaction", "consumedAmount", newConsumedAmount);
-                }
-                lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
-            }
+                // PREVENTIVE VALIDATION: Check if repayment amount exceeds current consumed amount
+                if (repaymentAmount.compareTo(currentConsumedAmount) > 0) {
+                    BigDecimal excessAmount = repaymentAmount.subtract(currentConsumedAmount);
+                    log.warn("""
+                            LOC consumed amount would go negative.
+                            LOC ID: {}, Loan ID: {}, Loan Transaction ID: {},
+                            Current consumed amount: {}, Repayment amount: {}, Excess amount: {}, Transaction type: {}.
+                            Capping consumed amount at zero. Excess repayment amount ({}) cannot be applied to available balance
+                            as it would exceed maximum LOC limit. This may indicate a data inconsistency.
+                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, repaymentAmount, excessAmount,
+                            type, excessAmount);
 
-            lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
+                    // Graceful handling: Cap consumed amount at zero
+                    // Set available balance using constraint: available = maximum - consumed = maximum - 0 = maximum
+                    // This ensures we don't lose the excess amount silently - it's logged as a warning
+                    lineOfCredit.getSummary().setConsumedAmount(BigDecimal.ZERO);
+                    BigDecimal newAvailableBalance = lineOfCredit.getMaximumAmount();
+                    lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
+                } else {
+                    // Normal case: consumed amount can be reduced without going negative
+                    BigDecimal newConsumedAmount = currentConsumedAmount.subtract(repaymentAmount);
+                    lineOfCredit.getSummary().setConsumedAmount(newConsumedAmount);
+                    // Increase available balance by the repayment amount
+                    BigDecimal newAvailableBalance = currentAvailableBalance.add(repaymentAmount);
+                    lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
+                }
+            } else {
+                // For balance increment (limit increase), only increase available balance
+                BigDecimal newAvailableBalance = currentAvailableBalance.add(amount);
+                lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
+            }
         }
     }
 
@@ -344,12 +451,19 @@ public class LineOfCreditBalanceUpdateService {
                 // increase
                 if (!tx.getTransactionType().isBalanceIncrement()) {
                     runningConsumedAmount = runningConsumedAmount.subtract(transactionAmount);
-                    // Ensure consumed amount doesn't go negative
+                    // Ensure consumed amount doesn't go negative - graceful handling during recomputation
                     if (runningConsumedAmount.compareTo(BigDecimal.ZERO) < 0) {
-                        throw new PlatformApiDataValidationException("error.msg.loc.consumed.amount.negative",
-                                "LOC transaction history error: Consumed amount cannot be negative during re-computation for Tx ID:"
-                                        + tx.getId(),
-                                List.of());
+                        log.warn(
+                                "LOC consumed amount would go negative during recomputation. LOC ID: {}, Tx ID: {}, "
+                                        + "Current consumed: {}, Transaction amount: {}, Transaction type: {}. "
+                                        + "Capping consumed amount at zero.",
+                                lineOfCredit.getId(), tx.getId(), runningConsumedAmount.add(transactionAmount), transactionAmount,
+                                tx.getTransactionType());
+                        // Cap at zero to maintain data integrity
+                        runningConsumedAmount = BigDecimal.ZERO;
+                        // Adjust available balance to maintain constraint: available_balance + consumed_amount =
+                        // maximum_amount
+                        runningAvailableBalance = lineOfCredit.getMaximumAmount();
                     }
                 }
             }
@@ -407,12 +521,11 @@ public class LineOfCreditBalanceUpdateService {
 
             // Compare the balances - they should match exactly
             if (currentSystemBalance.compareTo(lastTransactionBalanceAfter) != 0) {
-                throw new PlatformApiDataValidationException("error.msg.loc.balance.inconsistency",
-                        String.format(
-                                "Balance inconsistency detected for LOC ID %d. "
-                                        + "Current system balance: %s, Last transaction balance: %s",
-                                locId, currentSystemBalance, lastTransactionBalanceAfter),
-                        "availableBalance", currentSystemBalance, lastTransactionBalanceAfter);
+                throw new PlatformApiDataValidationException("error.msg.loc.balance.inconsistency", """
+                        Balance inconsistency detected for LOC ID %d.
+                        Current system balance: %s, Last transaction balance: %s
+                        """.formatted(locId, currentSystemBalance, lastTransactionBalanceAfter), "availableBalance", currentSystemBalance,
+                        lastTransactionBalanceAfter);
             }
         }
         // If no transactions exist, no validation is needed as this would be the first transaction

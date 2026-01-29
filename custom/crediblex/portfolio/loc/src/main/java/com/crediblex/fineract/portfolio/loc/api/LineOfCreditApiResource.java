@@ -26,10 +26,10 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
+import com.crediblex.fineract.portfolio.loc.data.UpdateVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditTransactionReadPlatformService;
-import com.crediblex.fineract.portfolio.loc.service.LineOfCreditWritePlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -62,6 +62,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
+import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
@@ -78,12 +79,11 @@ public class LineOfCreditApiResource {
 
     private final PlatformSecurityContext context;
     private final LineOfCreditReadPlatformService readPlatformService;
-    private final LineOfCreditWritePlatformService writePlatformService;
     private final LineOfCreditTransactionReadPlatformService transactionReadPlatformService;
     private final DefaultToApiJsonSerializer<LineOfCreditData> toApiJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditTransactionData> transactionToApiJsonSerializer;
-    private final DefaultToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
+    private final ToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
@@ -313,10 +313,89 @@ public class LineOfCreditApiResource {
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @Parameter(hidden = true) final String requestBody) {
 
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().addVendor(lineOfCreditId, clientId)
+                .withJson(requestBody).build();
+
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @GET
+    @Path("{clientId}/creditlines/{lineOfCreditId}/vendors")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "List Vendors for Line of Credit", description = "Retrieves all vendors/suppliers for a specific line of credit")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = VendorResponse.class))) })
+    public String retrieveAllVendors(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @Context final UriInfo uriInfo) {
+
         this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
-        VendorResponse response = this.writePlatformService.addVendor(lineOfCreditId, requestBody);
+        final Collection<VendorResponse> vendors = this.readPlatformService.retrieveAllVendors(lineOfCreditId);
 
-        return this.vendorResponseSerializer.serialize(response);
+        return this.vendorResponseSerializer.serialize(settings, vendors);
+    }
+
+    @GET
+    @Path("vendors/los-external-id/{losExternalId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Get Vendor by LOS External ID", description = "Retrieves a vendor by their LOS external ID")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = VendorResponse.class))) })
+    public String retrieveVendorByLosExternalId(
+            @PathParam("losExternalId") @Parameter(description = "losExternalId") final String losExternalId,
+            @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
+        final VendorResponse vendor = this.readPlatformService.retrieveVendorByLosExternalId(losExternalId);
+
+        return this.vendorResponseSerializer.serialize(settings, vendor);
+    }
+
+    @PUT
+    @Path("{clientId}/creditlines/{lineOfCreditId}/vendors/{vendorId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Update Vendor Name", description = "Updates the name of a vendor. Only the name field can be updated.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = UpdateVendorRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PutLineOfCreditResponse.class))) })
+    public String updateVendor(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @PathParam("vendorId") @Parameter(description = "vendorId") final Long vendorId,
+            @Parameter(hidden = true) final String requestBody) {
+
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().updateVendor(lineOfCreditId, vendorId, clientId)
+                .withJson(requestBody).build();
+
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @DELETE
+    @Path("{clientId}/creditlines/{lineOfCreditId}/vendors/{vendorId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Delete Vendor", description = "Deletes a vendor if it is not associated with any active drawdowns")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.DeleteLineOfCreditResponse.class))) })
+    public String deleteVendor(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
+            @PathParam("vendorId") @Parameter(description = "vendorId") final Long vendorId) {
+
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().deleteVendor(lineOfCreditId, vendorId, clientId)
+                .build();
+
+        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+
+        return this.toApiJsonSerializer.serialize(result);
     }
 }
