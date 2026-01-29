@@ -263,7 +263,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
             this.context.authenticatedUser();
 
             final LoanScheduleResultSetExtractor fullResultsetExtractor = new LoanScheduleResultSetExtractor(
-                    repaymentScheduleRelatedLoanData, disbursementData, isInterestRecalculationEnabled, loanScheduleType);
+                    repaymentScheduleRelatedLoanData, disbursementData, isInterestRecalculationEnabled, loanScheduleType, this.jdbcTemplate);
             final String sql = "select " + fullResultsetExtractor.schema() + " where ls.loan_id = ? order by ls.loan_id, ls.installment";
 
             return this.jdbcTemplate.query(sql, fullResultsetExtractor, loanId); // NOSONAR
@@ -1208,12 +1208,14 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
         private final BigDecimal totalFeeChargesDueAtDisbursement;
         private final Collection<DisbursementData> disbursementData;
         private final LoanScheduleType loanScheduleType;
+        private final JdbcTemplate jdbcTemplate;
         private LocalDate lastDueDate;
         private BigDecimal outstandingLoanPrincipalBalance;
         private boolean excludePastUnDisbursed;
 
         LoanScheduleResultSetExtractor(final RepaymentScheduleRelatedLoanData repaymentScheduleRelatedLoanData,
-                Collection<DisbursementData> disbursementData, boolean isInterestRecalculationEnabled, LoanScheduleType loanScheduleType) {
+                Collection<DisbursementData> disbursementData, boolean isInterestRecalculationEnabled, LoanScheduleType loanScheduleType,
+                JdbcTemplate jdbcTemplate) {
             this.currency = repaymentScheduleRelatedLoanData.getCurrency();
             this.disbursement = repaymentScheduleRelatedLoanData.disbursementData();
             this.totalFeeChargesDueAtDisbursement = repaymentScheduleRelatedLoanData.getTotalFeeChargesAtDisbursement();
@@ -1222,6 +1224,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
             this.disbursementData = disbursementData;
             this.excludePastUnDisbursed = isInterestRecalculationEnabled;
             this.loanScheduleType = loanScheduleType;
+            this.jdbcTemplate = jdbcTemplate;
         }
 
         public String schema() {
@@ -1420,7 +1423,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                         taxChargesPaid, taxChargesWaived, taxChargesWrittenOff, taxChargesOutstanding, penaltyChargesExpectedDue,
                         penaltyChargesPaid, penaltyChargesWaived, penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod,
                         totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits,
-                        isDownPayment, accrualInterest);
+                        isDownPayment, accrualInterest, BigDecimal.ZERO, BigDecimal.ZERO);
 
                 periods.add(periodData);
             }

@@ -51,7 +51,12 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
         final Long savingsProductId = savingsDTO.getSavingsProductId();
         final Long savingsId = savingsDTO.getSavingsId();
         final String currencyCode = savingsDTO.getCurrencyCode();
-        for (final SavingsTransactionDTO savingsTransactionDTO : savingsDTO.getNewSavingsTransactions()) {
+
+        // Track transactions that were processed by custom logic to avoid duplicate processing
+        java.util.List<Integer> processedTransactionIndices = new java.util.ArrayList<>();
+
+        for (int i = 0; i < savingsDTO.getNewSavingsTransactions().size(); i++) {
+            final SavingsTransactionDTO savingsTransactionDTO = savingsDTO.getNewSavingsTransactions().get(i);
             final LocalDate transactionDate = savingsTransactionDTO.getTransactionDate();
             final String transactionId = savingsTransactionDTO.getTransactionId();
             final Office office = this.helper.getOfficeById(savingsTransactionDTO.getOfficeId());
@@ -71,10 +76,11 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     log.info(
                             "CustomAccrualBasedAccountingProcessorForSavings: RBF loan product detected - Skipping journal entries for deposit (loan disbursement)");
                     // Skip journal entry creation for RBF deposits
+                    processedTransactionIndices.add(i);
                     continue;
                 }
-                // Non-RBF: Use default parent logic
-                super.createJournalEntriesForSavings(savingsDTO);
+                // Non-RBF: Use default parent logic - mark for later processing
+                processedTransactionIndices.add(i);
             }
             // Custom logic: Handle RBF withdrawals with account transfer (loan repayment from savings)
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
@@ -84,45 +90,78 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     log.info(
                             "CustomAccrualBasedAccountingProcessorForSavings: RBF loan product detected - Skipping journal entries for withdrawal (loan repayment)");
                     // Skip journal entry creation for RBF withdrawals
+                    processedTransactionIndices.add(i);
                     continue;
                 }
-                // Non-RBF: Use default parent logic
-                super.createJournalEntriesForSavings(savingsDTO);
+                // Non-RBF: Use default parent logic - mark for later processing
+                processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
-                // Normal deposits (not account transfers) - ensure they use GL 100062, not payment_type-specific GL
-                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
-                // 100062
-                if (paymentTypeId != null && paymentTypeId == 5L) {
-                    // Payment type 5 is for loan disbursements, not normal deposits
-                    // Use NULL to get the default ASSET account (100062) instead of 100003
-                    log.debug(
-                            "CustomAccrualBasedAccountingProcessorForSavings: Normal deposit with payment_type=5, using default GL (100062) instead");
-                    // Create journal entries with payment_type = null to get default GL 100062
-                    // For deposits: DR ASSET (1), CR SAVINGS_CONTROL (2)
-                    this.helper.createCashBasedJournalEntriesAndReversalsForSavings(office, currencyCode,
-                            AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), AccrualAccountsForSavings.SAVINGS_CONTROL.getValue(),
-                            savingsProductId, null, savingsId, transactionId, transactionDate, amount, isReversal);
-                } else {
-                    // Use default parent logic
-                    super.createJournalEntriesForSavings(savingsDTO);
-                }
+                // Normal deposits (not account transfers) - use default parent logic
+                // Note: Payment type 5 (RBF Loan Disbursement) is only used for account transfers (disbursements)
+                // and withdrawals (repayments), so it won't appear in normal deposits
+                processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
                     && paymentTypeId != null && paymentTypeId == 5L) {
                 // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
+                // For reversals: CR 200040 (RBF Loan Payable), DR 100003 (Bank) - swap the entries
                 GLAccount rbfGLAccount = getRBFGLAccount();
                 GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
                         AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
                 if (rbfGLAccount != null && bankAccount != null) {
-                    this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
-                            transactionDate, amount);
-                    this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
-                            transactionDate, amount);
+                    if (isReversal) {
+                        // Reversal: Swap DR/CR - CR 200040, DR 100003
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        log.info("CustomAccrualBasedAccountingProcessorForSavings: RBF withdrawal REVERSAL - CR 200040, DR 100003");
+                    } else {
+                        // Normal: DR 200040, CR 100003
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        log.info("CustomAccrualBasedAccountingProcessorForSavings: RBF withdrawal - DR 200040, CR 100003");
+                    }
+                    processedTransactionIndices.add(i);
                 } else {
-                    log.error("RBF GL Account 200040 or Bank Account not found, using default logic");
-                    super.createJournalEntriesForSavings(savingsDTO);
+                    log.error("RBF GL Account 200040 or Bank Account not found, using default logic for this transaction");
+                    // Do NOT mark as processed - let parent handle it
                 }
-            } else {
-                // For all other transaction types, delegate to parent class
+            }
+            // For all other transaction types that were not explicitly handled, they will be processed by parent below
+        }
+
+        // IMPORTANT: Only delegate to parent for transactions that were NOT processed by custom logic
+        // This prevents duplicate GL entries for handled transaction types
+        if (processedTransactionIndices.size() < savingsDTO.getNewSavingsTransactions().size()) {
+            // Create a filtered list with only unprocessed transactions
+            java.util.List<SavingsTransactionDTO> unprocessedTransactions = new java.util.ArrayList<>();
+            for (int i = 0; i < savingsDTO.getNewSavingsTransactions().size(); i++) {
+                if (!processedTransactionIndices.contains(i)) {
+                    unprocessedTransactions.add(savingsDTO.getNewSavingsTransactions().get(i));
+                }
+            }
+
+            if (!unprocessedTransactions.isEmpty()) {
+                log.debug("CustomAccrualBasedAccountingProcessorForSavings: {} transactions were handled by custom logic, delegating {} unprocessed transactions to parent processor",
+                        processedTransactionIndices.size(), unprocessedTransactions.size());
+
+                // Call parent's processing logic for handled transactions that use default logic
+                for (int i = 0; i < savingsDTO.getNewSavingsTransactions().size(); i++) {
+                    if (processedTransactionIndices.contains(i)) {
+                        SavingsTransactionDTO tx = savingsDTO.getNewSavingsTransactions().get(i);
+                        if ((tx.getTransactionType().isDeposit() && tx.isAccountTransfer()) ||
+                            (tx.getTransactionType().isWithdrawal() && tx.isAccountTransfer()) ||
+                            (tx.getTransactionType().isDeposit() && !tx.isAccountTransfer())) {
+                            // These need parent logic
+                            unprocessedTransactions.add(tx);
+                        }
+                    }
+                }
+            }
+
+            if (!unprocessedTransactions.isEmpty()) {
                 super.createJournalEntriesForSavings(savingsDTO);
             }
         }
