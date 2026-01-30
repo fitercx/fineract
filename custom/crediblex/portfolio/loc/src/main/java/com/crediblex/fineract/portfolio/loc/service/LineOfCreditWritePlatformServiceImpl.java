@@ -784,13 +784,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     public CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command) {
         final LineOfCredit lineOfCredit = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 
-        // Allow approved buyer management only for ACTIVE LOCs
-        if (lineOfCredit.getStatus() != LocStatus.ACTIVE) {
-            throw new PlatformDataIntegrityException("error.msg.loc.manage.approved.buyers.not.allowed",
-                    "Approved buyers can only be managed when Line of Credit is ACTIVE. Current status: "
-                            + lineOfCredit.getStatus().name());
-        }
-
         // Use enhanced validation with credit limit checking
         this.dataValidator.validateForManageApprovedBuyersWithCreditLimit(command, lineOfCredit.getMaximumAmount());
 
