@@ -2616,7 +2616,6 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             Money principalRepaid = Money.of(getCurrency(), this.getSummary().getTotalPrincipalRepaid());
             Money principalWrittenOff = Money.of(getCurrency(), this.getSummary().getTotalPrincipalWrittenOff());
             Money principalAdjustments = Money.of(getCurrency(), this.getSummary().getTotalPrincipalAdjustments());
-
             totalPrincipal = disbursedPrincipal.plus(principalAdjustments).minus(principalRepaid).minus(principalWrittenOff);
         } else {
             totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
