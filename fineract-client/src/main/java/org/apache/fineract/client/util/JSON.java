@@ -288,7 +288,7 @@ public class JSON {
         /**
          * Empty finalizer to prevent finalizer attacks. See SEI CERT Rule OBJ-11: Defend against finalizer attacks.
          */
-        @SuppressWarnings({"all", "FI_EMPTY"})
+        @SuppressWarnings({ "all", "FI_EMPTY" })
         @Override
         protected final void finalize() {
             // Empty finalizer prevents attackers from exploiting partially initialized objects
