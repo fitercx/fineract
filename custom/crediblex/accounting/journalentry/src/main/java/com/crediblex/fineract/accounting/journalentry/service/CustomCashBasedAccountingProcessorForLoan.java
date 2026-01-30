@@ -200,8 +200,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     log.info("CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200040 for RBF disbursement");
                 }
             } else if (isReceivableLOCProduct(loanProductId)) {
-                log.info(
-                        "CustomCashBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 200041 for loan product {}",
+                log.info("CustomCashBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 200041 for loan product {}",
                         loanProductId);
 
                 // Get GL 200041 account
@@ -453,8 +452,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
         try {
             return glAccountRepository.findOneByGlCode(RECEIVABLE_LOC_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE,
-                    e.getMessage());
+            log.error("CustomCashBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE, e.getMessage());
             return null;
         }
     }
