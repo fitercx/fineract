@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
@@ -1467,8 +1468,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
             // Compute new custom loan status based on updated schedule/installments
             CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
-            CustomLoanStatus newCustomLoanStatus = com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils
-                    .computeCustomLoanStatusForLoan(updatedLoan);
+            CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
             updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
             updatedLoan = this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(updatedLoan);
 
