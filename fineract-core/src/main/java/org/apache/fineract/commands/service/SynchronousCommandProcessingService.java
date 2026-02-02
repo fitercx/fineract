@@ -167,7 +167,7 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
     }
 
     private void publishHookErrorEvent(CommandWrapper wrapper, JsonCommand command, ErrorInfo errorInfo) {
-        publishHookEvent(wrapper.entityName(), wrapper.actionName(), command, gson.toJson(errorInfo));
+        publishHookEvent(wrapper.entityName(), wrapper.actionName(), command, errorInfo);
     }
 
     private void exceptionWhenTheRequestAlreadyProcessed(CommandWrapper wrapper, String idempotencyKey, boolean retry) {
