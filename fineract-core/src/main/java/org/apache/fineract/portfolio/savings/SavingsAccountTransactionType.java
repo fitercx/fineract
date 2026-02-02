@@ -51,7 +51,8 @@ public enum SavingsAccountTransactionType {
     ESCHEAT(19, "savingsAccountTransactionType.escheat", TransactionEntryType.DEBIT), //
     AMOUNT_HOLD(20, "savingsAccountTransactionType.onHold", TransactionEntryType.DEBIT), //
     AMOUNT_RELEASE(21, "savingsAccountTransactionType.release", TransactionEntryType.CREDIT), //
-    PAY_TAX(22, "savingsAccountTransactionType.payTax", TransactionEntryType.DEBIT); //
+    PAY_TAX(22, "savingsAccountTransactionType.payTax", TransactionEntryType.DEBIT), //
+    CHARGE_REVERSAL(23, "savingsAccountTransactionType.chargeReversal", TransactionEntryType.CREDIT); //
 
     private static final Map<Integer, SavingsAccountTransactionType> BY_ID = Arrays.stream(values())
             .collect(Collectors.toMap(SavingsAccountTransactionType::getValue, v -> v));

@@ -370,9 +370,70 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         // handle penalties payment of writeOff
         if (penaltiesAmount != null && penaltiesAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalDebitAmount = totalDebitAmount.add(penaltiesAmount);
-            if (isIncomeFromFee) {
+
+            // Handle different transaction types
+            if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
+                populateDebitAccountEntry(loanProductId, penaltiesAmount,
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
+                        debitAccountMapForGoodwillCredit, paymentTypeId);
                 GLAccount account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
-                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                if (accountMap.containsKey(account)) {
+                    BigDecimal amount = accountMap.get(account).add(penaltiesAmount);
+                    accountMap.put(account, amount);
+                } else {
+                    accountMap.put(account, penaltiesAmount);
+                }
+            } else if (loanTransactionDTO.getTransactionType().isRepayment()) {
+                // For repayments: Use INCOME_FROM_RECOVERY, but for RBF products use GL 300015 instead
+                GLAccount account;
+                if (isRBFProduct(loanProductId)) {
+                    // Use hardcoded GL 300015 for RBF overdue interest penalty income on repayments
+                    account = glAccountRepository.findOneByGlCode("300015").orElse(null);
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300015 (Over Due Interest - LPI - RBF) not found for RBF product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income on repayment, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else {
+                    // Non-RBF: Use default INCOME_FROM_RECOVERY
+                    account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                            AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                }
+                if (accountMap.containsKey(account)) {
+                    BigDecimal amount = accountMap.get(account).add(penaltiesAmount);
+                    accountMap.put(account, amount);
+                } else {
+                    accountMap.put(account, penaltiesAmount);
+                }
+            } else if (isIncomeFromFee) {
+                // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
+                // instead of the default INCOME_FROM_PENALTIES account
+                GLAccount account;
+                if (isRBFProduct(loanProductId)) {
+                    // Use hardcoded GL 300015 for RBF overdue interest penalty income
+                    account = glAccountRepository.findOneByGlCode("300015").orElse(null);
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300015 (Over Due Interest - LPI - RBF) not found for RBF product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else {
+                    account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                            AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                }
                 if (accountMap.containsKey(account)) {
                     BigDecimal amount = accountMap.get(account).add(penaltiesAmount);
                     accountMap.put(account, amount);
@@ -388,12 +449,6 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 } else {
                     accountMap.put(account, penaltiesAmount);
                 }
-            }
-
-            if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
-                populateDebitAccountEntry(loanProductId, penaltiesAmount,
-                        AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
-                        debitAccountMapForGoodwillCredit, paymentTypeId);
             }
         }
 

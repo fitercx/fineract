@@ -213,6 +213,10 @@ public final class SavingsEnumerations {
                 optionData = new SavingsAccountTransactionEnumData(SavingsAccountTransactionType.AMOUNT_RELEASE.getValue().longValue(),
                         SavingsAccountTransactionType.AMOUNT_RELEASE.getCode(), "Release Amount");
             break;
+            case CHARGE_REVERSAL:
+                optionData = new SavingsAccountTransactionEnumData(SavingsAccountTransactionType.CHARGE_REVERSAL.getValue().longValue(),
+                        SavingsAccountTransactionType.CHARGE_REVERSAL.getCode(), "Charge Reversal");
+            break;
         }
         return optionData;
     }

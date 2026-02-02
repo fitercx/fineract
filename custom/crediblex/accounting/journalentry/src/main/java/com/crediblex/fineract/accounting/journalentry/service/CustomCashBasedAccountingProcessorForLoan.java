@@ -308,9 +308,33 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
 
         if (penaltiesAmount != null && penaltiesAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalDebitAmount = totalDebitAmount.add(penaltiesAmount);
-            this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
-                    AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
-                    transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+
+            // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
+            // instead of the default INCOME_FROM_PENALTIES account
+            if (isRBFProduct(loanProductId)) {
+                // Use hardcoded GL 300015 for RBF overdue interest penalty income
+                GLAccount rbfPenaltyIncomeAccount = glAccountRepository.findOneByGlCode("300015").orElse(null);
+                if (rbfPenaltyIncomeAccount != null) {
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
+                            penaltiesAmount);
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            penaltiesAmount, rbfPenaltyIncomeAccount);
+                } else {
+                    log.warn(
+                            "CustomCashBasedAccountingProcessorForLoan: GL 300015 (Over Due Interest - LPI - RBF) not found for RBF product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                            loanProductId);
+                    this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                            AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
+                            transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+                }
+            } else {
+                // Non-RBF products: Use default logic
+                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                        AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
+                        transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+            }
+
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, penaltiesAmount,
                         AccountingConstants.CashAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
