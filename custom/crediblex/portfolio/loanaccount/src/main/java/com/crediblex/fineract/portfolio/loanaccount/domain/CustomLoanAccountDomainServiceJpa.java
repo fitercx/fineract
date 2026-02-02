@@ -559,7 +559,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         return newRepaymentTransaction;
     }
 
-    
     /**
      * Calculate total outstanding for multi-disbursement loans based on disbursed amounts only. This considers: -
      * Disbursed principal outstanding (not approved principal) - Interest outstanding - Fee charges outstanding (only
