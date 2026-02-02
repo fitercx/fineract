@@ -2638,7 +2638,19 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public LoanRepaymentScheduleInstallment fetchLoanForeclosureDetail(final LocalDate closureDate) {
         Money[] receivables = retrieveIncomeOutstandingTillDate(closureDate);
-        Money totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
+        Money totalPrincipal;
+
+        if (isMultiDisburmentLoan()) {
+            // For multi-disbursement loans, calculate outstanding based on actually disbursed amount only
+            Money disbursedPrincipal = Money.of(getCurrency(), getDisbursedAmount());
+            Money principalRepaid = Money.of(getCurrency(), this.getSummary().getTotalPrincipalRepaid());
+            Money principalWrittenOff = Money.of(getCurrency(), this.getSummary().getTotalPrincipalWrittenOff());
+            Money principalAdjustments = Money.of(getCurrency(), this.getSummary().getTotalPrincipalAdjustments());
+            totalPrincipal = disbursedPrincipal.plus(principalAdjustments).minus(principalRepaid).minus(principalWrittenOff);
+        } else {
+            totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
+        }
+
         totalPrincipal = totalPrincipal.minus(receivables[3]);
         final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
         final LocalDate currentDate = DateUtils.getBusinessLocalDate();

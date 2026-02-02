@@ -1311,10 +1311,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
                 isRecoveryRepayment, chargeRefundChargeType);
         if (result != null && result.getResourceId() != null && !penaltiesToDisable.isEmpty()) {
-            final Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
             this.applyOverdueChargesLoan(loanId);
+            Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
             this.addLoanPeriodicAccruals(backdatedLoan);
             loanScheduleService.recalculateSchedule(backdatedLoan, loanUtilService.buildScheduleGeneratorDTO(backdatedLoan, null));
+            backdatedLoan = this.loanAssembler.assembleFrom(loanId);
             saveAndFlushLoanWithDataIntegrityViolationChecks(backdatedLoan);
         }
         return result;

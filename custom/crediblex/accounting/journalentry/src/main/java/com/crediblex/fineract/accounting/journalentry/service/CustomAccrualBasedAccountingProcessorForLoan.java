@@ -32,6 +32,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
     // Hardcoded RBF Configuration
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
     private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
+    private static final String RECEIVABLE_LOC_PRODUCT_SHORT_NAME = "LRL";
+    private static final String RECEIVABLE_LOC_GL_CODE = "200041"; // Loan Payable - Invoice Discounting
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
@@ -68,6 +70,28 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             return RBF_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
             // If query fails, default to non-RBF (use old Liability Transfer)
+            return false;
+        }
+    }
+
+    /**
+     * Check if the loan product is Receivable LOC product
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if Receivable LOC product, false otherwise
+     */
+    private boolean isReceivableLOCProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return RECEIVABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            // If query fails, default to non-Receivable LOC (use old Liability Transfer)
             return false;
         }
     }
@@ -178,7 +202,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         } else if (loanTransactionDTO.isAccountTransfer()) {
             // For account transfers (disburse to savings):
             // - RBF products: Use GL 200040 directly
-            // - Non-RBF products: Use LIABILITY_TRANSFER financial activity
+            // - Receivable LOC products: Use GL 200041 directly
+            // - Other products: Use LIABILITY_TRANSFER financial activity
             if (isRBFProduct(loanProductId)) {
                 log.info("CustomAccrualBasedAccountingProcessorForLoan: RBF product detected - Using GL 200040 for loan product {}",
                         loanProductId);
@@ -196,8 +221,27 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             loanDTO.getNetDisbursalAmount(), rbfGLAccount);
                     log.info("CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200040 for RBF disbursement");
                 }
+            } else if (isReceivableLOCProduct(loanProductId)) {
+                log.info(
+                        "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 200041 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200041 account
+                GLAccount receivableLOCGLAccount = getReceivableLOCGLAccount();
+                if (receivableLOCGLAccount == null) {
+                    log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 200041 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // Receivable LOC: Credit GL 200041 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), receivableLOCGLAccount);
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
+                }
             } else {
-                log.debug("CustomAccrualBasedAccountingProcessorForLoan: Non-RBF product, using default LIABILITY_TRANSFER");
+                log.debug("CustomAccrualBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
                 this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
                         transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
@@ -424,7 +468,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 } else if (loanTransactionDTO.isAccountTransfer()) {
                     // For account transfers (repayment from savings to loan):
                     // - RBF products: Use GL 210003 (Working Capital Loan)
-                    // - Non-RBF products: Use LIABILITY_TRANSFER financial activity
+                    // - Receivable LOC products: Use GL 210003 (Working Capital Loan)
+                    // - Other products: Use LIABILITY_TRANSFER financial activity
                     if (isRBFProduct(loanProductId)) {
                         log.info("CustomAccrualBasedAccountingProcessorForLoan: RBF product detected - Using GL 210003 for repayment");
                         // Get GL 210003 account (Working Capital Loan)
@@ -441,8 +486,25 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                     AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
                                     loanId, transactionId, transactionDate, totalDebitAmount);
                         }
+                    } else if (isReceivableLOCProduct(loanProductId)) {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 210003 for repayment");
+                        // Get GL 210003 account (Working Capital Loan)
+                        GLAccount receivableLOCRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
+                        if (receivableLOCRepaymentGLAccount != null) {
+                            this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                    totalDebitAmount, receivableLOCRepaymentGLAccount);
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 210003 for Receivable LOC repayment");
+                        } else {
+                            log.warn(
+                                    "CustomAccrualBasedAccountingProcessorForLoan: GL 210003 not found, falling back to LIABILITY_TRANSFER");
+                            this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
+                                    loanId, transactionId, transactionDate, totalDebitAmount);
+                        }
                     } else {
-                        log.debug("CustomAccrualBasedAccountingProcessorForLoan: Non-RBF product, using default LIABILITY_TRANSFER");
+                        log.debug("CustomAccrualBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
                         this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                                 AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
                                 transactionId, transactionDate, totalDebitAmount);
@@ -537,6 +599,20 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
         } catch (Exception e) {
             log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting) Looks up by GL code to avoid hardcoding
+     * account ID
+     */
+    private GLAccount getReceivableLOCGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(RECEIVABLE_LOC_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }

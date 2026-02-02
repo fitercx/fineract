@@ -22,6 +22,9 @@ import org.springframework.stereotype.Component;
  *
  * Hardcoded RBF logic: For RBF savings products, uses GL 200040 instead of LIABILITY_TRANSFER when loan is disbursed to
  * savings.
+ *
+ * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
  */
 @Slf4j
 @Primary
@@ -31,6 +34,17 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     // Hardcoded RBF Configuration
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF"; // RBF loan product short_name
     private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
+    private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF withdrawal payment type
+
+    // Hardcoded LOC Receivable Configuration
+    private static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL"; // LOC Receivable loan product short_name
+    private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable withdrawal payment type
+    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
+                                                                         // Asset
+    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current
+                                                                          // Liability
+    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
+                                                                                // Receivable - Current Liability
 
     private final AccountingProcessorHelper helper;
     private final GLAccountRepository glAccountRepository;
@@ -61,11 +75,11 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
 
             this.helper.checkForBranchClosures(latestGLClosure, transactionDate);
 
-            // Custom logic: Handle RBF deposits/withdrawals with account transfer
-            // For RBF products: DO NOT create any journal entries on savings side
+            // Custom logic: Handle RBF and LOC Receivable deposits/withdrawals with account transfer
+            // For RBF and LOC Receivable products: DO NOT create any journal entries on savings side
             // Journal entries will only be created on the loan side
             if (savingsTransactionDTO.getTransactionType().isDeposit() && savingsTransactionDTO.isAccountTransfer()) {
-                // Check if the linked loan product is RBF (not the savings product)
+                // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
                     log.info(
@@ -73,12 +87,19 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Skip journal entry creation for RBF deposits
                     continue;
                 }
-                // Non-RBF: Use default parent logic
+                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable loan product detected - Skipping journal entries for deposit (loan disbursement)");
+                    // Skip journal entry creation for LOC Receivable deposits - handled on loan side
+                    continue;
+                }
+                // Non-RBF/Non-LOC Receivable: Use default parent logic
                 super.createJournalEntriesForSavings(savingsDTO);
             }
-            // Custom logic: Handle RBF withdrawals with account transfer (loan repayment from savings)
+            // Custom logic: Handle RBF and LOC Receivable withdrawals with account transfer (loan repayment from
+            // savings)
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
-                // Check if the linked loan product is RBF (not the savings product)
+                // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
                     log.info(
@@ -86,10 +107,35 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Skip journal entry creation for RBF withdrawals
                     continue;
                 }
-                // Non-RBF: Use default parent logic
+                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
+                    // Skip journal entry creation for LOC Receivable withdrawals - handled on loan side
+                    continue;
+                }
+                // Non-RBF/Non-LOC Receivable: Use default parent logic
                 super.createJournalEntriesForSavings(savingsDTO);
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
-                // Normal deposits (not account transfers) - ensure they use GL 100062, not payment_type-specific GL
+                // Normal deposits (not account transfers)
+                // Check if this is a LOC Receivable linked savings account
+                Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
+                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086
+                    // (Invoice Discounting Clearing)
+                    log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
+                    GLAccount debitAccount = getLOCReceivableDebitGLAccount();
+                    GLAccount creditAccount = getLOCReceivableCreditGLAccount();
+                    if (debitAccount != null && creditAccount != null) {
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, creditAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                    } else {
+                        log.error("LOC Receivable GL Accounts (100062 or 200086) not found, using default logic");
+                        super.createJournalEntriesForSavings(savingsDTO);
+                    }
+                    continue;
+                }
                 // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
                 // 100062
                 if (paymentTypeId != null && paymentTypeId == 5L) {
@@ -107,18 +153,50 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     super.createJournalEntriesForSavings(savingsDTO);
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && paymentTypeId == 5L) {
-                // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
-                GLAccount rbfGLAccount = getRBFGLAccount();
-                GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
-                        AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
-                if (rbfGLAccount != null && bankAccount != null) {
-                    this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
-                            transactionDate, amount);
-                    this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
-                            transactionDate, amount);
+                    && paymentTypeId != null && paymentTypeId.equals(RBF_PAYMENT_TYPE_ID)) {
+                // RBF Manual withdrawal with payment_type=5
+                Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
+                if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
+                    // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
+                    log.info("CustomAccrualBasedAccountingProcessorForSavings: RBF manual withdrawal - DR 200040, CR Bank");
+                    GLAccount rbfGLAccount = getRBFGLAccount();
+                    GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                            AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+                    if (rbfGLAccount != null && bankAccount != null) {
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                    } else {
+                        log.error("RBF GL Account 200040 or Bank Account not found, using default logic");
+                        super.createJournalEntriesForSavings(savingsDTO);
+                    }
                 } else {
-                    log.error("RBF GL Account 200040 or Bank Account not found, using default logic");
+                    // Not RBF product but has payment_type=5, use default logic
+                    super.createJournalEntriesForSavings(savingsDTO);
+                }
+            } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
+                    && paymentTypeId != null && paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID)) {
+                // LOC Receivable Manual withdrawal with payment_type=73
+                Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
+                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
+                    // 100003 (Bank)
+                    log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");
+                    GLAccount locLoanPayableAccount = getLOCReceivableLoanPayableGLAccount();
+                    GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                            AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+                    if (locLoanPayableAccount != null && bankAccount != null) {
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locLoanPayableAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                    } else {
+                        log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic");
+                        super.createJournalEntriesForSavings(savingsDTO);
+                    }
+                } else {
+                    // Not LOC Receivable product but has payment_type=73, use default logic
                     super.createJournalEntriesForSavings(savingsDTO);
                 }
             } else {
@@ -182,6 +260,70 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
             return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
         } catch (Exception e) {
             log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if loan product is LOC Receivable Queries product short_name from database to identify LOC Receivable
+     * products
+     */
+    private boolean isLOCReceivableLoanProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            // Query product short_name from database
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            log.debug(
+                    "CustomAccrualBasedAccountingProcessorForSavings: Error checking LOC Receivable loan product for loanProductId {}: {}",
+                    loanProductId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by GL
+     * code to avoid hardcoding account ID
+     */
+    private GLAccount getLOCReceivableDebitGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_DEBIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_DEBIT_GL_CODE,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200086 account (Invoice Discounting - Clearing - Current Liability) for LOC Receivable deposits Looks up
+     * by GL code to avoid hardcoding account ID
+     */
+    private GLAccount getLOCReceivableCreditGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_CREDIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_CREDIT_GL_CODE,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200041 account (Loan Payable - Invoice Discounting - Receivable - Current Liability) for LOC Receivable
+     * manual withdrawals Looks up by GL code to avoid hardcoding account ID
+     */
+    private GLAccount getLOCReceivableLoanPayableGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
+                    LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE, e.getMessage());
             return null;
         }
     }
