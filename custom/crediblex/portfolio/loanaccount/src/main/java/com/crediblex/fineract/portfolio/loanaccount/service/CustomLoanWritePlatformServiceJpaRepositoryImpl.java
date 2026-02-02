@@ -1784,6 +1784,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             throw new LoanRepaymentScheduleNotFoundException(installmentNumber);
         }
 
+        validateNoOverdueChargesForInstallment(loan, installment);
+
         final LocalDate oldDueDate = installment.getDueDate();
         final Map<String, Object> changes = new HashMap<>();
 
@@ -1831,11 +1833,32 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 }
             }
 
+            loan.updateLoanSummaryAndStatus();
+            loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
             saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
         }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
                 .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    private void validateNoOverdueChargesForInstallment(final Loan loan, final LoanRepaymentScheduleInstallment installment) {
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        if (!installment.isOverdueOn(businessDate)) {
+            return;
+        }
+
+        final MonetaryCurrency currency = loan.getCurrency();
+        final Money feeOutstanding = installment.getFeeChargesOutstanding(currency);
+        final Money penaltyOutstanding = installment.getPenaltyChargesOutstanding(currency);
+        final Money taxOutstanding = installment.getTaxChargesOutstanding(currency);
+
+        if (feeOutstanding.isGreaterThanZero() || penaltyOutstanding.isGreaterThanZero() || taxOutstanding.isGreaterThanZero()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.overdue.charges",
+                    "Cannot adjust installment date because overdue charges exist for installment " + installment.getInstallmentNumber()
+                            + ". Please remove overdue charges before adjusting the date.",
+                    installment.getInstallmentNumber());
+        }
     }
 }

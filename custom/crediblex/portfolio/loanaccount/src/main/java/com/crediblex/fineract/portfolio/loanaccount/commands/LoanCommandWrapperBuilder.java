@@ -58,4 +58,22 @@ public class LoanCommandWrapperBuilder {
         this.href = "/loans/" + loanId;
         return this;
     }
+
+    /**
+     * Creates a command wrapper for reversing a paid loan charge.
+     *
+     * @param loanId
+     *            The ID of the loan
+     * @param loanChargeId
+     *            The ID of the charge to reverse
+     * @return this builder
+     */
+    public LoanCommandWrapperBuilder reversePaidLoanCharge(final Long loanId, final Long loanChargeId) {
+        this.actionName = "REVERSEPAID";
+        this.entityName = "LOANCHARGE";
+        this.entityId = loanChargeId;
+        this.loanId = loanId;
+        this.href = "/loans/" + loanId + "/charges/" + loanChargeId;
+        return this;
+    }
 }

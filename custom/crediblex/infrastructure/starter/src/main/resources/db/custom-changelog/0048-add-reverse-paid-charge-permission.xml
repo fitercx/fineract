@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Permission for Reverse Paid Loan Charge -->
+    <changeSet id="0048-1-add-reverse-paid-loan-charge-permission" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM m_permission WHERE code = 'REVERSEPAID_LOANCHARGE'
+            </sqlCheck>
+        </preConditions>
+        <comment>Add permission for Reverse Paid Loan Charge feature - allows admins to undo paid charges with GL reversal</comment>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="REVERSEPAID_LOANCHARGE"/>
+            <column name="entity_name" value="LOANCHARGE"/>
+            <column name="action_name" value="REVERSEPAID"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>
