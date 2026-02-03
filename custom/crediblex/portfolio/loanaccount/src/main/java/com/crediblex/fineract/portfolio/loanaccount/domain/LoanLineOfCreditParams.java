@@ -231,7 +231,8 @@ public class LoanLineOfCreditParams {
         }
 
         if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY) != null) {
-            params.setAmountInFacilityCurrency(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY));
+            params.setAmountInFacilityCurrency(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY));
         }
 
         if (jsonCommand.stringValueOfParameterNamed(LoanAccountAdditionalProperties.SUPPLIER_DETAILS) != null) {
@@ -240,7 +241,8 @@ public class LoanLineOfCreditParams {
 
         // Extract new AED currency related parameters
         if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED) != null) {
-            params.setInvoiceAmountInAED(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED));
+            params.setInvoiceAmountInAED(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED));
         }
 
         if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED) != null) {
@@ -269,8 +271,7 @@ public class LoanLineOfCreditParams {
         }
 
         if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT) != null) {
-            params.setRequestedAmount(
-                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT));
+            params.setRequestedAmount(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT));
         }
 
         // Note: amountInFacilityCurrency and approvedPayableAmount are auto-computed in @PrePersist
@@ -369,7 +370,8 @@ public class LoanLineOfCreditParams {
         }
 
         // Handle new AED currency related parameters
-        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, this.invoiceAmountInAED)) {
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED,
+                this.invoiceAmountInAED)) {
             final BigDecimal newValue = jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED);
             actualChanges.put(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, newValue);
             this.invoiceAmountInAED = newValue;
