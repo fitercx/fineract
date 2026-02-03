@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements. See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership. The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License. You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied. See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!-- Add invoice_amount_in_aed column -->
+    <changeSet id="add-invoice-amount-in-aed-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="invoice_amount_in_aed"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="invoice_amount_in_aed" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add disapproved_amount_in_aed column -->
+    <changeSet id="add-disapproved-amount-in-aed-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="disapproved_amount_in_aed"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="disapproved_amount_in_aed" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add approved_invoice_amount_in_aed column -->
+    <changeSet id="add-approved-invoice-amount-in-aed-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="approved_invoice_amount_in_aed"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="approved_invoice_amount_in_aed" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add amount_after_advance_in_aed column -->
+    <changeSet id="add-amount-after-advance-in-aed-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="amount_after_advance_in_aed"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="amount_after_advance_in_aed" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add requested_amount_in_aed column -->
+    <changeSet id="add-requested-amount-in-aed-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="requested_amount_in_aed"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="requested_amount_in_aed" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add funded_amount_in_invoice_currency column -->
+    <changeSet id="add-funded-amount-in-invoice-currency-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="funded_amount_in_invoice_currency"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="funded_amount_in_invoice_currency" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- Add requested_amount column -->
+    <changeSet id="add-requested-amount-column" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_loan_line_of_credit_params"/>
+            <not>
+                <columnExists tableName="m_loan_line_of_credit_params" columnName="requested_amount"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_loan_line_of_credit_params">
+            <column name="requested_amount" type="DECIMAL(19,6)">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+</databaseChangeLog>
