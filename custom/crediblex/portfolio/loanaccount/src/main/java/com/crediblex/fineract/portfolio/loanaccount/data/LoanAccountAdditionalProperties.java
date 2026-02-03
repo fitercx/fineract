@@ -37,10 +37,21 @@ public final class LoanAccountAdditionalProperties {
     public static String LOC_TYPE = "locType";
     public static String FACTOR_RATE_ENABLED = "factorRateEnabled";
 
+    // New AED currency related parameters (for display/audit purposes)
+    public static String INVOICE_AMOUNT_IN_AED = "invoiceAmountInAED";
+    public static String DISAPPROVED_AMOUNT_IN_AED = "disapprovedAmountInAED";
+    public static String APPROVED_INVOICE_AMOUNT_IN_AED = "approvedInvoiceAmountInAED";
+    public static String AMOUNT_AFTER_ADVANCE_IN_AED = "amountAfterAdvanceInAED";
+    public static String REQUESTED_AMOUNT_IN_AED = "requestedAmountInAED";
+    public static String FUNDED_AMOUNT_IN_INVOICE_CURRENCY = "fundedAmountInInvoiceCurrency";
+    public static String REQUESTED_AMOUNT = "requestedAmount";
+
     public static Collection<String> getAllLoanAccountAdditionalPropertiesParameters() {
         return List.of(INVOICE_NO, INVOICE_DATE, INVOICE_AMOUNT, INVOICE_DUE_DATE, INVOICE_CURRENCY, DISAPPROVED_AMOUNT,
                 APPROVED_RECEIVABLE_AMOUNT, ADVANCE_PERCENTAGE, AMOUNT_AFTER_ADVANCE, BUYER_DETAILS, EXCHANGE_RATE, MARKUP,
-                AMOUNT_IN_FACILITY_CURRENCY, APPROVED_PAYABLE_AMOUNT, SUPPLIER_DETAILS, LINE_OF_CREDIT_ID, LOC_TYPE, FACTOR_RATE_ENABLED);
+                AMOUNT_IN_FACILITY_CURRENCY, APPROVED_PAYABLE_AMOUNT, SUPPLIER_DETAILS, LINE_OF_CREDIT_ID, LOC_TYPE, FACTOR_RATE_ENABLED,
+                INVOICE_AMOUNT_IN_AED, DISAPPROVED_AMOUNT_IN_AED, APPROVED_INVOICE_AMOUNT_IN_AED, AMOUNT_AFTER_ADVANCE_IN_AED,
+                REQUESTED_AMOUNT_IN_AED, FUNDED_AMOUNT_IN_INVOICE_CURRENCY, REQUESTED_AMOUNT);
     }
 
 }

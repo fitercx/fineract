@@ -115,6 +115,28 @@ public class LoanLineOfCreditParams {
     @Column(name = "supplier_details", columnDefinition = "TEXT")
     private String supplierDetails;
 
+    // New AED currency related fields (for display/audit purposes)
+    @Column(name = "invoice_amount_in_aed", precision = 19, scale = 6)
+    private BigDecimal invoiceAmountInAED;
+
+    @Column(name = "disapproved_amount_in_aed", precision = 19, scale = 6)
+    private BigDecimal disapprovedAmountInAED;
+
+    @Column(name = "approved_invoice_amount_in_aed", precision = 19, scale = 6)
+    private BigDecimal approvedInvoiceAmountInAED;
+
+    @Column(name = "amount_after_advance_in_aed", precision = 19, scale = 6)
+    private BigDecimal amountAfterAdvanceInAED;
+
+    @Column(name = "requested_amount_in_aed", precision = 19, scale = 6)
+    private BigDecimal requestedAmountInAED;
+
+    @Column(name = "funded_amount_in_invoice_currency", precision = 19, scale = 6)
+    private BigDecimal fundedAmountInInvoiceCurrency;
+
+    @Column(name = "requested_amount", precision = 19, scale = 6)
+    private BigDecimal requestedAmount;
+
     // Auto-compute fields before persistence
     @PrePersist
     @PreUpdate
@@ -143,7 +165,10 @@ public class LoanLineOfCreditParams {
 
     // Business logic: Amount In Facility Currency = Approved Receivable Amount * Exchange Rate
     private void computeAmountInFacilityCurrency() {
-        if (this.approvedPayableAmount != null && this.exchangeRate != null && lineOfCredit.getProductType().isPayable()) {
+        // Only compute if not already provided from frontend
+        // Frontend calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
+        if (this.amountInFacilityCurrency == null && this.approvedPayableAmount != null && this.exchangeRate != null
+                && lineOfCredit.getProductType().isPayable()) {
             this.amountInFacilityCurrency = this.approvedPayableAmount.multiply(this.exchangeRate.add(this.markup));
         }
     }
@@ -205,8 +230,47 @@ public class LoanLineOfCreditParams {
             params.setMarkup(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.MARKUP));
         }
 
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY) != null) {
+            params.setAmountInFacilityCurrency(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY));
+        }
+
         if (jsonCommand.stringValueOfParameterNamed(LoanAccountAdditionalProperties.SUPPLIER_DETAILS) != null) {
             params.setSupplierDetails(jsonCommand.stringValueOfParameterNamed(LoanAccountAdditionalProperties.SUPPLIER_DETAILS));
+        }
+
+        // Extract new AED currency related parameters
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED) != null) {
+            params.setInvoiceAmountInAED(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED) != null) {
+            params.setDisapprovedAmountInAED(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED) != null) {
+            params.setApprovedInvoiceAmountInAED(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED) != null) {
+            params.setAmountAfterAdvanceInAED(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED) != null) {
+            params.setRequestedAmountInAED(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY) != null) {
+            params.setFundedAmountInInvoiceCurrency(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY));
+        }
+
+        if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT) != null) {
+            params.setRequestedAmount(
+                    jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT));
         }
 
         // Note: amountInFacilityCurrency and approvedPayableAmount are auto-computed in @PrePersist
@@ -295,6 +359,68 @@ public class LoanLineOfCreditParams {
             actualChanges.put(LoanAccountAdditionalProperties.SUPPLIER_DETAILS, newValue);
             this.supplierDetails = newValue;
         }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY,
+                this.amountInFacilityCurrency)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY);
+            actualChanges.put(LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY, newValue);
+            this.amountInFacilityCurrency = newValue;
+        }
+
+        // Handle new AED currency related parameters
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, this.invoiceAmountInAED)) {
+            final BigDecimal newValue = jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED);
+            actualChanges.put(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, newValue);
+            this.invoiceAmountInAED = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED,
+                this.disapprovedAmountInAED)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED);
+            actualChanges.put(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED, newValue);
+            this.disapprovedAmountInAED = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED,
+                this.approvedInvoiceAmountInAED)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED);
+            actualChanges.put(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED, newValue);
+            this.approvedInvoiceAmountInAED = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED,
+                this.amountAfterAdvanceInAED)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED);
+            actualChanges.put(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED, newValue);
+            this.amountAfterAdvanceInAED = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED,
+                this.requestedAmountInAED)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED);
+            actualChanges.put(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED, newValue);
+            this.requestedAmountInAED = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY,
+                this.fundedAmountInInvoiceCurrency)) {
+            final BigDecimal newValue = jsonCommand
+                    .bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY);
+            actualChanges.put(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY, newValue);
+            this.fundedAmountInInvoiceCurrency = newValue;
+        }
+
+        if (jsonCommand.isChangeInBigDecimalParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT, this.requestedAmount)) {
+            final BigDecimal newValue = jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT);
+            actualChanges.put(LoanAccountAdditionalProperties.REQUESTED_AMOUNT, newValue);
+            this.requestedAmount = newValue;
+        }
+
         return actualChanges;
     }
 
