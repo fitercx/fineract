@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
@@ -326,12 +327,13 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 // tranches.
                 BigDecimal totalVatForTransaction = BigDecimal.ZERO;
                 if (loanTransactionDTO.getFeePayments() != null) {
-                    for (org.apache.fineract.accounting.journalentry.data.ChargePaymentDTO feePayment : loanTransactionDTO
-                            .getFeePayments()) {
-                        if (feePayment instanceof CustomChargePaymentDTO customFeePayment && customFeePayment.getTaxAmount() != null) {
-                            totalVatForTransaction = totalVatForTransaction.add(customFeePayment.getTaxAmount());
-                        }
-                    }
+                    totalVatForTransaction = loanTransactionDTO.getFeePayments().stream()
+                            .filter(Objects::nonNull)
+                            .filter(CustomChargePaymentDTO.class::isInstance)
+                            .map(CustomChargePaymentDTO.class::cast)
+                            .map(CustomChargePaymentDTO::getTaxAmount)
+                            .filter(Objects::nonNull)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
                 }
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
                         transactionDate, totalVatForTransaction, loanTransactionDTO.getFeePayments());
