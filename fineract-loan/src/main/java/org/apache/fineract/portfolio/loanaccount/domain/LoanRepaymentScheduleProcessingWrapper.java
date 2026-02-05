@@ -55,17 +55,23 @@ public class LoanRepaymentScheduleProcessingWrapper {
         final Loan loan = firstNormalPeriod.getLoan();
         Money factorRateNetFeeAmountPerInstallment = Money.zero(currency);
         Money factorRateTaxAmountPerInstallment = Money.zero(currency);
+        Money factorRateNetFeeAmount = Money.zero(currency);
+        Money factorRateTaxAmount = Money.zero(currency);
         boolean isFactorRateEnabled = false;
         if (loan != null && loan.isFactorRateEnabled()) {
             isFactorRateEnabled = true;
-            Money[] factorRateFeeTaxPerInstallment = calculateFactorRateFeeTaxPerInstallment(currency, loanCharges);
-            factorRateNetFeeAmountPerInstallment = factorRateFeeTaxPerInstallment[0];
-            factorRateTaxAmountPerInstallment = factorRateFeeTaxPerInstallment[1];
+            final LoanCharge factorRateInstallmentFee = loanCharges.stream().filter(LoanCharge::isInstalmentFee).findFirst().orElse(null);
+            if (factorRateInstallmentFee != null && factorRateInstallmentFee.getLoan() != null) {
+                final Integer numberOfRepayments = factorRateInstallmentFee.getLoan().getNumberOfRepayments();
+                final Money[] factorRateFeeTaxPerInstallment = calculateFactorRateFeeTaxPerInstallment(currency, loanCharges);
+                factorRateNetFeeAmount = factorRateFeeTaxPerInstallment[0];
+                factorRateTaxAmount = factorRateFeeTaxPerInstallment[1];
+                factorRateNetFeeAmountPerInstallment = factorRateNetFeeAmount.dividedBy(numberOfRepayments);
+                factorRateTaxAmountPerInstallment = factorRateTaxAmount.dividedBy(numberOfRepayments);
+            }
         }
         for (final LoanRepaymentScheduleInstallment period : repaymentPeriods) {
-
             if (!period.isDownPayment()) {
-
                 boolean isFirstNonDownPaymentPeriod = period.equals(firstNormalPeriod);
                 final int lastNormalInstallmentNumber = LoanRepaymentScheduleProcessingWrapper
                         .fetchLastNormalInstallmentNumber(repaymentPeriods);
@@ -79,6 +85,14 @@ public class LoanRepaymentScheduleProcessingWrapper {
                 if (isFactorRateEnabled) {
                     feeChargesDueForRepaymentPeriod = factorRateNetFeeAmountPerInstallment;
                     taxesDueForRepaymentPeriod = factorRateTaxAmountPerInstallment;
+                }
+
+                if (isFactorRateEnabled && isLastNonDownPaymentPeriod) {
+                    // Adjust the last installment to account for any rounding differences
+                    feeChargesDueForRepaymentPeriod = feeChargesDueForRepaymentPeriod.plus(factorRateNetFeeAmount
+                            .minus(factorRateNetFeeAmountPerInstallment.multipliedBy(BigDecimal.valueOf(loan.getNumberOfRepayments()))));
+                    taxesDueForRepaymentPeriod = taxesDueForRepaymentPeriod.plus(factorRateTaxAmount
+                            .minus(factorRateTaxAmountPerInstallment.multipliedBy(BigDecimal.valueOf(loan.getNumberOfRepayments()))));
                 }
 
                 final Money feeChargesWaivedForRepaymentPeriod = cumulativeChargesWaivedWithin(startDate, period.getDueDate(), loanCharges,
@@ -107,8 +121,8 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
     private Money[] calculateFactorRateFeeTaxPerInstallment(final MonetaryCurrency currency, final Set<LoanCharge> loanCharges) {
         final LoanCharge factorRateInstallmentFee = loanCharges.stream().filter(LoanCharge::isInstalmentFee).findFirst().orElse(null);
-        Money factorRateTaxAmountPerInstallment = Money.zero(currency);
-        Money factorRateNetFeeAmountPerInstallment = Money.zero(currency);
+        Money factorRateTaxAmountMoney = Money.zero(currency);
+        Money factorRateNetFeeAmountMoney = Money.zero(currency);
         if (factorRateInstallmentFee != null) {
             final Loan loan = factorRateInstallmentFee.getLoan();
             if (loan != null && loan.isFactorRateEnabled()) {
@@ -116,7 +130,6 @@ public class LoanRepaymentScheduleProcessingWrapper {
                         : DateUtils.getBusinessLocalDate();
                 final BigDecimal loanAmount = factorRateInstallmentFee.getLoan().getFactorRateLoanAmount();
                 final BigDecimal factorRate = factorRateInstallmentFee.getLoan().getFactorRate();
-                final Integer numberOfRepayments = factorRateInstallmentFee.getLoan().getNumberOfRepayments();
                 final Set<TaxGroupMappings> taxGroupMappings = factorRateInstallmentFee.getCharge().getTaxGroup() != null
                         ? factorRateInstallmentFee.getCharge().getTaxGroup().getTaxGroupMappings()
                         : Collections.emptySet();
@@ -124,11 +137,11 @@ public class LoanRepaymentScheduleProcessingWrapper {
                 final BigDecimal principalAmount = factorRateInstallmentFee.getLoan().getPrincipal().getAmount();
                 final BigDecimal totalFactorRateFeeAmount = loanAmount.subtract(principalAmount);
                 final BigDecimal factorRateNetFeeAmount = totalFactorRateFeeAmount.subtract(taxAmount);
-                factorRateTaxAmountPerInstallment = Money.of(currency, taxAmount).dividedBy(numberOfRepayments);
-                factorRateNetFeeAmountPerInstallment = Money.of(currency, factorRateNetFeeAmount).dividedBy(numberOfRepayments);
+                factorRateNetFeeAmountMoney = Money.of(currency, factorRateNetFeeAmount);
+                factorRateTaxAmountMoney = Money.of(currency, taxAmount);
             }
         }
-        return new Money[] { factorRateNetFeeAmountPerInstallment, factorRateTaxAmountPerInstallment };
+        return new Money[] { factorRateNetFeeAmountMoney, factorRateTaxAmountMoney };
     }
 
     private Money cumulativeFeeChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd, final Set<LoanCharge> loanCharges,

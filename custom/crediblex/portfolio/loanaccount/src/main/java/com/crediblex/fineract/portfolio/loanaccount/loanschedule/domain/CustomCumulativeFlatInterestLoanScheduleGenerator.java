@@ -9,22 +9,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.organisation.workingdays.data.AdjustedDateDetailsDTO;
 import org.apache.fineract.organisation.workingdays.domain.RepaymentRescheduleType;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
+import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeFlatInterestLoanScheduleGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelRepaymentPeriod;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanTermVariationParams;
@@ -34,11 +39,15 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.Recalculati
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduleCurrentPeriodParams;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementEmiAmountException;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.ScheduleDateException;
 import org.apache.fineract.portfolio.loanproduct.domain.RepaymentStartDateType;
+import org.apache.fineract.portfolio.tax.domain.TaxGroupMappings;
+import org.apache.fineract.portfolio.tax.service.TaxUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @Primary
 public class CustomCumulativeFlatInterestLoanScheduleGenerator extends CumulativeFlatInterestLoanScheduleGenerator {
@@ -46,6 +55,12 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
     public CustomCumulativeFlatInterestLoanScheduleGenerator(ScheduledDateGenerator scheduledDateGenerator,
             PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator) {
         super(scheduledDateGenerator, paymentPeriodsInOneYearCalculator);
+    }
+
+    @Override
+    public LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+            final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
+        return generateInternal(mc, loanApplicationTerms, loanCharges, holidayDetailDTO, null);
     }
 
     @Override
@@ -163,13 +178,7 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
         return new PrincipalInterest(principalForThisInstallment, interestForThisInstallment, interestBroughtForwardDueToGrace);
     }
 
-    @Override
-    public LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
-            final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
-        return generate(mc, loanApplicationTerms, loanCharges, holidayDetailDTO, null);
-    }
-
-    private LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+    private LoanScheduleModel generateInternal(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
             final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO, final LoanScheduleParams loanScheduleParams) {
 
         final BigDecimal totalOriginalPrincipal = loanApplicationTerms.getPrincipal().getAmount();
@@ -578,6 +587,228 @@ public class CustomCumulativeFlatInterestLoanScheduleGenerator extends Cumulativ
                 scheduleParams.getTotalCumulativeInterest(), true, scheduleParams.isFirstPeriod(), mc));
         scheduleParams.addTotalFeeChargesCharged(currentPeriodParams.getFeeChargesForInstallment());
         scheduleParams.addTotalPenaltyChargesCharged(currentPeriodParams.getPenaltyChargesForInstallment());
+    }
+
+    /**
+     * Override to fix issue where LOC Receivable installment fees are recalculated from installment principal
+     * (disbursed amount) instead of using the charge's total amount (calculated from proposed principal). This ensures
+     * fees remain consistent after approval: 10% of loan amount, not 10% of disbursed amount.
+     */
+    @Override
+    protected Money cumulativeFeeChargesDueWithin(final LocalDate periodStart, final LocalDate periodEnd, final Set<LoanCharge> loanCharges,
+            final MonetaryCurrency monetaryCurrency, final PrincipalInterest principalInterestForThisPeriod, final Money principalDisbursed,
+            final Money totalInterestChargedForFullLoanTerm, boolean isInstallmentChargeApplicable, final boolean isFirstPeriod,
+            final MathContext mc) {
+
+        Money cumulative = Money.zero(monetaryCurrency);
+
+        for (final LoanCharge loanCharge : loanCharges) {
+            if (!loanCharge.isDueAtDisbursement() && loanCharge.isFeeCharge()) {
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod);
+                boolean isLocReceivableInstallmentFee = loanCharge.isInstalmentFee() && isInstallmentChargeApplicable
+                        && loanCharge.getLoan() != null && loanCharge.getLoan().isReceivableLocLoan()
+                        && loanCharge.getChargeCalculation().isPercentageBased();
+                boolean taxAlreadyIncluded = false;
+
+                if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
+                    // For LOC Receivable loans with percentage-based installment fees, use the charge's total amount
+                    // (which is calculated from proposed principal) divided by installments, instead of recalculating
+                    // from installment principal (which uses disbursed amount)
+                    if (isLocReceivableInstallmentFee) {
+                        // Use charge's total amount (including tax) divided by number of installments
+                        // This ensures consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                        int numberOfInstallments = loanCharge.getLoan().fetchNumberOfInstallmensAfterExceptions();
+                        if (numberOfInstallments > 0) {
+                            // For LOC Receivable, always recalculate from amountPercentageAppliedTo (proposed
+                            // principal)
+                            // instead of using stored charge amount, which might be temporarily incorrect during
+                            // schedule regeneration (e.g., during approval when schedule is regenerated)
+                            BigDecimal totalChargeAmount;
+                            if (loanCharge.getAmountPercentageAppliedTo() != null && loanCharge.getPercentage() != null) {
+                                // Recalculate from amountPercentageAppliedTo to ensure we use proposed principal
+                                BigDecimal baseAmount = loanCharge.getAmountPercentageAppliedTo();
+                                BigDecimal chargeBaseAmount = baseAmount.multiply(loanCharge.getPercentage())
+                                        .divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP);
+
+                                // Recalculate tax from the correct base amount (chargeBaseAmount) to ensure consistency
+                                // The stored tax amount might be incorrect during approval if it was calculated from
+                                // the wrong base amount (disbursed principal instead of proposed principal)
+                                if (loanCharge.hasTax() && loanCharge.getCharge() != null && loanCharge.getCharge().getTaxGroup() != null
+                                        && loanCharge.getCharge().getTaxGroup().getTaxGroupMappings() != null
+                                        && !loanCharge.getCharge().getTaxGroup().getTaxGroupMappings().isEmpty()) {
+                                    LocalDate chargeDate = loanCharge.getDueDate() != null ? loanCharge.getDueDate()
+                                            : DateUtils.getBusinessLocalDate();
+                                    Set<TaxGroupMappings> taxGroupMappings = loanCharge.getCharge().getTaxGroup().getTaxGroupMappings();
+                                    // Calculate total amount with tax, then subtract base to get tax amount
+                                    BigDecimal totalWithTax = TaxUtils.addTaxToAmount(chargeBaseAmount, chargeDate, taxGroupMappings,
+                                            chargeBaseAmount.scale());
+                                    BigDecimal recalculatedTaxAmount = totalWithTax != null ? totalWithTax.subtract(chargeBaseAmount)
+                                            : BigDecimal.ZERO;
+                                    totalChargeAmount = chargeBaseAmount.add(recalculatedTaxAmount);
+                                } else {
+                                    totalChargeAmount = chargeBaseAmount;
+                                }
+                            } else {
+                                // Fallback to stored amount if amountPercentageAppliedTo is not available
+                                totalChargeAmount = loanCharge.getAmountWithTaxes();
+                            }
+
+                            Money chargeAmountPerInstallment = Money.of(monetaryCurrency, totalChargeAmount).dividedBy(numberOfInstallments,
+                                    mc);
+                            cumulative = cumulative.plus(chargeAmountPerInstallment);
+                            taxAlreadyIncluded = true; // Tax is already included in totalChargeAmount
+                        }
+                    } else {
+                        // For non-LOC loans or non-percentage charges, use standard calculation
+                        // Reimplement calculateInstallmentCharge logic since it's private in base class
+                        if (loanCharge.getChargeCalculation().isPercentageBased()) {
+                            BigDecimal amount = BigDecimal.ZERO;
+                            if (loanCharge.getChargeCalculation().isPercentageOfAmountAndInterest()) {
+                                amount = amount.add(principalInterestForThisPeriod.principal().getAmount())
+                                        .add(principalInterestForThisPeriod.interest().getAmount());
+                            } else if (loanCharge.getChargeCalculation().isPercentageOfInterest()) {
+                                amount = amount.add(principalInterestForThisPeriod.interest().getAmount());
+                            } else {
+                                amount = amount.add(principalInterestForThisPeriod.principal().getAmount());
+                            }
+                            BigDecimal loanChargeAmt = amount.multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), mc);
+                            cumulative = cumulative.plus(loanChargeAmt);
+                        } else {
+                            cumulative = cumulative.plus(loanCharge.amountOrPercentage());
+                        }
+                    }
+                } else if (loanCharge.isOverdueInstallmentCharge() && isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
+                    cumulative = cumulative.plus(loanCharge.chargeAmount());
+                } else if (isDue && loanCharge.getChargeCalculation().isPercentageBased()) {
+                    // Reimplement calculateSpecificDueDateChargeWithPercentage logic since it's private in base class
+                    BigDecimal amount = BigDecimal.ZERO;
+                    if (loanCharge.getChargeCalculation().isPercentageOfAmountAndInterest()) {
+                        amount = amount.add(principalDisbursed.getAmount()).add(totalInterestChargedForFullLoanTerm.getAmount());
+                    } else if (loanCharge.getChargeCalculation().isPercentageOfInterest()) {
+                        amount = amount.add(totalInterestChargedForFullLoanTerm.getAmount());
+                    } else {
+                        amount = amount.add(principalDisbursed.getAmount());
+                    }
+                    BigDecimal loanChargeAmt = amount.multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), mc);
+                    cumulative = cumulative.plus(loanChargeAmt);
+                } else if (isDue) {
+                    cumulative = cumulative.plus(loanCharge.amount());
+                }
+
+                // Add tax separately, but skip if already included (for LOC Receivable installment fees)
+                if (loanCharge.hasTax() && !taxAlreadyIncluded) {
+                    cumulative = cumulative.plus(loanCharge.getTaxAmount());
+                }
+            }
+        }
+
+        return cumulative;
+    }
+
+    /**
+     * Override to fix multi-tranche loan schedule calculation.
+     *
+     * For multi-disbursal loans, use only the total DISBURSED amount (not approved/all tranches) to calculate repayment
+     * schedule. This ensures schedules reflect actual disbursed principal, not approved principal that hasn't been
+     * disbursed yet.
+     *
+     * Fixes bug where schedule was calculated using getTotalMultiDisbursedAmount() (all tranches) instead of
+     * getTotalDisbursedAmount() (only disbursed tranches).
+     */
+    @Override
+    protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
+        Money principalToBeScheduled;
+        if (loanApplicationTerms.isMultiDisburseLoan()) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+
+            if (totalDisbursed.isGreaterThanZero()) {
+                // FIX: Use only disbursed amount, not all approved tranches
+                principalToBeScheduled = totalDisbursed;
+            } else if (loanApplicationTerms.getApprovedPrincipal().isGreaterThanZero()) {
+                principalToBeScheduled = loanApplicationTerms.getApprovedPrincipal();
+            } else {
+                principalToBeScheduled = loanApplicationTerms.getPrincipal();
+            }
+        } else {
+            principalToBeScheduled = loanApplicationTerms.getPrincipal();
+        }
+        Money result = principalToBeScheduled.minus(loanApplicationTerms.getDownPaymentAmount());
+        return result;
+    }
+
+    /**
+     * Override to exclude undisbursed tranches from outstanding balance calculation.
+     *
+     * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones), which causes the
+     * schedule to include future tranches in principal calculations. This fix ensures only actually disbursed tranches
+     * are added to outstanding balance.
+     */
+    @Override
+    protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
+            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate,
+            final BigDecimal totalOriginalPrincipal) {
+        for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
+            // Check if all tranches on this date are actually disbursed
+            // If multiple tranches share a date, they're summed in the map, so we need to check all of them
+            List<DisbursementData> tranchesOnDate = loanApplicationTerms.getDisbursementDatas().stream()
+                    .filter(data -> data.disbursementDate().equals(disburseDetail.getKey())).toList();
+
+            // Only process if there are tranches on this date AND all of them are disbursed
+            boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
+
+            if (DateUtils.isAfter(disburseDetail.getKey(), scheduleParams.getPeriodStartDate())
+                    && !DateUtils.isAfter(disburseDetail.getKey(), scheduledDueDate) && allDisbursed) {
+                // validation check for amount not exceeds specified max
+                if (loanApplicationTerms.getMaxOutstandingBalance() != null) {
+                    Money maxOutstandingBalance = loanApplicationTerms.getMaxOutstandingBalanceMoney();
+                    if (scheduleParams.getOutstandingBalance().plus(disburseDetail.getValue()).isGreaterThan(maxOutstandingBalance)) {
+                        String errorMsg = "Outstanding balance must not exceed the amount: " + maxOutstandingBalance;
+                        throw new MultiDisbursementOutstandingAmoutException(errorMsg, maxOutstandingBalance.getAmount(),
+                                disburseDetail.getValue());
+                    }
+                }
+
+                // creates and add disbursement detail to the repayments period
+                final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
+                        totalOriginalPrincipal, disburseDetail.getValue().getAmount(), chargesDueAtTimeOfDisbursement);
+                final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
+                        .disbursement(disburseDetail.getKey(), disburseDetail.getValue(), chargesDueAtTimeOfDisbursementForTranche);
+                periods.add(disbursementPeriod);
+
+                BigDecimal downPaymentAmt = BigDecimal.ZERO;
+                if (loanApplicationTerms.isDownPaymentEnabled()) {
+                    // get list of disbursements done on same date and create down payment periods
+                    List<DisbursementData> disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                            .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disburseDetail.getKey())
+                                    && disbursementData.isDisbursed())
+                            .toList();
+                    for (DisbursementData disbursementData : disbursementsOnSameDate) {
+                        final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
+                                scheduleParams, disbursementData.disbursementDate(), disbursementData.getPrincipal());
+                        periods.add(downPaymentPeriod);
+                        downPaymentAmt = downPaymentAmt.add(downPaymentPeriod.principalDue());
+                    }
+                }
+                // updates actual outstanding balance with new disbursement detail (only for disbursed tranches)
+                Money remainingPrincipal = disburseDetail.getValue().minus(downPaymentAmt);
+                scheduleParams.addOutstandingBalance(remainingPrincipal);
+                scheduleParams.addPrincipalToBeScheduled(remainingPrincipal);
+                loanApplicationTerms.setPrincipal(loanApplicationTerms.getPrincipal().plus(remainingPrincipal));
+            }
+        }
+    }
+
+    /**
+     * Helper method to calculate charges due at time of disbursement for a tranche. Copied from parent class since it's
+     * private.
+     */
+    private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
+            final BigDecimal tranchePrincipal, final BigDecimal totalChargesDueAtTimeOfDisbursement) {
+        if (totalChargesDueAtTimeOfDisbursement == null || totalLoanPrincipal == null || tranchePrincipal == null
+                || totalLoanPrincipal.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return tranchePrincipal.multiply(totalChargesDueAtTimeOfDisbursement).divide(totalLoanPrincipal, MoneyHelper.getMathContext());
     }
 
 }

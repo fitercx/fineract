@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import java.util.Collection;
 import java.util.List;
 
@@ -41,4 +42,8 @@ public interface LineOfCreditReadPlatformService {
     Integer getTotalOfActiveLoans(Long lineOfCreditId);
 
     List<LineOfCreditSummary> retrieveSummary(String lineOfCreditId, Long clientId, LocProductType locProductType);
+
+    Collection<VendorResponse> retrieveAllVendors(Long lineOfCreditId);
+
+    VendorResponse retrieveVendorByLosExternalId(String losExternalId);
 }

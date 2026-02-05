@@ -1,0 +1,502 @@
+package com.crediblex.fineract.portfolio.loanaccount.loanschedule.domain;
+
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.portfolio.loanaccount.data.DisbursementData;
+import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTermVariationsData;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleModelDownPaymentPeriod;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleParams;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.CumulativeDecliningBalanceInterestLoanScheduleGenerator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanApplicationTerms;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModel;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelDisbursementPeriod;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleModelPeriod;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.PaymentPeriodsInOneYearCalculator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.PrincipalInterest;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.exception.MultiDisbursementOutstandingAmoutException;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
+
+/**
+ * Custom implementation of CumulativeDecliningBalanceInterestLoanScheduleGenerator that fixes multi-tranche loan
+ * schedule calculation to use only disbursed amounts.
+ */
+@Slf4j
+@Component
+@Primary
+public class CustomCumulativeDecliningBalanceLoanScheduleGenerator extends CumulativeDecliningBalanceInterestLoanScheduleGenerator {
+
+    // Thread-local storage for loan charges to be used in processDisbursements
+    private static final ThreadLocal<Set<LoanCharge>> loanChargesThreadLocal = new ThreadLocal<>();
+
+    public CustomCumulativeDecliningBalanceLoanScheduleGenerator(ScheduledDateGenerator scheduledDateGenerator,
+            PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator) {
+        super(scheduledDateGenerator, paymentPeriodsInOneYearCalculator);
+    }
+
+    @Override
+    public LoanScheduleModel generate(final MathContext mc, final LoanApplicationTerms loanApplicationTerms,
+            final Set<LoanCharge> loanCharges, final HolidayDetailDTO holidayDetailDTO) {
+        try {
+            // Store loan charges in thread-local for use in processDisbursements
+            loanChargesThreadLocal.set(loanCharges);
+            return super.generate(mc, loanApplicationTerms, loanCharges, holidayDetailDTO);
+        } finally {
+            // Clean up thread-local to prevent memory leaks
+            loanChargesThreadLocal.remove();
+        }
+    }
+
+    /**
+     * Override to fix multi-tranche loan schedule calculation.
+     *
+     * <p>
+     * For multi-disbursal loans:
+     * <ul>
+     * <li>If loan has disbursed amounts (existing loan), use only DISBURSED amount</li>
+     * <li>If loan has no disbursed amounts but has expected tranches (pre-creation calculateLoanSchedule API), use ALL
+     * expected tranches (getTotalMultiDisbursedAmount)</li>
+     * </ul>
+     *
+     * <p>
+     * This ensures:
+     * <ul>
+     * <li>Existing loans: schedules reflect only actual disbursed principal</li>
+     * <li>Pre-creation API: schedules include all expected tranches for preview</li>
+     * </ul>
+     */
+    @Override
+    protected Money getPrincipalToBeScheduled(final LoanApplicationTerms loanApplicationTerms) {
+        Money principalToBeScheduled;
+        if (loanApplicationTerms.isMultiDisburseLoan()) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+
+            if (totalDisbursed.isGreaterThanZero()) {
+                // Existing loan with disbursed amounts - use only disbursed amount
+                principalToBeScheduled = totalDisbursed;
+            } else if (totalMultiDisbursed.isGreaterThanZero()) {
+                // Pre-creation scenario (calculateLoanSchedule API) - use all expected tranches
+                principalToBeScheduled = totalMultiDisbursed;
+            } else if (loanApplicationTerms.getApprovedPrincipal().isGreaterThanZero()) {
+                principalToBeScheduled = loanApplicationTerms.getApprovedPrincipal();
+            } else {
+                principalToBeScheduled = loanApplicationTerms.getPrincipal();
+            }
+        } else {
+            principalToBeScheduled = loanApplicationTerms.getPrincipal();
+        }
+        Money result = principalToBeScheduled.minus(loanApplicationTerms.getDownPaymentAmount());
+        return result;
+    }
+
+    /**
+     * Override to handle both existing loans and pre-creation schedule calculation.
+     *
+     * <p>
+     * For existing loans: Only process actually disbursed tranches.
+     * <p>
+     * For pre-creation (calculateLoanSchedule API): Process all expected tranches.
+     *
+     * <p>
+     * The parent method processes ALL tranches in disburseDetailMap (including undisbursed ones), which causes the
+     * schedule to include future tranches in principal calculations for existing loans. This fix ensures:
+     * <ul>
+     * <li>Existing loans: only actually disbursed tranches are added to outstanding balance</li>
+     * <li>Pre-creation: all expected tranches are included in the schedule preview</li>
+     * </ul>
+     */
+    @Override
+    protected void processDisbursements(final LoanApplicationTerms loanApplicationTerms, final BigDecimal chargesDueAtTimeOfDisbursement,
+            LoanScheduleParams scheduleParams, final Collection<LoanScheduleModelPeriod> periods, final LocalDate scheduledDueDate,
+            final BigDecimal totalOriginalPrincipal) {
+        // Determine if this is a pre-creation scenario (no disbursed amounts but has expected tranches)
+        Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+        boolean isPreCreationScenario = totalDisbursed.isZero() && !loanApplicationTerms.getDisbursementDatas().isEmpty();
+
+        // Collect dates to remove from map (undisbursed tranches for existing loans)
+        List<LocalDate> datesToRemove = new ArrayList<>();
+
+        for (Map.Entry<LocalDate, Money> disburseDetail : scheduleParams.getDisburseDetailMap().entrySet()) {
+            LocalDate disbursementDate = disburseDetail.getKey();
+            Money disbursementAmount = disburseDetail.getValue();
+
+            // Check if all tranches on this date are actually disbursed
+            // If multiple tranches share a date, they're summed in the map, so we need to check all of them
+            List<DisbursementData> tranchesOnDate = loanApplicationTerms.getDisbursementDatas().stream()
+                    .filter(data -> data.disbursementDate().equals(disbursementDate)).toList();
+
+            // For pre-creation scenario, include all expected tranches
+            // For existing loans, only include actually disbursed tranches
+            boolean shouldProcess;
+            if (isPreCreationScenario) {
+                // Pre-creation: include all expected tranches
+                shouldProcess = !tranchesOnDate.isEmpty();
+            } else {
+                // Existing loan: only include disbursed tranches
+                boolean allDisbursed = !tranchesOnDate.isEmpty() && tranchesOnDate.stream().allMatch(DisbursementData::isDisbursed);
+                shouldProcess = allDisbursed;
+
+                // If not all disbursed, mark for removal from map
+                if (!shouldProcess && !tranchesOnDate.isEmpty()) {
+                    datesToRemove.add(disbursementDate);
+                }
+            }
+
+            if (DateUtils.isAfter(disbursementDate, scheduleParams.getPeriodStartDate())
+                    && !DateUtils.isAfter(disbursementDate, scheduledDueDate) && shouldProcess) {
+                // validation check for amount not exceeds specified max
+                if (loanApplicationTerms.getMaxOutstandingBalance() != null) {
+                    Money maxOutstandingBalance = loanApplicationTerms.getMaxOutstandingBalanceMoney();
+                    if (scheduleParams.getOutstandingBalance().plus(disbursementAmount).isGreaterThan(maxOutstandingBalance)) {
+                        String errorMsg = "Outstanding balance must not exceed the amount: " + maxOutstandingBalance;
+                        throw new MultiDisbursementOutstandingAmoutException(errorMsg, maxOutstandingBalance.getAmount(),
+                                disbursementAmount.getAmount());
+                    }
+                }
+
+                // creates and add disbursement detail to the repayments period
+                // For disbursement charges on multi-tranche loans:
+                // - Percentage-based charges: recalculate per tranche (percentage × trancheAmount)
+                // - Flat charges: split proportionally (trancheAmount / totalAmount) × totalCharge
+                final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateDisbursementChargesForTranche(loanApplicationTerms,
+                        disbursementAmount.getAmount(), chargesDueAtTimeOfDisbursement, totalOriginalPrincipal);
+                final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
+                        .disbursement(disbursementDate, disbursementAmount, chargesDueAtTimeOfDisbursementForTranche);
+                periods.add(disbursementPeriod);
+
+                BigDecimal downPaymentAmt = BigDecimal.ZERO;
+                if (loanApplicationTerms.isDownPaymentEnabled()) {
+                    // get list of disbursements on same date
+                    // For pre-creation: include all expected tranches
+                    // For existing loans: only include disbursed tranches
+                    List<DisbursementData> disbursementsOnSameDate;
+                    if (isPreCreationScenario) {
+                        disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                                .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disbursementDate))
+                                .toList();
+                    } else {
+                        disbursementsOnSameDate = loanApplicationTerms.getDisbursementDatas().stream()
+                                .filter(disbursementData -> DateUtils.isEqual(disbursementData.disbursementDate(), disbursementDate)
+                                        && disbursementData.isDisbursed())
+                                .toList();
+                    }
+
+                    for (DisbursementData disbursementData : disbursementsOnSameDate) {
+                        final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
+                                scheduleParams, disbursementData.disbursementDate(), disbursementData.getPrincipal());
+                        periods.add(downPaymentPeriod);
+                        downPaymentAmt = downPaymentAmt.add(downPaymentPeriod.principalDue());
+                    }
+                }
+                // updates actual outstanding balance with new disbursement detail
+                Money remainingPrincipal = disbursementAmount.minus(downPaymentAmt);
+                scheduleParams.addOutstandingBalance(remainingPrincipal);
+                scheduleParams.addPrincipalToBeScheduled(remainingPrincipal);
+                loanApplicationTerms.setPrincipal(loanApplicationTerms.getPrincipal().plus(remainingPrincipal));
+            }
+        }
+
+        // Remove undisbursed tranches from disburseDetailMap to prevent them from being included in outstanding balance
+        // calculations
+        // This is critical - calculateOutstandingBalanceAsPerRest uses this map and will add ALL entries to outstanding
+        // balance
+        for (LocalDate dateToRemove : datesToRemove) {
+            scheduleParams.getDisburseDetailMap().remove(dateToRemove);
+        }
+    }
+
+    /**
+     * Calculate disbursement charges for a tranche, handling percentage-based and flat charges correctly.
+     *
+     * <p>
+     * For multi-tranche loans with disbursement charges:
+     * <ul>
+     * <li>Percentage-based charges: recalculate per tranche (percentage × trancheAmount)</li>
+     * <li>Flat charges: split proportionally based on tranche size</li>
+     * </ul>
+     */
+    private BigDecimal calculateDisbursementChargesForTranche(final LoanApplicationTerms loanApplicationTerms,
+            final BigDecimal trancheAmount, final BigDecimal totalChargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
+        if (totalChargesDueAtTimeOfDisbursement == null || totalChargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) == 0
+                || trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+
+        // If not a multi-tranche loan, use standard proportional calculation
+        if (!loanApplicationTerms.isMultiDisburseLoan()) {
+            return calculateChargesDueAtTimeOfDisbursementForTranche(totalOriginalPrincipal, trancheAmount,
+                    totalChargesDueAtTimeOfDisbursement);
+        }
+
+        // Get loan charges from thread-local
+        Set<LoanCharge> loanCharges = loanChargesThreadLocal.get();
+        if (loanCharges == null || loanCharges.isEmpty()) {
+            // Fallback to proportional calculation if charges not available
+            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+            BigDecimal principalForCalculation = totalMultiDisbursed.isGreaterThanZero() ? totalMultiDisbursed.getAmount()
+                    : totalOriginalPrincipal;
+            return calculateChargesDueAtTimeOfDisbursementForTranche(principalForCalculation, trancheAmount,
+                    totalChargesDueAtTimeOfDisbursement);
+        }
+
+        // Calculate charges per tranche based on charge type
+        BigDecimal totalTrancheCharges = BigDecimal.ZERO;
+        Money trancheAmountMoney = Money.of(loanApplicationTerms.getCurrency(), trancheAmount);
+
+        for (LoanCharge loanCharge : loanCharges) {
+            if (!loanCharge.isDueAtDisbursement()) {
+                continue;
+            }
+
+            BigDecimal chargeAmount = BigDecimal.ZERO;
+            boolean isPercentageBased = loanCharge.getChargeCalculation().isPercentageBased() && loanCharge.getPercentage() != null;
+
+            // For percentage-based disbursement charges, recalculate per tranche
+            if (isPercentageBased) {
+                // Calculate: percentage × trancheAmount
+                chargeAmount = trancheAmountMoney.getAmount().multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), 6,
+                        java.math.RoundingMode.HALF_UP);
+            } else {
+                // For flat charges, split proportionally
+                // Use approved principal or total multi-disbursed amount as base
+                Money sanctionedAmount = loanApplicationTerms.getApprovedPrincipal();
+                if (sanctionedAmount == null || sanctionedAmount.isZero()) {
+                    Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+                    sanctionedAmount = totalMultiDisbursed.isGreaterThanZero() ? totalMultiDisbursed : loanApplicationTerms.getPrincipal();
+                }
+
+                MonetaryCurrency currency = MonetaryCurrency.fromCurrencyData(loanApplicationTerms.getCurrency());
+                Money totalChargeAmount = loanCharge.getAmount(currency);
+                if (sanctionedAmount.isGreaterThanZero() && totalChargeAmount.isGreaterThanZero()) {
+                    // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
+                    chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount())
+                            .divide(sanctionedAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
+                }
+            }
+
+            // Add tax if applicable
+            if (loanCharge.hasTax()) {
+                MonetaryCurrency currency = MonetaryCurrency.fromCurrencyData(loanApplicationTerms.getCurrency());
+                Money totalTaxAmount = loanCharge.getTaxAmount(currency);
+                if (totalTaxAmount.isGreaterThanZero()) {
+                    BigDecimal taxToAdd = BigDecimal.ZERO;
+                    // For percentage-based charges, calculate tax proportionally based on charge ratio
+                    if (loanCharge.getChargeCalculation().isPercentageBased()) {
+                        Money totalChargeAmount = loanCharge.getAmount(currency);
+                        if (totalChargeAmount.isGreaterThanZero()) {
+                            // Tax ratio = trancheChargeAmount / totalChargeAmount
+                            BigDecimal taxRatio = chargeAmount.divide(totalChargeAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
+                            taxToAdd = totalTaxAmount.getAmount().multiply(taxRatio);
+                            chargeAmount = chargeAmount.add(taxToAdd);
+                        }
+                    } else {
+                        // For flat charges, split tax proportionally
+                        Money sanctionedAmount = loanApplicationTerms.getApprovedPrincipal();
+                        if (sanctionedAmount == null || sanctionedAmount.isZero()) {
+                            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+                            sanctionedAmount = totalMultiDisbursed.isGreaterThanZero() ? totalMultiDisbursed
+                                    : loanApplicationTerms.getPrincipal();
+                        }
+                        if (sanctionedAmount.isGreaterThanZero()) {
+                            taxToAdd = totalTaxAmount.getAmount().multiply(trancheAmountMoney.getAmount())
+                                    .divide(sanctionedAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
+                            chargeAmount = chargeAmount.add(taxToAdd);
+                        }
+                    }
+                }
+            }
+
+            totalTrancheCharges = totalTrancheCharges.add(chargeAmount);
+        }
+
+        return totalTrancheCharges;
+    }
+
+    /**
+     * Helper method to calculate charges due at time of disbursement for a tranche. Copied from parent class since it's
+     * private.
+     */
+    private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
+            final BigDecimal tranchePrincipal, final BigDecimal totalChargesDueAtTimeOfDisbursement) {
+        if (totalChargesDueAtTimeOfDisbursement == null || totalLoanPrincipal == null || tranchePrincipal == null
+                || totalLoanPrincipal.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return tranchePrincipal.multiply(totalChargesDueAtTimeOfDisbursement).divide(totalLoanPrincipal, MoneyHelper.getMathContext());
+    }
+
+    /**
+     * Override to handle first disbursement charges correctly for multi-tranche loans. For percentage-based
+     * disbursement charges, recalculate per tranche instead of using proportional splitting.
+     */
+    @Override
+    protected List<LoanScheduleModelPeriod> createNewLoanScheduleListWithDisbursementDetails(
+            final LoanApplicationTerms loanApplicationTerms, final LoanScheduleParams loanScheduleParams,
+            final BigDecimal chargesDueAtTimeOfDisbursement, final BigDecimal totalOriginalPrincipal) {
+        List<LoanScheduleModelPeriod> periods = new ArrayList<>();
+        if (!loanApplicationTerms.isMultiDisburseLoan()) {
+            // For single disbursement loans, use parent implementation
+            return super.createNewLoanScheduleListWithDisbursementDetails(loanApplicationTerms, loanScheduleParams,
+                    chargesDueAtTimeOfDisbursement, totalOriginalPrincipal);
+        }
+
+        // For multi-tranche loans, handle first disbursement (on period start date)
+        if (loanApplicationTerms.getDisbursementDatas().isEmpty()) {
+            final Long disbursementId = 1L;
+            final LocalDate expectedDisbursementDate = loanApplicationTerms.getExpectedDisbursementDate();
+            final LocalDate actualDisbursementDate = loanApplicationTerms.getExpectedDisbursementDate();
+            final BigDecimal principal = loanApplicationTerms.getPrincipal().getAmount();
+            final BigDecimal netDisbursalAmount = null;
+            final BigDecimal factorRateLoanAmount = null;
+            final String loanChargeId = null;
+            final BigDecimal chargeAmount = null;
+            final BigDecimal waivedChargeAmount = null;
+
+            loanApplicationTerms.getDisbursementDatas()
+                    .add(new DisbursementData(disbursementId, expectedDisbursementDate, actualDisbursementDate, principal,
+                            netDisbursalAmount, factorRateLoanAmount, loanChargeId, chargeAmount, waivedChargeAmount));
+        }
+
+        for (DisbursementData disbursementData : loanApplicationTerms.getDisbursementDatas()) {
+            if (disbursementData.disbursementDate().equals(loanScheduleParams.getPeriodStartDate())) {
+                final Money principalDisbursed = Money.of(loanScheduleParams.getCurrency(), disbursementData.getPrincipal());
+                // Use the same calculation method for first disbursement
+                final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateDisbursementChargesForTranche(loanApplicationTerms,
+                        disbursementData.getPrincipal(), chargesDueAtTimeOfDisbursement, totalOriginalPrincipal);
+                final LoanScheduleModelDisbursementPeriod disbursementPeriod = LoanScheduleModelDisbursementPeriod
+                        .disbursement(disbursementData.disbursementDate(), principalDisbursed, chargesDueAtTimeOfDisbursementForTranche);
+                periods.add(disbursementPeriod);
+
+                if (loanApplicationTerms.isDownPaymentEnabled()) {
+                    final LoanScheduleModelDownPaymentPeriod downPaymentPeriod = createDownPaymentPeriod(loanApplicationTerms,
+                            loanScheduleParams, disbursementData.disbursementDate(), disbursementData.getPrincipal());
+                    periods.add(downPaymentPeriod);
+                }
+            }
+        }
+
+        return periods;
+    }
+
+    /**
+     * Override to fix EMI calculation for multi-disburse loans.
+     *
+     * <p>
+     * For multi-disburse loans with existing disbursements, the EMI should be calculated using the total disbursed
+     * amount, not the approved principal. This ensures equal installments are calculated correctly based on actual
+     * disbursed principal.
+     */
+    @Override
+    protected void updateAmortization(final MathContext mc, final LoanApplicationTerms loanApplicationTerms, int periodNumber,
+            Money outstandingBalance) {
+        // For multi-disburse loans with existing disbursements, use total disbursed amount for EMI calculation
+        if (loanApplicationTerms.isMultiDisburseLoan() && loanApplicationTerms.getAmortizationMethod().isEqualInstallment()) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+            Money totalMultiDisbursed = loanApplicationTerms.getTotalMultiDisbursedAmount();
+
+            if (totalDisbursed.isGreaterThanZero()) {
+                // Use total disbursed amount instead of outstandingBalance (which might be approved principal)
+                Money principalForEmiCalculation = totalDisbursed.minus(loanApplicationTerms.getDownPaymentAmount());
+                super.updateAmortization(mc, loanApplicationTerms, periodNumber, principalForEmiCalculation);
+                return;
+            } else if (totalMultiDisbursed.isGreaterThanZero()) {
+                // Pre-creation scenario - use total multi-disbursed
+                Money principalForEmiCalculation = totalMultiDisbursed.minus(loanApplicationTerms.getDownPaymentAmount());
+                super.updateAmortization(mc, loanApplicationTerms, periodNumber, principalForEmiCalculation);
+                return;
+            }
+        }
+
+        // For non-multi-disburse or pre-creation scenarios, use parent implementation
+        super.updateAmortization(mc, loanApplicationTerms, periodNumber, outstandingBalance);
+    }
+
+    /**
+     * Override to fix last installment adjustment for multi-disburse loans.
+     *
+     * <p>
+     * The parent's adjustPrincipalIfLastRepaymentPeriod uses loanApplicationTerms.getPrincipal() which for
+     * multi-disburse loans may be the approved principal (150,000) instead of the actual disbursed principal (65,000).
+     * This causes the last installment to be incorrectly inflated.
+     *
+     * <p>
+     * This fix ensures that for multi-disburse loans with existing disbursements, the last installment adjustment uses
+     * the total disbursed amount instead of the approved principal.
+     */
+    @Override
+    public PrincipalInterest calculatePrincipalInterestComponentsForPeriod(final PaymentPeriodsInOneYearCalculator calculator,
+            final BigDecimal interestCalculationGraceOnRepaymentPeriodFraction, final Money totalCumulativePrincipal,
+            final Money totalCumulativeInterest, final Money totalInterestDueForLoan, final Money cumulatingInterestPaymentDueToGrace,
+            final Money outstandingBalance, final LoanApplicationTerms loanApplicationTerms, final int periodNumber, final MathContext mc,
+            final TreeMap<LocalDate, Money> principalVariation, final Map<LocalDate, Money> compoundingMap, final LocalDate periodStartDate,
+            final LocalDate periodEndDate, final Collection<LoanTermVariationsData> termVariations) {
+
+        PrincipalInterest result = super.calculatePrincipalInterestComponentsForPeriod(calculator,
+                interestCalculationGraceOnRepaymentPeriodFraction, totalCumulativePrincipal, totalCumulativeInterest,
+                totalInterestDueForLoan, cumulatingInterestPaymentDueToGrace, outstandingBalance, loanApplicationTerms, periodNumber, mc,
+                principalVariation, compoundingMap, periodStartDate, periodEndDate, termVariations);
+
+        // Fix last installment adjustment for multi-disburse loans
+        if (loanApplicationTerms.isMultiDisburseLoan() && loanApplicationTerms.isLastRepaymentPeriod(periodNumber)) {
+            Money totalDisbursed = loanApplicationTerms.getTotalDisbursedAmount();
+
+            // Only adjust if we have disbursed amounts (existing loan scenario)
+            if (totalDisbursed.isGreaterThanZero()) {
+                Money originalPrincipal = result.principal();
+                Money originalInterest = result.interest();
+                Money cumulativePrincipalBeforeThisPeriod = totalCumulativePrincipal;
+                Money remainingPrincipalToPay = totalDisbursed.minus(cumulativePrincipalBeforeThisPeriod);
+
+                // For the last period, we should clear the remaining balance exactly
+                // This may result in a slightly different total than EMI (due to rounding), which is acceptable
+                Money fixedEmiAmount = loanApplicationTerms.getFixedEmiAmount() != null
+                        ? Money.of(loanApplicationTerms.getCurrency(), loanApplicationTerms.getFixedEmiAmount())
+                        : null;
+
+                // Calculate what the installment would be if we use remaining principal
+                Money totalInstallmentWithRemainingPrincipal = remainingPrincipalToPay.plus(originalInterest);
+
+                // Check if using remaining principal keeps us close to EMI (within 1% tolerance)
+                Money tolerance = fixedEmiAmount != null ? fixedEmiAmount.multipliedBy(BigDecimal.valueOf(0.01)) // 1%
+                                                                                                                 // of
+                                                                                                                 // EMI
+                        : Money.of(loanApplicationTerms.getCurrency(), BigDecimal.valueOf(100)); // Default tolerance
+
+                if (fixedEmiAmount != null && fixedEmiAmount.isGreaterThanZero()) {
+                    Money differenceFromEmi = totalInstallmentWithRemainingPrincipal.minus(fixedEmiAmount).abs();
+
+                    // If the difference is within tolerance, use remaining principal to clear balance exactly
+                    // This matches the single-tranche loan behavior where Period 6 is slightly higher
+                    if (differenceFromEmi.isLessThan(tolerance)) {
+                        return new PrincipalInterest(remainingPrincipalToPay, result.interest(), result.interestPaymentDueToGrace());
+                    } else {
+                        // Difference is significant - use EMI-based calculation
+                        Money principalForEqualInstallment = fixedEmiAmount.minus(originalInterest);
+                        return new PrincipalInterest(principalForEqualInstallment, result.interest(), result.interestPaymentDueToGrace());
+                    }
+                } else {
+                    // No fixed EMI - use remaining principal to clear balance exactly
+                    return new PrincipalInterest(remainingPrincipalToPay, result.interest(), result.interestPaymentDueToGrace());
+                }
+            }
+        }
+
+        return result;
+    }
+}

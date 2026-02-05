@@ -45,4 +45,12 @@ public interface LineOfCreditWritePlatformService {
     CommandProcessingResult reduceCreditLimit(Long lineOfCreditId, JsonCommand command);
 
     CommandProcessingResult undoCloseLineOfCredit(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult addVendor(Long lineOfCreditId, JsonCommand command);
+
+    CommandProcessingResult updateVendor(Long lineOfCreditId, Long vendorId, JsonCommand command);
+
+    CommandProcessingResult deleteVendor(Long lineOfCreditId, Long vendorId);
 }

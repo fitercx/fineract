@@ -27,6 +27,7 @@ public class LineOfCreditCommandWrapperBuilder {
     private String actionName;
     private String entityName;
     private Long entityId;
+    private Long subentityId;
     private String href;
     private String json = "{}";
     private Long clientId;
@@ -132,13 +133,51 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder manageApprovedBuyers(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "UPDATE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/manageapprovedbuyers";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder addVendor(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "ADDVENDOR";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/vendors";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder updateVendor(Long lineOfCreditId, Long vendorId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "UPDATEVENDOR";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = vendorId;
+        this.subentityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/vendors/" + vendorId;
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder deleteVendor(Long lineOfCreditId, Long vendorId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "DELETEVENDOR";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = vendorId;
+        this.subentityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/vendors/" + vendorId;
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder withJson(final String json) {
         this.json = json;
         return this;
     }
 
     public CommandWrapper build() {
-        return new CommandWrapper(null, null, clientId, null, null, this.actionName, this.entityName, this.entityId, null, this.href,
-                this.json, null, null, null, null, null, null, null, null);
+        return new CommandWrapper(null, null, clientId, null, null, this.actionName, this.entityName, this.entityId, this.subentityId,
+                this.href, this.json, null, null, null, null, null, null, null, null);
     }
 }

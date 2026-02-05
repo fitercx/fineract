@@ -43,12 +43,14 @@ import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainServiceJpa;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCollateralManagementRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
@@ -216,7 +218,30 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         Money penaltyPayable = foreCloseDetail.getPenaltyChargesCharged(currency);
         Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
-        updateInstallmentsPostDate(loan, foreClosureDate);
+
+        // For Factor Rate loans, always use loan summary totals for fees and taxes
+        // The installment-based calculation (retrieveIncomeOutstandingTillDate) only includes fees from installments
+        // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
+        // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
+        // summary.
+        // Extract values as BigDecimal immediately to avoid entity state issues before collection modifications
+        if (loan.isFactorRateEnabled()) {
+            final LoanSummary loanSummary = loan.getSummary();
+            if (loanSummary != null) {
+                BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
+                BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
+
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are
+                // included
+                // Create new Money objects from extracted BigDecimal values to avoid entity references
+                feePayable = Money.of(currency, feeOutstandingAmount);
+                taxPayable = Money.of(currency, taxOutstandingAmount);
+            }
+        }
+
+        if (!loan.isFactorRateEnabled()) {
+            updateInstallmentsPostDate(loan, foreClosureDate);
+        }
 
         LoanTransaction payment = null;
         List<Long> transactionIds = new ArrayList<>();
@@ -307,6 +332,15 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         changes.put("transactions", transactionIds);
         changes.put("eventAmount", payPrincipal.getAmount().negate());
 
+        // For multi-disbursement loans, check if the loan should be closed based on disbursed amounts only
+        if (loan.isMultiDisburmentLoan()) {
+            final BigDecimal totalOutstandingForMultiDisburse = calculateMultiDisbursementLoanOutstanding(loan, currency);
+            if (totalOutstandingForMultiDisburse.compareTo(BigDecimal.ZERO) == 0) {
+                // Loan has zero outstanding based on disbursed amounts - close it
+                loan.setClosedOnDate(foreClosureDate);
+                defaultLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+            }
+        }
         loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
         if (StringUtils.isNotBlank(noteText)) {
@@ -320,6 +354,65 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         businessEventNotifierService.notifyPostBusinessEvent(new LoanForeClosurePostBusinessEvent(payment));
         return payment;
+    }
+
+    /**
+     * Calculate total outstanding for multi-disbursement loans based on disbursed amounts only. This considers: -
+     * Disbursed principal outstanding (not approved principal) - Interest outstanding - Fee charges outstanding (only
+     * from disbursed tranches) - Penalty charges outstanding - Tax charges outstanding (only from disbursed tranches)
+     *
+     * @param loan
+     *            the loan to calculate outstanding for
+     * @param currency
+     *            the monetary currency
+     * @return BigDecimal representing the total outstanding amount
+     */
+    private BigDecimal calculateMultiDisbursementLoanOutstanding(Loan loan, MonetaryCurrency currency) {
+        final LoanSummary summary = loan.getSummary();
+
+        // Calculate disbursed principal outstanding
+        final BigDecimal disbursedPrincipal = loan.getDisbursedAmount();
+        final BigDecimal principalRepaid = summary.getTotalPrincipalRepaid();
+        final BigDecimal principalWrittenOff = summary.getTotalPrincipalWrittenOff();
+        final BigDecimal principalAdjustments = summary.getTotalPrincipalAdjustments();
+        final BigDecimal disbursedPrincipalOutstanding = disbursedPrincipal.add(principalAdjustments).subtract(principalRepaid)
+                .subtract(principalWrittenOff);
+
+        // Calculate other outstanding amounts
+        final BigDecimal interestOutstanding = summary.getTotalInterestOutstanding();
+        final BigDecimal feeOutstanding = calculateFeeChargesOutstanding(loan, currency);
+        final BigDecimal penaltyOutstanding = summary.getTotalPenaltyChargesOutstanding();
+        final BigDecimal taxOutstanding = calculateTaxChargesOutstanding(loan, currency);
+        return disbursedPrincipalOutstanding.add(interestOutstanding).add(feeOutstanding).add(penaltyOutstanding).add(taxOutstanding);
+    }
+
+    private BigDecimal calculateFeeChargesOutstanding(final Loan loan, final MonetaryCurrency currency) {
+        Money totalFeeOutstanding = Money.zero(currency);
+        for (final LoanCharge charge : loan.getActiveCharges()) {
+            if (charge.isPenaltyCharge()) {
+                continue; // Skip penalty charges, we only want fee charges
+            }
+            if (!charge.isDisbursementCharge() && !charge.isTrancheDisbursementCharge()) {
+                totalFeeOutstanding = totalFeeOutstanding.plus(charge.getAmountOutstanding(currency));
+            }
+        }
+        return totalFeeOutstanding.getAmount();
+    }
+
+    private BigDecimal calculateTaxChargesOutstanding(final Loan loan, final MonetaryCurrency currency) {
+        Money totalDisbursedTaxOutstanding = Money.zero(currency);
+        for (final LoanCharge charge : loan.getActiveCharges()) {
+            if (charge.isPenaltyCharge()) {
+                continue; // Skip penalty charges
+            }
+            if (!charge.hasTax()) {
+                continue; // Skip charges without tax
+            }
+            if (!charge.isDisbursementCharge() && !charge.isTrancheDisbursementCharge()) {
+                totalDisbursedTaxOutstanding = totalDisbursedTaxOutstanding.plus(charge.getTaxAmountOutstanding(currency));
+            }
+        }
+        return totalDisbursedTaxOutstanding.getAmount();
     }
 
 }

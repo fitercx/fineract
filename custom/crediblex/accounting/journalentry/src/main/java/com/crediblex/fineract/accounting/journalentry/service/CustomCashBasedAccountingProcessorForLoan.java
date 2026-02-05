@@ -6,8 +6,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.closure.domain.GLClosure;
 import org.apache.fineract.accounting.common.AccountingConstants;
+import org.apache.fineract.accounting.glaccount.domain.GLAccount;
+import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
@@ -18,14 +21,34 @@ import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionEnumData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+/**
+ * Custom Cash-Based Accounting Processor for Loans
+ *
+ * Hardcoded RBF logic: For RBF loan products, uses GL 200040 instead of LIABILITY_TRANSFER when disbursing to savings
+ * accounts.
+ */
+@Slf4j
 @Primary
 @Component
 public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccountingProcessorForLoan {
 
+    // Hardcoded RBF Configuration
+    private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
+    private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
+    private static final String RECEIVABLE_LOC_PRODUCT_SHORT_NAME = "LRL";
+    private static final String RECEIVABLE_LOC_GL_CODE = "200041"; // Loan Payable - Invoice Discounting
+
     @Autowired
     private CustomAccountingProcessorHelper customAccountingProcessorHelper;
+
+    @Autowired
+    private GLAccountRepository glAccountRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     public CustomCashBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
@@ -156,10 +179,50 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, loanTransactionDTO.getAmount());
         } else if (loanTransactionDTO.isAccountTransfer()) {
-            // net disbursement may not play so well with tranch loans
-            this.helper.createCreditJournalEntryForLoan(office, currencyCode,
-                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
-                    transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            // For account transfers (disburse to savings):
+            // - RBF products: Use GL 200040 directly
+            // - Non-RBF products: Use LIABILITY_TRANSFER financial activity
+            if (isRBFProduct(loanProductId)) {
+                log.info("CustomCashBasedAccountingProcessorForLoan: RBF product detected - Using GL 200040 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200040 account
+                GLAccount rbfGLAccount = getRBFGLAccount();
+                if (rbfGLAccount == null) {
+                    log.warn("CustomCashBasedAccountingProcessorForLoan: GL 200040 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // RBF: Credit GL 200040 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), rbfGLAccount);
+                    log.info("CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200040 for RBF disbursement");
+                }
+            } else if (isReceivableLOCProduct(loanProductId)) {
+                log.info("CustomCashBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 200041 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200041 account
+                GLAccount receivableLOCGLAccount = getReceivableLOCGLAccount();
+                if (receivableLOCGLAccount == null) {
+                    log.warn("CustomCashBasedAccountingProcessorForLoan: GL 200041 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // Receivable LOC: Credit GL 200041 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), receivableLOCGLAccount);
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
+                }
+            } else {
+                log.debug("CustomCashBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
+                this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+            }
         } else {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
@@ -216,9 +279,25 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else {
-                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
-                        AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
+                if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
+                    GLAccount earlySettlementFeeRevenue = glAccountRepository.findOneByGlCode("300002").orElse(null);
+                    if (earlySettlementFeeRevenue != null) {
+                        this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                feesAmount, earlySettlementFeeRevenue);
+                        log.info(
+                                "CustomCashBasedAccountingProcessorForLoan: Using GL 300002 (Early Settlement Fee Revenue) for RBF foreclosure fees");
+                    } else {
+                        log.warn("CustomCashBasedAccountingProcessorForLoan: GL 300002 not found, falling back to INCOME_FROM_FEES");
+                        this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                                AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
+                                transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                    }
+                } else {
+                    this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                            AccountingConstants.CashAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
+                            transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                }
             }
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, feesAmount,
@@ -229,9 +308,33 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
 
         if (penaltiesAmount != null && penaltiesAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalDebitAmount = totalDebitAmount.add(penaltiesAmount);
-            this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
-                    AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
-                    transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+
+            // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
+            // instead of the default INCOME_FROM_PENALTIES account
+            if (isRBFProduct(loanProductId)) {
+                // Use hardcoded GL 300015 for RBF overdue interest penalty income
+                GLAccount rbfPenaltyIncomeAccount = glAccountRepository.findOneByGlCode("300015").orElse(null);
+                if (rbfPenaltyIncomeAccount != null) {
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
+                            penaltiesAmount);
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            penaltiesAmount, rbfPenaltyIncomeAccount);
+                } else {
+                    log.warn(
+                            "CustomCashBasedAccountingProcessorForLoan: GL 300015 (Over Due Interest - LPI - RBF) not found for RBF product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                            loanProductId);
+                    this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                            AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
+                            transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+                }
+            } else {
+                // Non-RBF products: Use default logic
+                this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                        AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
+                        transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+            }
+
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
                 populateDebitAccountEntry(loanProductId, penaltiesAmount,
                         AccountingConstants.CashAccountsForLoan.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
@@ -256,9 +359,29 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     AccountingConstants.FinancialActivity.ASSET_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, totalDebitAmount);
         } else if (loanTransactionDTO.isAccountTransfer()) {
-            this.helper.createDebitJournalEntryForLoan(office, currencyCode,
-                    AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
-                    transactionId, transactionDate, totalDebitAmount);
+            // For account transfers (repayment from savings to loan):
+            // - RBF products: Use GL 210003 (Working Capital Loan)
+            // - Non-RBF products: Use LIABILITY_TRANSFER financial activity
+            if (isRBFProduct(loanProductId)) {
+                log.info("CustomCashBasedAccountingProcessorForLoan: RBF product detected - Using GL 210003 for repayment");
+                // Get GL 210003 account (Working Capital Loan)
+                GLAccount rbfRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
+                if (rbfRepaymentGLAccount != null) {
+                    this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            totalDebitAmount, rbfRepaymentGLAccount);
+                    log.info("CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 210003 for RBF repayment");
+                } else {
+                    log.warn("CustomCashBasedAccountingProcessorForLoan: GL 210003 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, totalDebitAmount);
+                }
+            } else {
+                log.debug("CustomCashBasedAccountingProcessorForLoan: Non-RBF product, using default LIABILITY_TRANSFER");
+                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                        transactionId, transactionDate, totalDebitAmount);
+            }
         } else {
             if (loanTransactionDTO.getTransactionType().isGoodwillCredit()) {
 
@@ -289,5 +412,99 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, totalDebitAmount);
         }
+    }
+
+    /**
+     * Check if loan product is RBF Hardcoded: Checks product short_name = "RBF"
+     */
+    private boolean isRBFProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            // Query product short_name from database
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return RBF_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            log.debug("CustomCashBasedAccountingProcessorForLoan: Error checking RBF product for loanProductId {}: {}", loanProductId,
+                    e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if the loan product is Receivable LOC product
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if Receivable LOC product, false otherwise
+     */
+    private boolean isReceivableLOCProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return RECEIVABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            // If query fails, default to non-Receivable LOC (use old Liability Transfer)
+            return false;
+        }
+    }
+
+    /**
+     * Get GL 200040 account (RBF Loan Payable) Looks up by GL code to avoid hardcoding account ID
+     */
+    private GLAccount getRBFGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomCashBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting) Looks up by GL code to avoid hardcoding
+     * account ID
+     */
+    private GLAccount getReceivableLOCGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(RECEIVABLE_LOC_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomCashBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if the transaction is a foreclosure charge
+     */
+    private boolean isForeclosureCharge(LoanTransactionDTO loanTransactionDTO) {
+        try {
+            if (loanTransactionDTO.getFeePayments() != null && !loanTransactionDTO.getFeePayments().isEmpty()) {
+                for (var feePayment : loanTransactionDTO.getFeePayments()) {
+                    Long chargeId = feePayment.getChargeId();
+                    if (chargeId != null) {
+                        String sql = "SELECT name FROM m_charge WHERE id = ?";
+                        String chargeName = this.jdbcTemplate.queryForObject(sql, String.class, chargeId);
+                        if (chargeName != null) {
+                            String lowerName = chargeName.toLowerCase();
+                            if (lowerName.contains("foreclosure") || lowerName.contains("early settlement")
+                                    || lowerName.contains("prepayment") || lowerName.contains("early closure")) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("CustomCashBasedAccountingProcessorForLoan: Error checking foreclosure charge: {}", e.getMessage());
+        }
+        return false;
     }
 }

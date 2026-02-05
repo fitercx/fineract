@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet id="0049-1-add-charge-reversal-transaction-type" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="r_enum_value"/>
+            <!-- Check if CHARGE_REVERSAL already exists by enum_value (more robust than checking enum_id) -->
+            <!-- This ensures we don't insert duplicates even if enum_id differs in production -->
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM r_enum_value
+                WHERE enum_name = 'savings_transaction_type_enum'
+                AND enum_value = 'CHARGE_REVERSAL'
+            </sqlCheck>
+        </preConditions>
+        <comment>Add new transaction type for Paid Penalty Charge Reversal to distinguish from regular deposits</comment>
+
+        <!-- Add the enum value for CHARGE_REVERSAL in r_enum_value table -->
+        <!-- Note: The Java enum SavingsAccountTransactionType.CHARGE_REVERSAL uses ID 23 -->
+        <!-- However, we check by enum_value first to avoid conflicts if enum_id differs in production -->
+        <!-- If enum_id 23 is already taken, this will fail with a unique constraint violation -->
+        <!-- In that case, the database admin must manually fix the enum_id to match the Java code -->
+        <!-- Use Liquibase insert tag with valueBoolean to handle both MySQL (tinyint) and PostgreSQL (boolean) -->
+        <insert tableName="r_enum_value">
+            <column name="enum_name" value="savings_transaction_type_enum"/>
+            <column name="enum_id" valueNumeric="23"/>
+            <column name="enum_message_property" value="savingsAccountTransactionType.chargeReversal"/>
+            <column name="enum_value" value="CHARGE_REVERSAL"/>
+            <column name="enum_type" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

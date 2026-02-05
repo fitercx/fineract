@@ -202,7 +202,22 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                 successCount, failureCount, dueCount);
 
         if (!errors.isEmpty()) {
-            throw new JobExecutionException(errors);
+            // Log all errors with context before throwing
+            log.error("Standing instruction job completed with {} error(s). Details:", errors.size());
+            for (int i = 0; i < errors.size(); i++) {
+                Throwable error = errors.get(i);
+                log.error("Error {} of {}:", i + 1, errors.size(), error);
+            }
+
+            // Create a more informative exception with summary using text block
+            String summaryMessage = """
+                    Standing instruction job completed with %d error(s) out of %d processed instructions.
+                    Success: %d, Failed: %d. See error details above.
+                    """.formatted(errors.size(), processedCount, successCount.get(), failureCount.get());
+
+            // Wrap errors in JobExecutionException with better context
+            // JobExecutionException requires both message and list of throwables
+            throw new JobExecutionException(summaryMessage, errors);
         }
         return RepeatStatus.FINISHED;
     }
@@ -250,9 +265,32 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             }
         } catch (final PlatformApiDataValidationException e) {
             transferCompleted = false;
-            errors.add(new Exception("Validation exception while transferring funds for standing Instruction id" + instructionId + " from "
-                    + accountTransferDTO.getFromAccountId() + " to " + accountTransferDTO.getToAccountId(), e));
-            errorLog.append("Validation exception while transferring funds ").append(e.getDefaultUserMessage());
+
+            // Enhanced error context for LOC-related validation failures
+            String errorMessage = e.getDefaultUserMessage();
+            boolean isLocError = errorMessage != null && (errorMessage.contains("Consumed amount cannot be negative")
+                    || errorMessage.contains("LOC balance") || errorMessage.contains("loc.balance"));
+
+            String contextualError;
+            if (isLocError) {
+                contextualError = """
+                        LOC balance validation failed for standing Instruction id %d from account %d to account %d.
+                        Amount: %s, Error: %s
+                        This may indicate a data inconsistency that requires reconciliation.
+                        """.formatted(instructionId, accountTransferDTO.getFromAccountId(), accountTransferDTO.getToAccountId(), amount,
+                        errorMessage);
+                log.warn("LOC balance validation error for standing instruction {}: {}", instructionId, errorMessage, e);
+            } else {
+                contextualError = """
+                        Validation exception while transferring funds for standing Instruction id %d from account %d to account %d.
+                        Amount: %s, Error: %s
+                        """.formatted(instructionId, accountTransferDTO.getFromAccountId(), accountTransferDTO.getToAccountId(), amount,
+                        errorMessage);
+                log.error("Validation error for standing instruction {}: {}", instructionId, errorMessage, e);
+            }
+
+            errors.add(new Exception(contextualError, e));
+            errorLog.append("Validation exception: ").append(errorMessage);
 
         } catch (final InsufficientAccountBalanceException e) {
             transferCompleted = false;

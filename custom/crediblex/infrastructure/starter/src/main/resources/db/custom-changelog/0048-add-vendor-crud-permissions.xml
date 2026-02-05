@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    <changeSet id="1" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'ADDVENDOR_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="ADDVENDOR_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="ADDVENDOR"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="2" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'UPDATEVENDOR_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="UPDATEVENDOR_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="UPDATEVENDOR"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="3" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'DELETEVENDOR_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="DELETEVENDOR_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="DELETEVENDOR"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

@@ -840,11 +840,19 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                         yield getTotalAllTrancheDisbursementAmount().getAmount().add(totalInterestCharged);
                     }
                 } else {
-                    yield getPrincipal().getAmount().add(totalInterestCharged);
+                    // For LOC Receivable loans, percentage-based charges should use proposed principal
+                    // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                    // to ensure consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                    if (this.isReceivableLocLoan) {
+                        yield getProposedPrincipal().add(totalInterestCharged);
+                    } else {
+                        yield getPrincipal().getAmount().add(totalInterestCharged);
+                    }
                 }
             }
             case PERCENT_OF_INTEREST -> getTotalInterest();
             case PERCENT_OF_DISBURSEMENT_AMOUNT -> {
+                // PERCENT_OF_DISBURSEMENT_AMOUNT should always use disbursed amount, not approved principal
                 if (loanCharge.getTrancheDisbursementCharge() != null) {
                     yield loanCharge.getTrancheDisbursementCharge().getLoanDisbursementDetails().principal();
                 } else {
@@ -2129,8 +2137,18 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     if (loanCharge.getChargeCalculation().isFlat()) {
                         amount = loanCharge.amountOrPercentage();
                     } else {
-                        amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
-                                installment).getAmount();
+                        // For LOC Receivable loans with percentage-based installment fees, use the charge's total
+                        // amount
+                        // (which is calculated based on proposed principal) divided by installments, instead of
+                        // calculating
+                        // per installment based on installment principal (which uses disbursed amount)
+                        if (this.isReceivableLocLoan && loanCharge.getChargeCalculation().isPercentageBased()) {
+                            final BigDecimal numberOfInstallments = BigDecimal.valueOf(installments.size());
+                            amount = loanCharge.getAmount().divide(numberOfInstallments, MoneyHelper.getRoundingMode());
+                        } else {
+                            amount = calculateInstallmentChargeAmount(loanCharge.getChargeCalculation(), loanCharge.getPercentage(),
+                                    installment).getAmount();
+                        }
                     }
                 }
                 final LoanInstallmentCharge loanInstallmentCharge = new LoanInstallmentCharge(amount, loanCharge, installment);
@@ -2532,7 +2550,35 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public BigDecimal getDerivedAmountForCharge(final LoanCharge loanCharge) {
         BigDecimal amount = BigDecimal.ZERO;
         if (isMultiDisburmentLoan() && loanCharge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())) {
-            amount = getApprovedPrincipal();
+            // For multi-disbursement loans, calculate fee proportionally per tranche
+            // Check if charge is associated with a specific tranche
+            LoanTrancheDisbursementCharge trancheCharge = loanCharge.getTrancheDisbursementCharge();
+            if (trancheCharge != null) {
+                // Charge is linked to a specific tranche - use that tranche's principal
+                amount = trancheCharge.getLoanDisbursementDetails().principal();
+            } else {
+                // Charge not linked to tranche - find tranche by disbursement date and calculate proportionally
+                LocalDate actualDisbursementDate = getActualDisbursementDate(loanCharge);
+                if (actualDisbursementDate != null) {
+                    // Find the tranche that matches this disbursement date
+                    Optional<LoanDisbursementDetails> matchingTranche = getDisbursementDetails().stream()
+                            .filter(detail -> actualDisbursementDate.equals(detail.actualDisbursementDate())).findFirst();
+
+                    if (matchingTranche.isPresent()) {
+                        // Use the matching tranche's principal for proportional calculation
+                        // The fee percentage will be applied to this tranche amount, ensuring
+                        // proportional allocation: (trancheAmount / sanctionedAmount) * totalFee
+                        amount = matchingTranche.get().principal();
+                    } else {
+                        // Fallback: if no matching tranche found, use approved principal
+                        // This should not happen in normal flow, but provides safety
+                        amount = getApprovedPrincipal();
+                    }
+                } else {
+                    // No disbursement date yet - use approved principal as fallback
+                    amount = getApprovedPrincipal();
+                }
+            }
         } else {
             // If charge type is specified due date and loan is multi disburment loan.
             // Then we need to get as of this loan charge due date how much amount disbursed.
@@ -2543,7 +2589,14 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                     }
                 }
             } else {
-                amount = getPrincipal().getAmount();
+                // For LOC Receivable loans, percentage-based charges should use proposed principal
+                // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                // to ensure consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                if (this.isReceivableLocLoan) {
+                    amount = getProposedPrincipal();
+                } else {
+                    amount = getPrincipal().getAmount();
+                }
             }
         }
         return amount;
@@ -2555,7 +2608,19 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public LoanRepaymentScheduleInstallment fetchLoanForeclosureDetail(final LocalDate closureDate) {
         Money[] receivables = retrieveIncomeOutstandingTillDate(closureDate);
-        Money totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
+        Money totalPrincipal;
+
+        if (isMultiDisburmentLoan()) {
+            // For multi-disbursement loans, calculate outstanding based on actually disbursed amount only
+            Money disbursedPrincipal = Money.of(getCurrency(), getDisbursedAmount());
+            Money principalRepaid = Money.of(getCurrency(), this.getSummary().getTotalPrincipalRepaid());
+            Money principalWrittenOff = Money.of(getCurrency(), this.getSummary().getTotalPrincipalWrittenOff());
+            Money principalAdjustments = Money.of(getCurrency(), this.getSummary().getTotalPrincipalAdjustments());
+            totalPrincipal = disbursedPrincipal.plus(principalAdjustments).minus(principalRepaid).minus(principalWrittenOff);
+        } else {
+            totalPrincipal = Money.of(getCurrency(), this.getSummary().getTotalPrincipalOutstanding());
+        }
+
         totalPrincipal = totalPrincipal.minus(receivables[3]);
         final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
         final LocalDate currentDate = DateUtils.getBusinessLocalDate();

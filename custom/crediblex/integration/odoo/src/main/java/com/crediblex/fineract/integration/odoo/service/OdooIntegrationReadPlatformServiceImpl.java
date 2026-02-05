@@ -219,7 +219,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
-        // BNK10 journal for SAVINGS_WITHDRAWAL
+        // BNK10 journal for SAVINGS_WITHDRAWAL i.e. refund from savings account
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType)) {
             if ("100062".equals(glCode)) {
                 return "BNK10";
@@ -229,7 +229,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             }
         }
 
-        // BNK9 journal for SAVINGS_DEPOSIT
+        // BNK9 journal for SAVINGS_DEPOSIT i.e. deposit money to savings account
         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
             if ("210003".equals(glCode)) {
                 return "BNK9";
@@ -242,6 +242,18 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // General GL code mappings
         if ("200040".equals(glCode) && isDebit) {
             return "BNK1";
+        } 
+         
+        // BNK9 journal for SAVINGS_DEPOSIT during disbursement i.e. deposit money to savings account
+        if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
+            // When GL code is 210003
+            if ("210003".equals(glCode)) {
+                return "BNK9";
+            }
+            // When GL code is 200040 and it's a debit transaction
+            if ("200040".equals(glCode) && isDebit) {
+                return "BNK9";
+            }
         }
 
         if ("100003".equals(glCode)) {
@@ -252,7 +264,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK7";
         }
 
-        // BNK8 journal for REPAYMENT business events
+        // BNK8 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
             return "BNK8";
         }
@@ -289,6 +301,12 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         return null;
+        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
+            return "BNK8";
+        }
+
+        return null; // No mapping found
     }
 
     /**

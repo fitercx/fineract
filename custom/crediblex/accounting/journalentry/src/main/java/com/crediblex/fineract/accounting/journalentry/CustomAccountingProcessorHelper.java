@@ -158,6 +158,7 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
             customLoanDTO.setTotalDisbursementFeesTax(customBridgeData.getTotalDisbursementFeesTax());
             customLoanDTO.setTotalAccruedInterest(customBridgeData.getTotalAccruedInterest());
             customLoanDTO.setTotalInterestCharged(customBridgeData.getTotalInterestCharged());
+            customLoanDTO.setTaxLiabilityGLAccountId(customBridgeData.getTaxLiabilityGLAccountId());
         }
 
         return customLoanDTO;

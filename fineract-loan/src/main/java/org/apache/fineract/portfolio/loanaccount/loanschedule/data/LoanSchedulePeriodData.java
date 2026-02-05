@@ -85,6 +85,8 @@ public class LoanSchedulePeriodData {
     private final BigDecimal totalCredits;
     private final BigDecimal totalAccruedInterest;
     private final boolean downPaymentPeriod;
+    private final BigDecimal feeChargesReversed;
+    private final BigDecimal penaltyChargesReversed;
 
     public static LoanSchedulePeriodData disbursementOnlyPeriod(final LocalDate disbursementDate, final BigDecimal principalDisbursed,
             final BigDecimal feeChargesDueAtTimeOfDisbursement, final boolean isDisbursed) {
@@ -167,7 +169,7 @@ public class LoanSchedulePeriodData {
             final BigDecimal penaltyChargesWaived, final BigDecimal penaltyChargesWrittenOff, final BigDecimal penaltyChargesOutstanding,
             final BigDecimal totalPaid, final BigDecimal totalPaidInAdvanceForPeriod, final BigDecimal totalPaidLateForPeriod,
             final BigDecimal totalWaived, final BigDecimal totalWrittenOff, final BigDecimal totalCredits, final boolean isDownPayment,
-            final BigDecimal totalAccruedInterest) {
+            final BigDecimal totalAccruedInterest, final BigDecimal feeChargesReversed, final BigDecimal penaltyChargesReversed) {
 
         final MathContext mc = MoneyHelper.getMathContext();
 
@@ -224,6 +226,8 @@ public class LoanSchedulePeriodData {
                 .totalCredits(totalCredits) //
                 .downPaymentPeriod(isDownPayment) //
                 .totalAccruedInterest(totalAccruedInterest) //
+                .feeChargesReversed(feeChargesReversed) //
+                .penaltyChargesReversed(penaltyChargesReversed) //
                 .build();
     }
 
@@ -275,6 +279,8 @@ public class LoanSchedulePeriodData {
                 .totalCredits(loanSchedulePeriodData.totalCredits) //
                 .downPaymentPeriod(loanSchedulePeriodData.isDownPaymentPeriod()) //
                 .totalAccruedInterest(loanSchedulePeriodData.totalAccruedInterest) //
+                .feeChargesReversed(loanSchedulePeriodData.feeChargesReversed) //
+                .penaltyChargesReversed(loanSchedulePeriodData.penaltyChargesReversed) //
                 .build();
     }
 
@@ -384,6 +390,14 @@ public class LoanSchedulePeriodData {
 
     public BigDecimal totalOutstandingForPeriod() {
         return MathUtil.nullToDefault(this.totalOutstandingForPeriod, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getFeeChargesReversed() {
+        return MathUtil.nullToDefault(this.feeChargesReversed, BigDecimal.ZERO);
+    }
+
+    public BigDecimal getPenaltyChargesReversed() {
+        return MathUtil.nullToDefault(this.penaltyChargesReversed, BigDecimal.ZERO);
     }
 
 }

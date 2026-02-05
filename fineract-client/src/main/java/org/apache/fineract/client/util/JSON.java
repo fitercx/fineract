@@ -103,6 +103,7 @@ public class JSON {
      * <tt>[2009,1,1]</tt> format, but EXPECTS as String not Array and with a locale and dateFormat. Weird, but so it is
      * (see FINERACT-1220 & FINERACT-1233).
      */
+    @SuppressWarnings("SIC_INNER_SHOULD_BE_STATIC")
     public static class LocalDateTypeAdapter extends TypeAdapter<LocalDate> {
 
         // NB this format is referenced from org.apache.fineract.client.util.FineractClient.DATE_FORMAT
@@ -282,6 +283,15 @@ public class JSON {
             }
             this.gson = gson;
             this.gsonConverterFactory = GsonConverterFactory.create(gson);
+        }
+
+        /**
+         * Empty finalizer to prevent finalizer attacks. See SEI CERT Rule OBJ-11: Defend against finalizer attacks.
+         */
+        @SuppressWarnings({ "all", "FI_EMPTY" })
+        @Override
+        protected final void finalize() {
+            // Empty finalizer prevents attackers from exploiting partially initialized objects
         }
 
         @Override

@@ -59,95 +59,161 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
     @Override
     public AccountingBridgeDataDTO deriveAccountingBridgeData(final String currencyCode, final List<Long> existingTransactionIds,
             final List<Long> existingReversedTransactionIds, final boolean isAccountTransfer, final Loan loan) {
+        final List<AccountingBridgeLoanTransactionDTO> newLoanTransactions = buildNewLoanTransactions(loan, currencyCode,
+                existingTransactionIds, existingReversedTransactionIds);
+        final BigDecimal netAmountForLiabilityTransfer = calculateNetAmountForLiabilityTransfer(loan);
+
+        final CustomAccountingBridgeDataDTO accountingData = createAccountingBridgeDataDTO(loan, currencyCode, isAccountTransfer,
+                newLoanTransactions, netAmountForLiabilityTransfer);
+
+        if (isLocReceivable(loan)) {
+            populateLocReceivableFields(accountingData, loan);
+        }
+
+        return accountingData;
+    }
+
+    private List<AccountingBridgeLoanTransactionDTO> buildNewLoanTransactions(final Loan loan, final String currencyCode,
+            final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds) {
         final List<AccountingBridgeLoanTransactionDTO> newLoanTransactions = new ArrayList<>();
         for (final LoanTransaction transaction : loan.getLoanTransactions()) {
-            if (transaction.isReversed() && existingTransactionIds.contains(transaction.getId())
-                    && !existingReversedTransactionIds.contains(transaction.getId())) {
-                newLoanTransactions.add(mapToLoanTransactionData(transaction, currencyCode));
-            } else if (!existingTransactionIds.contains(transaction.getId())) {
+            if (shouldIncludeTransaction(transaction, existingTransactionIds, existingReversedTransactionIds)) {
                 newLoanTransactions.add(mapToLoanTransactionData(transaction, currencyCode));
             }
         }
+        return newLoanTransactions;
+    }
 
-        BigDecimal netAmountForLiabilityTransfer = ((loan.getNetDisbursalAmount() != null)
-                && (loan.getNetDisbursalAmount().compareTo(BigDecimal.ZERO) < 0))
-                        ? loan.getApprovedPrincipal().add(loan.getNetDisbursalAmount())
-                        : loan.getApprovedPrincipal();
+    private boolean shouldIncludeTransaction(final LoanTransaction transaction, final List<Long> existingTransactionIds,
+            final List<Long> existingReversedTransactionIds) {
+        return (transaction.isReversed() && existingTransactionIds.contains(transaction.getId())
+                && !existingReversedTransactionIds.contains(transaction.getId())) || !existingTransactionIds.contains(transaction.getId());
+    }
 
-        CustomAccountingBridgeDataDTO accountingData = new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(),
-                currencyCode, loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
+    private BigDecimal calculateNetAmountForLiabilityTransfer(final Loan loan) {
+        if (loan.getNetDisbursalAmount() != null && loan.getNetDisbursalAmount().compareTo(BigDecimal.ZERO) < 0) {
+            return loan.getApprovedPrincipal().add(loan.getNetDisbursalAmount());
+        }
+        return loan.getApprovedPrincipal();
+    }
+
+    private CustomAccountingBridgeDataDTO createAccountingBridgeDataDTO(final Loan loan, final String currencyCode,
+            final boolean isAccountTransfer, final List<AccountingBridgeLoanTransactionDTO> newLoanTransactions,
+            final BigDecimal netAmountForLiabilityTransfer) {
+        return new CustomAccountingBridgeDataDTO(loan.getId(), loan.productId(), loan.getOfficeId(), currencyCode,
+                loan.getSummary().getTotalInterestCharged(), loan.isCashBasedAccountingEnabledOnLoanProduct(),
                 loan.isUpfrontAccrualAccountingEnabledOnLoanProduct(), loan.isPeriodicAccrualAccountingEnabledOnLoanProduct(),
                 isAccountTransfer, loan.isChargedOff(), loan.isFraud(), loan.fetchChargeOffReasonId(), newLoanTransactions,
                 netAmountForLiabilityTransfer);
+    }
 
-        // Populate LOC receivable specific fields for upfront accrual accounting
-        boolean isLocReceivable = loan.getLoanProduct().isEnableLocReceivable() && loan.isPeriodicAccrualAccountingEnabledOnLoanProduct();
+    private boolean isLocReceivable(final Loan loan) {
+        return loan.getLoanProduct().isEnableLocReceivable() && loan.isPeriodicAccrualAccountingEnabledOnLoanProduct();
+    }
 
-        if (isLocReceivable) {
-            accountingData.setLocReceivable(true);
+    private void populateLocReceivableFields(final CustomAccountingBridgeDataDTO accountingData, final Loan loan) {
+        accountingData.setLocReceivable(true);
+        accountingData.setTotalContractualInterest(calculateTotalContractualInterest(loan));
+        populateDisbursementFees(accountingData, loan);
+        accountingData.setTotalAccruedInterest(calculateTotalAccruedInterest(loan));
+        accountingData.setTotalInterestCharged(calculateTotalInterestCharged(loan));
+    }
 
-            // Calculate total contractual interest from loan schedule installments (not summary)
-            // At disbursement time, loan.getSummary().getTotalInterestCharged() may be 0
-            BigDecimal totalContractualInterest = BigDecimal.ZERO;
-            if (loan.getRepaymentScheduleInstallments() != null) {
-                for (var installment : loan.getRepaymentScheduleInstallments()) {
-                    Money interestCharged = installment.getInterestCharged(loan.getCurrency());
-                    if (interestCharged != null) {
-                        totalContractualInterest = totalContractualInterest.add(interestCharged.getAmount());
-                    }
+    private BigDecimal calculateTotalContractualInterest(final Loan loan) {
+        BigDecimal totalContractualInterest = BigDecimal.ZERO;
+        if (loan.getRepaymentScheduleInstallments() != null) {
+            for (var installment : loan.getRepaymentScheduleInstallments()) {
+                Money interestCharged = installment.getInterestCharged(loan.getCurrency());
+                if (interestCharged != null) {
+                    totalContractualInterest = totalContractualInterest.add(interestCharged.getAmount());
                 }
             }
-            accountingData.setTotalContractualInterest(totalContractualInterest);
+        }
+        return totalContractualInterest;
+    }
 
-            // Calculate total disbursement fees (net + tax)
-            BigDecimal totalDisbursementFees = BigDecimal.ZERO;
-            BigDecimal totalDisbursementFeesTax = BigDecimal.ZERO;
+    private void populateDisbursementFees(final CustomAccountingBridgeDataDTO accountingData, final Loan loan) {
+        DisbursementFeesCalculation feesCalculation = calculateDisbursementFees(loan);
+        accountingData.setTotalDisbursementFees(feesCalculation.totalFees);
+        accountingData.setTotalDisbursementFeesTax(feesCalculation.totalFeesTax);
+        accountingData.setTaxLiabilityGLAccountId(feesCalculation.taxLiabilityGLAccountId);
+    }
 
-            for (LoanCharge charge : loan.getCharges()) {
-                if ((charge.isDisbursementCharge() || charge.isInstalmentFee()) && !charge.isWaived()) {
-                    BigDecimal chargeAmount = charge.getAmount();
-                    if (chargeAmount != null) {
-                        totalDisbursementFees = totalDisbursementFees.add(chargeAmount);
+    private DisbursementFeesCalculation calculateDisbursementFees(final Loan loan) {
+        BigDecimal totalDisbursementFees = BigDecimal.ZERO;
+        BigDecimal totalDisbursementFeesTax = BigDecimal.ZERO;
+        Long taxLiabilityGLAccountId = null;
 
-                        // Add tax amount if charge has tax
-                        if (charge.hasTax() && charge.getTaxAmount() != null) {
-                            BigDecimal taxAmount = Money.of(loan.getCurrency(), charge.getTaxAmount()).getAmount();
-                            totalDisbursementFees = totalDisbursementFees.add(taxAmount);
-                            totalDisbursementFeesTax = totalDisbursementFeesTax.add(taxAmount);
+        for (LoanCharge charge : loan.getCharges()) {
+            if (isApplicableCharge(charge)) {
+                BigDecimal chargeAmount = charge.getAmount();
+                if (chargeAmount != null) {
+                    totalDisbursementFees = totalDisbursementFees.add(chargeAmount);
+                    if (charge.hasTax() && charge.getTaxAmount() != null) {
+                        BigDecimal taxAmount = Money.of(loan.getCurrency(), charge.getTaxAmount()).getAmount();
+                        totalDisbursementFees = totalDisbursementFees.add(taxAmount);
+                        totalDisbursementFeesTax = totalDisbursementFeesTax.add(taxAmount);
+                        if (taxLiabilityGLAccountId == null) {
+                            taxLiabilityGLAccountId = extractTaxLiabilityGLAccountId(charge);
                         }
                     }
                 }
             }
-
-            accountingData.setTotalDisbursementFees(totalDisbursementFees);
-            accountingData.setTotalDisbursementFeesTax(totalDisbursementFeesTax);
-
-            // Calculate total accrued interest from non-reversed accrual transactions
-            BigDecimal totalAccruedInterest = BigDecimal.ZERO;
-            for (LoanTransaction transaction : loan.getLoanTransactions()) {
-                if (transaction.isAccrual() && !transaction.isReversed()) {
-                    BigDecimal interestPortion = transaction.getInterestPortion();
-                    if (interestPortion != null) {
-                        totalAccruedInterest = totalAccruedInterest.add(interestPortion);
-                    }
-                }
-            }
-            accountingData.setTotalAccruedInterest(totalAccruedInterest);
-
-            // Calculate total interest charged from loan schedule installments
-            BigDecimal totalInterestCharged = BigDecimal.ZERO;
-            if (loan.getRepaymentScheduleInstallments() != null) {
-                for (var installment : loan.getRepaymentScheduleInstallments()) {
-                    Money interestCharged = installment.getInterestCharged(loan.getCurrency());
-                    if (interestCharged != null) {
-                        totalInterestCharged = totalInterestCharged.add(interestCharged.getAmount());
-                    }
-                }
-            }
-            accountingData.setTotalInterestCharged(totalInterestCharged);
         }
 
-        return accountingData;
+        return new DisbursementFeesCalculation(totalDisbursementFees, totalDisbursementFeesTax, taxLiabilityGLAccountId);
+    }
+
+    private boolean isApplicableCharge(final LoanCharge charge) {
+        return (charge.isDisbursementCharge() || charge.isInstalmentFee()) && !charge.isWaived();
+    }
+
+    private Long extractTaxLiabilityGLAccountId(final LoanCharge charge) {
+        if (charge.getCharge() == null || charge.getCharge().getTaxGroup() == null) {
+            return null;
+        }
+        return charge.getCharge().getTaxGroup().getTaxGroupMappings().stream().findFirst()
+                .filter(mapping -> mapping.getTaxComponent() != null && mapping.getTaxComponent().getCreditAccount() != null)
+                .map(mapping -> mapping.getTaxComponent().getCreditAccount().getId()).orElse(null);
+    }
+
+    private BigDecimal calculateTotalAccruedInterest(final Loan loan) {
+        BigDecimal totalAccruedInterest = BigDecimal.ZERO;
+        for (LoanTransaction transaction : loan.getLoanTransactions()) {
+            if (transaction.isAccrual() && !transaction.isReversed()) {
+                BigDecimal interestPortion = transaction.getInterestPortion();
+                if (interestPortion != null) {
+                    totalAccruedInterest = totalAccruedInterest.add(interestPortion);
+                }
+            }
+        }
+        return totalAccruedInterest;
+    }
+
+    private BigDecimal calculateTotalInterestCharged(final Loan loan) {
+        BigDecimal totalInterestCharged = BigDecimal.ZERO;
+        if (loan.getRepaymentScheduleInstallments() != null) {
+            for (var installment : loan.getRepaymentScheduleInstallments()) {
+                Money interestCharged = installment.getInterestCharged(loan.getCurrency());
+                if (interestCharged != null) {
+                    totalInterestCharged = totalInterestCharged.add(interestCharged.getAmount());
+                }
+            }
+        }
+        return totalInterestCharged;
+    }
+
+    private static class DisbursementFeesCalculation {
+
+        final BigDecimal totalFees;
+        final BigDecimal totalFeesTax;
+        final Long taxLiabilityGLAccountId;
+
+        DisbursementFeesCalculation(final BigDecimal totalFees, final BigDecimal totalFeesTax, final Long taxLiabilityGLAccountId) {
+            this.totalFees = totalFees;
+            this.totalFeesTax = totalFeesTax;
+            this.taxLiabilityGLAccountId = taxLiabilityGLAccountId;
+        }
     }
 
     @Override

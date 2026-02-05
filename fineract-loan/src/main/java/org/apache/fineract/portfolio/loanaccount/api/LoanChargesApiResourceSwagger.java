@@ -25,7 +25,7 @@ import java.util.Set;
 /**
  * Created by Chirag Gupta on 12/02/17.
  */
-final class LoanChargesApiResourceSwagger {
+public final class LoanChargesApiResourceSwagger {
 
     private LoanChargesApiResourceSwagger() {}
 

@@ -1108,7 +1108,8 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     + "left join m_account_transfer_transaction totran on totran.to_savings_transaction_id = tr.id "
                     + "left join m_payment_detail pd on tr.payment_detail_id = pd.id "
                     + "left join m_payment_type pt on pd.payment_type_id = pt.id left join m_appuser au on au.id= tr." + CREATED_BY_DB_FIELD
-                    + " left join m_note nt ON nt.savings_account_transaction_id=tr.id "
+                    // this change cannot be done in custom folder as static final classes cannot be extended.
+                    + " left join m_note nt ON nt.id = (select max(n.id) from m_note n where n.savings_account_transaction_id = tr.id) "
                     + "left join m_savings_account_charge_paid_by chargePaidBy on chargePaidBy.savings_account_transaction_id = tr.id "
                     + "left join m_savings_account_charge savingsCharge on savingsCharge.id = chargePaidBy.savings_account_charge_id "
                     + "left join m_loan loan on loan.id = savingsCharge.loan_account_id "

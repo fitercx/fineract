@@ -163,10 +163,33 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                     .orElseThrow(() -> new LoanProductNotFoundException(loanProductId));
             this.fromApiJsonDeserializer.validateForUpdate(command, product);
             validateInputDates(command);
-            if (anyChangeInCriticalFloatingRateLinkedParams(command, product)
-                    && this.loanRepositoryWrapper.doNonClosedLoanAccountsExistForProduct(product.getId())) {
+            // Cache result to avoid redundant database queries if multiple validations need it
+            final boolean hasNonClosedLoans = this.loanRepositoryWrapper.doNonClosedLoanAccountsExistForProduct(product.getId());
+
+            if (anyChangeInCriticalFloatingRateLinkedParams(command, product) && hasNonClosedLoans) {
                 throw new LoanProductCannotBeModifiedDueToNonClosedLoansException(product.getId());
             }
+
+            // VALIDATION RELAXED: Allow changing from single-disbursal to multi-disbursal even with active loans
+            // This is now safe because we've implemented LoanTrancheValidationHelper.hasActualMultipleTranches()
+            // which checks the loan's actual structure (not just product setting) for repayment validation
+            // Single-disbursal loans will continue to work correctly even if product is updated to multi-disbursal
+            final boolean isCurrentlyMultiDisburse = product.isMultiDisburseLoan();
+            if (command.isChangeInBooleanParameterNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME,
+                    isCurrentlyMultiDisburse)) {
+                final boolean newValue = command
+                        .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME);
+
+                // If changing from single-disbursal (false) to multi-disbursal (true) and active loans exist
+                if (!isCurrentlyMultiDisburse && newValue && hasNonClosedLoans) {
+                    log.info("Allowing change of loan product {} from single-disbursal to multi-disbursal with active loans. "
+                            + "This is safe because repayment validation now checks actual loan structure, not just product setting.",
+                            product.getId());
+                    // Validation removed - allow the change
+                    // The repayment validation fix ensures single-disbursal loans won't be incorrectly validated
+                }
+            }
+
             FloatingRate floatingRate = null;
             if (command.parameterExists("floatingRatesId")) {
                 floatingRate = this.floatingRateRepository

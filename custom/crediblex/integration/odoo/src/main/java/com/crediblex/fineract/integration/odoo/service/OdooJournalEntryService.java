@@ -460,8 +460,20 @@ public class OdooJournalEntryService {
             Integer accountId = odooIntegrationService.getOdooAccountId(accountCode);
 
             if (accountId == null) {
-                log.warn("Could not map account {} to Odoo, skipping entry {}", accountCode, entry.getId());
-                continue;
+                String errorMsg = String.format(
+                        "Could not map GL account '%s' to Odoo account ID for entry %d. Check account mapping configuration.", accountCode,
+                        entry.getId());
+                log.error(errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+
+            // Additional validation: verify account exists in Odoo
+            if (!doesAccountExistInOdoo(accountCode)) {
+                String errorMsg = String.format(
+                        "GL account '%s' (mapped to account ID %d) does not exist in Odoo for entry %d. Account may have been deleted or archived.",
+                        accountCode, accountId, entry.getId());
+                log.error(errorMsg);
+                throw new RuntimeException(errorMsg);
             }
 
             String accountKey = accountId.toString();
@@ -473,6 +485,8 @@ public class OdooJournalEntryService {
             } else {
                 amounts.merge("credit", entry.getAmount(), BigDecimal::add);
             }
+
+            log.debug("Processed journal entry {} with GL code '{}' mapped to account ID {}", entry.getId(), accountCode, accountId);
         }
 
         // Check if we have overdue interest charges (GL code 100030) to add additional LPI entries
@@ -1053,6 +1067,252 @@ public class OdooJournalEntryService {
         }
 
         return validationResults;
+    }
+
+    /**
+     * Enhanced version of postJournalEntriesForLoan with individual entry tracking This method provides granular
+     * success/failure tracking for each journal entry
+     */
+    public EntryProcessingResult postJournalEntriesForLoanWithTracking(Long loanId, List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+        List<Long> successfulEntryIds = new ArrayList<>();
+        Map<Long, String> failedEntryIds = new HashMap<>();
+        Map<Integer, Long> journalToMoveMap = new HashMap<>();
+
+        try {
+            // Authenticate with Odoo
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                String error = "Odoo authentication failed for loan " + loanId;
+                // Mark all entries as failed due to authentication issue
+                for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                    failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                }
+                return new EntryProcessingResult(successfulEntryIds, failedEntryIds, 0, journalToMoveMap);
+            }
+
+            List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
+
+            // First pass: validate entries and separate valid from invalid
+            List<JournalEntryOdooSync> validEntries = new ArrayList<>();
+
+            for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                JournalEntry entry = sync.getJournalEntry();
+                if (!canPostToOdoo(entry)) {
+                    String error = String.format("Journal entry %d for loan %d failed validation", entry.getId(), loanId);
+                    failedEntryIds.put(entry.getId(), error);
+                } else {
+                    validEntries.add(sync);
+                }
+            }
+
+            if (validEntries.isEmpty()) {
+                log.warn("No valid journal entries to post for loan {}", loanId);
+                return new EntryProcessingResult(successfulEntryIds, failedEntryIds, 0, journalToMoveMap);
+            }
+
+            // Group valid entries by journal
+            Map<Integer, List<JournalEntryOdooSync>> entriesByJournal = new HashMap<>();
+            for (JournalEntryOdooSync sync : validEntries) {
+                JournalEntry entry = sync.getJournalEntry();
+                String glCode = entry.getGlAccount().getGlCode();
+                String businessEventType = sync.getBusinessEventType();
+                boolean isDebit = entry.isDebitEntry();
+
+                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
+                if (journalId != null) {
+                    entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
+                } else {
+                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", glCode,
+                            businessEventType, isDebit);
+                    failedEntryIds.put(entry.getId(), error);
+                }
+            }
+
+            // Process each journal group separately
+            for (Map.Entry<Integer, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey();
+                List<JournalEntryOdooSync> groupEntries = journalGroup.getValue();
+
+                try {
+                    List<JournalEntry> entries = groupEntries.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
+
+                    // Create the account move for this journal
+                    Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
+                    Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
+
+                    if (odooMoveId == null) {
+                        String error = String.format("Failed to create account move in Odoo for loan %d and journal %d", loanId, journalId);
+                        for (JournalEntryOdooSync sync : groupEntries) {
+                            failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                        }
+                        continue;
+                    }
+
+                    // Try to post the move
+                    Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
+                    if (!posted) {
+                        log.warn("Created move {} in Odoo but failed to post it - move remains in draft state", odooMoveId);
+                    }
+
+                    // If we get here, the journal group was successful
+                    journalToMoveMap.put(journalId, odooMoveId);
+                    for (JournalEntryOdooSync sync : groupEntries) {
+                        successfulEntryIds.add(sync.getJournalEntry().getId());
+                    }
+
+                    log.info("Successfully posted {} journal entries for loan {} to Odoo journal {} as move {}", groupEntries.size(),
+                            loanId, journalId, odooMoveId);
+
+                } catch (Exception e) {
+                    // This specific journal group failed
+                    String error = String.format("Failed to post journal entries for loan %d, journal %d: %s", loanId, journalId,
+                            e.getMessage());
+                    log.error("Journal group processing failed for loan {}, journal {}", loanId, journalId, e);
+
+                    for (JournalEntryOdooSync sync : groupEntries) {
+                        failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            // Unexpected error during processing
+            String error = String.format("Unexpected error during loan %d processing: %s", loanId, e.getMessage());
+            log.error("Unexpected error during loan {} processing", loanId, e);
+
+            // Mark any remaining entries that weren't already processed as failed
+            for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                Long entryId = sync.getJournalEntry().getId();
+                if (!successfulEntryIds.contains(entryId) && !failedEntryIds.containsKey(entryId)) {
+                    failedEntryIds.put(entryId, error);
+                }
+            }
+        }
+
+        return new EntryProcessingResult(successfulEntryIds, failedEntryIds, journalToMoveMap.size(), journalToMoveMap);
+    }
+
+    /**
+     * Enhanced version of postJournalEntriesForBusinessEvent with individual entry tracking
+     */
+    public EntryProcessingResult postJournalEntriesForBusinessEventWithTracking(String businessEventType,
+            List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+        List<Long> successfulEntryIds = new ArrayList<>();
+        Map<Long, String> failedEntryIds = new HashMap<>();
+        Map<Integer, Long> journalToMoveMap = new HashMap<>();
+
+        try {
+            // Authenticate with Odoo
+            Integer uid = odooApiClient.authenticate();
+            if (uid == null) {
+                String error = "Odoo authentication failed for business event " + businessEventType;
+                for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                    failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                }
+                return new EntryProcessingResult(successfulEntryIds, failedEntryIds, 0, journalToMoveMap);
+            }
+
+            List<JournalEntry> journalEntries = journalEntryOdooSyncs.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
+
+            // Validate entries and separate valid from invalid
+            List<JournalEntryOdooSync> validEntries = new ArrayList<>();
+
+            for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                JournalEntry entry = sync.getJournalEntry();
+                if (!canPostToOdoo(entry)) {
+                    String error = String.format("Journal entry %d for business event %s failed validation", entry.getId(),
+                            businessEventType);
+                    failedEntryIds.put(entry.getId(), error);
+                } else {
+                    validEntries.add(sync);
+                }
+            }
+
+            if (validEntries.isEmpty()) {
+                log.warn("No valid journal entries to post for business event {}", businessEventType);
+                return new EntryProcessingResult(successfulEntryIds, failedEntryIds, 0, journalToMoveMap);
+            }
+
+            // Group valid entries by journal
+            Map<Integer, List<JournalEntryOdooSync>> entriesByJournal = new HashMap<>();
+            for (JournalEntryOdooSync sync : validEntries) {
+                JournalEntry entry = sync.getJournalEntry();
+                String glCode = entry.getGlAccount().getGlCode();
+                boolean isDebit = entry.isDebitEntry();
+
+                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, sync.getBusinessEventType(), isDebit);
+                if (journalId != null) {
+                    entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
+                } else {
+                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", glCode,
+                            businessEventType, isDebit);
+                    failedEntryIds.put(entry.getId(), error);
+                }
+            }
+
+            // Process each journal group separately
+            for (Map.Entry<Integer, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey();
+                List<JournalEntryOdooSync> groupEntries = journalGroup.getValue();
+
+                try {
+                    List<JournalEntry> entries = groupEntries.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
+
+                    // Create the account move for this journal
+                    Map<String, Object> moveValues = buildAccountMoveValuesForBusinessEvent(businessEventType, entries, journalId);
+                    Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
+
+                    if (odooMoveId == null) {
+                        String error = String.format("Failed to create account move in Odoo for business event %s and journal %d",
+                                businessEventType, journalId);
+                        for (JournalEntryOdooSync sync : groupEntries) {
+                            failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                        }
+                        continue;
+                    }
+
+                    // Try to post the move
+                    Boolean posted = odooApiClient.postAccountMove(uid, odooMoveId);
+                    if (!posted) {
+                        log.warn("Created move {} in Odoo but failed to post it - move remains in draft state", odooMoveId);
+                    }
+
+                    // If we get here, the journal group was successful
+                    journalToMoveMap.put(journalId, odooMoveId);
+                    for (JournalEntryOdooSync sync : groupEntries) {
+                        successfulEntryIds.add(sync.getJournalEntry().getId());
+                    }
+
+                    log.info("Successfully posted {} journal entries for business event {} to Odoo journal {} as move {}",
+                            groupEntries.size(), businessEventType, journalId, odooMoveId);
+
+                } catch (Exception e) {
+                    // This specific journal group failed
+                    String error = String.format("Failed to post journal entries for business event %s, journal %d: %s", businessEventType,
+                            journalId, e.getMessage());
+                    log.error("Journal group processing failed for business event {}, journal {}", businessEventType, journalId, e);
+
+                    for (JournalEntryOdooSync sync : groupEntries) {
+                        failedEntryIds.put(sync.getJournalEntry().getId(), error);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            // Unexpected error during processing
+            String error = String.format("Unexpected error during business event %s processing: %s", businessEventType, e.getMessage());
+            log.error("Unexpected error during business event {} processing", businessEventType, e);
+
+            // Mark any remaining entries that weren't already processed as failed
+            for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
+                Long entryId = sync.getJournalEntry().getId();
+                if (!successfulEntryIds.contains(entryId) && !failedEntryIds.containsKey(entryId)) {
+                    failedEntryIds.put(entryId, error);
+                }
+            }
+        }
+
+        return new EntryProcessingResult(successfulEntryIds, failedEntryIds, journalToMoveMap.size(), journalToMoveMap);
     }
 
 }

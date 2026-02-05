@@ -126,7 +126,8 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
 
     /**
      * Calculates proportional charge amount for multi-tranche loans. For DISBURSEMENT charges on multi-tranche loans
-     * without tranche association, calculates: (trancheAmount / sanctionedAmount) * totalChargeAmount
+     * without tranche association: - For percentage-based charges: recalculates charge per tranche (percentage ×
+     * trancheAmount) - For flat charges: splits proportionally (trancheAmount / sanctionedAmount) × totalChargeAmount
      *
      * @param loan
      *            the loan
@@ -150,14 +151,24 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
 
             if (currentTranche.isPresent()) {
                 Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
-                Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
-                Money totalChargeAmount = charge.getAmount(loan.getCurrency());
 
-                if (sanctionedAmount.isGreaterThanZero()) {
-                    // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
-                    BigDecimal proportionalAmount = totalChargeAmount.getAmount().multiply(trancheAmount.getAmount())
-                            .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
-                    return Money.of(loan.getCurrency(), proportionalAmount);
+                // For percentage-based charges, recalculate per tranche instead of splitting
+                if (charge.getChargeCalculation().isPercentageBased() && charge.getPercentage() != null) {
+                    // Calculate: percentage × trancheAmount
+                    BigDecimal chargeAmount = trancheAmount.getAmount().multiply(charge.getPercentage()).divide(BigDecimal.valueOf(100), 6,
+                            RoundingMode.HALF_UP);
+                    return Money.of(loan.getCurrency(), chargeAmount);
+                } else {
+                    // For flat charges, split proportionally
+                    Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
+                    Money totalChargeAmount = charge.getAmount(loan.getCurrency());
+
+                    if (sanctionedAmount.isGreaterThanZero()) {
+                        // Calculate proportional fee: (trancheAmount / sanctionedAmount) * totalChargeAmount
+                        BigDecimal proportionalAmount = totalChargeAmount.getAmount().multiply(trancheAmount.getAmount())
+                                .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
+                        return Money.of(loan.getCurrency(), proportionalAmount);
+                    }
                 }
             }
         }
@@ -167,7 +178,8 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
     }
 
     /**
-     * Calculates proportional tax amount for multi-tranche loans.
+     * Calculates proportional tax amount for multi-tranche loans. For percentage-based charges, tax is recalculated per
+     * tranche based on the charge amount for that tranche.
      *
      * @param loan
      *            the loan
@@ -193,14 +205,32 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
                     .filter(detail -> disbursedOn.equals(detail.actualDisbursementDate())).findFirst();
 
             if (currentTranche.isPresent()) {
-                Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
-                Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
-                Money totalTaxAmount = charge.getTaxAmount(loan.getCurrency());
+                // For percentage-based charges, calculate tax based on the recalculated charge amount for this tranche
+                if (charge.getChargeCalculation().isPercentageBased() && charge.getPercentage() != null) {
+                    // Calculate charge amount for this tranche
+                    Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
+                    BigDecimal trancheChargeAmount = trancheAmount.getAmount().multiply(charge.getPercentage())
+                            .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
 
-                if (sanctionedAmount.isGreaterThanZero()) {
-                    BigDecimal proportionalTax = totalTaxAmount.getAmount().multiply(trancheAmount.getAmount())
-                            .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
-                    return Money.of(loan.getCurrency(), proportionalTax);
+                    // Calculate tax proportionally based on the ratio of tranche charge to total charge
+                    Money totalChargeAmount = charge.getAmount(loan.getCurrency());
+                    if (totalChargeAmount.isGreaterThanZero()) {
+                        Money totalTaxAmount = charge.getTaxAmount(loan.getCurrency());
+                        BigDecimal taxRatio = trancheChargeAmount.divide(totalChargeAmount.getAmount(), 6, RoundingMode.HALF_UP);
+                        BigDecimal proportionalTax = totalTaxAmount.getAmount().multiply(taxRatio);
+                        return Money.of(loan.getCurrency(), proportionalTax);
+                    }
+                } else {
+                    // For flat charges, split tax proportionally
+                    Money trancheAmount = Money.of(loan.getCurrency(), currentTranche.get().principal());
+                    Money sanctionedAmount = Money.of(loan.getCurrency(), loan.getApprovedPrincipal());
+                    Money totalTaxAmount = charge.getTaxAmount(loan.getCurrency());
+
+                    if (sanctionedAmount.isGreaterThanZero()) {
+                        BigDecimal proportionalTax = totalTaxAmount.getAmount().multiply(trancheAmount.getAmount())
+                                .divide(sanctionedAmount.getAmount(), 6, RoundingMode.HALF_UP);
+                        return Money.of(loan.getCurrency(), proportionalTax);
+                    }
                 }
             }
         }

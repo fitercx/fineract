@@ -46,11 +46,14 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.antlr.v4.runtime.misc.NotNull;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
@@ -113,12 +116,15 @@ import org.apache.fineract.portfolio.loanaccount.data.RepaymentScheduleRelatedLo
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSubStatus;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanNotFoundException;
@@ -151,6 +157,7 @@ import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @Primary
 public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImpl {
@@ -167,6 +174,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl;
     private final ConfigurationDomainService configurationDomainService;
     private final AccountAssociationsRepository accountAssociationsRepository;
+    private final CustomReversedChargeCalculationService customReversedChargeCalculationService;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -189,8 +197,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             ConfigurationDomainService configurationDomainService1,
             CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl,
             LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
-            AccountAssociationsRepository accountAssociationsRepository) {
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, AccountAssociationsRepository accountAssociationsRepository,
+            CustomReversedChargeCalculationService customReversedChargeCalculationService) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -211,6 +219,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.configurationDomainService = configurationDomainService1;
         this.customLoanChargeReadPlatformServiceImpl = customLoanChargeReadPlatformServiceImpl;
         this.accountAssociationsRepository = accountAssociationsRepository;
+        this.customReversedChargeCalculationService = customReversedChargeCalculationService;
     }
 
     @Override
@@ -221,7 +230,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 result.getInMultiplesOf(), result.getCurrencyDisplaySymbol(), result.getCurrencyNameCode());
 
         final LoanTransactionEnumData transactionType = LoanEnumerations.transactionType(LoanTransactionType.REPAYMENT);
-        final LocalDate date = ((java.sql.Date) result.getTransactionDate()).toLocalDate();
+        // Handle null transaction date - default to current date if null (e.g., when loan is fully paid)
+        final LocalDate date = result.getTransactionDate() != null ? ((java.sql.Date) result.getTransactionDate()).toLocalDate()
+                : DateUtils.getLocalDateOfTenant();
         final BigDecimal principalPortion = result.getPrincipalDue();
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
@@ -245,8 +256,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         try {
             this.context.authenticatedUser();
 
+            // Get loan charges for per-tranche charge recalculation
+            Set<LoanCharge> loanCharges = null;
+            try {
+                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+                loanCharges = loan.getActiveCharges();
+            } catch (Exception e) {
+                log.warn("Could not load loan charges for loan {}: {}", loanId, e.getMessage());
+            }
+
             final LoanScheduleResultSetExtractor fullResultsetExtractor = new LoanScheduleResultSetExtractor(
-                    repaymentScheduleRelatedLoanData, disbursementData, isInterestRecalculationEnabled, loanScheduleType);
+                    repaymentScheduleRelatedLoanData, disbursementData, isInterestRecalculationEnabled, loanScheduleType, loanCharges,
+                    customReversedChargeCalculationService);
             final String sql = "select " + fullResultsetExtractor.schema() + " where ls.loan_id = ? order by ls.loan_id, ls.installment";
 
             LoanScheduleData loanScheduleData = this.jdbcTemplate.query(sql, fullResultsetExtractor, loanId); // NOSONAR
@@ -254,14 +275,110 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             CurrencyData currency = loanScheduleData.getCurrency();
             Collection<LoanSchedulePeriodData> periods = loanScheduleData.getPeriods();
 
-            Collection<ExtendedLoanSchedulePeriodData> periodDataWithStatus = periods.stream()
-                    .map(p -> new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p))).toList();
+            // Get loan to calculate reversed charges per period
+            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+            Collection<ExtendedLoanSchedulePeriodData> periodDataWithStatus = periods.stream().map(p -> {
+                BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
+                return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
+            }).toList();
 
             Collection<LoanSchedulePeriodData> periodDataCollection = new ArrayList<>(periodDataWithStatus);
             return loanScheduleData.withPeriods(periodDataCollection);
         } catch (final EmptyResultDataAccessException e) {
             throw new LoanNotFoundException(loanId, e);
         }
+    }
+
+    /**
+     * Calculates the total amount of reversed penalty charges for a specific repayment schedule period. This includes
+     * only inactive charges that were reversed (have a CHARGE_ADJUSTMENT transaction).
+     *
+     * IMPORTANT: A reversed charge should appear ONLY in the period where its due date matches the period's due date.
+     * This prevents a charge due on 26 Jan from appearing in both period 1 (due 26 Jan) and period 2 (due 24 Feb).
+     */
+    private BigDecimal calculateReversedPenaltyChargesForPeriod(Loan loan, LoanSchedulePeriodData period) {
+        if (period.getPeriod() == null) {
+            // Disbursement period - no reversed charges
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal reversedAmount = BigDecimal.ZERO;
+        Integer installmentNumber = period.getPeriod();
+        LocalDate periodDueDate = period.getDueDate();
+
+        if (periodDueDate == null) {
+            log.warn("Period {} has null due date, cannot match reversed charges", installmentNumber);
+            return BigDecimal.ZERO;
+        }
+
+        // Check all loan charges to find reversed penalty charges linked to this installment
+        // IMPORTANT: Only check inactive charges that have been reversed (have CHARGE_ADJUSTMENT transaction)
+        for (LoanCharge loanCharge : loan.getLoanCharges()) {
+            // Check if this is a reversed penalty charge:
+            // 1. Must be a penalty charge
+            // 2. Must be inactive (marked as reversed)
+            // 3. Must have a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
+            if (loanCharge.isPenaltyCharge() && !loanCharge.isActive()) {
+                // Check if this charge has a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
+                boolean hasChargeAdjustment = loan.getLoanTransactions().stream()
+                        .anyMatch(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment() && tx.getLoanChargesPaid().stream()
+                                .anyMatch(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())));
+
+                if (hasChargeAdjustment) {
+                    boolean appliesToPeriod = false;
+
+                    // For overdue charges, match by exact due date match
+                    if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
+                        LocalDate chargeDueDate = loanCharge.getDueLocalDate();
+                        // CRITICAL: Match ONLY if the charge due date exactly equals the period's due date
+                        // This ensures a charge due on 26 Jan matches ONLY period 1 (due 26 Jan), not period 2 (due 24
+                        // Feb)
+                        appliesToPeriod = chargeDueDate.equals(periodDueDate);
+
+                        if (appliesToPeriod) {
+                            log.debug("Matched reversed overdue charge {} (due: {}) to period {} (due: {})", loanCharge.getId(),
+                                    chargeDueDate, installmentNumber, periodDueDate);
+                        }
+                    } else {
+                        // For installment fees, match by installment number via LoanInstallmentCharge
+                        LoanInstallmentCharge installmentCharge = loanCharge.getInstallmentLoanCharge(installmentNumber);
+                        appliesToPeriod = (installmentCharge != null);
+                        if (appliesToPeriod) {
+                            log.debug("Matched reversed installment fee charge {} to period {} via LoanInstallmentCharge",
+                                    loanCharge.getId(), installmentNumber);
+                        }
+                    }
+
+                    if (appliesToPeriod) {
+                        // Get the original paid amount from the CHARGE_ADJUSTMENT transaction
+                        // Note: LoanChargePaidBy stores the positive amount, not negative
+                        BigDecimal originalPaidAmount = loan.getLoanTransactions().stream()
+                                .filter(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment())
+                                .flatMap(tx -> tx.getLoanChargesPaid().stream())
+                                .filter(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId()))
+                                .map(cpb -> cpb.getAmount()) // Amount is already positive in LoanChargePaidBy
+                                .findFirst().orElse(BigDecimal.ZERO);
+
+                        if (originalPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
+                            reversedAmount = reversedAmount.add(originalPaidAmount);
+                            log.info("Added reversed charge {} (due: {}) amount {} to period {} (due: {}), total reversed: {}",
+                                    loanCharge.getId(), loanCharge.getDueLocalDate(), originalPaidAmount, installmentNumber, periodDueDate,
+                                    reversedAmount);
+                        } else {
+                            log.warn("Reversed charge {} (due: {}) matched period {} but has zero amount in CHARGE_ADJUSTMENT",
+                                    loanCharge.getId(), loanCharge.getDueLocalDate(), installmentNumber);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (reversedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("Period {} (due: {}) has total reversed penalty charges: {}", installmentNumber, periodDueDate, reversedAmount);
+        }
+
+        return reversedAmount;
     }
 
     ExtendedLoanSchedulePeriodData.Status resolvePeriodStatus(CurrencyData currencyData, LoanSchedulePeriodData period) {
@@ -1141,13 +1258,19 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
         final CurrencyData currency = this.jdbcTemplate.queryForObject(loanCurrencySql, loanCurrencyDataMapper, loanId);
 
-        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
-                .map(p -> new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p))).toList();
-
+        // Get loan to calculate reversed charges per period
+        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
 
+        List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream().map(p -> {
+            BigDecimal reversedPenaltyCharges = calculateReversedPenaltyChargesForPeriod(loan, p);
+            return new ExtendedLoanSchedulePeriodData(p, resolvePeriodStatus(currency, p), reversedPenaltyCharges);
+        }).toList();
+
+        // All loans now allow early repayments before the first installment due date
+        final boolean isDrawdownLoan = true;
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue);
+                penaltyWaitPeriodValue, isDrawdownLoan);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
@@ -1227,19 +1350,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
 
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema())
-                // Exclude installments that already have overdue charges applied
-                .append(" left join m_loan_charge lc on lc.loan_id = ml.id and lc.charge_id = mc.id and lc.is_active = true ")
-                .append(" left join m_loan_overdue_installment_charge loic on loic.loan_charge_id = lc.id and loic.loan_schedule_id = ls.id ")
-                .append(" where " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day") + " > ls.duedate ")
+        sqlBuilder.append("select ").append(rm.schema()).append(" where ")
+                .append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and loic.id IS NULL "); // Exclude
-                                                                                                                      // installments
-                                                                                                                      // with
-                                                                                                                      // existing
-                                                                                                                      // overdue
-                                                                                                                      // charges
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ")
+                // Exclude installments that already have overdue charges applied
+                .append("""
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM m_loan_charge lc
+                            INNER JOIN m_loan_overdue_installment_charge loic ON (loic.loan_charge_id = lc.id AND loic.loan_schedule_id = ls.id)
+                            WHERE lc.loan_id = ml.id AND lc.is_active = TRUE
+                         )
+                        """);
 
         if (backdatePenalties) {
             return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod);
@@ -1552,20 +1676,64 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         private final BigDecimal totalFeeChargesDueAtDisbursement;
         private final Collection<DisbursementData> disbursementData;
         private final LoanScheduleType loanScheduleType;
+        private final Set<LoanCharge> loanCharges;
+        private final CustomReversedChargeCalculationService customReversedChargeCalculationService;
         private LocalDate lastDueDate;
         private BigDecimal outstandingLoanPrincipalBalance;
+        private BigDecimal expectedDisbursementsRunningBalance;
         private boolean excludePastUnDisbursed;
 
         LoanScheduleResultSetExtractor(final RepaymentScheduleRelatedLoanData repaymentScheduleRelatedLoanData,
-                Collection<DisbursementData> disbursementData, boolean isInterestRecalculationEnabled, LoanScheduleType loanScheduleType) {
+                Collection<DisbursementData> disbursementData, boolean isInterestRecalculationEnabled, LoanScheduleType loanScheduleType,
+                Set<LoanCharge> loanCharges, CustomReversedChargeCalculationService customReversedChargeCalculationService) {
             this.currency = repaymentScheduleRelatedLoanData.getCurrency();
             this.disbursement = repaymentScheduleRelatedLoanData.disbursementData();
             this.totalFeeChargesDueAtDisbursement = repaymentScheduleRelatedLoanData.getTotalFeeChargesAtDisbursement();
             this.lastDueDate = this.disbursement.disbursementDate();
             this.outstandingLoanPrincipalBalance = this.disbursement.getPrincipal();
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
             this.disbursementData = disbursementData;
             this.excludePastUnDisbursed = isInterestRecalculationEnabled;
             this.loanScheduleType = loanScheduleType;
+            this.loanCharges = loanCharges;
+            this.customReversedChargeCalculationService = customReversedChargeCalculationService;
+        }
+
+        /**
+         * Helper method to check if a BigDecimal value is positive (greater than zero).
+         *
+         * @param value
+         *            the BigDecimal value to check
+         * @return true if value is greater than zero, false otherwise
+         */
+        private static boolean isPositive(BigDecimal value) {
+            return value != null && value.compareTo(BigDecimal.ZERO) > 0;
+        }
+
+        /**
+         * Helper method to check if a BigDecimal value is zero.
+         *
+         * @param value
+         *            the BigDecimal value to check
+         * @return true if value is zero, false otherwise
+         */
+        private static boolean isZero(BigDecimal value) {
+            return value != null && value.compareTo(BigDecimal.ZERO) == 0;
+        }
+
+        /**
+         * Determines if the expected disbursement balance should be used for calculating outstanding balance. This is
+         * true when the loan is approved but not yet disbursed, and we're processing a scheduled repayment period.
+         *
+         * @param isDisbursementPeriod
+         *            whether this is a disbursement period
+         * @param principalDue
+         *            the principal due for this period
+         * @return true if expected disbursement balance should be used, false otherwise
+         */
+        private boolean shouldUseExpectedDisbursementBalance(boolean isDisbursementPeriod, BigDecimal principalDue) {
+            return !isDisbursementPeriod && isPositive(principalDue) && isZero(this.outstandingLoanPrincipalBalance)
+                    && isPositive(this.expectedDisbursementsRunningBalance);
         }
 
         public String schema() {
@@ -1628,12 +1796,33 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             Money totalOutstanding = Money.zero(monCurrency);
             Money totalCredits = Money.zero(monCurrency);
 
-            // update totals with details of fees charged during disbursement
-            totalFeeChargesCharged = totalFeeChargesCharged.plus(disbursementPeriod.getFeeChargesDue().subtract(waivedChargeAmount));
-            totalRepayment = totalRepayment.plus(disbursementPeriod.getFeeChargesPaid()).minus(waivedChargeAmount);
+            // Determine if this is a multi-tranche loan (will be used throughout the method)
+            final boolean isMultiTrancheLoan = this.disbursementData != null && this.disbursementData.size() > 1;
+
+            // For multi-tranche loans, reset totals to zero to avoid double-counting
+            // We'll recalculate from actual periods at the end to ensure per-tranche accuracy
+            // For single disbursement loans, keep the initial values (they should be correct)
+            if (isMultiTrancheLoan) {
+                totalFeeChargesCharged = Money.zero(monCurrency);
+                totalRepayment = Money.zero(monCurrency);
+            } else {
+                // For single disbursement loans, initialize from the first disbursement period
+                totalFeeChargesCharged = totalFeeChargesCharged.plus(disbursementPeriod.getFeeChargesDue().subtract(waivedChargeAmount));
+                totalRepayment = totalRepayment.plus(disbursementPeriod.getFeeChargesPaid()).minus(waivedChargeAmount);
+            }
 
             Integer loanTermInDays = 0;
             Set<Long> disbursementPeriodIds = new HashSet<>();
+
+            // Reset expected disbursements running balance for each schedule extraction
+            // This allows us to show correct outstanding balances in the schedule preview
+            // We maintain a running balance similar to outstandingLoanPrincipalBalance
+            this.expectedDisbursementsRunningBalance = BigDecimal.ZERO;
+
+            // Collect disbursement period charges from result set as we iterate
+            // Store them in a map keyed by disbursement date for use when processing disbursements
+            Map<LocalDate, BigDecimal> disbursementChargesFromDB = new HashMap<>();
+
             while (rs.next()) {
 
                 final Integer period = JdbcSupport.getInteger(rs, "period");
@@ -1641,10 +1830,24 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final LocalDate dueDate = JdbcSupport.getLocalDate(rs, "dueDate");
                 final LocalDate obligationsMetOnDate = JdbcSupport.getLocalDate(rs, "obligationsMetOnDate");
                 final boolean complete = rs.getBoolean("complete");
+
+                // Read principalDue and feeChargesDue early to identify disbursement periods
+                final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
+                final BigDecimal feeChargesDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
+
+                // Identify disbursement periods: principalDue is null/zero AND feeChargesDue > 0
+                // Disbursement periods have charges but no principal due (principal is disbursed, not due)
+                boolean isDisbursementPeriod = (principalDue == null || principalDue.compareTo(BigDecimal.ZERO) == 0)
+                        && isPositive(feeChargesDue);
+
+                if (isDisbursementPeriod && dueDate != null) {
+                    disbursementChargesFromDB.put(dueDate, feeChargesDue);
+                }
+
                 BigDecimal disbursedAmount = BigDecimal.ZERO;
 
                 disbursedAmount = processDisbursementData(loanScheduleType, disbursementData, fromDate, dueDate, disbursementPeriodIds,
-                        disbursementChargeAmount, waivedChargeAmount, periods);
+                        disbursementChargeAmount, waivedChargeAmount, periods, disbursementChargesFromDB);
 
                 // Add the Charge back or Credits to the initial amount to avoid negative balance
                 final BigDecimal principalCredits = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalCredits");
@@ -1660,8 +1863,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     daysInPeriod = DateUtils.getExactDifferenceInDays(fromDate, dueDate);
                     loanTermInDays = loanTermInDays + daysInPeriod;
                 }
-
-                final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
                 totalPrincipalExpected = totalPrincipalExpected.plus(principalDue);
                 final BigDecimal principalPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalPaid");
                 totalPrincipalPaid = totalPrincipalPaid.plus(principalPaid);
@@ -1680,7 +1881,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 final BigDecimal interestOutstanding = interestActualDue.subtract(interestPaid);
 
                 final BigDecimal feeChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesDue");
-                totalFeeChargesCharged = totalFeeChargesCharged.plus(feeChargesExpectedDue);
+                // For multi-tranche loans, skip accumulating fee charges for disbursement periods
+                // They're handled separately with correct per-tranche calculation
+                // For single disbursement loans, accumulate normally (DB values should be correct)
+                if (!isMultiTrancheLoan || !isDisbursementPeriod) {
+                    totalFeeChargesCharged = totalFeeChargesCharged.plus(feeChargesExpectedDue);
+                }
                 final BigDecimal feeChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesPaid");
                 final BigDecimal feeChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWaived");
                 final BigDecimal feeChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feeChargesWrittenOff");
@@ -1740,13 +1946,47 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     fromDate = this.lastDueDate;
                 }
 
-                final BigDecimal outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // For scheduled periods (not disbursement periods), calculate outstanding balance
+                // If no actual disbursements have occurred but we have expected disbursements,
+                // use expected disbursements to show correct balance in schedule preview
+                BigDecimal outstandingPrincipalBalanceOfLoan;
+                if (shouldUseExpectedDisbursementBalance(isDisbursementPeriod, principalDue)) {
+                    // Special case: Loan is approved but not yet disbursed - use expected disbursements for preview
+                    outstandingPrincipalBalanceOfLoan = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                } else {
+                    // Default case: use actual outstanding balance (for disbursed loans or disbursement periods)
+                    outstandingPrincipalBalanceOfLoan = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                }
 
                 // update based on current period values
                 this.lastDueDate = dueDate;
-                this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                // Update outstanding balance based on whether we have actual or expected disbursements
+                // Only subtract principal due for scheduled repayment periods (principalDue > 0)
+                // Disbursement periods have principalDue = 0, so no subtraction needed
+                if (isPositive(principalDue)) {
+                    if (isPositive(this.outstandingLoanPrincipalBalance)) {
+                        // Loan has actual disbursements - update actual outstanding balance
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    } else if (isPositive(this.expectedDisbursementsRunningBalance)) {
+                        // Loan is approved but not yet disbursed - update expected disbursements running balance
+                        // This maintains the running balance for preview purposes
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance.subtract(principalDue);
+                    } else {
+                        // Edge case: Both balances are zero but we have principal due
+                        // Update outstandingLoanPrincipalBalance as fallback to track the principal due
+                        // This handles cases where balances have been fully paid off but schedule still has principal
+                        // due
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.subtract(principalDue);
+                    }
+                }
 
                 final boolean isDownPayment = rs.getBoolean("isDownPayment");
+
+                // Calculate reversed charges for this period
+                BigDecimal feeChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
+                        fromDate, dueDate, false);
+                BigDecimal penaltyChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
+                        fromDate, dueDate, true);
 
                 final LoanSchedulePeriodData periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate,
                         obligationsMetOnDate, complete, principalDue, principalPaid, principalWrittenOff, principalOutstanding,
@@ -1755,9 +1995,42 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         feeChargesOutstanding, taxChargesExpectedDue, taxChargesPaid, taxChargesWaived, taxChargesWrittenOff,
                         taxChargesOutstanding, penaltyChargesExpectedDue, penaltyChargesPaid, penaltyChargesWaived,
                         penaltyChargesWrittenOff, penaltyChargesOutstanding, totalPaidForPeriod, totalPaidInAdvanceForPeriod,
-                        totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits, isDownPayment, accrualInterest);
+                        totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod, credits, isDownPayment, accrualInterest,
+                        feeChargesReversed, penaltyChargesReversed);
 
                 periods.add(periodData);
+            }
+
+            // For multi-tranche loans, recalculate fee charge totals from actual periods
+            // This ensures totals match the per-tranche charges we calculated (580.25 + 369.25 = 949.50),
+            // not the DB values which may use the full loan amount calculation (1,055.00)
+            // For single disbursement loans, use the accumulated values (they should be correct)
+            if (isMultiTrancheLoan) {
+                Money recalculatedTotalFeeChargesCharged = Money.zero(monCurrency);
+                Money recalculatedTotalFeeChargesPaid = Money.zero(monCurrency);
+                for (LoanSchedulePeriodData period : periods) {
+                    if (period.getFeeChargesDue() != null) {
+                        recalculatedTotalFeeChargesCharged = recalculatedTotalFeeChargesCharged
+                                .plus(Money.of(monCurrency, period.getFeeChargesDue()));
+                    }
+                    if (period.getFeeChargesPaid() != null) {
+                        recalculatedTotalFeeChargesPaid = recalculatedTotalFeeChargesPaid
+                                .plus(Money.of(monCurrency, period.getFeeChargesPaid()));
+                    }
+                }
+                // Use recalculated totals instead of accumulated DB values for multi-tranche loans
+                totalFeeChargesCharged = recalculatedTotalFeeChargesCharged;
+
+                // Recalculate totalRepayment from periods to ensure it matches the sum of all period payments
+                // This is safe because periods contain all the correct per-tranche values
+                Money recalculatedTotalRepayment = Money.zero(monCurrency);
+                for (LoanSchedulePeriodData period : periods) {
+                    if (period.getTotalPaidForPeriod() != null) {
+                        recalculatedTotalRepayment = recalculatedTotalRepayment.plus(Money.of(monCurrency, period.getTotalPaidForPeriod()));
+                    }
+                }
+                // Use recalculated totalRepayment to ensure it matches the sum of all period payments
+                totalRepayment = recalculatedTotalRepayment;
             }
 
             return new LoanScheduleData(this.currency, periods, loanTermInDays, totalPrincipalDisbursed, totalPrincipalExpected.getAmount(),
@@ -1769,7 +2042,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         private BigDecimal processDisbursementData(LoanScheduleType loanScheduleType, Collection<DisbursementData> disbursementData,
                 LocalDate fromDate, LocalDate dueDate, Set<Long> disbursementPeriodIds, BigDecimal disbursementChargeAmount,
-                BigDecimal waivedChargeAmount, List<LoanSchedulePeriodData> periods) {
+                BigDecimal waivedChargeAmount, List<LoanSchedulePeriodData> periods, Map<LocalDate, BigDecimal> disbursementChargesFromDB) {
             BigDecimal disbursedAmount = BigDecimal.ZERO;
             final BigDecimal totalOriginalPrincipal = this.disbursementData.stream().map(DisbursementData::getPrincipal)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -1779,11 +2052,32 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         || (fromDate.equals(dueDate) && data.disbursementDate().equals(fromDate))
                         || canAddDisbursementData(data, isDueForDisbursement, excludePastUnDisbursed))
                         && !disbursementPeriodIds.contains(data.getId())) {
-                    disbursedAmount = disbursedAmount.add(data.getPrincipal());
+                    // FIX: Only count actually disbursed amounts in totalPrincipalDisbursed calculation
+                    // Undisbursed tranches should still appear in schedule periods for display purposes,
+                    // but should not be counted in the disbursed total
+                    if (data.isDisbursed()) {
+                        disbursedAmount = disbursedAmount.add(data.getPrincipal());
+                    }
+                    // Use feeChargesDue from database map if available for this disbursement date
+                    // This preserves the correct per-tranche charges calculated during schedule generation
+                    BigDecimal chargesForThisTranche = disbursementChargesFromDB.get(data.disbursementDate());
+                    if (!isPositive(chargesForThisTranche)) {
+                        // Fallback: will use data.getChargeAmount() or recalculate
+                        chargesForThisTranche = null;
+                    }
                     LoanSchedulePeriodData periodData = createLoanSchedulePeriodData(data, disbursementChargeAmount, waivedChargeAmount,
-                            totalOriginalPrincipal);
+                            totalOriginalPrincipal, chargesForThisTranche);
                     periods.add(periodData);
-                    this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    // Only add to outstanding balance if actually disbursed
+                    if (data.isDisbursed()) {
+                        this.outstandingLoanPrincipalBalance = this.outstandingLoanPrincipalBalance.add(periodData.getPrincipalDisbursed());
+                    } else {
+                        // Track expected disbursements for loans that are approved but not yet disbursed
+                        // This allows us to calculate correct outstanding balances in schedule preview
+                        // Maintain a running balance similar to outstandingLoanPrincipalBalance
+                        this.expectedDisbursementsRunningBalance = this.expectedDisbursementsRunningBalance
+                                .add(periodData.getPrincipalDisbursed());
+                    }
                     disbursementPeriodIds.add(data.getId());
                 }
             }
@@ -1791,13 +2085,113 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         private LoanSchedulePeriodData createLoanSchedulePeriodData(final DisbursementData data, BigDecimal disbursementChargeAmount,
-                BigDecimal waivedChargeAmount, final BigDecimal totalOriginalPrincipal) {
-            BigDecimal chargeAmount = data.getChargeAmount() == null ? disbursementChargeAmount
-                    : disbursementChargeAmount.add(data.getChargeAmount()).subtract(waivedChargeAmount);
-            final BigDecimal chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(
-                    totalOriginalPrincipal, data.getPrincipal(), chargeAmount);
+                BigDecimal waivedChargeAmount, final BigDecimal totalOriginalPrincipal, BigDecimal feeChargesDueFromDB) {
+            // Priority order for charge amount:
+            // 1. Use feeChargesDueFromDB if provided (from schedule period in database - most accurate)
+            // 2. Recalculate per-tranche charges if we have loan charges and it's a multi-tranche loan (same logic as
+            // schedule generation)
+            // 3. Use data.getChargeAmount() if available (from disbursement charge table - may be incorrect for
+            // multi-tranche)
+            // 4. Fallback: recalculate using proportional method
+            BigDecimal chargesDueAtTimeOfDisbursementForTranche;
+            if (isPositive(feeChargesDueFromDB)) {
+                // Use the stored charge amount from schedule period (most accurate - includes correct per-tranche
+                // calculation)
+                chargesDueAtTimeOfDisbursementForTranche = feeChargesDueFromDB;
+            } else if (loanCharges != null && !loanCharges.isEmpty() && disbursementData.size() > 1) {
+                // Multi-tranche loan: recalculate per-tranche charges using the same logic as schedule generation
+                chargesDueAtTimeOfDisbursementForTranche = recalculateDisbursementChargesForTranche(data.getPrincipal(),
+                        totalOriginalPrincipal, disbursementChargeAmount);
+            } else if (data.getChargeAmount() != null) {
+                // Use the stored charge amount from disbursement charge table (may be incorrect for multi-tranche
+                // loans)
+                chargesDueAtTimeOfDisbursementForTranche = data.getChargeAmount();
+            } else {
+                // Fallback: recalculate if charge amount not stored
+                BigDecimal chargeAmount = disbursementChargeAmount
+                        .subtract(waivedChargeAmount != null ? waivedChargeAmount : BigDecimal.ZERO);
+                chargesDueAtTimeOfDisbursementForTranche = calculateChargesDueAtTimeOfDisbursementForTranche(totalOriginalPrincipal,
+                        data.getPrincipal(), chargeAmount);
+            }
             return LoanSchedulePeriodData.disbursementOnlyPeriod(data.disbursementDate(), data.getPrincipal(),
                     chargesDueAtTimeOfDisbursementForTranche, data.isDisbursed());
+        }
+
+        /**
+         * Recalculate disbursement charges for a tranche using the same logic as
+         * CustomCumulativeDecliningBalanceLoanScheduleGenerator. This ensures consistency between schedule generation
+         * and retrieval.
+         */
+        private BigDecimal recalculateDisbursementChargesForTranche(final BigDecimal trancheAmount, final BigDecimal totalOriginalPrincipal,
+                final BigDecimal totalChargesDueAtTimeOfDisbursement) {
+            if (loanCharges == null || loanCharges.isEmpty() || trancheAmount == null || trancheAmount.compareTo(BigDecimal.ZERO) == 0) {
+                return BigDecimal.ZERO;
+            }
+
+            if (totalChargesDueAtTimeOfDisbursement == null || totalChargesDueAtTimeOfDisbursement.compareTo(BigDecimal.ZERO) == 0) {
+                return BigDecimal.ZERO;
+            }
+
+            BigDecimal totalTrancheCharges = BigDecimal.ZERO;
+            MonetaryCurrency currency = MonetaryCurrency.fromCurrencyData(this.currency);
+            Money trancheAmountMoney = Money.of(currency, trancheAmount);
+
+            // Calculate total multi-disbursed amount
+            BigDecimal totalMultiDisbursed = disbursementData.stream().map(DisbursementData::getPrincipal).reduce(BigDecimal.ZERO,
+                    BigDecimal::add);
+
+            for (LoanCharge loanCharge : loanCharges) {
+                if (!loanCharge.isDueAtDisbursement()) {
+                    continue;
+                }
+
+                BigDecimal chargeAmount = BigDecimal.ZERO;
+                boolean isPercentageBased = loanCharge.getChargeCalculation().isPercentageBased() && loanCharge.getPercentage() != null;
+
+                // For percentage-based disbursement charges, recalculate per tranche
+                if (isPercentageBased) {
+                    // Calculate: percentage × trancheAmount
+                    chargeAmount = trancheAmountMoney.getAmount().multiply(loanCharge.getPercentage()).divide(BigDecimal.valueOf(100), 6,
+                            java.math.RoundingMode.HALF_UP);
+                } else {
+                    // For flat charges, split proportionally
+                    Money totalChargeAmount = loanCharge.getAmount(currency);
+                    if (isPositive(totalMultiDisbursed) && totalChargeAmount.isGreaterThanZero()) {
+                        // Calculate proportional fee: (trancheAmount / totalMultiDisbursed) * totalChargeAmount
+                        chargeAmount = totalChargeAmount.getAmount().multiply(trancheAmountMoney.getAmount()).divide(totalMultiDisbursed, 6,
+                                java.math.RoundingMode.HALF_UP);
+                    }
+                }
+
+                // Add tax if applicable
+                if (loanCharge.hasTax()) {
+                    Money totalTaxAmount = loanCharge.getTaxAmount(currency);
+                    if (totalTaxAmount.isGreaterThanZero()) {
+                        BigDecimal taxToAdd = BigDecimal.ZERO;
+                        // For percentage-based charges, calculate tax proportionally based on charge ratio
+                        if (loanCharge.getChargeCalculation().isPercentageBased()) {
+                            Money totalChargeAmount = loanCharge.getAmount(currency);
+                            if (totalChargeAmount.isGreaterThanZero()) {
+                                // Tax ratio = trancheChargeAmount / totalChargeAmount
+                                BigDecimal taxRatio = chargeAmount.divide(totalChargeAmount.getAmount(), 6, java.math.RoundingMode.HALF_UP);
+                                taxToAdd = totalTaxAmount.getAmount().multiply(taxRatio);
+                                chargeAmount = chargeAmount.add(taxToAdd);
+                            }
+                        } else {
+                            // For flat charges, split tax proportionally
+                            if (isPositive(totalMultiDisbursed)) {
+                                taxToAdd = totalTaxAmount.getAmount().multiply(trancheAmountMoney.getAmount()).divide(totalMultiDisbursed,
+                                        6, java.math.RoundingMode.HALF_UP);
+                                chargeAmount = chargeAmount.add(taxToAdd);
+                            }
+                        }
+                    }
+                }
+
+                totalTrancheCharges = totalTrancheCharges.add(chargeAmount);
+            }
+
+            return totalTrancheCharges;
         }
 
         private BigDecimal calculateChargesDueAtTimeOfDisbursementForTranche(final BigDecimal totalLoanPrincipal,
@@ -1836,16 +2230,44 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal outstandingLoanBalance = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount();
         final Boolean isReversed = false;
 
-        final Money outStandingAmount = loanRepaymentScheduleInstallment.getTotalOutstanding(currency);
+        // For Factor Rate loans, use charged amounts (which are set to outstanding in foreclosure detail)
+        // to ensure fees and taxes are properly included in foreclosure
+        Money feeChargesAmount = loanRepaymentScheduleInstallment.getFeeChargesCharged(currency);
+        Money taxChargesAmount = loanRepaymentScheduleInstallment.getTaxChargesCharged(currency);
+
+        // For Factor Rate loans, always use loan summary totals for fees and taxes
+        // The installment-based calculation (retrieveIncomeOutstandingTillDate) only includes fees from installments
+        // due up to the foreclosure date, not all outstanding fees. Since Factor Rate loans charge fees upfront and
+        // allocate them across all installments, foreclosure should include ALL outstanding fees/taxes from the loan
+        // summary.
+        // Extract values as BigDecimal immediately to avoid entity state issues
+        if (loan.isFactorRateEnabled()) {
+            final LoanSummary loanSummary = loan.getSummary();
+            if (loanSummary != null) {
+                BigDecimal feeOutstandingAmount = loanSummary.getTotalFeeChargesOutstanding();
+                BigDecimal taxOutstandingAmount = loanSummary.getTotalTaxChargesOutstanding();
+
+                // Always use loan summary values for Factor Rate loans to ensure all outstanding fees/taxes are
+                // included
+                // Create new Money objects from extracted BigDecimal values to avoid entity references
+                feeChargesAmount = Money.of(currency, feeOutstandingAmount);
+                taxChargesAmount = Money.of(currency, taxOutstandingAmount);
+            }
+        }
+
+        // Recalculate total outstanding amount with updated fees/taxes for Factor Rate loans
+        // This ensures the total amount includes all outstanding fees/taxes from loan summary for Factor Rate loans
+        Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
+        Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
+        Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
+        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
+                .plus(taxChargesAmount);
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
-                earliestUnpaidInstallmentDate, outStandingAmount.getAmount(), loan.getNetDisbursalAmount(),
-                loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getInterestOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getFeeChargesOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency).getAmount(),
-                loanRepaymentScheduleInstallment.getTaxChargesOutstanding(currency).getAmount(), null, unrecognizedIncomePortion,
-                paymentTypeOptions, ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
+                earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
+                principalOutstanding.getAmount(), interestOutstanding.getAmount(), feeChargesAmount.getAmount(),
+                penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
+                ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());

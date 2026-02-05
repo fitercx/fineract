@@ -30,6 +30,8 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
     }
 
     public final Status status;
+    /** Amount of reversed penalty charges for this period (for display purposes) */
+    public final BigDecimal reversedPenaltyChargesDue;
 
     public static LoanSchedulePeriodData paymentsSummaryPeriod(final Integer periodNumber, final LocalDate dueDate,
             final Boolean isComplete, final BigDecimal principalDue, final BigDecimal penaltyChargesDue,
@@ -55,7 +57,7 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
             BigDecimal totalPaidLateForPeriod, BigDecimal totalWaivedForPeriod, BigDecimal totalWrittenOffForPeriod,
             BigDecimal totalOutstandingForPeriod, BigDecimal totalOverdue, BigDecimal totalActualCostOfLoanForPeriod,
             BigDecimal totalInstallmentAmountForPeriod, BigDecimal totalCredits, BigDecimal totalAccruedInterest, boolean downPaymentPeriod,
-            Status status) {
+            BigDecimal feeChargesReversed, BigDecimal penaltyChargesReversed, Status status, BigDecimal reversedPenaltyChargesDue) {
         super(period, fromDate, dueDate, obligationsMetOnDate, complete, daysInPeriod, principalDisbursed, principalOriginalDue,
                 principalDue, principalPaid, principalWrittenOff, principalOutstanding, principalLoanBalanceOutstanding,
                 interestOriginalDue, interestDue, interestPaid, interestWaived, interestWrittenOff, interestOutstanding, feeChargesDue,
@@ -64,11 +66,16 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
                 penaltyChargesWrittenOff, penaltyChargesOutstanding, totalOriginalDueForPeriod, totalDueForPeriod, totalPaidForPeriod,
                 totalPaidInAdvanceForPeriod, totalPaidLateForPeriod, totalWaivedForPeriod, totalWrittenOffForPeriod,
                 totalOutstandingForPeriod, totalOverdue, totalActualCostOfLoanForPeriod, totalInstallmentAmountForPeriod, totalCredits,
-                totalAccruedInterest, downPaymentPeriod);
+                totalAccruedInterest, downPaymentPeriod, feeChargesReversed, penaltyChargesReversed);
         this.status = status;
+        this.reversedPenaltyChargesDue = reversedPenaltyChargesDue != null ? reversedPenaltyChargesDue : BigDecimal.ZERO;
     }
 
     public ExtendedLoanSchedulePeriodData(LoanSchedulePeriodData periodData, Status status) {
+        this(periodData, status, null);
+    }
+
+    public ExtendedLoanSchedulePeriodData(LoanSchedulePeriodData periodData, Status status, BigDecimal reversedPenaltyChargesDue) {
         this(periodData.getPeriod(), periodData.getFromDate(), periodData.getDueDate(), periodData.getObligationsMetOnDate(),
                 periodData.getComplete(), periodData.getDaysInPeriod(), periodData.getPrincipalDisbursed(),
                 periodData.getPrincipalOriginalDue(), periodData.getPrincipalDue(), periodData.getPrincipalPaid(),
@@ -84,7 +91,8 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
                 periodData.getTotalPaidInAdvanceForPeriod(), periodData.getTotalPaidLateForPeriod(), periodData.getTotalWaivedForPeriod(),
                 periodData.getTotalWrittenOffForPeriod(), periodData.getTotalOutstandingForPeriod(), periodData.getTotalOverdue(),
                 periodData.getTotalActualCostOfLoanForPeriod(), periodData.getTotalInstallmentAmountForPeriod(),
-                periodData.getTotalCredits(), periodData.getTotalAccruedInterest(), periodData.isDownPaymentPeriod(), status);
+                periodData.getTotalCredits(), periodData.getTotalAccruedInterest(), periodData.isDownPaymentPeriod(),
+                periodData.getFeeChargesReversed(), periodData.getPenaltyChargesReversed(), status, reversedPenaltyChargesDue);
     }
 
 }

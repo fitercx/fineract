@@ -64,7 +64,21 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                 if (command.hasParameter("principal")) {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal");
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
+                    // This ensures the charge is calculated on the full loan amount, and then recalculated
+                    // per tranche during actual disbursement
+                    // For LOC Receivable loans, percentage-based charges should use proposed principal
+                    // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                    // to ensure consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+                    if ((loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                            || isReceivableLineOfCredit) {
+                        // For LOC Receivable: use proposedPrincipal (e.g., 900.00) not approvedPrincipal (e.g., 735.49)
+                        amountPercentageAppliedTo = isReceivableLineOfCredit ? loan.getProposedPrincipal() : loan.getApprovedPrincipal();
+                    } else {
+                        amountPercentageAppliedTo = loan.getPrincipal().getAmount();
+                    }
                 }
 
                 if (isReceivableLineOfCredit) {
@@ -77,7 +91,15 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
                     amountPercentageAppliedTo = command.bigDecimalValueOfParameterNamed("principal")
                             .add(command.bigDecimalValueOfParameterNamed("interest"));
                 } else {
-                    amountPercentageAppliedTo = loan.getPrincipal().getAmount().add(loan.getTotalInterest());
+                    // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
+                    // use approved principal (total loan amount) instead of current principal
+                    // For LOC Receivable loans, percentage-based charges should use proposed principal
+                    // (loan amount before interest deduction) instead of approved principal (disbursed amount)
+                    BigDecimal principalAmount = (loan.isMultiDisburmentLoan()
+                            && chargeDefinition.getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue()))
+                                    ? loan.getApprovedPrincipal()
+                                    : (isReceivableLineOfCredit ? loan.getProposedPrincipal() : loan.getPrincipal().getAmount());
+                    amountPercentageAppliedTo = principalAmount.add(loan.getTotalInterest());
                 }
 
                 if (isReceivableLineOfCredit) {
@@ -102,8 +124,19 @@ public class CustomLoanChargeAssembler extends LoanChargeAssembler {
             if (percentage == null) {
                 percentage = chargeDefinition.getAmount();
             }
-            loanCharge = loan.calculatePerInstallmentChargeAmount(ChargeCalculationType.fromInt(chargeDefinition.getChargeCalculation()),
-                    percentage);
+            // For LOC Receivable loans with installment fees, use amountPercentageAppliedTo (proposed principal)
+            // instead of calculating from installments (which uses disbursed principal)
+            // This ensures consistent fee calculation: 10% of loan amount, not 10% of disbursed amount
+            if (isReceivableLineOfCredit && ChargeCalculationType.fromInt(chargeDefinition.getChargeCalculation()).isPercentageBased()) {
+                // Calculate directly from amountPercentageAppliedTo which is already set to proposed principal
+                // This applies to all percentage-based charges (PERCENT_OF_AMOUNT, PERCENT_OF_AMOUNT_AND_INTEREST,
+                // PERCENT_OF_INTEREST)
+                loanCharge = amountPercentageAppliedTo.multiply(percentage).divide(BigDecimal.valueOf(100), 6,
+                        java.math.RoundingMode.HALF_UP);
+            } else {
+                loanCharge = loan.calculatePerInstallmentChargeAmount(
+                        ChargeCalculationType.fromInt(chargeDefinition.getChargeCalculation()), percentage);
+            }
         }
 
         // If charge type is specified due date and loan is multi disburment
