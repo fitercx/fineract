@@ -318,8 +318,23 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                         AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
+                // For VAT deduction at disbursement, use the sum of tax amounts from the
+                // fee payments as the total amount for the advanced accounting helper.
+                // This aligns the helper's integrity check with the actual VAT being
+                // posted in this transaction, even when VAT is collected across multiple
+                // tranches.
+                BigDecimal totalVatForTransaction = BigDecimal.ZERO;
+                if (loanTransactionDTO.getFeePayments() != null) {
+                    for (var feePayment : loanTransactionDTO.getFeePayments()) {
+                        if (feePayment instanceof com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDTO customFeePayment) {
+                            if (customFeePayment.getTaxAmount() != null) {
+                                totalVatForTransaction = totalVatForTransaction.add(customFeePayment.getTaxAmount());
+                            }
+                        }
+                    }
+                }
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                        transactionDate, totalVatForTransaction, loanTransactionDTO.getFeePayments());
             } else {
                 // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
                 if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
