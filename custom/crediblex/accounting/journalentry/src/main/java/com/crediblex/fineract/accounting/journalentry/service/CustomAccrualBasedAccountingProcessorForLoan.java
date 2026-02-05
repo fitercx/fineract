@@ -1,6 +1,7 @@
 package com.crediblex.fineract.accounting.journalentry.service;
 
 import com.crediblex.fineract.accounting.journalentry.CustomAccountingProcessorHelper;
+import com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDTO;
 import com.crediblex.fineract.accounting.journalentry.journalentry.CustomLoanDTO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -326,10 +327,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 BigDecimal totalVatForTransaction = BigDecimal.ZERO;
                 if (loanTransactionDTO.getFeePayments() != null) {
                     for (var feePayment : loanTransactionDTO.getFeePayments()) {
-                        if (feePayment instanceof com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDTO customFeePayment) {
-                            if (customFeePayment.getTaxAmount() != null) {
-                                totalVatForTransaction = totalVatForTransaction.add(customFeePayment.getTaxAmount());
-                            }
+                        if (feePayment instanceof CustomChargePaymentDTO customFeePayment && customFeePayment.getTaxAmount() != null) {
+                            totalVatForTransaction = totalVatForTransaction.add(customFeePayment.getTaxAmount());
                         }
                     }
                 }
