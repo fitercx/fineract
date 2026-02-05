@@ -326,7 +326,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 // tranches.
                 BigDecimal totalVatForTransaction = BigDecimal.ZERO;
                 if (loanTransactionDTO.getFeePayments() != null) {
-                    for (var feePayment : loanTransactionDTO.getFeePayments()) {
+                    for (org.apache.fineract.accounting.journalentry.data.ChargePaymentDTO feePayment : loanTransactionDTO
+                            .getFeePayments()) {
                         if (feePayment instanceof CustomChargePaymentDTO customFeePayment && customFeePayment.getTaxAmount() != null) {
                             totalVatForTransaction = totalVatForTransaction.add(customFeePayment.getTaxAmount());
                         }
