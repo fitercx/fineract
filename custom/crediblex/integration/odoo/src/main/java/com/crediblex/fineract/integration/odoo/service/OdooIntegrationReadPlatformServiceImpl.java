@@ -242,8 +242,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // General GL code mappings
         if ("200040".equals(glCode) && isDebit) {
             return "BNK1";
-        } 
-         
+        }
+
         // BNK9 journal for SAVINGS_DEPOSIT during disbursement i.e. deposit money to savings account
         if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
             // When GL code is 210003
