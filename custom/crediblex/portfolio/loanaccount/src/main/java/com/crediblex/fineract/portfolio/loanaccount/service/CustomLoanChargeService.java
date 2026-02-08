@@ -59,10 +59,17 @@ public class CustomLoanChargeService extends LoanChargeService {
                 amount = loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
             } else {
                 // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
-                // use approved principal instead of letting getDerivedAmountForCharge return the first tranche amount
+                // use disbursed principal when at least one tranche is already disbursed (e.g. after deleting
+                // future tranches). Otherwise use approved principal (e.g. at approval, no disbursement yet).
+                // This keeps fee tied to actual disbursed tranche amount, not full loan amount.
                 if (loan.isMultiDisburmentLoan() && loanCharge.isDisbursementCharge() && loanCharge.getTrancheDisbursementCharge() == null
                         && loanCharge.getChargeCalculation().isPercentageOfAmount()) {
-                    amount = approvedPrincipal;
+                    BigDecimal disbursedAmount = loan.getDisbursedAmount();
+                    if (disbursedAmount != null && disbursedAmount.compareTo(BigDecimal.ZERO) > 0) {
+                        amount = disbursedAmount;
+                    } else {
+                        amount = approvedPrincipal;
+                    }
                 } else {
                     // calculateAmountPercentageAppliedTo now uses getProposedPrincipal() for LOC Receivable loans
                     amount = loan.calculateAmountPercentageAppliedTo(loanCharge);
