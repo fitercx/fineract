@@ -568,7 +568,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     }
 
-    private static final class CredibleXLoanMapper implements RowMapper<LoanAccountData> {
+    private final class CredibleXLoanMapper implements RowMapper<LoanAccountData> {
 
         private final DatabaseSpecificSQLGenerator sqlGenerator;
         private final DelinquencyReadPlatformService delinquencyReadPlatformService;
@@ -961,6 +961,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                         .overdueSinceDate(overdueSinceDate).writeoffReasonId(writeoffReasonId).writeoffReason(writeoffReason)
                         .totalRecovered(totalRecovered).chargeOffReasonId(chargeOffReasonId).chargeOffReason(chargeOffReason).build();
 
+                // Include VAT paid at disbursement in summary so Total Paid = Principal + Interest + Fees + Tax +
+                // Penalty
+                if (multiDisburseLoan != null && multiDisburseLoan) {
+                    loanSummary = CredXLoanReadPlatformServiceImpl.this.correctSummaryForVatAtDisbursement(id, loanSummary);
+                }
             }
 
             GroupGeneralData groupData = null;
@@ -1667,6 +1672,126 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return LoanTransactionData.loanTransactionDataForDisbursalTemplate(transactionType, expectedDisbursementDate, disbursementAmount,
                 loan.getNetDisbursalAmount(), paymentOptions, loan.retriveLastEmiAmount(),
                 loan.getNextPossibleRepaymentDateForRescheduling(), appCurrency.toData());
+    }
+
+    /**
+     * For multi-disbursal loans, ensure summary shows Fee and Tax (VAT) separately and Total Paid = sum of components.
+     * - If core already included VAT in feeChargesPaid (feeChargesPaid = fee + VAT), reclassify: show Fee = fee only,
+     * Tax = VAT, total unchanged. - If core did not include VAT in totalRepayment (e.g. feeChargesPaid = fee only), add
+     * VAT to taxChargesPaid and totalRepayment.
+     */
+    private LoanSummaryData correctSummaryForVatAtDisbursement(final Long loanId, final LoanSummaryData loanSummary) {
+        if (loanSummary == null) {
+            return null;
+        }
+        Loan loan;
+        try {
+            loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+        } catch (Exception e) {
+            log.warn("Could not load loan {} for VAT summary correction", loanId, e);
+            return loanSummary;
+        }
+        // Principal correction: after deleting future tranches, DB summary can still show original
+        // principalDisbursed/principalOutstanding
+        BigDecimal principalDisbursedToUse = loanSummary.getPrincipalDisbursed() != null ? loanSummary.getPrincipalDisbursed()
+                : BigDecimal.ZERO;
+        BigDecimal principalOutstandingToUse = loanSummary.getPrincipalOutstanding() != null ? loanSummary.getPrincipalOutstanding()
+                : BigDecimal.ZERO;
+        BigDecimal actualDisbursed = loan.getDisbursedAmount();
+        if (actualDisbursed != null && actualDisbursed.compareTo(principalDisbursedToUse) < 0) {
+            principalDisbursedToUse = actualDisbursed;
+            BigDecimal principalPaid = loanSummary.getPrincipalPaid() != null ? loanSummary.getPrincipalPaid() : BigDecimal.ZERO;
+            principalOutstandingToUse = actualDisbursed.subtract(principalPaid).max(BigDecimal.ZERO);
+        }
+        BigDecimal vatPaidAtDisbursement = BigDecimal.ZERO;
+        BigDecimal feeOnlyFromCharges = BigDecimal.ZERO;
+        for (LoanCharge charge : loan.getLoanCharges()) {
+            if (charge.isActive() && charge.isDisbursementCharge()) {
+                final MonetaryCurrency currency = loan.getCurrency();
+                final Money feeAmount = charge.getAmount(currency);
+                if (feeAmount != null) {
+                    feeOnlyFromCharges = feeOnlyFromCharges.add(feeAmount.getAmount());
+                }
+                // Core does not set charge.taxAmountPaid when VAT_DEDUCTION_AT_DISBURSEMENT is applied
+                // (markAsFullyPaidWithTaxes only sets amountPaid = fee+VAT)
+                Money taxPaid = charge.getTaxAmountPaid(currency);
+                if (taxPaid != null && taxPaid.isGreaterThanZero()) {
+                    vatPaidAtDisbursement = vatPaidAtDisbursement.add(taxPaid.getAmount());
+                } else if (charge.hasTax() && charge.getAmountPaid(currency) != null && feeAmount != null
+                        && charge.getAmountPaid(currency).isGreaterThan(feeAmount)) {
+                    // Derive VAT as (amountPaid - fee) for charges where tax is paid but taxAmountPaid was not
+                    // persisted
+                    vatPaidAtDisbursement = vatPaidAtDisbursement
+                            .add(charge.getAmountPaid(currency).getAmount().subtract(feeAmount.getAmount()));
+                }
+            }
+        }
+        boolean principalCorrected = actualDisbursed != null && loanSummary.getPrincipalDisbursed() != null
+                && actualDisbursed.compareTo(loanSummary.getPrincipalDisbursed()) < 0;
+        BigDecimal totalOutstandingToUse = loanSummary.getTotalOutstanding() != null ? loanSummary.getTotalOutstanding() : BigDecimal.ZERO;
+        if (principalCorrected && loanSummary.getPrincipalOutstanding() != null) {
+            totalOutstandingToUse = totalOutstandingToUse.subtract(loanSummary.getPrincipalOutstanding()).add(principalOutstandingToUse);
+        }
+        if (vatPaidAtDisbursement.compareTo(BigDecimal.ZERO) <= 0 && !principalCorrected) {
+            return loanSummary;
+        }
+        BigDecimal feeChargesPaid = loanSummary.getFeeChargesPaid() != null ? loanSummary.getFeeChargesPaid() : BigDecimal.ZERO;
+        BigDecimal taxPaid = loanSummary.getTaxChargesPaid() != null ? loanSummary.getTaxChargesPaid() : BigDecimal.ZERO;
+        BigDecimal totalRepayment = loanSummary.getTotalRepayment() != null ? loanSummary.getTotalRepayment() : BigDecimal.ZERO;
+        BigDecimal totalCostOfLoan = loanSummary.getTotalCostOfLoan() != null ? loanSummary.getTotalCostOfLoan() : BigDecimal.ZERO;
+        BigDecimal feeChargesCharged = loanSummary.getFeeChargesCharged() != null ? loanSummary.getFeeChargesCharged() : BigDecimal.ZERO;
+        BigDecimal taxChargesCharged = loanSummary.getTaxChargesCharged() != null ? loanSummary.getTaxChargesCharged() : BigDecimal.ZERO;
+        // Reclassify charged side so "Taxes Original" shows VAT: feeChargesCharged (fee+VAT) → fee only,
+        // taxChargesCharged → +VAT
+        BigDecimal newFeeChargesCharged = feeChargesCharged;
+        BigDecimal newTaxChargesCharged = taxChargesCharged;
+        if (feeChargesCharged.compareTo(feeOnlyFromCharges.add(vatPaidAtDisbursement)) >= 0) {
+            newFeeChargesCharged = feeChargesCharged.subtract(vatPaidAtDisbursement);
+            newTaxChargesCharged = taxChargesCharged.add(vatPaidAtDisbursement);
+        }
+        // If core already included VAT in feeChargesPaid (feeChargesPaid >= fee + VAT), reclassify only; else add VAT
+        // to total
+        BigDecimal newFeeChargesPaid;
+        BigDecimal newTaxChargesPaid = taxPaid.add(vatPaidAtDisbursement);
+        BigDecimal newTotalRepayment;
+        BigDecimal newTotalCostOfLoan;
+        if (feeChargesPaid.compareTo(feeOnlyFromCharges.add(vatPaidAtDisbursement)) >= 0) {
+            // VAT already included in feeChargesPaid: reclassify so Fee = fee only, Tax = VAT, total unchanged
+            newFeeChargesPaid = feeChargesPaid.subtract(vatPaidAtDisbursement);
+            newTotalRepayment = totalRepayment;
+            newTotalCostOfLoan = totalCostOfLoan;
+        } else {
+            // Core did not include VAT in total: add VAT to totalRepayment and totalCostOfLoan
+            newFeeChargesPaid = feeChargesPaid;
+            newTotalRepayment = totalRepayment.add(vatPaidAtDisbursement);
+            newTotalCostOfLoan = totalCostOfLoan.add(vatPaidAtDisbursement);
+        }
+        return LoanSummaryData.builder().currency(loanSummary.getCurrency()).principalDisbursed(principalDisbursedToUse)
+                .principalAdjustments(loanSummary.getPrincipalAdjustments()).principalPaid(loanSummary.getPrincipalPaid())
+                .principalWrittenOff(loanSummary.getPrincipalWrittenOff()).principalOutstanding(principalOutstandingToUse)
+                .principalOverdue(loanSummary.getPrincipalOverdue()).interestCharged(loanSummary.getInterestCharged())
+                .interestPaid(loanSummary.getInterestPaid()).interestWaived(loanSummary.getInterestWaived())
+                .interestWrittenOff(loanSummary.getInterestWrittenOff()).interestOutstanding(loanSummary.getInterestOutstanding())
+                .interestOverdue(loanSummary.getInterestOverdue()).feeChargesCharged(newFeeChargesCharged)
+                .feeAdjustments(loanSummary.getFeeAdjustments())
+                .feeChargesDueAtDisbursementCharged(loanSummary.getFeeChargesDueAtDisbursementCharged()).feeChargesPaid(newFeeChargesPaid)
+                .feeChargesWaived(loanSummary.getFeeChargesWaived()).feeChargesWrittenOff(loanSummary.getFeeChargesWrittenOff())
+                .feeChargesOutstanding(loanSummary.getFeeChargesOutstanding()).feeChargesOverdue(loanSummary.getFeeChargesOverdue())
+                .penaltyChargesCharged(loanSummary.getPenaltyChargesCharged()).penaltyAdjustments(loanSummary.getPenaltyAdjustments())
+                .penaltyChargesPaid(loanSummary.getPenaltyChargesPaid()).penaltyChargesWaived(loanSummary.getPenaltyChargesWaived())
+                .penaltyChargesWrittenOff(loanSummary.getPenaltyChargesWrittenOff())
+                .penaltyChargesOutstanding(loanSummary.getPenaltyChargesOutstanding())
+                .penaltyChargesOverdue(loanSummary.getPenaltyChargesOverdue()).taxChargesCharged(newTaxChargesCharged)
+                .taxAdjustments(loanSummary.getTaxAdjustments()).taxChargesPaid(newTaxChargesPaid)
+                .taxChargesWaived(loanSummary.getTaxChargesWaived()).taxChargesWrittenOff(loanSummary.getTaxChargesWrittenOff())
+                .taxChargesOutstanding(loanSummary.getTaxChargesOutstanding()).taxChargesOverdue(loanSummary.getTaxChargesOverdue())
+                .totalExpectedRepayment(loanSummary.getTotalExpectedRepayment()).totalRepayment(newTotalRepayment)
+                .totalExpectedCostOfLoan(loanSummary.getTotalExpectedCostOfLoan()).totalCostOfLoan(newTotalCostOfLoan)
+                .totalWaived(loanSummary.getTotalWaived()).totalWrittenOff(loanSummary.getTotalWrittenOff())
+                .totalOutstanding(totalOutstandingToUse).totalOverdue(loanSummary.getTotalOverdue())
+                .totalRecovered(loanSummary.getTotalRecovered()).overdueSinceDate(loanSummary.getOverdueSinceDate())
+                .writeoffReasonId(loanSummary.getWriteoffReasonId()).writeoffReason(loanSummary.getWriteoffReason())
+                .chargeOffReasonId(loanSummary.getChargeOffReasonId()).chargeOffReason(loanSummary.getChargeOffReason()).build();
     }
 
     private static final class LoanScheduleResultSetExtractor implements ResultSetExtractor<LoanScheduleData> {
