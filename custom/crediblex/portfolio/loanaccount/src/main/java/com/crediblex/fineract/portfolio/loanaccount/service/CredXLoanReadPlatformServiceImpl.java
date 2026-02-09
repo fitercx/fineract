@@ -1688,7 +1688,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         try {
             loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         } catch (Exception e) {
-            log.warn("Could not load loan {} for VAT summary correction: {}", loanId, e.getMessage());
+            log.warn("Could not load loan {} for VAT summary correction", loanId, e);
             return loanSummary;
         }
         // Principal correction: after deleting future tranches, DB summary can still show original
