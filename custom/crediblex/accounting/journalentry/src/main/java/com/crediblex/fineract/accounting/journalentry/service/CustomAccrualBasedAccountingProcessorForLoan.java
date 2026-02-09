@@ -328,7 +328,6 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 BigDecimal totalVatForTransaction = BigDecimal.ZERO;
                 if (loanTransactionDTO.getFeePayments() != null) {
                     totalVatForTransaction = loanTransactionDTO.getFeePayments().stream().filter(Objects::nonNull)
-
                             .filter(CustomChargePaymentDTO.class::isInstance).map(CustomChargePaymentDTO.class::cast)
                             .map(CustomChargePaymentDTO::getTaxAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
                 }
