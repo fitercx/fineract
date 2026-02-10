@@ -20,9 +20,52 @@ import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 
 public class CustomLoanDisbursementService extends LoanDisbursementService {
 
+    /**
+     * Result of per-tranche fee and tax calculation (read-only). Used so disbursement-to-savings uses the same net
+     * amount as loan charge posting.
+     */
+    public record FeeAndTaxForTranche(Money fee, Money tax) {
+    }
+
     public CustomLoanDisbursementService(LoanChargeValidator loanChargeValidator, LoanDisbursementValidator loanDisbursementValidator,
             ReprocessLoanTransactionsService reprocessLoanTransactionsService) {
         super(loanChargeValidator, loanDisbursementValidator, reprocessLoanTransactionsService);
+    }
+
+    /**
+     * Calculates fee and tax applicable to a single tranche disbursement (read-only). Uses the same proportional logic
+     * as {@link #handleDisbursementTransaction} so the amount passed to loan-to-savings transfer matches what is posted
+     * as charges. Only includes charges that are deducted from principal (not payment mode account transfer).
+     *
+     * @param loan
+     *            the loan
+     * @param disbursedOn
+     *            the tranche disbursement date
+     * @return fee and tax for this tranche
+     */
+    public FeeAndTaxForTranche calculateFeeAndTaxForTrancheDisbursement(final Loan loan, final LocalDate disbursedOn) {
+        Money feeSum = Money.zero(loan.getCurrency());
+        Money taxSum = Money.zero(loan.getCurrency());
+        final Money totalFeeChargesDueAtDisbursement = loan.getSummary().getTotalFeeChargesDueAtDisbursement(loan.getCurrency());
+        if (!totalFeeChargesDueAtDisbursement.isGreaterThanZero()) {
+            return new FeeAndTaxForTranche(feeSum, taxSum);
+        }
+        for (final LoanCharge charge : loan.getActiveCharges()) {
+            LocalDate actualDisbursementDate = loan.getActualDisbursementDate(charge);
+            boolean applicable = (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
+                    && disbursedOn.equals(actualDisbursementDate))
+                    || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
+                            && disbursedOn.equals(actualDisbursementDate))
+                    || isMultiTrancheDisbursementChargeApplicable(charge, loan, disbursedOn);
+            if (!applicable || charge.isWaived() || charge.isFullyPaid() || charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+                continue;
+            }
+            Money chargeAmount = calculateProportionalChargeAmount(loan, charge, disbursedOn);
+            Money taxAmount = calculateProportionalTaxAmount(loan, charge, disbursedOn);
+            feeSum = feeSum.plus(chargeAmount);
+            taxSum = taxSum.plus(taxAmount);
+        }
+        return new FeeAndTaxForTranche(feeSum, taxSum);
     }
 
     public void handleDisbursementTransaction(final Loan loan, final LocalDate disbursedOn, final PaymentDetail paymentDetail) {
