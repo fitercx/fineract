@@ -57,7 +57,7 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
                             && disbursedOn.equals(actualDisbursementDate))
                     || isMultiTrancheDisbursementChargeApplicable(charge, loan, disbursedOn);
-            if (!applicable || charge.isWaived() || charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+            if (!applicable || charge.isWaived() || charge.isFullyPaid() || charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                 continue;
             }
             Money chargeAmount = calculateProportionalChargeAmount(loan, charge, disbursedOn);
