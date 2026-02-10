@@ -263,7 +263,8 @@ public class LoanTransactionData implements Serializable {
                 manuallyReversed, false, ExternalId.empty(), null, loanId);
     }
 
-    // Backwards-compatible constructor used by tests and older call sites
+    // Backwards-compatible constructor used by tests and older call sites.
+    // Reversed state is not inferred from reversedOnDate; pass explicit reversed when known (e.g. from DB).
     public LoanTransactionData(final Long id, final Long officeId, final String officeName, final LoanTransactionEnumData transactionType,
             final PaymentDetailData paymentDetailData, final CurrencyData currency, final LocalDate date, final BigDecimal amount,
             final BigDecimal netDisbursalAmount, final BigDecimal principalPortion, final BigDecimal interestPortion,
@@ -274,8 +275,8 @@ public class LoanTransactionData implements Serializable {
             final LocalDate reversedOnDate, Long loanId, ExternalId externalLoanId) {
         this(id, officeId, officeName, transactionType, paymentDetailData, currency, date, amount, netDisbursalAmount, principalPortion,
                 interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, overpaymentPortion, unrecognizedIncomePortion,
-                externalId, transfer, fixedEmiAmount, outstandingLoanBalance, submittedOnDate, manuallyReversed, reversedOnDate != null,
-                reversalExternalId, reversedOnDate, loanId, externalLoanId);
+                externalId, transfer, fixedEmiAmount, outstandingLoanBalance, submittedOnDate, manuallyReversed, false, reversalExternalId,
+                reversedOnDate, loanId, externalLoanId);
     }
 
     public LoanTransactionData(final Long id, final Long officeId, final String officeName, final LoanTransactionEnumData transactionType,

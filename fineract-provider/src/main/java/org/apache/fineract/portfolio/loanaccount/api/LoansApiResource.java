@@ -955,7 +955,7 @@ public class LoansApiResource {
 
             if (associationParameters.contains(DataTableApiConstant.transactionsAssociateParamName)) {
                 mandatoryResponseParameters.add(DataTableApiConstant.transactionsAssociateParamName);
-                loanRepayments = this.loanReadPlatformService.retrieveLoanTransactions(resolvedLoanId);
+                loanRepayments = this.loanReadPlatformService.retrieveLoanTransactions(resolvedLoanId, true);
             }
 
             if (associationParameters.contains(DataTableApiConstant.multiDisburseDetailsAssociateParamName)

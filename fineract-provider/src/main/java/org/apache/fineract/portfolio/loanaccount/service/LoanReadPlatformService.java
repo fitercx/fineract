@@ -54,6 +54,15 @@ public interface LoanReadPlatformService {
 
     Collection<LoanTransactionData> retrieveLoanTransactions(Long loanId);
 
+    /**
+     * Retrieve loan transactions, optionally including reversed ones (e.g. for loan details to show full history).
+     *
+     * @param includeReversed
+     *            when false, only non-reversed or manually-adjusted transactions are returned (backward-compatible
+     *            behavior)
+     */
+    Collection<LoanTransactionData> retrieveLoanTransactions(Long loanId, boolean includeReversed);
+
     org.springframework.data.domain.Page<LoanTransactionData> retrieveLoanTransactions(@NotNull Long loanId,
             Set<LoanTransactionType> excludedTransactionTypes, Pageable pageable);
 
