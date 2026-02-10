@@ -288,7 +288,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
              * TODO Vishwas: Remove references to "Contra" from the codebase
              ***/
             final String sql = "select " + rm.loanPaymentsSchema() + " where tr.loan_id = ? and tr.transaction_type_enum not in (0, 3) "
-                    + " and (tr.is_reversed=false or tr.manually_adjusted_or_reversed = true)  order by tr.transaction_date, tr.created_on_utc, tr.id ";
+                    + " order by tr.transaction_date, tr.created_on_utc, tr.id ";
             Collection<LoanTransactionData> loanTransactionData = this.jdbcTemplate.query(sql, rm, loanId); // NOSONAR
             // TODO: would worth to rework in the future. It is not nice to fetch relations one by one... might worth to
             // give a try to get rid of native queries
@@ -1486,7 +1486,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
                     + " tr.fee_charges_portion_derived as fees, tr.tax_charges_portion_derived as taxes, tr.penalty_charges_portion_derived as penalties,  "
                     + " tr.overpayment_portion_derived as overpayment, tr.outstanding_loan_balance_derived as outstandingLoanBalance, "
                     + " tr.unrecognized_income_portion as unrecognizedIncome, tr.submitted_on_date as submittedOnDate, "
-                    + " tr.manually_adjusted_or_reversed as manuallyReversed, tr.reversal_external_id as reversalExternalId, tr.reversed_on_date as reversedOnDate, "
+                    + " tr.is_reversed as reversed, tr.manually_adjusted_or_reversed as manuallyReversed, tr.reversal_external_id as reversalExternalId, tr.reversed_on_date as reversedOnDate, "
                     + " pd.payment_type_id as paymentType,pd.account_number as accountNumber,pd.check_number as checkNumber, "
                     + " pd.receipt_number as receiptNumber, pd.bank_number as bankNumber,pd.routing_code as routingCode, l.net_disbursal_amount as netDisbursalAmount,"
                     + " l.currency_code as currencyCode, l.currency_digits as currencyDigits, l.currency_multiplesof as inMultiplesOf, rc."
@@ -1527,6 +1527,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
             final int transactionTypeInt = JdbcSupport.getInteger(rs, "transactionType");
             final LoanTransactionEnumData transactionType = LoanEnumerations.transactionType(transactionTypeInt);
             final boolean manuallyReversed = rs.getBoolean("manuallyReversed");
+            final boolean reversed = rs.getBoolean("reversed");
 
             PaymentDetailData paymentDetailData = null;
 
@@ -1586,7 +1587,7 @@ public class LoanReadPlatformServiceImpl implements LoanReadPlatformService, Loa
             return new LoanTransactionData(id, officeId, officeName, transactionType, paymentDetailData, currencyData, date, totalAmount,
                     netDisbursalAmount, principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion,
                     overPaymentPortion, unrecognizedIncomePortion, externalId, transfer, null, outstandingLoanBalance, submittedOnDate,
-                    manuallyReversed, reversalExternalId, reversedOnDate, loanId, externalLoanId);
+                    manuallyReversed, reversed, reversalExternalId, reversedOnDate, loanId, externalLoanId);
         }
     }
 
