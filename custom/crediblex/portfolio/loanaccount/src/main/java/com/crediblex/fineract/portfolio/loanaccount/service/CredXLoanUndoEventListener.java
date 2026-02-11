@@ -64,6 +64,28 @@ public class CredXLoanUndoEventListener implements InitializingBean {
         cleanupStandingInstructionsSafely(loan, "undo approval");
     }
 
+    /**
+     * Reverses savings-side transfers that correspond to loan disbursement transactions which have already been
+     * reversed by an undo operation.
+     *
+     * <p>
+     * Concretely:
+     * </p>
+     * <ul>
+     * <li>Fetches all non-reversed {@link AccountTransferTransaction} rows where this loan is the "from" account.</li>
+     * <li>Filters to those where the "to" side is a savings account and the {@code fromLoanTransaction}:
+     * <ul>
+     * <li>is a {@link LoanTransactionType#DISBURSEMENT DISBURSEMENT}, and</li>
+     * <li>is already marked as reversed by the loan undo logic.</li>
+     * </ul>
+     * </li>
+     * <li>Delegates to {@link AccountTransfersWritePlatformService#reverseTransfersWithFromAccountTransactions} so that
+     * both the loan-side transfer transaction and the savings deposit are undone in a consistent way.</li>
+     * </ul>
+     *
+     * If the savings account does not have enough available balance to undo the deposit, the savings undo will fail and
+     * the overall undo operation (loan + savings) will roll back.
+     */
     private void reverseLoanDisbursalsToSavings(Loan loan) {
         List<AccountTransferTransaction> transfersFromLoan = accountTransferRepository.findByFromLoanId(loan.getId());
         if (transfersFromLoan == null || transfersFromLoan.isEmpty()) {
