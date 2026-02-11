@@ -48,10 +48,12 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                                                                           // Liability
     private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
                                                                                 // Receivable - Current Liability
+    private static final String LOC_PAYABLE_PRODUCT_SHORT_NAME = "LPLL"; // LOC Payable loan product short_name
+    private static final String LOC_PAYABLE_LOAN_PAYABLE_GL_CODE = "200042"; // Loan Payable - Working Capital - Revenue Finance (used for reversals)
 
     // Payment Type IDs
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
-    private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
+    private static final Long DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
 
     private final AccountingProcessorHelper helper;
     private final GLAccountRepository glAccountRepository;
@@ -110,6 +112,13 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     processedTransactionIndices.add(i);
                     continue;
                 }
+                if(linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)){
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for deposit (loan disbursement)");
+                    // Skip journal entry creation for LOC Payable deposits - handled on loan side
+                    processedTransactionIndices.add(i);
+                    continue;
+                }
                 // Non-RBF/Non-LOC Receivable: Use default parent logic
                 this.helper.createCashBasedJournalEntriesAndReversalsForSavings(office, currencyCode,
                         FinancialActivity.LIABILITY_TRANSFER.getValue(), CashAccountsForSavings.SAVINGS_CONTROL.getValue(),
@@ -132,6 +141,14 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: LOC Receivable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
                     // Skip journal entry creation for LOC Receivable withdrawals - handled on loan side
+                    processedTransactionIndices.add(i);
+                    continue;
+                }
+                if (linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)){
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
+                    // Skip journal entry creation for LOC Payable withdrawals - handled on loan side
+                    processedTransactionIndices.add(i);
                     continue;
                 }
                 // Non-RBF/Non-LOC Receivable: Use default parent logic
@@ -213,7 +230,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
                     && paymentTypeId != null
-                    && (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) || paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID))) {
+                    && (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) || paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID))) {
                 // Manual withdrawal with payment_type=5 (RBF) or payment_type=73 (LOC Receivable)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
 
@@ -244,7 +261,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         log.error("RBF GL Account 200040 or Bank Account not found, using default logic for this transaction");
                         // Do NOT mark as processed - let parent handle it
                     }
-                } else if (paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID) && linkedLoanProductId != null
+                } else if (paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID) && linkedLoanProductId != null
                         && isLOCReceivableLoanProduct(linkedLoanProductId)) {
                     // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
                     // 100003 (Bank)
@@ -260,6 +277,24 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                         processedTransactionIndices.add(i);
                     } else {
                         log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic for this transaction");
+                        // Do NOT mark as processed - let parent handle it
+                    }
+                } else if (paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID) && linkedLoanProductId != null
+                        && isLOCPayableLoanProduct(linkedLoanProductId)) {
+                    // LOC Payable Loan Repayment withdrawal: DR 200042 (Loan Payable - Payable LOC), CR
+                    // 100003 (Bank)
+                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable manual withdrawal - DR 200042, CR Bank");
+                    GLAccount locPayableLoanPayableAccount = getLOCPayableLoanPayableGLAccount();
+                    GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                            CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+                    if (locPayableLoanPayableAccount != null && bankAccount != null) {
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locPayableLoanPayableAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        processedTransactionIndices.add(i);
+                    } else {
+                        log.error("LOC Payable GL Account 200042 or Bank Account not found, using default logic for this transaction");
                         // Do NOT mark as processed - let parent handle it
                     }
                 } else {
@@ -402,6 +437,27 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
+     * Check if loan product is LOC Payable Queries product short_name from database to identify LOC Payable
+     * products
+     */
+    private boolean isLOCPayableLoanProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            // Query product short_name from database
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return LOC_PAYABLE_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            log.debug("CustomCashBasedAccountingProcessorForSavings: Error checking LOC Payable loan product for loanProductId {}: {}",
+                    loanProductId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by GL
      * code to avoid hardcoding account ID
      */
@@ -438,6 +494,20 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
         } catch (Exception e) {
             log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200042 account (Loan Payable - Payable LOC - Current Liability) for LOC Payable
+     * manual withdrawals Looks up by GL code to avoid hardcoding account ID
+     */
+    private GLAccount getLOCPayableLoanPayableGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_PAYABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_PAYABLE_LOAN_PAYABLE_GL_CODE,
                     e.getMessage());
             return null;
         }

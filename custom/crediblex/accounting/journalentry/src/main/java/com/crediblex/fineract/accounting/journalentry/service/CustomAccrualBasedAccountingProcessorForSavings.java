@@ -38,6 +38,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
 
     // Hardcoded LOC Receivable Configuration
     private static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL"; // LOC Receivable loan product short_name
+    private static final String LOC_PAYABLE_PRODUCT_SHORT_NAME = "LPLL"; // LOC Payable loan product short_name (for repayments from savings)
     private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable withdrawal payment type
     private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
                                                                          // Asset
@@ -45,6 +46,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                                                                           // Liability
     private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
                                                                                 // Receivable - Current Liability
+    private static final String LOC_PAYABLE_LOAN_PAYABLE_GL_CODE = "200042";
 
     private final AccountingProcessorHelper helper;
     private final GLAccountRepository glAccountRepository;

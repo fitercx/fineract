@@ -36,6 +36,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
     private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
     private static final String RECEIVABLE_LOC_PRODUCT_SHORT_NAME = "LRL";
     private static final String RECEIVABLE_LOC_GL_CODE = "200041"; // Loan Payable - Invoice Discounting
+    private static final String PAYABLE_LOC_PRODUCT_SHORT_NAME = "LPLL";
+    private static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
 
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
@@ -94,6 +96,28 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             return RECEIVABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
             // If query fails, default to non-Receivable LOC (use old Liability Transfer)
+            return false;
+        }
+    }
+
+    /**
+     * Check if the loan product is Payable LOC product
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if Payable LOC product, false otherwise
+     */
+    private boolean isPayableLOCProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            // If query fails, default to non-Payable LOC (use old Liability Transfer)
             return false;
         }
     }
@@ -241,6 +265,25 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             loanDTO.getNetDisbursalAmount(), receivableLOCGLAccount);
                     log.info(
                             "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
+                }
+            } else if (isPayableLOCProduct(loanProductId)) {
+                log.info(
+                        "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200042 account
+                GLAccount payableLOCGLAccount = getPayableLOCGLAccount();
+                if (payableLOCGLAccount == null) {
+                    log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 200042 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // Payable LOC: Credit GL 200042 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), payableLOCGLAccount);
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200042 for Payable LOC disbursement");
                 }
             } else {
                 log.debug("CustomAccrualBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
@@ -680,6 +723,19 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             return glAccountRepository.findOneByGlCode(RECEIVABLE_LOC_GL_CODE).orElse(null);
         } catch (Exception e) {
             log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE,
+                    e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200042 account (Payable LOC Loan Payable) Looks up by GL code to avoid hardcoding account ID
+     */
+    private GLAccount getPayableLOCGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(PAYABLE_LOC_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", PAYABLE_LOC_GL_CODE,
                     e.getMessage());
             return null;
         }
