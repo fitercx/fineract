@@ -52,12 +52,14 @@ public class CustomLoanDisbursementService extends LoanDisbursementService {
         }
         for (final LoanCharge charge : loan.getActiveCharges()) {
             LocalDate actualDisbursementDate = loan.getActualDisbursementDate(charge);
-            boolean multiTrancheApplicable = isMultiTrancheDisbursementChargeApplicable(charge, loan, disbursedOn);
-            boolean applicable = (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
+            boolean directApplicable = (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
                     && disbursedOn.equals(actualDisbursementDate))
                     || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
-                            && disbursedOn.equals(actualDisbursementDate))
-                    || multiTrancheApplicable;
+                            && disbursedOn.equals(actualDisbursementDate));
+            // Only evaluate multi-tranche helper when the direct charge-time checks did not match, to preserve
+            // short-circuit behaviour and avoid extra work for simple cases.
+            boolean multiTrancheApplicable = !directApplicable && isMultiTrancheDisbursementChargeApplicable(charge, loan, disbursedOn);
+            boolean applicable = directApplicable || multiTrancheApplicable;
             if (!applicable || charge.isWaived() || charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                 continue;
             }
