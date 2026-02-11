@@ -401,8 +401,11 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             BigDecimal netLoanDisbursementAmount = accountTransferDTO.getTransactionAmount();
             if (accountTransferDTO instanceof CustomAccountTransferDTO) {
-                netLoanDisbursementAmount = ((CustomAccountTransferDTO) accountTransferDTO).getNetLoanDisbursementAmount();
-                fromLoanAccount.setNetDisbursalAmount(netLoanDisbursementAmount);
+                BigDecimal netAmount = ((CustomAccountTransferDTO) accountTransferDTO).getNetLoanDisbursementAmount();
+                if (netAmount != null) {
+                    netLoanDisbursementAmount = netAmount;
+                    fromLoanAccount.setNetDisbursalAmount(netAmount);
+                }
             }
 
             final SavingsAccountTransaction deposit = this.savingsAccountDomainService.handleDeposit(toSavingsAccount,
