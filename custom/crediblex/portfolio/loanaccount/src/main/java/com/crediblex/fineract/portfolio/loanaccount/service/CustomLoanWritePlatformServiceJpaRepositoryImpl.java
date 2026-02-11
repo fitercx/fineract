@@ -529,6 +529,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
         loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
 
+        // For LOC loans, we need to add isDrawdown flag in the result to indicate whether this disbursement is a
+        // drawdown or not
+        Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        boolean isDrawdown = invoice.isPresent();
+        changes.put("isDrawdown", isDrawdown);
+
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loan.getId())
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
                 .withSubEntityExternalId(disbursalTransactionExternalId).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
