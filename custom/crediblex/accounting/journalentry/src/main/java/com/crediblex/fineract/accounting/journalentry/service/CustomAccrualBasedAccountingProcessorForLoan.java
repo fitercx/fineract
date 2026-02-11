@@ -267,8 +267,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
                 }
             } else if (isPayableLOCProduct(loanProductId)) {
-                log.info(
-                        "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
+                log.info("CustomAccrualBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
                         loanProductId);
 
                 // Get GL 200042 account
@@ -735,8 +734,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
         try {
             return glAccountRepository.findOneByGlCode(PAYABLE_LOC_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", PAYABLE_LOC_GL_CODE,
-                    e.getMessage());
+            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", PAYABLE_LOC_GL_CODE, e.getMessage());
             return null;
         }
     }

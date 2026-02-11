@@ -49,7 +49,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
                                                                                 // Receivable - Current Liability
     private static final String LOC_PAYABLE_PRODUCT_SHORT_NAME = "LPLL"; // LOC Payable loan product short_name
-    private static final String LOC_PAYABLE_LOAN_PAYABLE_GL_CODE = "200042"; // Loan Payable - Working Capital - Revenue Finance (used for reversals)
+    private static final String LOC_PAYABLE_LOAN_PAYABLE_GL_CODE = "200042"; // Loan Payable - Working Capital - Revenue
+                                                                             // Finance (used for reversals)
 
     // Payment Type IDs
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
@@ -112,7 +113,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     processedTransactionIndices.add(i);
                     continue;
                 }
-                if(linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)){
+                if (linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for deposit (loan disbursement)");
                     // Skip journal entry creation for LOC Payable deposits - handled on loan side
@@ -144,7 +145,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     processedTransactionIndices.add(i);
                     continue;
                 }
-                if (linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)){
+                if (linkedLoanProductId != null && isLOCPayableLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
                     // Skip journal entry creation for LOC Payable withdrawals - handled on loan side
@@ -288,8 +289,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
                             CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
                     if (locPayableLoanPayableAccount != null && bankAccount != null) {
-                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locPayableLoanPayableAccount, savingsId, transactionId,
-                                transactionDate, amount);
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locPayableLoanPayableAccount, savingsId,
+                                transactionId, transactionDate, amount);
                         this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
                                 transactionDate, amount);
                         processedTransactionIndices.add(i);
@@ -437,8 +438,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Check if loan product is LOC Payable Queries product short_name from database to identify LOC Payable
-     * products
+     * Check if loan product is LOC Payable Queries product short_name from database to identify LOC Payable products
      */
     private boolean isLOCPayableLoanProduct(Long loanProductId) {
         if (loanProductId == null) {
@@ -500,8 +500,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Get GL 200042 account (Loan Payable - Payable LOC - Current Liability) for LOC Payable
-     * manual withdrawals Looks up by GL code to avoid hardcoding account ID
+     * Get GL 200042 account (Loan Payable - Payable LOC - Current Liability) for LOC Payable manual withdrawals Looks
+     * up by GL code to avoid hardcoding account ID
      */
     private GLAccount getLOCPayableLoanPayableGLAccount() {
         try {
