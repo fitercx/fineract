@@ -26,5 +26,6 @@ dependencies {
     implementation(project(":custom:crediblex:portfolio:loc"));
     implementation(project(":custom:crediblex:portfolio:loanaccount"));
     implementation('org.springframework.batch:spring-batch-integration')
+    implementation('org.springframework.boot:spring-boot-starter-security')
     implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement
 }

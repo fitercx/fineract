@@ -187,6 +187,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     // Autowire to avoid constructor signature change
     @Autowired(required = false)
     private LineOfCreditRepository lineOfCreditRepository;
+    private final CustomLoanDisbursementService customLoanDisbursementService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -231,7 +232,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
             LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             PlatformTransactionManager platformTransactionManager, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
-            LocStatusAggregationUtils locStatusAggregationUtils) {
+            LocStatusAggregationUtils locStatusAggregationUtils, CustomLoanDisbursementService customLoanDisbursementService ) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -262,6 +263,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
         this.transactionTemplate = new TransactionTemplate(platformTransactionManager);
         this.locStatusAggregationUtils = locStatusAggregationUtils;
+        this.customLoanDisbursementService = customLoanDisbursementService;
     }
 
     @PostConstruct
@@ -385,23 +387,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             LoanTransaction disbursementTransaction = null;
             if (isAccountTransfer) {
-
-                final Set<LoanCharge> loanCharges = loan.getActiveCharges();
-                BigDecimal chargeReducableFromDisbursement = BigDecimal.ZERO;
-                for (final LoanCharge loanCharge : loanCharges) {
-                    if (loanCharge.isDueAtDisbursement() && !loanCharge.getChargePaymentMode().isPaymentModeAccountTransfer()
-                            && loanCharge.isChargePending()) {
-                        final BigDecimal multiDisbursementChargeAmount = loanCharge
-                                .calculateMultiDisbursementChargeAmount(amountToDisburse.getAmount());
-                        chargeReducableFromDisbursement = chargeReducableFromDisbursement.add(multiDisbursementChargeAmount);
-                    }
-
-                }
-
+                // Use same per-tranche fee/tax as CustomLoanDisbursementService so savings gets net amount every
+                // tranche
+                CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
+                        .calculateFeeAndTaxForTrancheDisbursement(loan, actualDisbursementDate);
+                BigDecimal chargeReducableFromDisbursement = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
                 loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                // Calculate net disbursement amount by deducting fees from principal
-                Money netDisbursementAmount = amountToDisburse.minus(Money.of(loan.getCurrency(), chargeReducableFromDisbursement));
+                Money netDisbursementAmount = amountToDisburse.minus(feeAndTax.fee()).minus(feeAndTax.tax());
                 disburseLoanToSavings(loan, command, amountToDisburse, netDisbursementAmount, paymentDetail);
                 existingTransactionIds.addAll(loan.findExistingTransactionIds());
                 existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
@@ -604,6 +597,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         journalEntryPoster.postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
         loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
 
+        // For LOC loans, we need to add isDrawdown flag in the result to indicate whether this disbursement is a
+        // drawdown or not
+        Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        boolean isDrawdown = invoice.isPresent();
+        changes.put("isDrawdown", isDrawdown);
+
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loan.getId())
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
                 .withSubEntityExternalId(disbursalTransactionExternalId).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
@@ -791,21 +790,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 final ExternalId txnExternalId = externalIdFactory.createFromCommand(command, LoanApiConstants.externalIdParameterName);
 
                 if (isAccountTransfer) {
-
-                    final Set<LoanCharge> loanCharges = loan.getActiveCharges();
-                    BigDecimal chargeReducableFromDisbursement = BigDecimal.ZERO;
-                    for (final LoanCharge loanCharge : loanCharges) {
-                        if (loanCharge.isDueAtDisbursement() && !loanCharge.getChargePaymentMode().isPaymentModeAccountTransfer()
-                                && loanCharge.isChargePending()) {
-                            chargeReducableFromDisbursement = chargeReducableFromDisbursement.add(loanCharge.amountOutstanding());
-                        }
-
-                    }
-
+                    CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
+                            .calculateFeeAndTaxForTrancheDisbursement(loan, actualDisbursementDate);
+                    BigDecimal chargeReducableFromDisbursement = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
                     loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                    // Calculate net disbursement amount by deducting fees from principal
-                    Money netDisbursementAmount = disburseAmount.minus(Money.of(loan.getCurrency(), chargeReducableFromDisbursement));
+                    Money netDisbursementAmount = disburseAmount.minus(feeAndTax.fee()).minus(feeAndTax.tax());
                     disburseLoanToSavings(loan, command, disburseAmount, netDisbursementAmount, paymentDetail);
                     existingTransactionIds.addAll(loan.findExistingTransactionIds());
                     existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());

@@ -72,6 +72,7 @@ public class LoanTransactionData implements Serializable {
     private final BigDecimal outstandingLoanBalance;
     private final LocalDate submittedOnDate;
     private final boolean manuallyReversed;
+    private final boolean reversed;
     private final LocalDate possibleNextRepaymentDate;
 
     private Collection<LoanChargePaidByData> loanChargePaidByList;
@@ -154,6 +155,7 @@ public class LoanTransactionData implements Serializable {
         this.outstandingLoanBalance = null;
         this.submittedOnDate = null;
         this.manuallyReversed = false;
+        this.reversed = false;
         this.possibleNextRepaymentDate = null;
         this.paymentTypeOptions = null;
         this.writeOffReasonOptions = null;
@@ -207,6 +209,7 @@ public class LoanTransactionData implements Serializable {
         this.outstandingLoanBalance = null;
         this.submittedOnDate = null;
         this.manuallyReversed = false;
+        this.reversed = false;
         this.possibleNextRepaymentDate = null;
         this.paymentTypeOptions = null;
         this.writeOffReasonOptions = null;
@@ -257,7 +260,23 @@ public class LoanTransactionData implements Serializable {
         this(id, externalLoanId, officeId, officeName, transactionType, paymentDetailData, currency, date, amount, netDisbursalAmount,
                 principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, overpaymentPortion,
                 unrecognizedIncomePortion, paymentTypeOptions, externalId, transfer, fixedEmiAmount, outstandingLoanBalance, null,
-                manuallyReversed, ExternalId.empty(), null, loanId);
+                manuallyReversed, false, ExternalId.empty(), null, loanId);
+    }
+
+    // Backwards-compatible constructor used by tests and older call sites.
+    // Reversed state is not inferred from reversedOnDate; pass explicit reversed when known (e.g. from DB).
+    public LoanTransactionData(final Long id, final Long officeId, final String officeName, final LoanTransactionEnumData transactionType,
+            final PaymentDetailData paymentDetailData, final CurrencyData currency, final LocalDate date, final BigDecimal amount,
+            final BigDecimal netDisbursalAmount, final BigDecimal principalPortion, final BigDecimal interestPortion,
+            final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion, final BigDecimal taxChargesPortion,
+            final BigDecimal overpaymentPortion, final BigDecimal unrecognizedIncomePortion, final ExternalId externalId,
+            final AccountTransferData transfer, final BigDecimal fixedEmiAmount, BigDecimal outstandingLoanBalance,
+            final LocalDate submittedOnDate, final boolean manuallyReversed, final ExternalId reversalExternalId,
+            final LocalDate reversedOnDate, Long loanId, ExternalId externalLoanId) {
+        this(id, officeId, officeName, transactionType, paymentDetailData, currency, date, amount, netDisbursalAmount, principalPortion,
+                interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, overpaymentPortion, unrecognizedIncomePortion,
+                externalId, transfer, fixedEmiAmount, outstandingLoanBalance, submittedOnDate, manuallyReversed, false, reversalExternalId,
+                reversedOnDate, loanId, externalLoanId);
     }
 
     public LoanTransactionData(final Long id, final Long officeId, final String officeName, final LoanTransactionEnumData transactionType,
@@ -266,12 +285,12 @@ public class LoanTransactionData implements Serializable {
             final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion, final BigDecimal taxChargesPortion,
             final BigDecimal overpaymentPortion, final BigDecimal unrecognizedIncomePortion, final ExternalId externalId,
             final AccountTransferData transfer, BigDecimal fixedEmiAmount, BigDecimal outstandingLoanBalance, LocalDate submittedOnDate,
-            final boolean manuallyReversed, final ExternalId reversalExternalId, final LocalDate reversedOnDate, Long loanId,
-            ExternalId externalLoanId) {
+            final boolean manuallyReversed, final boolean reversed, final ExternalId reversalExternalId, final LocalDate reversedOnDate,
+            Long loanId, ExternalId externalLoanId) {
         this(id, externalLoanId, officeId, officeName, transactionType, paymentDetailData, currency, date, amount, netDisbursalAmount,
                 principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, overpaymentPortion,
                 unrecognizedIncomePortion, null, externalId, transfer, fixedEmiAmount, outstandingLoanBalance, submittedOnDate,
-                manuallyReversed, reversalExternalId, reversedOnDate, loanId);
+                manuallyReversed, reversed, reversalExternalId, reversedOnDate, loanId);
     }
 
     public LoanTransactionData(final Long id, final ExternalId externalLoanId, final Long officeId, final String officeName,
@@ -281,7 +300,8 @@ public class LoanTransactionData implements Serializable {
             final BigDecimal taxChargesPortion, final BigDecimal overpaymentPortion, final BigDecimal unrecognizedIncomePortion,
             final Collection<PaymentTypeData> paymentTypeOptions, final ExternalId externalId, final AccountTransferData transfer,
             final BigDecimal fixedEmiAmount, BigDecimal outstandingLoanBalance, final LocalDate submittedOnDate,
-            final boolean manuallyReversed, final ExternalId reversalExternalId, final LocalDate reversedOnDate, Long loanId) {
+            final boolean manuallyReversed, final boolean reversed, final ExternalId reversalExternalId, final LocalDate reversedOnDate,
+            Long loanId) {
         this.id = id;
         this.loanId = loanId;
         this.externalLoanId = externalLoanId;
@@ -307,6 +327,7 @@ public class LoanTransactionData implements Serializable {
         this.outstandingLoanBalance = outstandingLoanBalance;
         this.submittedOnDate = submittedOnDate;
         this.manuallyReversed = manuallyReversed;
+        this.reversed = reversed;
         this.possibleNextRepaymentDate = null;
         this.reversalExternalId = reversalExternalId;
         this.reversedOnDate = reversedOnDate;
@@ -319,7 +340,7 @@ public class LoanTransactionData implements Serializable {
             Long loanId, ExternalId externalLoanId) {
         this(id, externalLoanId, null, null, transactionType, null, null, date, totalAmount, netDisbursalAmount, principalPortion,
                 interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion, overpaymentPortion, unrecognizedIncomePortion,
-                null, externalId, null, null, outstandingLoanBalance, null, manuallyReversed, ExternalId.empty(), null, loanId);
+                null, externalId, null, null, outstandingLoanBalance, null, manuallyReversed, false, ExternalId.empty(), null, loanId);
     }
 
     public static LoanTransactionData loanTransactionDataForDisbursalTemplate(final LoanTransactionEnumData transactionType,
@@ -385,6 +406,7 @@ public class LoanTransactionData implements Serializable {
         this.outstandingLoanBalance = outstandingLoanBalance;
         this.submittedOnDate = submittedOnDate;
         this.manuallyReversed = manuallyReversed;
+        this.reversed = false;
         this.possibleNextRepaymentDate = possibleNextRepaymentDate;
         this.reversalExternalId = ExternalId.empty();
     }

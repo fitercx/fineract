@@ -78,7 +78,7 @@ public class SynchronousCommandProcessingService implements CommandProcessingSer
     private final CommandSourceService commandSourceService;
 
     private final FineractRequestContextHolder fineractRequestContextHolder;
-    private final Gson gson = GoogleGsonSerializerHelper.createSimpleGson();
+    protected final Gson gson = GoogleGsonSerializerHelper.createSimpleGson();
 
     @Override
     @Retry(name = "executeCommand", fallbackMethod = "fallbackExecuteCommand")

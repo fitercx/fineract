@@ -1,11 +1,13 @@
 package com.crediblex.fineract.accounting.journalentry.service;
 
 import com.crediblex.fineract.accounting.journalentry.CustomAccountingProcessorHelper;
+import com.crediblex.fineract.accounting.journalentry.data.CustomChargePaymentDTO;
 import com.crediblex.fineract.accounting.journalentry.journalentry.CustomLoanDTO;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
@@ -318,8 +320,19 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                         AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_FEES.getValue(), loanProductId, loanId, transactionId,
                         transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
             } else if (loanTransactionDTO.getTransactionType().isVatDeductionAtDisbursement()) {
+                // For VAT deduction at disbursement, use the sum of tax amounts from the
+                // fee payments as the total amount for the advanced accounting helper.
+                // This aligns the helper's integrity check with the actual VAT being
+                // posted in this transaction, even when VAT is collected across multiple
+                // tranches.
+                BigDecimal totalVatForTransaction = BigDecimal.ZERO;
+                if (loanTransactionDTO.getFeePayments() != null) {
+                    totalVatForTransaction = loanTransactionDTO.getFeePayments().stream().filter(Objects::nonNull)
+                            .filter(CustomChargePaymentDTO.class::isInstance).map(CustomChargePaymentDTO.class::cast)
+                            .map(CustomChargePaymentDTO::getTaxAmount).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+                }
                 this.customAccountingProcessorHelper.createCreditJournalEntryForLoanCharges(office, currencyCode, loanId, transactionId,
-                        transactionDate, feesAmount, loanTransactionDTO.getFeePayments());
+                        transactionDate, totalVatForTransaction, loanTransactionDTO.getFeePayments());
             } else {
                 // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
                 if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {

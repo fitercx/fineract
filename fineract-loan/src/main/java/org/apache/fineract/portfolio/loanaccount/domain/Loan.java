@@ -653,6 +653,27 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    /**
+     * Sum of charges due at disbursement for disbursed tranches only. Used after undo last disbursement so that
+     * totalFeeChargesDueAtDisbursement and fee/tax summary reflect only valid (disbursed) tranches.
+     */
+    public BigDecimal deriveSumTotalOfChargesDueAtDisbursementForDisbursedTranches() {
+        if (!isMultiDisburmentLoan()) {
+            return deriveSumTotalOfChargesDueAtDisbursement();
+        }
+        return getActiveCharges().stream() //
+                .filter(LoanCharge::isDueAtDisbursement) //
+                .filter(charge -> {
+                    var trancheCharge = charge.getTrancheDisbursementCharge();
+                    if (trancheCharge == null) {
+                        return true; // not tranche-specific, include
+                    }
+                    return trancheCharge.getLoanDisbursementDetails().actualDisbursementDate() != null;
+                }) //
+                .map(LoanCharge::getAmountWithTaxes) //
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private Set<LoanCharge> associateChargesWithThisLoan(final Set<LoanCharge> loanCharges) {
         for (final LoanCharge loanCharge : loanCharges) {
             loanCharge.update(this);
@@ -2525,7 +2546,8 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         }
         this.loanRepaymentScheduleDetail.setPrincipal(getDisbursedAmount().subtract(disbursementDetail.principal()));
         disbursementDetail.updateActualDisbursementDate(null);
-        disbursementDetail.reverse();
+        // Do NOT call disbursementDetail.reverse() - keep tranche visible as "pending" for re-disbursement
+        updateSummaryWithTotalFeeChargesDueAtDisbursement(deriveSumTotalOfChargesDueAtDisbursementForDisbursedTranches());
         updateLoanSummaryDerivedFields();
     }
 
