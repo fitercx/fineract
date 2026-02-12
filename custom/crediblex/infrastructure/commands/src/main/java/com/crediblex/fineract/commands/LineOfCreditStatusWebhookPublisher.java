@@ -106,13 +106,13 @@ public class LineOfCreditStatusWebhookPublisher {
         response.put("clientId", loan.getClientId());
         response.put("officeId", loan.getOfficeId());
         response.put("isDrawdown", isDrawdown);
+        response.put("resourceId", locIdOpt.orElse(null));
         locIdOpt.ifPresent(locId -> response.put("locId", locId));
 
         payload.put("response", response);
         payload.put("entityName", ENTITY);
         payload.put("actionName", ACTION);
-        payload.put("resourceId", loan.getId());
-        payload.put("resourceIdentifier", String.valueOf(loan.getId()));
+        payload.put("resourceIdentifier", locIdOpt.map(String::valueOf).orElse(null));
 
         credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
     }

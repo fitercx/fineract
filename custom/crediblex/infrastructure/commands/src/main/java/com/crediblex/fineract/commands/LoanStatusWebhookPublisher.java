@@ -65,6 +65,7 @@ public class LoanStatusWebhookPublisher {
         response.put("loanId", loan.getId());
         response.put("clientId", loan.getClientId());
         response.put("officeId", loan.getOfficeId());
+        response.put("resourceId", loan.getId());
         response.put("isDrawdown", isDrawdown);
 
         if (isDrawdown) {
@@ -74,7 +75,6 @@ public class LoanStatusWebhookPublisher {
         payload.put("response", response);
         payload.put("entityName", ENTITY);
         payload.put("actionName", ACTION);
-        payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
         credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
@@ -104,13 +104,13 @@ public class LoanStatusWebhookPublisher {
         response.put("loanId", loan.getId());
         response.put("clientId", loan.getClientId());
         response.put("officeId", loan.getOfficeId());
+        response.put("resourceId", loan.getId());
         response.put("isDrawdown", isDrawdown);
         locIdOpt.ifPresent(locId -> response.put("locId", locId));
 
         payload.put("response", response);
         payload.put("entityName", ENTITY);
         payload.put("actionName", ACTION);
-        payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
         credxSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
