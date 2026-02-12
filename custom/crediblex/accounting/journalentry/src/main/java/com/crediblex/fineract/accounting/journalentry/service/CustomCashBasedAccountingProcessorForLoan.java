@@ -220,8 +220,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                             "CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
                 }
             } else if (isPayableLOCProduct(loanProductId)) {
-                log.info(
-                        "CustomCashBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
+                log.info("CustomCashBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
                         loanProductId);
 
                 // Get GL 200042 account

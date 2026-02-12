@@ -113,7 +113,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // Non-RBF/Non-LOC Receivable/Non-LOC Payable: Use default parent logic - mark for later processing
                 processedTransactionIndices.add(i);
             }
-            // Custom logic: Handle RBF and LOC Receivable/Payable withdrawals with account transfer (loan repayment from
+            // Custom logic: Handle RBF and LOC Receivable/Payable withdrawals with account transfer (loan repayment
+            // from
             // savings)
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
                 // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
@@ -419,8 +420,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
         try {
             return glAccountRepository.findOneByGlCode(LOC_PAYABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
         } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}",
-                    LOC_PAYABLE_LOAN_PAYABLE_GL_CODE, e.getMessage());
+            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_PAYABLE_LOAN_PAYABLE_GL_CODE,
+                    e.getMessage());
             return null;
         }
     }
