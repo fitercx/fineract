@@ -140,7 +140,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     continue;
                 }
                 // Non-RBF/Non-LOC Receivable/Non-LOC Payable: Use default parent logic - mark for later processing
-                processedTransactionIndices.add(i)
+                processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
                 // Normal deposits (not account transfers) - ensure they use GL 100062, not payment_type-specific GL
                 // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
