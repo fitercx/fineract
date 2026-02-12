@@ -1,6 +1,15 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
+import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -12,6 +21,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -49,6 +59,7 @@ import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedEx
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
@@ -65,6 +76,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationTypeEnum;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJsonValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
@@ -95,7 +107,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
 @Service
@@ -118,6 +134,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService;
     private final ConfigurationDomainService configurationDomainService;
     private final CustomLoanChargeRepository customLoanChargeRepository;
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
+    private final LineOfCreditRepository lineOfCreditRepository;
+    private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+    private final LocStatusAggregationUtils locStatusAggregationUtils;
+    private final TransactionTemplate transactionTemplate;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
     private final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
@@ -150,9 +172,13 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             LoanAccountingBridgeMapper loanAccountingBridgeMapper, LoanChargeValidator loanChargeValidator1,
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine1, LoanAccrualsProcessingService loanAccrualsProcessingService1,
             LoanAccrualTransactionBusinessEventService loanAccrualTransactionBusinessEventService1,
-            CustomLoanChargeRepository customLoanChargeRepository, GLAccountRepository glAccountRepository,
-            JournalEntryRepository journalEntryRepository, OfficeRepositoryWrapper officeRepositoryWrapper,
-            SavingsAccountWritePlatformService savingsAccountWritePlatformService,
+            CustomLoanChargeRepository customLoanChargeRepository,
+            // New injections for custom loan/loc status/webhook handling
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, LineOfCreditRepository lineOfCreditRepository,
+            LoanStatusWebhookPublisher loanStatusWebhookPublisher, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
+            LocStatusAggregationUtils locStatusAggregationUtils, PlatformTransactionManager platformTransactionManager,
+            GLAccountRepository glAccountRepository, JournalEntryRepository journalEntryRepository,
+            OfficeRepositoryWrapper officeRepositoryWrapper, SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
             SavingsAccountTransactionRepository savingsAccountTransactionRepository) {
 
@@ -180,6 +206,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.loanAccrualTransactionBusinessEventService = loanAccrualTransactionBusinessEventService1;
         this.configurationDomainService = configurationDomainService;
         this.customLoanChargeRepository = customLoanChargeRepository;
+        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
+        this.lineOfCreditRepository = lineOfCreditRepository;
+        this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
+        this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
+        this.locStatusAggregationUtils = locStatusAggregationUtils;
+        this.transactionTemplate = new TransactionTemplate(platformTransactionManager);
         this.reprocessLoanTransactionsService = reprocessLoanTransactionsService;
         this.loanRepositoryWrapper = loanRepositoryWrapper;
         this.accountAssociationsReadPlatformService = accountAssociationsReadPlatformService;
@@ -1421,6 +1453,57 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     Money.zero(currency), Money.zero(currency), Money.zero(currency));
 
             log.debug("Updated installment {} - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), totalFee, totalPenalty);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
+        // Delegate to parent to apply penalties and perform schedule recalculation and transaction reprocessing
+        super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
+
+        // After penalties and schedule changes, recompute custom statuses and fire webhooks
+        try {
+            Loan updatedLoan = this.loanAssembler.assembleFrom(loanId);
+
+            // Compute new custom loan status based on updated schedule/installments
+            CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
+            CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
+            updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
+            updatedLoan = this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(updatedLoan);
+
+            // LOC status aggregation if drawdown
+            Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
+            boolean isDrawdown = invoice.isPresent();
+            Optional<Long> locIdOpt = invoice.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+            LocStatusAggregationData locStatusAggregationData;
+            if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+                LineOfCredit loc = invoice.get().getLineOfCredit();
+                locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, updatedLoan);
+                lineOfCreditRepository.save(loc);
+            } else {
+                locStatusAggregationData = null;
+            }
+
+            final Loan finalLoan = updatedLoan;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                @Override
+                public void afterCommit() {
+                    transactionTemplate.execute(status -> {
+                        loanStatusWebhookPublisher.publish(finalLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+                        if (locStatusAggregationData != null) {
+                            lineOfCreditStatusWebhookPublisher.publish(finalLoan, locStatusAggregationData.getDefaultLocStatus().name(),
+                                    locStatusAggregationData.getOldLocCustomStatus().name(),
+                                    locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                        }
+                        return null;
+                    });
+                }
+            });
+        } catch (Exception e) {
+            log.warn("Failed to recompute/publish custom statuses after overdue penalties for loan {}: {}", loanId, e.getMessage());
         }
     }
 }

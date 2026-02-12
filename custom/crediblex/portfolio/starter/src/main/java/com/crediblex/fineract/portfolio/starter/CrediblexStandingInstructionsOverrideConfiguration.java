@@ -18,8 +18,11 @@
  */
 package com.crediblex.fineract.portfolio.starter;
 
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions.CustomExecuteStandingInstructionsTasklet;
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
@@ -32,6 +35,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
 public class CrediblexStandingInstructionsOverrideConfiguration {
@@ -40,7 +44,7 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     private SavingsAccountAssembler savingsAccountAssembler;
 
     @Autowired
-    private CustomCommandProcessingService customCommandProcessingService;
+    public CredXSynchronousCommandProcessingService customCommandProcessingService;
 
     @Autowired
     private FromJsonHelper fromApiJsonHelper;
@@ -50,10 +54,13 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
     public ExecuteStandingInstructionsTasklet executeStandingInstructionsTasklet(
             StandingInstructionReadPlatformService standingInstructionReadPlatformService, JdbcTemplate jdbcTemplate,
             DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository,
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService,
-                fromApiJsonHelper);
+                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, loanLocLookupRepository,
+                lineOfCreditStatusWebhookPublisher);
     }
 }

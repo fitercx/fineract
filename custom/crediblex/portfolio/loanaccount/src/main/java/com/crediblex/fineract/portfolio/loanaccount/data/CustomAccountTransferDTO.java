@@ -1,4 +1,4 @@
-package com.crediblex.fineract.portfolio.account.data;
+package com.crediblex.fineract.portfolio.loanaccount.data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -14,7 +14,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 
-// A copy of this class is also present in :custom:crediblex:portfolio:account to avoid circular dependency between :custom:crediblex:portfolio:account and :custom:crediblex:portfolio:loanaccount
+// Note: This class is a copy of :custom:crediblex:portfolio:account:data:CustomAccountTransferDTO.java
+// with no changes, moved here to avoid circular dependency between :custom:crediblex:portfolio:account and :custom:crediblex:portfolio:loanaccount
 // If any changes are needed, please make them in both places.
 public class CustomAccountTransferDTO extends AccountTransferDTO {
 

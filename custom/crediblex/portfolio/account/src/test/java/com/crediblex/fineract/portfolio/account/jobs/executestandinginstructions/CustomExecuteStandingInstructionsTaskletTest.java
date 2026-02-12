@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.MonthDay;
@@ -59,6 +61,7 @@ import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class CustomExecuteStandingInstructionsTaskletTest {
 
@@ -69,8 +72,11 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private CustomExecuteStandingInstructionsTasklet tasklet;
     private PlatformTransactionManager platformTransactionManager;
     private SavingsAccountAssembler savingsAccountAssembler;
-    private CustomCommandProcessingService customCommandProcessingService;
+    private CredXSynchronousCommandProcessingService customCommandProcessingService;
     private FromJsonHelper fromApiJsonHelper;
+    private LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private TransactionTemplate transactionTemplate;
+    private EzySqlLoanLocRepository ezySqlLoanLocRepository;
 
     @BeforeEach
     void setUp() {
@@ -80,6 +86,11 @@ class CustomExecuteStandingInstructionsTaskletTest {
         accountTransfersWritePlatformService = mock(AccountTransfersWritePlatformService.class);
         savingsAccountAssembler = mock(SavingsAccountAssembler.class);
         platformTransactionManager = mock(PlatformTransactionManager.class);
+        customCommandProcessingService = mock(CredXSynchronousCommandProcessingService.class);
+        fromApiJsonHelper = mock(FromJsonHelper.class);
+        loanStatusWebhookPublisher = mock(LoanStatusWebhookPublisher.class);
+        transactionTemplate = new TransactionTemplate(platformTransactionManager);
+        ezySqlLoanLocRepository = mock(EzySqlLoanLocRepository.class);
 
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, DateUtils.parseLocalDate("2025-05-20"))));
@@ -88,7 +99,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService,
-                fromApiJsonHelper);
+                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, ezySqlLoanLocRepository);
     }
 
     @Test

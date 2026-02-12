@@ -34,7 +34,6 @@ dependencies {
     implementation(project(':fineract-accounting'))
     implementation(project(':fineract-rates'))
     implementation project(':fineract-progressive-loan')
-    implementation(project(":custom:crediblex:portfolio:account"))
     implementation(project(":custom:crediblex:infrastructure:commands"))
 
     implementation('org.springframework.boot:spring-boot-starter-data-jpa')

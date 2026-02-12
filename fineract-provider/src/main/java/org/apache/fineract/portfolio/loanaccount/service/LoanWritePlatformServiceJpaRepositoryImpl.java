@@ -237,7 +237,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     protected final LoanTransactionRepository loanTransactionRepository;
     private final LoanTransactionRelationRepository loanTransactionRelationRepository;
     protected final LoanAssembler loanAssembler;
-    private final JournalEntryWritePlatformService journalEntryWritePlatformService;
+    protected final JournalEntryWritePlatformService journalEntryWritePlatformService;
     private final CalendarInstanceRepository calendarInstanceRepository;
     protected final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
     protected final HolidayRepositoryWrapper holidayRepository;
@@ -282,7 +282,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
     private final LoanAccountService loanAccountService;
     protected final LoanJournalEntryPoster journalEntryPoster;
     private final LoanAdjustmentService loanAdjustmentService;
-    private final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
+    protected final LoanAccountingBridgeMapper loanAccountingBridgeMapper;
     private final LoanMapper loanMapper;
     private final LoanTransactionProcessingService loanTransactionProcessingService;
     private final FineractProperties fineractProperties;
@@ -2113,7 +2113,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private void removeLoanCycle(final Loan loan) {
+    protected void removeLoanCycle(final Loan loan) {
         final List<Loan> loansToUpdate;
         if (loan.isGroupLoan()) {
             if (loan.loanProduct().isIncludeInBorrowerCycle()) {
@@ -3142,7 +3142,7 @@ public class LoanWritePlatformServiceJpaRepositoryImpl implements LoanWritePlatf
         }
     }
 
-    private Map<String, Object> undoDisbursal(final Loan loan, final ScheduleGeneratorDTO scheduleGeneratorDTO,
+    protected Map<String, Object> undoDisbursal(final Loan loan, final ScheduleGeneratorDTO scheduleGeneratorDTO,
             final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds) {
         final Map<String, Object> actualChanges = new LinkedHashMap<>();
         final LoanStatus currentStatus = loan.getStatus();

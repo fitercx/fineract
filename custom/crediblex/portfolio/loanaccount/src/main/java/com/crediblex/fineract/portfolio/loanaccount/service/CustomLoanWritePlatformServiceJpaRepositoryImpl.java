@@ -1,9 +1,13 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanStatusAggregationUtils;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
-import com.crediblex.fineract.portfolio.account.data.CustomAccountTransferDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
@@ -11,7 +15,9 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeR
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import com.google.common.collect.Lists;
@@ -55,6 +61,7 @@ import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
 import org.apache.fineract.infrastructure.event.business.BusinessEventListener;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanDisbursalBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.LoanUndoDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanDisbursalTransactionBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -81,8 +88,10 @@ import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
 import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulkDisbursalCommand;
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
+import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainService;
@@ -145,10 +154,15 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepositoryWrap
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @Primary
@@ -166,6 +180,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
     private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
     private final CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator;
+    private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+    private final TransactionTemplate transactionTemplate;
+    private final LocStatusAggregationUtils locStatusAggregationUtils;
+    // Autowire to avoid constructor signature change
+    @Autowired(required = false)
+    private LineOfCreditRepository lineOfCreditRepository;
     private final CustomLoanDisbursementService customLoanDisbursementService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
@@ -209,7 +230,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
             LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService, StandingInstructionRepository standingInstructionRepository,
             com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator customLoanDisbursementDateValidator,
-            LoanChargeWritePlatformService loanChargeWritePlatformService, CustomLoanDisbursementService customLoanDisbursementService) {
+            LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            PlatformTransactionManager platformTransactionManager, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
+            LocStatusAggregationUtils locStatusAggregationUtils, CustomLoanDisbursementService customLoanDisbursementService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -236,6 +259,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.credibleXLoanChargeWritePlatformService = credibleXLoanChargeWritePlatformService;
         this.customLoanDisbursementDateValidator = customLoanDisbursementDateValidator;
         this.savingsAccountRepositoryWrapper = savingsAccountRepositoryWrapper;
+        this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
+        this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
+        this.transactionTemplate = new TransactionTemplate(platformTransactionManager);
+        this.locStatusAggregationUtils = locStatusAggregationUtils;
         this.customLoanDisbursementService = customLoanDisbursementService;
     }
 
@@ -452,7 +479,48 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
         if (!changes.isEmpty()) {
             loan.updateLoanScheduleDependentDerivedFields();
+
+            // Compute and persist initial custom loan status based on full schedule after disbursement
+            CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+            CustomLoanStatus newCustomLoanStatus = LoanStatusAggregationUtils.computeCustomLoanStatusForLoan(loan);
+            loan.setCustomLoanStatus(newCustomLoanStatus);
             loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+
+            // Precompute drawdown flags for webhook payload
+            Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+            boolean isDrawdown = invoice.isPresent();
+            Optional<Long> locIdOpt = invoice.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+            // If drawdown, compute LOC status aggregation data
+            LocStatusAggregationData locStatusAggregationData;
+            if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+                LineOfCredit loc = invoice.get().getLineOfCredit();
+                locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
+                lineOfCreditRepository.save(loc);
+
+            } else {
+                locStatusAggregationData = null;
+            }
+
+            Loan finalLoan = loan;
+            // Schedule webhook publish after successful commit, in a new transaction
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                @Override
+                public void afterCommit() {
+                    transactionTemplate.execute(status -> {
+                        loanStatusWebhookPublisher.publish(finalLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+
+                        // Publish LOC status webhook if applicable
+                        if (locStatusAggregationData != null) {
+                            lineOfCreditStatusWebhookPublisher.publish(finalLoan, locStatusAggregationData.getDefaultLocStatus().name(),
+                                    locStatusAggregationData.getOldLocCustomStatus().name(),
+                                    locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                        }
+                        return null;
+                    });
+                }
+            });
 
             createNote(loan, command, changes);
             // auto create standing instruction only if one doesn't already exist
@@ -539,6 +607,109 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
                 .withSubEntityExternalId(disbursalTransactionExternalId).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    @Transactional
+    @Override
+    public CommandProcessingResult undoLoanDisbursal(final Long loanId, final JsonCommand command) {
+
+        Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        if (loan.isChargedOff()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.is.charged.off",
+                    "Undo Loan: " + loanId + " disbursement is not allowed. Loan Account is Charged-off", loanId);
+        }
+        businessEventNotifierService.notifyPreBusinessEvent(new LoanUndoDisbursalBusinessEvent(loan));
+        removeLoanCycle(loan);
+        final List<Long> existingTransactionIds = new ArrayList<>();
+        final List<Long> existingReversedTransactionIds = new ArrayList<>();
+        //
+        final MonetaryCurrency currency = loan.getCurrency();
+
+        final LocalDate recalculateFrom = null;
+        loan.setActualDisbursementDate(null);
+        ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, recalculateFrom);
+
+        // Remove post dated checks if added.
+        loan.removePostDatedChecks();
+
+        loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_DISBURSAL_UNDO);
+        loanTransactionValidator.validateActivityNotBeforeClientOrGroupTransferDate(loan, LoanEvent.LOAN_DISBURSAL_UNDO,
+                loan.getDisbursementDate());
+        final Map<String, Object> changes = undoDisbursal(loan, scheduleGeneratorDTO, existingTransactionIds,
+                existingReversedTransactionIds);
+
+        loanAccrualsProcessingService.reprocessExistingAccruals(loan);
+
+        if (!changes.isEmpty()) {
+            if (loan.isTopup() && loan.getClientId() != null) {
+                final Long loanIdToClose = loan.getTopupLoanDetails().getLoanIdToClose();
+                final LocalDate expectedDisbursementDate = command
+                        .localDateValueOfParameterNamed(LoanApiConstants.expectedDisbursementDateParameterName);
+                BigDecimal loanOutstanding = this.loanReadPlatformService
+                        .retrieveLoanPrePaymentTemplate(LoanTransactionType.REPAYMENT, loanIdToClose, expectedDisbursementDate).getAmount();
+                BigDecimal netDisbursalAmount = loan.getApprovedPrincipal().subtract(loanOutstanding);
+                loan.adjustNetDisbursalAmount(netDisbursalAmount);
+            }
+            loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            this.accountTransfersWritePlatformService.reverseAllTransactions(loanId, PortfolioAccountType.LOAN);
+            createNote(loan, command, changes);
+            boolean isAccountTransfer = false;
+            final AccountingBridgeDataDTO accountingBridgeData = loanAccountingBridgeMapper.deriveAccountingBridgeData(currency.getCode(),
+                    existingTransactionIds, existingReversedTransactionIds, isAccountTransfer, loan);
+            journalEntryWritePlatformService.createJournalEntriesForLoan(accountingBridgeData);
+            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanUndoDisbursalBusinessEvent(loan));
+
+            // Compute and persist custom loan status and LOC status aggregation, then publish webhooks after commit
+            CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+            CustomLoanStatus newCustomLoanStatus = CustomLoanStatus.INVALID;
+            loan.setCustomLoanStatus(newCustomLoanStatus);
+            loan = saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+
+            Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+            boolean isDrawdown = invoice.isPresent();
+            Optional<Long> locIdOpt = invoice.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+            LocStatusAggregationData locStatusAggregationData;
+            if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+                LineOfCredit loc = invoice.get().getLineOfCredit();
+                locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
+                lineOfCreditRepository.save(loc);
+            } else {
+                locStatusAggregationData = null;
+            }
+
+            final Loan finalLoan = loan;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                @Override
+                public void afterCommit() {
+                    transactionTemplate.execute(status -> {
+                        loanStatusWebhookPublisher.publish(finalLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+
+                        // Publish LOC status webhook if applicable
+                        if (locStatusAggregationData != null) {
+                            lineOfCreditStatusWebhookPublisher.publish(finalLoan, locStatusAggregationData.getDefaultLocStatus().name(),
+                                    locStatusAggregationData.getOldLocCustomStatus().name(),
+                                    locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                        }
+                        return null;
+                    });
+                }
+            });
+        }
+
+        return new CommandProcessingResultBuilder() //
+                .withCommandId(command.commandId()) //
+                .withEntityId(loan.getId()) //
+                .withEntityExternalId(loan.getExternalId()) //
+                .withOfficeId(loan.getOfficeId()) //
+                .withClientId(loan.getClientId()) //
+                .withGroupId(loan.getGroupId()) //
+                .withLoanId(loanId) //
+                .with(changes) //
+                .build();
     }
 
     private void updateNetDisbursalAmountForMultiDisbursalLoan(final Loan loan) {
@@ -832,6 +1003,53 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final Boolean isForcedClosure = command.booleanObjectValueOfParameterNamed("isForcedClosure");
         final Boolean isRestructured = command.booleanObjectValueOfParameterNamed("isRestructured");
 
+        Loan loan = this.loanAssembler.assembleFrom(loanId);
+
+        // Capture old custom loan status before update
+        CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+
+        // Update custom loan status based on closure type
+        if (Boolean.TRUE.equals(isForcedClosure)) {
+            loan.setCustomLoanStatus(CustomLoanStatus.FORCED_CLOSURE);
+        } else {
+            loan.setCustomLoanStatus(CustomLoanStatus.EARLY_CLOSURE);
+        }
+
+        // Precompute drawdown flags and LOC aggregation before commit
+        Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        boolean isDrawdown = locParamsOpt.isPresent();
+        Optional<Long> locIdOpt = locParamsOpt.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+        LocStatusAggregationData locStatusAggregationData;
+        if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+            LineOfCredit loc = locParamsOpt.get().getLineOfCredit();
+            // Compute LOC status aggregation based on the loan closure
+            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
+            // Persist LOC changes prior to webhook
+            lineOfCreditRepository.save(loc);
+        } else {
+            locStatusAggregationData = null;
+        }
+
+        // Schedule webhook publish after successful commit, in a new transaction
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+            @Override
+            public void afterCommit() {
+                transactionTemplate.execute(status -> {
+                    // Publish loan status change webhook
+                    loanStatusWebhookPublisher.publish(loan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+                    // Publish LOC status webhook if applicable
+                    if (locStatusAggregationData != null) {
+                        lineOfCreditStatusWebhookPublisher.publish(loan, locStatusAggregationData.getDefaultLocStatus().name(),
+                                locStatusAggregationData.getOldLocCustomStatus().name(),
+                                locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                    }
+                    return null;
+                });
+            }
+        });
+
         JsonElement parsedJson = command.parsedJson();
         if (parsedJson != null && parsedJson.isJsonObject()) {
             parsedJson.getAsJsonObject().remove("isForcedClosure");
@@ -844,22 +1062,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (result != null && result.getResourceId() != null && result.getResourceId() > 0L) {
 
-            Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
             BigDecimal amount = loan.getProposedPrincipal();
             final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
             updateLocBalance(loanId, amount, transactionDate, LineOfCreditTransactionType.FORECLOSURE, null);
             loan.setIsRestructured(Boolean.TRUE.equals(isRestructured));
             loan.setIsForcedClosure(Boolean.TRUE.equals(isForcedClosure));
-
-            loanRepositoryWrapper.save(loan);
         }
 
         return result;
     }
 
-    @Override
     @Transactional
+    @Override
     public CommandProcessingResult makeLoanRepayment(final LoanTransactionType repaymentTransactionType, final Long loanId,
             final JsonCommand command, final boolean isRecoveryRepayment) {
         // Fix: Validate repayment with corrected multi-tranche logic before calling parent
@@ -888,6 +1103,49 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         // Extract affected installments using the shared utility method
                         List<Map<String, Object>> affectedInstallments = LoanTransactionInstallmentUtils
                                 .extractAffectedInstallments(updatedLoan, transaction);
+
+                        // Capture old custom loan status before update
+                        CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
+
+                        // Compute and update the custom loan status based on affected installments
+                        CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
+                        updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
+
+                        // Precompute drawdown flags before commit using LoanLineOfCreditParamsRepository
+                        Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
+                        boolean isDrawdown = invoice.isPresent();
+                        Optional<Long> locIdOpt = invoice.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+                        // If drawdown, compute LOC status aggregation data
+                        LocStatusAggregationData locStatusAggregationData;
+                        if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+                            LineOfCredit loc = invoice.get().getLineOfCredit();
+                            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, updatedLoan);
+                            lineOfCreditRepository.save(loc);
+
+                        } else {
+                            locStatusAggregationData = null;
+                        }
+
+                        // Schedule webhook publish after successful commit, in a new transaction
+                        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                            @Override
+                            public void afterCommit() {
+                                transactionTemplate.execute(status -> {
+                                    loanStatusWebhookPublisher.publish(updatedLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+
+                                    // Publish LOC status webhook if applicable
+                                    if (locStatusAggregationData != null) {
+                                        lineOfCreditStatusWebhookPublisher.publish(updatedLoan,
+                                                locStatusAggregationData.getDefaultLocStatus().name(),
+                                                locStatusAggregationData.getOldLocCustomStatus().name(),
+                                                locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                                    }
+                                    return null;
+                                });
+                            }
+                        });
 
                         LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
 
@@ -1127,6 +1385,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         LoanTransaction transactionToAdjust = this.loanTransactionRepository.findByIdAndLoanId(transactionId, loanId)
                 .orElseThrow(() -> new LoanTransactionNotFoundException(transactionId, loanId));
 
+        // Capture old custom loan status before the adjustment (if present)
+        Loan loanBefore = this.loanAssembler.assembleFrom(loanId);
+        CustomLoanStatus oldCustomLoanStatus = loanBefore.hasCustomStatus() ? loanBefore.getCustomLoanStatus() : null;
+
         // Check if this is a repayment transaction being reversed
         boolean isRepaymentReversal = transactionToAdjust.isRepayment()
                 && command.bigDecimalValueOfParameterNamed("transactionAmount").compareTo(BigDecimal.ZERO) == 0;
@@ -1150,7 +1412,57 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // Reverse the LOC balance adjustments (opposite of what happens during repayment)
             // Pass transactionToAdjust so we can get the principal portion for non-receivable LOC products
             updateLocBalance(loanId, repaymentAmount, transactionDate, LineOfCreditTransactionType.REVERSAL, transactionToAdjust);
+        }
 
+        // After schedule and installment recalculations done by parent (LoanAdjustmentServiceImpl),
+        // recompute and persist new custom loan status and LOC status, then fire webhooks
+        try {
+            Loan updatedLoan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+            // Compute new custom loan status based on the updated schedule/installments
+            CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
+            updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
+
+            // Precompute drawdown flags for webhook payload
+            Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
+            boolean isDrawdown = invoice.isPresent();
+            Optional<Long> locIdOpt = invoice.map(p -> p.getLineOfCredit() != null ? p.getLineOfCredit().getId() : null);
+
+            // If drawdown, compute LOC status aggregation data
+            LocStatusAggregationData locStatusAggregationData;
+            if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null) {
+                LineOfCredit loc = invoice.get().getLineOfCredit();
+                locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, updatedLoan);
+                // Persist LOC changes
+                lineOfCreditRepository.save(loc);
+            } else {
+                locStatusAggregationData = null;
+            }
+
+            // Persist the new custom status on the loan
+            saveAndFlushLoanWithDataIntegrityViolationChecks(updatedLoan);
+
+            // Schedule webhook publish after successful commit, in a new transaction
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                @Override
+                public void afterCommit() {
+                    transactionTemplate.execute(status -> {
+                        // Publish loan status change
+                        loanStatusWebhookPublisher.publish(updatedLoan, oldCustomLoanStatus, isDrawdown, locIdOpt);
+
+                        // Publish LOC status webhook if applicable
+                        if (locStatusAggregationData != null) {
+                            lineOfCreditStatusWebhookPublisher.publish(updatedLoan, locStatusAggregationData.getDefaultLocStatus().name(),
+                                    locStatusAggregationData.getOldLocCustomStatus().name(),
+                                    locStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown, locIdOpt);
+                        }
+                        return null;
+                    });
+                }
+            });
+        } catch (Exception e) {
+            log.warn("Failed to recompute/publish custom statuses after adjustment for loan {}: {}", loanId, e.getMessage());
         }
 
         return result;

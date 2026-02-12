@@ -17,15 +17,21 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-savings'))
-    implementation(project(':fineract-core'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
-    implementation(project(":custom:crediblex:portfolio:loc"));
-    implementation(project(":custom:crediblex:portfolio:loanaccount"));
-    implementation('org.springframework.batch:spring-batch-integration')
-    implementation('org.springframework.boot:spring-boot-starter-security')
-    implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement
+package org.apache.fineract.portfolio.loanaccount.domain;
+
+import jakarta.persistence.AttributeConverter;
+import jakarta.persistence.Converter;
+
+@Converter(autoApply = true)
+public class CustomLoanStatusConverter implements AttributeConverter<CustomLoanStatus, Integer> {
+
+    @Override
+    public Integer convertToDatabaseColumn(CustomLoanStatus attribute) {
+        return attribute == null ? null : attribute.getValue();
+    }
+
+    @Override
+    public CustomLoanStatus convertToEntityAttribute(Integer dbData) {
+        return CustomLoanStatus.fromInt(dbData);
+    }
 }

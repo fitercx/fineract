@@ -1,11 +1,19 @@
 package com.crediblex.fineract.portfolio.loanaccount.domain;
 
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
+import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -14,10 +22,12 @@ import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRu
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargePaymentPostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargePaymentPreBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanForeClosurePostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanForeClosurePreBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanTransactionBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.holiday.domain.Holiday;
 import org.apache.fineract.organisation.holiday.domain.HolidayRepository;
@@ -40,6 +50,7 @@ import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatform
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.HolidayDetailDTO;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountDomainServiceJpa;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
@@ -53,6 +64,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
@@ -72,12 +84,17 @@ import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactio
 import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
+import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.data.PostDatedChecksStatus;
+import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecks;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @Primary
@@ -85,6 +102,14 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
 
     private final AccountAssociationsRepository accountAssociationsRepository;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
+
+    // Status/LOC/webhook dependencies
+    private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+    private final TransactionTemplate transactionTemplate;
+    private final LineOfCreditRepository lineOfCreditRepository; // optional
+    private final LocStatusAggregationUtils locStatusAggregationUtils; // optional
+    private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository; // prefer JPA over raw SQL
 
     public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService,
@@ -105,7 +130,10 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             LoanRefundService loanRefundService, LoanAccountService loanAccountService,
             ReprocessLoanTransactionsService reprocessLoanTransactionsService, LoanAccountingBridgeMapper loanAccountingBridgeMapper,
             AccountAssociationsRepository accountAssociationsRepository,
-            @Lazy AccountTransfersWritePlatformService accountTransfersWritePlatformService) {
+            @Lazy AccountTransfersWritePlatformService accountTransfersWritePlatformService,
+            LoanStatusWebhookPublisher loanStatusWebhookPublisher, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
+            TransactionTemplate transactionTemplate, LineOfCreditRepository lineOfCreditRepository,
+            LocStatusAggregationUtils locStatusAggregationUtils, LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
         super(loanAccountAssembler, loanRepositoryWrapper, loanTransactionRepository, configurationDomainService, holidayRepository,
                 workingDaysRepository, journalEntryWritePlatformService, noteRepository, businessEventNotifierService, loanUtilService,
                 standingInstructionRepository, postDatedChecksRepository, loanCollateralManagementRepository,
@@ -117,6 +145,12 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 loanAccountingBridgeMapper);
         this.accountAssociationsRepository = accountAssociationsRepository;
         this.accountTransfersWritePlatformService = accountTransfersWritePlatformService;
+        this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
+        this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
+        this.transactionTemplate = transactionTemplate;
+        this.lineOfCreditRepository = lineOfCreditRepository;
+        this.locStatusAggregationUtils = locStatusAggregationUtils;
+        this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
     }
 
     @Override
@@ -354,6 +388,175 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         businessEventNotifierService.notifyPostBusinessEvent(new LoanForeClosurePostBusinessEvent(payment));
         return payment;
+    }
+
+    @Transactional
+    @Override
+    public LoanTransaction makeRepayment(final LoanTransactionType repaymentTransactionType, Loan loan, final LocalDate transactionDate,
+            final BigDecimal transactionAmount, final PaymentDetail paymentDetail, final String noteText, final ExternalId txnExternalId,
+            final boolean isRecoveryRepayment, final String chargeRefundChargeType, boolean isAccountTransfer,
+            HolidayDetailDTO holidayDetailDto, Boolean isHolidayValidationDone, final boolean isLoanToLoanTransfer) {
+        checkClientOrGroupActive(loan);
+
+        LoanBusinessEvent repaymentEvent = getLoanRepaymentTypeBusinessEvent(repaymentTransactionType, isRecoveryRepayment, loan);
+        businessEventNotifierService.notifyPreBusinessEvent(repaymentEvent);
+
+        // TODO: Is it required to validate transaction date with meeting dates
+        // if repayments is synced with meeting?
+        /*
+         * if(loan.isSyncDisbursementWithMeeting()){ // validate actual disbursement date against meeting date
+         * CalendarInstance calendarInstance = this.calendarInstanceRepository.findCalendarInstaneByLoanId
+         * (loan.getId(), CalendarEntityType.LOANS.getValue()); this.loanEventApiJsonValidator
+         * .validateRepaymentDateWithMeetingDate(transactionDate, calendarInstance); }
+         */
+
+        final List<Long> existingTransactionIds = new ArrayList<>();
+        final List<Long> existingReversedTransactionIds = new ArrayList<>();
+
+        final Money repaymentAmount = Money.of(loan.getCurrency(), transactionAmount);
+        LoanTransaction newRepaymentTransaction;
+        if (isRecoveryRepayment) {
+            newRepaymentTransaction = LoanTransaction.recoveryRepayment(loan.getOffice(), repaymentAmount, paymentDetail, transactionDate,
+                    txnExternalId);
+        } else {
+            newRepaymentTransaction = LoanTransaction.repaymentType(repaymentTransactionType, loan.getOffice(), repaymentAmount,
+                    paymentDetail, transactionDate, txnExternalId, chargeRefundChargeType);
+        }
+
+        LocalDate recalculateFrom = null;
+        if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+            recalculateFrom = transactionDate;
+        }
+        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, recalculateFrom,
+                holidayDetailDto);
+
+        if (!isHolidayValidationDone) {
+            final HolidayDetailDTO holidayDetailDTO = scheduleGeneratorDTO.getHolidayDetailDTO();
+            loanTransactionValidator.validateRepaymentDateIsOnHoliday(newRepaymentTransaction.getTransactionDate(),
+                    holidayDetailDTO.isAllowTransactionsOnHoliday(), holidayDetailDTO.getHolidays());
+            loanTransactionValidator.validateRepaymentDateIsOnNonWorkingDay(newRepaymentTransaction.getTransactionDate(),
+                    holidayDetailDTO.getWorkingDays(), holidayDetailDTO.isAllowTransactionsOnNonWorkingDay());
+        }
+        final LoanEvent event = isRecoveryRepayment ? LoanEvent.LOAN_RECOVERY_PAYMENT : LoanEvent.LOAN_REPAYMENT_OR_WAIVER;
+        loanTransactionValidator.validateActivityNotBeforeLastTransactionDate(loan, newRepaymentTransaction.getTransactionDate(), event);
+        loanDownPaymentTransactionValidator.validateRepaymentTypeAccountStatus(loan, newRepaymentTransaction, event);
+        loanTransactionValidator.validateActivityNotBeforeClientOrGroupTransferDate(loan, event,
+                newRepaymentTransaction.getTransactionDate());
+        makeRepayment(loan, newRepaymentTransaction, defaultLoanLifecycleStateMachine, existingTransactionIds,
+                existingReversedTransactionIds, scheduleGeneratorDTO);
+
+        if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+            loanAccrualsProcessingService.reprocessExistingAccruals(loan);
+            loanAccrualsProcessingService.processIncomePostingAndAccruals(loan);
+        }
+
+        loanAccountService.saveLoanTransactionWithDataIntegrityViolationChecks(newRepaymentTransaction);
+        loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+
+        if (StringUtils.isNotBlank(noteText)) {
+            final Note note = Note.loanTransactionNote(loan, newRepaymentTransaction, noteText);
+            this.noteRepository.save(note);
+        }
+
+        loanAccrualsProcessingService.processAccrualsOnInterestRecalculation(loan, loan.isInterestBearingAndInterestRecalculationEnabled(),
+                false);
+
+        setLoanDelinquencyTag(loan, transactionDate);
+
+        if (!repaymentTransactionType.isChargeRefund()) {
+            LoanTransactionBusinessEvent transactionRepaymentEvent = getTransactionRepaymentTypeBusinessEvent(repaymentTransactionType,
+                    isRecoveryRepayment, newRepaymentTransaction);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
+            businessEventNotifierService.notifyPostBusinessEvent(transactionRepaymentEvent);
+        }
+
+        postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds, isAccountTransfer, isLoanToLoanTransfer);
+        loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+
+        // disable all active standing orders linked to this loan if status
+        // changes to closed
+        disableStandingInstructionsLinkedToClosedLoan(loan);
+
+        // Compute and persist custom loan status + LOC aggregation; publish after commit
+        try {
+            CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+            CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(loan);
+            loan.setCustomLoanStatus(customLoanStatus);
+
+            // Prefer JPA repository for drawdown/LOC lookup
+            Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+            boolean isDrawdown = locParamsOpt.isPresent();
+            Optional<Long> locIdOpt = locParamsOpt.map(LoanLineOfCreditParams::getLineOfCredit).map(LineOfCredit::getId);
+
+            LocStatusAggregationData locStatusAggregationData;
+            if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null && locStatusAggregationUtils != null) {
+                Optional<LineOfCredit> locOpt = lineOfCreditRepository.findById(locIdOpt.get());
+                if (locOpt.isPresent()) {
+                    LineOfCredit loc = locOpt.get();
+                    locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc, loan);
+                    if (locStatusAggregationData != null) {
+                        lineOfCreditRepository.save(loc);
+                    }
+                } else {
+                    locStatusAggregationData = null;
+                }
+            } else {
+                locStatusAggregationData = null;
+            }
+
+            final LocStatusAggregationData finalLocStatusAggregationData = locStatusAggregationData;
+            final CustomLoanStatus finalOldCustomStatus = oldCustomStatus;
+            final boolean finalIsDrawdown = isDrawdown;
+            final Optional<Long> finalLocIdOpt = locIdOpt;
+            final Loan finalLoanRef = loan;
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                @Override
+                public void afterCommit() {
+                    transactionTemplate.execute(innerStatus -> {
+                        loanStatusWebhookPublisher.publish(finalLoanRef, finalOldCustomStatus, finalIsDrawdown, finalLocIdOpt);
+                        if (finalLocStatusAggregationData != null) {
+                            lineOfCreditStatusWebhookPublisher.publish(finalLoanRef,
+                                    finalLocStatusAggregationData.getDefaultLocStatus().name(),
+                                    finalLocStatusAggregationData.getOldLocCustomStatus().name(),
+                                    finalLocStatusAggregationData.getNewLocCustomStatus().name(), finalIsDrawdown, finalLocIdOpt);
+                        }
+                        return null;
+                    });
+                }
+            });
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class)
+                    .warn("Failed to compute/publish loan/LOC status for repayment on loan {}: {}", loan.getId(), e.getMessage());
+        }
+
+        // Mark Post Dated Check as paid.
+        final Set<LoanTransactionToRepaymentScheduleMapping> loanTransactionToRepaymentScheduleMappings = newRepaymentTransaction
+                .getLoanTransactionToRepaymentScheduleMappings();
+        if (loanTransactionToRepaymentScheduleMappings != null) {
+            for (LoanTransactionToRepaymentScheduleMapping loanTransactionToRepaymentScheduleMapping : loanTransactionToRepaymentScheduleMappings) {
+                LoanRepaymentScheduleInstallment loanRepaymentScheduleInstallment = loanTransactionToRepaymentScheduleMapping
+                        .getLoanRepaymentScheduleInstallment();
+                if (loanRepaymentScheduleInstallment != null) {
+                    final boolean isPaid = loanRepaymentScheduleInstallment.isNotFullyPaidOff();
+                    PostDatedChecks postDatedChecks = this.postDatedChecksRepository
+                            .getPendingPostDatedCheck(loanRepaymentScheduleInstallment);
+
+                    if (postDatedChecks != null) {
+                        if (!isPaid) {
+                            postDatedChecks.setStatus(PostDatedChecksStatus.POST_DATED_CHECKS_PAID);
+                        } else {
+                            postDatedChecks.setStatus(PostDatedChecksStatus.POST_DATED_CHECKS_PENDING);
+                        }
+                        this.postDatedChecksRepository.saveAndFlush(postDatedChecks);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return newRepaymentTransaction;
     }
 
     /**

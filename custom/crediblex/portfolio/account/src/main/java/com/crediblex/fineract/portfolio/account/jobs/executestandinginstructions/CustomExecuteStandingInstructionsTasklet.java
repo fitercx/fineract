@@ -18,8 +18,15 @@
  */
 package com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions;
 
+import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
+import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
-import com.crediblex.fineract.portfolio.account.service.CustomCommandProcessingService;
+import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
+import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -28,6 +35,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -49,6 +57,7 @@ import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.Ex
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
+import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -60,11 +69,14 @@ import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanc
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Slf4j
@@ -78,16 +90,27 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
     private final SavingsAccountAssembler savingsAccountAssembler;
     private final PlatformTransactionManager transactionManager;
-    private final CustomCommandProcessingService customCommandProcessingService;
+    private final CredXSynchronousCommandProcessingService customCommandProcessingService;
     private final FromJsonHelper fromApiJsonHelper;
     private ApplicationContext applicationContext;
     private LoanRepositoryWrapper loanRepositoryWrapper;
+    private final LoanStatusWebhookPublisher loanStatusWebhookPublisher;
+    private final TransactionTemplate transactionTemplate;
+    private final EzySqlLoanLocRepository ezySqlLoanLocRepository;
+    private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+
+    @Autowired(required = false)
+    private LineOfCreditRepository lineOfCreditRepository;
+    @Autowired(required = false)
+    private LocStatusAggregationUtils locStatusAggregationUtils;
 
     public CustomExecuteStandingInstructionsTasklet(StandingInstructionReadPlatformService standingInstructionReadPlatformService,
             JdbcTemplate jdbcTemplate, DatabaseSpecificSQLGenerator sqlGenerator,
             AccountTransfersWritePlatformService accountTransfersWritePlatformService, SavingsAccountAssembler savingsAccountAssembler,
-            PlatformTransactionManager transactionManager, CustomCommandProcessingService customCommandProcessingService,
-            FromJsonHelper fromApiJsonHelper) {
+            PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
+            FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
+            TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository,
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -98,6 +121,10 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.savingsAccountAssembler = savingsAccountAssembler;
         this.customCommandProcessingService = customCommandProcessingService;
         this.fromApiJsonHelper = fromApiJsonHelper;
+        this.loanStatusWebhookPublisher = loanStatusWebhookPublisher;
+        this.transactionTemplate = transactionTemplate;
+        this.ezySqlLoanLocRepository = ezySqlLoanLocRepository;
+        this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
     }
 
     @Override
@@ -182,6 +209,79 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                             final String updateQuery = "UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?";
                             jdbcTemplate.update(updateQuery, transactionDate, data.getId());
                             successCount.getAndIncrement();
+
+                            // Begin: Custom loan status + LOC aggregation + publish (moved from
+                            // triggerRepaymentWebhook)
+                            try {
+                                Long loanId = data.getToAccount().getId();
+                                Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+
+                                // Find the most recent repayment transaction matching amount/date
+                                LoanTransaction recentTransaction = loan.getLoanTransactions().stream()
+                                        .filter(t -> t.isRepayment() && t.getAmount().compareTo(finalTransactionAmount) == 0
+                                                && t.getTransactionDate().equals(DateUtils.getBusinessLocalDate()))
+                                        .max((t1, t2) -> t1.getId().compareTo(t2.getId())).orElse(null);
+
+                                if (recentTransaction != null) {
+                                    // Capture custom old status before update
+                                    CustomLoanStatus oldCustomStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
+
+                                    // Compute and update the custom loan status based on affected installments
+                                    CustomLoanStatus customLoanStatus = LoanTransactionInstallmentUtils
+                                            .computeCustomLoanStatusForLoan(loan);
+                                    loan.setCustomLoanStatus(customLoanStatus);
+
+                                    // Precompute drawdown flags before commit using LOC lookup repository
+                                    boolean isDrawdown = ezySqlLoanLocRepository.existsByLoanId(loan.getId());
+                                    Optional<Long> locIdOpt = ezySqlLoanLocRepository.findLocIdByLoanId(loan.getId());
+
+                                    // If drawdown, compute LOC status aggregation data and persist only if changed
+                                    LocStatusAggregationData locStatusAggregationData;
+                                    if (isDrawdown && locIdOpt.isPresent() && lineOfCreditRepository != null
+                                            && locStatusAggregationUtils != null) {
+                                        Optional<LineOfCredit> locOpt = lineOfCreditRepository.findById(locIdOpt.get());
+                                        if (locOpt.isPresent()) {
+                                            LineOfCredit loc = locOpt.get();
+                                            locStatusAggregationData = this.locStatusAggregationUtils.computeLocStatusAggregationData(loc,
+                                                    loan);
+                                            if (locStatusAggregationData != null) {
+                                                lineOfCreditRepository.save(loc);
+                                            }
+                                        } else {
+                                            locStatusAggregationData = null;
+                                        }
+                                    } else {
+                                        locStatusAggregationData = null;
+                                    }
+
+                                    // Schedule webhook publish after successful commit, in a new transaction
+                                    final LocStatusAggregationData finalLocStatusAggregationData = locStatusAggregationData;
+                                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
+                                        @Override
+                                        public void afterCommit() {
+                                            transactionTemplate.execute(innerStatus -> {
+                                                loanStatusWebhookPublisher.publish(loan, oldCustomStatus, isDrawdown, locIdOpt);
+                                                if (finalLocStatusAggregationData != null) {
+                                                    lineOfCreditStatusWebhookPublisher.publish(loan,
+                                                            finalLocStatusAggregationData.getDefaultLocStatus().name(),
+                                                            finalLocStatusAggregationData.getOldLocCustomStatus().name(),
+                                                            finalLocStatusAggregationData.getNewLocCustomStatus().name(), isDrawdown,
+                                                            locIdOpt);
+                                                }
+                                                return null;
+                                            });
+                                        }
+                                    });
+                                } else {
+                                    log.warn("Could not find recent repayment transaction for standing instruction {} with amount {}",
+                                            data.getId(), finalTransactionAmount);
+                                }
+                            } catch (Exception e) {
+                                log.warn("Failed to compute/publish loan/LOC status for standing instruction {}: {}", data.getId(),
+                                        e.getMessage());
+                            }
+                            // End: Custom loan status + LOC aggregation + publish
                         } else {
                             failureCount.getAndIncrement();
                         }

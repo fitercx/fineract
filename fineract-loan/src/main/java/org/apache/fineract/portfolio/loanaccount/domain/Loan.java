@@ -54,7 +54,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
@@ -196,10 +195,16 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "term_period_frequency_enum", nullable = false)
     private PeriodFrequencyType termPeriodFrequencyType;
 
-    @Setter(AccessLevel.PACKAGE)
+    @Setter()
     @Column(name = "loan_status_id", nullable = false)
     @Convert(converter = LoanStatusConverter.class)
     private LoanStatus loanStatus;
+
+    @Setter
+    @Getter
+    @Column(name = "custom_loan_status_id")
+    @Convert(converter = CustomLoanStatusConverter.class)
+    private CustomLoanStatus customLoanStatus;
 
     @Setter()
     @Column(name = "sync_disbursement_with_meeting")
@@ -1671,6 +1676,31 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public boolean isOpen() {
         return getStatus().isActive();
+    }
+
+    // Null-safe helpers for customLoanStatus to avoid NPEs during JPA initialization or runtime
+    public boolean hasCustomStatus() {
+        return this.customLoanStatus != null;
+    }
+
+    public CustomLoanStatus getCustomLoanStatusOrDefault(CustomLoanStatus defaultStatus) {
+        return this.customLoanStatus != null ? this.customLoanStatus : defaultStatus;
+    }
+
+    public boolean isCustomPastDue() {
+        return this.customLoanStatus != null && this.customLoanStatus.isPastDue();
+    }
+
+    public boolean isCustomPastMaturity() {
+        return this.customLoanStatus != null && this.customLoanStatus.isPastMaturity();
+    }
+
+    public boolean isCustomEarlyClosure() {
+        return this.customLoanStatus != null && this.customLoanStatus.isEarlyClosure();
+    }
+
+    public boolean isCustomForcedClosure() {
+        return this.customLoanStatus != null && this.customLoanStatus.isForcedClosure();
     }
 
     public boolean isAllTranchesNotDisbursed() {
