@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- Update SQL for Expected Payments By Date - Basic report -->
+    <changeSet author="CredibleX" id="0051-update-expected-payments-by-date-basic-sql">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Expected Payments By Date - Basic'
+            </sqlCheck>
+        </preConditions>
+        <update tableName="stretchy_report">
+            <column name="report_sql"><![CDATA[
+SELECT
+    ounder.name AS "Office",
+    coalesce(ms.display_name,'-') AS "Loan Officer",
+    mc.account_no AS "Client Account Number",
+    mc.display_name AS "Name",
+    mp.name AS "Product",
+    ml.account_no AS "Loan Account Number",
+    llocp.line_of_credit_id AS "LOC ID",
+    mr.duedate AS "Due Date",
+    mr.installment AS "Installment",
+    cu.display_symbol AS "Currency",
+    mr.principal_amount - coalesce(mr.principal_completed_derived,0) AS "Principal Due",
+    mr.interest_amount - coalesce(coalesce(mr.interest_completed_derived,mr.interest_waived_derived),0) AS "Interest Due",
+    coalesce(mr.fee_charges_amount,0) - coalesce(coalesce(mr.fee_charges_completed_derived,mr.fee_charges_waived_derived),0) AS "Fees Due",
+    coalesce(mr.penalty_charges_amount,0) - coalesce(coalesce(mr.penalty_charges_completed_derived,mr.penalty_charges_waived_derived),0) AS "Penalty Due",
+    (mr.principal_amount- coalesce(mr.principal_completed_derived,0)) +
+    (mr.interest_amount- coalesce(coalesce(mr.interest_completed_derived,mr.interest_waived_derived),0)) +
+    (coalesce(mr.fee_charges_amount,0)- coalesce(coalesce(mr.fee_charges_completed_derived,mr.fee_charges_waived_derived),0)) +
+    (coalesce(mr.penalty_charges_amount,0)- coalesce(coalesce(mr.penalty_charges_completed_derived,mr.penalty_charges_waived_derived),0)) AS "Total Due",
+    mlaa.total_overdue_derived AS "Total Overdue"
+FROM m_office mo
+JOIN m_office ounder ON ounder.hierarchy LIKE concat(mo.hierarchy, '%')
+    AND ounder.hierarchy LIKE concat('${currentUserHierarchy}', '%')
+LEFT JOIN m_client mc ON mc.office_id=ounder.id
+LEFT JOIN m_loan ml ON ml.client_id=mc.id
+    AND ml.loan_status_id=300
+LEFT JOIN m_loan_arrears_aging mlaa ON mlaa.loan_id=ml.id
+LEFT JOIN m_loan_repayment_schedule mr ON mr.loan_id=ml.id
+    AND mr.completed_derived=false
+LEFT JOIN m_product_loan mp ON mp.id=ml.product_id
+LEFT JOIN m_staff ms ON ms.id=ml.loan_officer_id
+LEFT JOIN m_currency cu ON cu.code=ml.currency_code
+LEFT JOIN m_loan_line_of_credit_params llocp ON llocp.loan_id=ml.id
+WHERE mo.id='${officeId}'
+    AND (coalesce(ml.loan_officer_id, -10) = ${loanOfficerId} OR '-1' = ${loanOfficerId})
+    AND mr.duedate BETWEEN '${startDate}' AND '${endDate}'
+ORDER BY ounder.id, mr.duedate, ml.account_no
+            ]]></column>
+            <where>report_name = 'Expected Payments By Date - Basic'</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>

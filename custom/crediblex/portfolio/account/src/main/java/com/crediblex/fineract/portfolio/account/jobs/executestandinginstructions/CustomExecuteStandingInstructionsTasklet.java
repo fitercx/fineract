@@ -458,6 +458,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             changes.put("transactionAmount", transactionAmount.toString());
             changes.put("locale", "en");
             changes.put("transactionDate", formattedDate);
+            changes.put("isDrawdown", Boolean.FALSE);
 
             // Follow the EXACT SAME pattern as UI repayment - find the actual transaction and use its mappings
             Long loanId = data.getToAccount().getId();

@@ -1161,6 +1161,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         additionalChanges.put("transactionDate", transactionDate);
                         additionalChanges.put("transactionId", result.getResourceId()); // Use resourceId as transaction
                                                                                         // ID
+                        additionalChanges.put("isDrawdown", isDrawdown);
+                        if (isDrawdown) {
+                            Long locId = locIdOpt.orElse(null);
+                            additionalChanges.put("locId", locId);
+                        }
 
                         // Create a new result with the additional schedule information
                         return new CommandProcessingResultBuilder().withCommandId(result.getCommandId())
