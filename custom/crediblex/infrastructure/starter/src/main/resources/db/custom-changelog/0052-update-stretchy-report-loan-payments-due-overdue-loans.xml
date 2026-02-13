@@ -77,4 +77,3 @@ ORDER BY ounder.hierarchy, ml.currency_code, mc.account_no, ml.account_no
     </changeSet>
 
 </databaseChangeLog>
-
