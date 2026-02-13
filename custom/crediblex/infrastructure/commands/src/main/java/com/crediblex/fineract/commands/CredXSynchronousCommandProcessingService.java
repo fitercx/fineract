@@ -95,21 +95,10 @@ public class CredXSynchronousCommandProcessingService extends SynchronousCommand
                 reqmap.put("clientId", resultCopy.getClientId());
                 resultCopy.setOfficeId(null);
 
-                // For the specific case of loan disbursement to savings, we want to move the isDrawdown field from
-                // changes to the root of the response
-                if ("LOAN".equalsIgnoreCase(entityName) && "DISBURSETOSAVINGS".equalsIgnoreCase(actionName)
-                        && resultCopy.getChanges() != null && resultCopy.getChanges().containsKey("isDrawdown")) {
-                    Map<String, Object> responseMap = gson.fromJson(gson.toJson(resultCopy), type);
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> changesMap = (Map<String, Object>) responseMap.get("changes");
-                    if (changesMap != null && changesMap.containsKey("isDrawdown")) {
-                        responseMap.put("isDrawdown", changesMap.get("isDrawdown"));
-                        changesMap.remove("isDrawdown");
-                        if (changesMap.isEmpty()) {
-                            responseMap.remove("changes");
-                        }
-                    }
-                    reqmap.put("response", responseMap);
+                // Delegate special LOAN cases to a helper to avoid clutter
+                Object maybeSpecialResponse = reshapeLoanResponseIfApplicable(entityName, actionName, resultCopy, type);
+                if (maybeSpecialResponse != null) {
+                    reqmap.put("response", maybeSpecialResponse);
                 } else {
                     reqmap.put("response", resultCopy);
                 }
@@ -139,6 +128,65 @@ public class CredXSynchronousCommandProcessingService extends SynchronousCommand
 
             applicationContext.publishEvent(applicationEvent);
         }
+    }
+
+    /**
+     * Reshape the response for specific LOAN actions by lifting certain fields from changes into the response root.
+     * Returns a Map representing the response when reshaping is applied; otherwise returns null.
+     */
+    private Object reshapeLoanResponseIfApplicable(String entityName, String actionName, CommandProcessingResult resultCopy,
+            Type gsonMapType) {
+        if (!"LOAN".equalsIgnoreCase(entityName) || resultCopy == null) {
+            return null;
+        }
+        if (resultCopy.getChanges() == null) {
+            return null;
+        }
+
+        // DISBURSETOSAVINGS: move isDrawdown from changes -> root
+        if ("DISBURSETOSAVINGS".equalsIgnoreCase(actionName) && resultCopy.getChanges().containsKey("isDrawdown")) {
+            Map<String, Object> responseMap = gson.fromJson(gson.toJson(resultCopy), gsonMapType);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> changesMap = (Map<String, Object>) responseMap.get("changes");
+            if (changesMap != null && changesMap.containsKey("isDrawdown")) {
+                responseMap.put("isDrawdown", changesMap.get("isDrawdown"));
+                changesMap.remove("isDrawdown");
+                if (changesMap.isEmpty()) {
+                    responseMap.remove("changes");
+                }
+            }
+            return responseMap;
+        }
+
+        // REPAYMENT: move isDrawdown and locId from changes -> root; unwrap Optional for locId to avoid Gson issues
+        if ("REPAYMENT".equalsIgnoreCase(actionName)) {
+            // Normalize Optional in changes
+            if (resultCopy.getChanges().containsKey("locId")) {
+                Object locIdRaw = resultCopy.getChanges().get("locId");
+                if (locIdRaw instanceof java.util.Optional<?> opt) {
+                    resultCopy.getChanges().put("locId", opt.orElse(null));
+                }
+            }
+            Map<String, Object> responseMap = gson.fromJson(gson.toJson(resultCopy), gsonMapType);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> changesMap = (Map<String, Object>) responseMap.get("changes");
+            if (changesMap != null) {
+                if (changesMap.containsKey("isDrawdown")) {
+                    responseMap.put("isDrawdown", changesMap.get("isDrawdown"));
+                    changesMap.remove("isDrawdown");
+                }
+                if (changesMap.containsKey("locId")) {
+                    responseMap.put("locId", changesMap.get("locId"));
+                    changesMap.remove("locId");
+                }
+                if (changesMap.isEmpty()) {
+                    responseMap.remove("changes");
+                }
+            }
+            return responseMap;
+        }
+
+        return null;
     }
 
     public void publishHookEventRaw(final String entityName, final String actionName, final Map<String, Object> reqmap) {
