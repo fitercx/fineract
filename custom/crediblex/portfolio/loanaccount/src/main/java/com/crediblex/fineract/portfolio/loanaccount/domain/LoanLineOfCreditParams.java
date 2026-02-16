@@ -33,7 +33,6 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -155,7 +154,8 @@ public class LoanLineOfCreditParams {
         }
     }
 
-    // Business logic: For receivable products, Amount After Advance = Amount in facility current which is min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit) from Frontend Calculation
+    // Business logic: For receivable products, Amount After Advance = Amount in facility current which is
+    // min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit) from Frontend Calculation
     private void computeAmountAfterAdvance() {
         if (this.amountInFacilityCurrency != null && lineOfCredit.getProductType().isReceivable()) {
             this.amountAfterAdvance = this.amountInFacilityCurrency;

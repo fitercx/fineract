@@ -13,7 +13,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -107,7 +106,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
             term.setIsReceivableLineOfCredit(true);
 
-            // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only as it comes from Funded Amount field in Frontend / SDK API
+            // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only
+            // as it comes from Funded Amount field in Frontend / SDK API
             // Frontend / SDK API calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
             BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
             BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
