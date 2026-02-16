@@ -107,7 +107,9 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
             term.setIsReceivableLineOfCredit(true);
 
-            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+            // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only as it comes from Funded Amount field in Frontend / SDK API
+            // Frontend / SDK API calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
+            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
             BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -149,7 +151,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         terms.setIsReceivableLineOfCredit(isReceivableLOC);
         if (isReceivableLOC) {
             terms.setIsReceivableLineOfCredit(true);
-            terms.setAmountAfterAdvance(element.getAsJsonObject().get("amountAfterAdvance").getAsBigDecimal());
+            terms.setAmountAfterAdvance(element.getAsJsonObject().get("amountInFacilityCurrency").getAsBigDecimal());
         }
 
         return terms;
@@ -246,13 +248,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
     }
 
     private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance, MathContext mc) {
-        BigDecimal invoiceAmount = element.getAsJsonObject().get("invoiceAmount").getAsBigDecimal();
-        BigDecimal disapprovedAmount = element.getAsJsonObject().get("disapprovedAmount").getAsBigDecimal();
-        BigDecimal advancePercentage = element.getAsJsonObject().get("advancePercentage").getAsBigDecimal();
-        BigDecimal amountForCalculation = invoiceAmount.subtract(disapprovedAmount);
 
-        BigDecimal proposedPrincipal = (advancePercentage.multiply(amountForCalculation)).divide(BigDecimal.valueOf(100), mc.getPrecision(),
-                RoundingMode.HALF_UP);
+        BigDecimal proposedPrincipal = element.getAsJsonObject().get("amountInFacilityCurrency").getAsBigDecimal();
 
         if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new GeneralPlatformDomainRuleException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",

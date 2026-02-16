@@ -155,11 +155,10 @@ public class LoanLineOfCreditParams {
         }
     }
 
-    // Business logic: Amount After Advance = Approved Receivable Amount * (Advance % / 100)
+    // Business logic: For receivable products, Amount After Advance = Amount in facility current which is min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit) from Frontend Calculation
     private void computeAmountAfterAdvance() {
-        if (this.approvedReceivableAmount != null && this.advancePercentage != null && lineOfCredit.getProductType().isReceivable()) {
-            this.amountAfterAdvance = this.approvedReceivableAmount.multiply(this.advancePercentage).divide(BigDecimal.valueOf(100), 6,
-                    RoundingMode.HALF_UP);
+        if (this.amountInFacilityCurrency != null && lineOfCredit.getProductType().isReceivable()) {
+            this.amountAfterAdvance = this.amountInFacilityCurrency;
         }
     }
 
