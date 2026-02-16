@@ -376,6 +376,11 @@ public class LineOfCreditStepDef extends AbstractStepDef {
 
         String advancePercentageStr = getOptionalValue(drawdownDetails, "advancePercentage", null);
 
+        // Extract fundedAmount/amountInFacilityCurrency - this is what the frontend sends directly
+        // For receivable LOC: frontend calculates min(amountAfterAdvance, requestedAmount, availableLimit)
+        // and sends it as the funded amount
+        String fundedAmountStr = getOptionalValue(drawdownDetails, "fundedAmount", null);
+
         // Extract payable-specific parameters
         String exchangeRateStr = getOptionalValue(drawdownDetails, "exchangeRate", null);
         String markupStr = getOptionalValue(drawdownDetails, "markup", null);
@@ -422,18 +427,25 @@ public class LineOfCreditStepDef extends AbstractStepDef {
 
         // Add receivable-specific fields if this is a receivable LOC
         if (locType.equalsIgnoreCase("receivable")) {
-            // Set approved receivable amount
-            BigDecimal approvedReceivableAmount = loanRequest.getInvoiceAmount().subtract(loanRequest.getDisapprovedAmount());
             BigDecimal advancePercentage = advancePercentageStr != null && !advancePercentageStr.isEmpty() ? new BigDecimal(advancePercentageStr) : new BigDecimal(90);
             // Set advance percentage
             loanRequest.setAdvancePercentage(advancePercentage);
-            BigDecimal amountAfterAdvance = approvedReceivableAmount
-                    .multiply(advancePercentage)
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-            loanRequest.setPrincipal(
-                    amountAfterAdvance
-            );
-            loanRequest.setAmountAfterAdvance(amountAfterAdvance);
+
+            // Use fundedAmount directly if provided (simulating frontend behavior)
+            // Frontend sends amountInFacilityCurrency = min(amountAfterAdvance, requestedAmount, availableLimit)
+            // For tests, we use the drawdownAmount or a specific fundedAmount if provided
+            BigDecimal amountInFacilityCurrency;
+            if (fundedAmountStr != null && !fundedAmountStr.isEmpty()) {
+                amountInFacilityCurrency = new BigDecimal(fundedAmountStr);
+            } else {
+                // Default: use the drawdown amount from the test as the funded amount
+                // This simulates frontend sending the final funded amount directly
+                amountInFacilityCurrency = new BigDecimal(drawdownAmount);
+            }
+
+            loanRequest.setPrincipal(amountInFacilityCurrency);
+            // Set amountInFacilityCurrency - this is the primary field used by backend
+            loanRequest.setAmountInFacilityCurrency(amountInFacilityCurrency);
 
             loanRequest.setBuyerDetails(List.of(supplierOrBuyerId));
 
