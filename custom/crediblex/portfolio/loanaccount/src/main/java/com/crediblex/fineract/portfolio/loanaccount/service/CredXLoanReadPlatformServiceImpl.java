@@ -686,7 +686,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " loc.external_id as locExternalId, loc.activation_status as locActivationStatus,loc.product_type as locProductType, "////
                     + " l.is_factor_rate_enabled AS factorRateEnabled, l.factor_rate AS factorRate, "
                     + " llocp.approved_payable_amount as approvedPayableAmount, llocp.supplier_details as supplierDetails, " ////
-                    + " lp.penalty_grace_period as penaltyGracePeriod " ////
+                    + " llocp.invoice_amount_in_aed as invoiceAmountInAED, llocp.disapproved_amount_in_aed as disapprovedAmountInAED, "
+                    + " llocp.approved_invoice_amount_in_aed as approvedInvoiceAmountInAED, llocp.amount_after_advance_in_aed as amountAfterAdvanceInAED, "
+                    + " llocp.requested_amount_in_aed as requestedAmountInAED, llocp.funded_amount_in_invoice_currency as fundedAmountInInvoiceCurrency, "
+                    + " llocp.requested_amount as requestedAmount, " + " lp.penalty_grace_period as penaltyGracePeriod " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
                     + " left join m_loan_recalculation_details lir on lir.loan_id = l.id join m_currency rc on rc."
@@ -1200,6 +1203,44 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             if (locApprovedPayableAmount != null) {
                 extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT,
                         locApprovedPayableAmount);
+            }
+
+            // Read and add AED currency related fields
+            final BigDecimal locInvoiceAmountInAED = rs.getBigDecimal(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED);
+            final BigDecimal locDisapprovedAmountInAED = rs.getBigDecimal(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED);
+            final BigDecimal locApprovedInvoiceAmountInAED = rs
+                    .getBigDecimal(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED);
+            final BigDecimal locAmountAfterAdvanceInAED = rs.getBigDecimal(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED);
+            final BigDecimal locRequestedAmountInAED = rs.getBigDecimal(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED);
+            final BigDecimal locFundedAmountInInvoiceCurrency = rs
+                    .getBigDecimal(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY);
+            final BigDecimal locRequestedAmount = rs.getBigDecimal(LoanAccountAdditionalProperties.REQUESTED_AMOUNT);
+
+            if (locInvoiceAmountInAED != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, locInvoiceAmountInAED);
+            }
+            if (locDisapprovedAmountInAED != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED,
+                        locDisapprovedAmountInAED);
+            }
+            if (locApprovedInvoiceAmountInAED != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED,
+                        locApprovedInvoiceAmountInAED);
+            }
+            if (locAmountAfterAdvanceInAED != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED,
+                        locAmountAfterAdvanceInAED);
+            }
+            if (locRequestedAmountInAED != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED,
+                        locRequestedAmountInAED);
+            }
+            if (locFundedAmountInInvoiceCurrency != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY,
+                        locFundedAmountInInvoiceCurrency);
+            }
+            if (locRequestedAmount != null) {
+                extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.REQUESTED_AMOUNT, locRequestedAmount);
             }
 
         }

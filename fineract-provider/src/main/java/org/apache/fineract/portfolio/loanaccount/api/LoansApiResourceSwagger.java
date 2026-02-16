@@ -1396,6 +1396,8 @@ final class LoansApiResourceSwagger {
         public BigDecimal advancePercentage;
         @Schema(example = "43333243")
         public BigDecimal amountAfterAdvance;
+        @Schema(example = "43333243", description = "Amount in facility currency for receivable LOC. This is the funded amount calculated by frontend as min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)")
+        public BigDecimal amountInFacilityCurrency;
         @Schema(description = "List of buyer details")
         public List<Long> buyerDetails;
         @Schema(example = "0")

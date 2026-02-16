@@ -13,7 +13,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -107,7 +106,18 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
             term.setIsReceivableLineOfCredit(true);
 
-            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+            // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only
+            // as it comes from Funded Amount field in Frontend / SDK API
+            // Frontend / SDK API calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
+            // Fall back to amountAfterAdvance if amountInFacilityCurrency is not provided (for backward compatibility)
+            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
+            if (amountAfterAdvance == null) {
+                amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+            }
+            if (amountAfterAdvance == null) {
+                throw new GeneralPlatformDomainRuleException("loan.amount.in.facility.currency.or.amount.after.advance.is.required",
+                        "Either amountInFacilityCurrency or amountAfterAdvance is required for receivable line of credit.", List.of());
+            }
             BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -149,7 +159,16 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         terms.setIsReceivableLineOfCredit(isReceivableLOC);
         if (isReceivableLOC) {
             terms.setIsReceivableLineOfCredit(true);
-            terms.setAmountAfterAdvance(element.getAsJsonObject().get("amountAfterAdvance").getAsBigDecimal());
+            // Fall back to amountAfterAdvance if amountInFacilityCurrency is not provided
+            JsonElement amountInFacilityCurrencyElement = element.getAsJsonObject().get("amountInFacilityCurrency");
+            if (amountInFacilityCurrencyElement != null && !amountInFacilityCurrencyElement.isJsonNull()) {
+                terms.setAmountAfterAdvance(amountInFacilityCurrencyElement.getAsBigDecimal());
+            } else {
+                JsonElement amountAfterAdvanceElement = element.getAsJsonObject().get("amountAfterAdvance");
+                if (amountAfterAdvanceElement != null && !amountAfterAdvanceElement.isJsonNull()) {
+                    terms.setAmountAfterAdvance(amountAfterAdvanceElement.getAsBigDecimal());
+                }
+            }
         }
 
         return terms;
@@ -246,22 +265,13 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
     }
 
     private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance, MathContext mc) {
-        BigDecimal invoiceAmount = element.getAsJsonObject().get("invoiceAmount").getAsBigDecimal();
-        BigDecimal disapprovedAmount = element.getAsJsonObject().get("disapprovedAmount").getAsBigDecimal();
-        BigDecimal advancePercentage = element.getAsJsonObject().get("advancePercentage").getAsBigDecimal();
-        BigDecimal amountForCalculation = invoiceAmount.subtract(disapprovedAmount);
+        // Use the amountAfterAdvance parameter directly - it's already resolved from either
+        // amountInFacilityCurrency or amountAfterAdvance in the calling code
+        BigDecimal proposedPrincipal = amountAfterAdvance;
 
-        BigDecimal proposedPrincipal = (advancePercentage.multiply(amountForCalculation)).divide(BigDecimal.valueOf(100), mc.getPrecision(),
-                RoundingMode.HALF_UP);
-
-        if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
+        if (proposedPrincipal == null || proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new GeneralPlatformDomainRuleException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
                     "Proposed principal amount must be greater than zero for receivable line of credit.", List.of());
-        }
-
-        if (proposedPrincipal.compareTo(amountAfterAdvance) != 0) {
-            throw new GeneralPlatformDomainRuleException("loan.proposed.principal.calculated.must.be.equal.to.amount.after.advance",
-                    "Proposed principal amount must be equal to amount after advance for receivable line of credit.", List.of());
         }
 
         return proposedPrincipal;
