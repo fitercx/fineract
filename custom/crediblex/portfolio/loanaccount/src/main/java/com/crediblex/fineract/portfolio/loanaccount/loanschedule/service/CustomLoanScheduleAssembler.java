@@ -265,17 +265,13 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
     }
 
     private BigDecimal getProposedPrincipal(JsonElement element, BigDecimal amountAfterAdvance, MathContext mc) {
+        // Use the amountAfterAdvance parameter directly - it's already resolved from either
+        // amountInFacilityCurrency or amountAfterAdvance in the calling code
+        BigDecimal proposedPrincipal = amountAfterAdvance;
 
-        BigDecimal proposedPrincipal = element.getAsJsonObject().get("amountInFacilityCurrency").getAsBigDecimal();
-
-        if (proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
+        if (proposedPrincipal == null || proposedPrincipal.compareTo(BigDecimal.ZERO) <= 0) {
             throw new GeneralPlatformDomainRuleException("loan.proposed.principal.cannot.be.less.than.or.equal.to.zero",
                     "Proposed principal amount must be greater than zero for receivable line of credit.", List.of());
-        }
-
-        if (proposedPrincipal.compareTo(amountAfterAdvance) != 0) {
-            throw new GeneralPlatformDomainRuleException("loan.proposed.principal.calculated.must.be.equal.to.amount.after.advance",
-                    "Proposed principal amount must be equal to amount after advance for receivable line of credit.", List.of());
         }
 
         return proposedPrincipal;
