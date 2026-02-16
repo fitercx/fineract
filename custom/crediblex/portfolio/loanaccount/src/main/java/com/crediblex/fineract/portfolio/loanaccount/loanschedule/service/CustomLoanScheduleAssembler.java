@@ -109,7 +109,15 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only
             // as it comes from Funded Amount field in Frontend / SDK API
             // Frontend / SDK API calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
+            // Fall back to amountAfterAdvance if amountInFacilityCurrency is not provided (for backward compatibility)
             BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
+            if (amountAfterAdvance == null) {
+                amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+            }
+            if (amountAfterAdvance == null) {
+                throw new GeneralPlatformDomainRuleException("loan.amount.in.facility.currency.or.amount.after.advance.is.required",
+                        "Either amountInFacilityCurrency or amountAfterAdvance is required for receivable line of credit.", List.of());
+            }
             BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -151,7 +159,16 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         terms.setIsReceivableLineOfCredit(isReceivableLOC);
         if (isReceivableLOC) {
             terms.setIsReceivableLineOfCredit(true);
-            terms.setAmountAfterAdvance(element.getAsJsonObject().get("amountInFacilityCurrency").getAsBigDecimal());
+            // Fall back to amountAfterAdvance if amountInFacilityCurrency is not provided
+            JsonElement amountInFacilityCurrencyElement = element.getAsJsonObject().get("amountInFacilityCurrency");
+            if (amountInFacilityCurrencyElement != null && !amountInFacilityCurrencyElement.isJsonNull()) {
+                terms.setAmountAfterAdvance(amountInFacilityCurrencyElement.getAsBigDecimal());
+            } else {
+                JsonElement amountAfterAdvanceElement = element.getAsJsonObject().get("amountAfterAdvance");
+                if (amountAfterAdvanceElement != null && !amountAfterAdvanceElement.isJsonNull()) {
+                    terms.setAmountAfterAdvance(amountAfterAdvanceElement.getAsBigDecimal());
+                }
+            }
         }
 
         return terms;

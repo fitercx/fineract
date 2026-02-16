@@ -157,7 +157,7 @@ public class LoanLineOfCreditParams {
     // Business logic: For receivable products, Amount After Advance = Amount in facility current which is
     // min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit) from Frontend Calculation
     private void computeAmountAfterAdvance() {
-        if (this.amountInFacilityCurrency != null && lineOfCredit.getProductType().isReceivable()) {
+        if (this.amountInFacilityCurrency != null && this.lineOfCredit != null && lineOfCredit.getProductType().isReceivable()) {
             this.amountAfterAdvance = this.amountInFacilityCurrency;
         }
     }
