@@ -431,16 +431,20 @@ public class LineOfCreditStepDef extends AbstractStepDef {
             // Set advance percentage
             loanRequest.setAdvancePercentage(advancePercentage);
 
-            // Use fundedAmount directly if provided (simulating frontend behavior)
-            // Frontend sends amountInFacilityCurrency = min(amountAfterAdvance, requestedAmount, availableLimit)
-            // For tests, we use the drawdownAmount or a specific fundedAmount if provided
+            // Calculate amountInFacilityCurrency (funded amount) - simulating frontend behavior
+            // Frontend calculates: amountAfterAdvance = (invoiceAmount - disapprovedAmount) × advancePercentage / 100
+            // Then sends: amountInFacilityCurrency = min(amountAfterAdvance, requestedAmount, availableLimit)
             BigDecimal amountInFacilityCurrency;
             if (fundedAmountStr != null && !fundedAmountStr.isEmpty()) {
+                // Use explicit fundedAmount if provided in test data
                 amountInFacilityCurrency = new BigDecimal(fundedAmountStr);
             } else {
-                // Default: use the drawdown amount from the test as the funded amount
-                // This simulates frontend sending the final funded amount directly
-                amountInFacilityCurrency = new BigDecimal(drawdownAmount);
+                // Calculate the same way frontend does:
+                // amountAfterAdvance = (invoiceAmount - disapprovedAmount) × advancePercentage / 100
+                BigDecimal approvedReceivableAmount = loanRequest.getInvoiceAmount().subtract(loanRequest.getDisapprovedAmount());
+                amountInFacilityCurrency = approvedReceivableAmount
+                        .multiply(advancePercentage)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             }
 
             loanRequest.setPrincipal(amountInFacilityCurrency);
