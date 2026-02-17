@@ -36,6 +36,7 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -49,6 +50,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.staff.data.StaffData;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
@@ -463,7 +465,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             // New properties
             Integer daysPastDue = 0; // default to zero when not applicable
             if (overdueSinceDate != null) {
-                daysPastDue = Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(overdueSinceDate, java.time.LocalDate.now()));
+                daysPastDue = Math.toIntExact(ChronoUnit.DAYS.between(overdueSinceDate, DateUtils.getLocalDateOfTenant()));
                 if (daysPastDue < 0) {
                     daysPastDue = 0;
                 }
