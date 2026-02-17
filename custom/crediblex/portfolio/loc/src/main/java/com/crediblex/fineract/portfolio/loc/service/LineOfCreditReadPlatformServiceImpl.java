@@ -305,7 +305,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.invoice_amount as invoiceAmount,
                     mlcp.advance_percentage as advancePercentage,
                     STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
-                    STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan
+                    STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan,
+                    COALESCE(SUM(COALESCE(mr.penalty_charges_amount, 0)
+                                 - COALESCE(mr.penalty_charges_completed_derived, 0)
+                                 - COALESCE(mr.penalty_charges_writtenoff_derived, 0)
+                                 - COALESCE(mr.penalty_charges_waived_derived, 0)), 0) as penaltyDue
                     FROM m_line_of_credit loc
                     LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
                     LEFT JOIN m_loan l ON l.id = mlcp.loan_id
@@ -314,6 +318,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab_loc ON mlocab_loc.line_of_credit_id = loc.id
+                    LEFT JOIN m_loan_repayment_schedule mr ON mr.loan_id = l.id
 
                     """;
         }
@@ -435,6 +440,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal amountInFacilityCurrency = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amountInFacilityCurrency");
             final BigDecimal advancePercentage = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "advancePercentage");
             final BigDecimal annualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
+            final BigDecimal penaltyDue = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "penaltyDue");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -454,6 +460,18 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
             summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
             summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
+            // New properties
+            Integer daysPastDue = 0; // default to zero when not applicable
+            if (overdueSinceDate != null) {
+                daysPastDue = Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(overdueSinceDate, java.time.LocalDate.now()));
+                if (daysPastDue < 0) {
+                    daysPastDue = 0;
+                }
+            }
+            // Ensure lateFee is always present as zero when not applicable
+            BigDecimal lateFee = penaltyDue != null ? penaltyDue : BigDecimal.ZERO;
+            summaryData.getAdditionalProperties().put("daysPastDue", daysPastDue);
+            summaryData.getAdditionalProperties().put("lateFee", lateFee);
             return summaryData;
         }
 
