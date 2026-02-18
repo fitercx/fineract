@@ -51,8 +51,10 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
 
     // LOC Activation Processing Fee GL Codes
-    private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current Asset
-    private static final String LOC_ACTIVATION_FEE_INCOME_GL_CODE = "300004"; // Loan Servicing / Processing Fee Income - Revenue
+    private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
+                                                                         // Asset
+    private static final String LOC_ACTIVATION_FEE_INCOME_GL_CODE = "300004"; // Loan Servicing / Processing Fee Income
+                                                                              // - Revenue
     private static final String LOC_ACTIVATION_VAT_GL_CODE = "200065"; // Value Added Tax - VAT - Current Liability
 
     private final AccountingProcessorHelper helper;
@@ -135,7 +137,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
                 // Normal deposits (not account transfers)
-                
+
                 // LOC Activation: Skip journal entries entirely - handled elsewhere
                 if (savingsProductId != null && isLOCActivationSavingsProduct(savingsProductId)) {
                     log.info(
@@ -143,7 +145,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     processedTransactionIndices.add(i);
                     continue;
                 }
-                
+
                 // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
                 // 100062
                 if (paymentTypeId != null && paymentTypeId == 5L) {
@@ -222,20 +224,22 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // DR 100062 (Client Receivable Clearing Acc - Current Asset) - Total amount
                     // CR 300004 (Loan Servicing / Processing Fee Income - Revenue) - Fee amount (excluding VAT)
                     // CR 200065 (Value Added Tax - VAT - Current Liability) - VAT amount
-                    log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee withdrawal - DR 100062, CR 300004, CR 200065");
-                    
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee withdrawal - DR 100062, CR 300004, CR 200065");
+
                     GLAccount debitAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_DEBIT_GL_CODE).orElse(null);
                     GLAccount feeIncomeAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_FEE_INCOME_GL_CODE).orElse(null);
                     GLAccount vatAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_VAT_GL_CODE).orElse(null);
-                    
+
                     if (debitAccount != null && feeIncomeAccount != null && vatAccount != null) {
                         // Get the tax/VAT amount from the LOC charge linked to this savings account
                         // The LOC charge has the actual tax amount configured (not hardcoded 5%)
                         BigDecimal vatAmount = BigDecimal.ZERO;
                         BigDecimal feeAmount = amount;
-                        
+
                         // First, try to get VAT from taxPayments in the SavingsTransactionDTO
-                        java.util.List<org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO> taxPaymentsList = savingsTransactionDTO.getTaxPayments();
+                        java.util.List<org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO> taxPaymentsList = savingsTransactionDTO
+                                .getTaxPayments();
                         if (taxPaymentsList != null && !taxPaymentsList.isEmpty()) {
                             for (org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO taxPayment : taxPaymentsList) {
                                 if (taxPayment.getAmount() != null && taxPayment.getAmount().compareTo(BigDecimal.ZERO) > 0) {
@@ -244,35 +248,42 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                             }
                             if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
                                 feeAmount = amount.subtract(vatAmount);
-                                log.info("CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from taxPayments, fee amount = {}", vatAmount, feeAmount);
+                                log.info("CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from taxPayments, fee amount = {}",
+                                        vatAmount, feeAmount);
                             }
                         }
-                        
+
                         // Fallback 1: Query the LOC charges directly using the settlement savings account ID
                         // This is more reliable than querying through the paid_by table (similar to LOC API approach)
                         if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
                             vatAmount = getLOCChargeTaxAmountBySavingsAccount(savingsId);
                             if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
                                 feeAmount = amount.subtract(vatAmount);
-                                log.info("CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charges (by savings account), fee amount = {}", vatAmount, feeAmount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charges (by savings account), fee amount = {}",
+                                        vatAmount, feeAmount);
                             }
                         }
-                        
+
                         // Fallback 2: Query the LOC charge via paid_by link table (legacy approach)
                         if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
                             vatAmount = getLOCChargeTaxAmount(transactionId);
                             if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
                                 feeAmount = amount.subtract(vatAmount);
-                                log.info("CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charge (by transaction), fee amount = {}", vatAmount, feeAmount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charge (by transaction), fee amount = {}",
+                                        vatAmount, feeAmount);
                             }
                         }
-                        
+
                         // If still no VAT found, the charge might not have tax configured - use full amount as fee
                         if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
-                            log.info("CustomAccrualBasedAccountingProcessorForSavings: No VAT found for LOC Activation, using full amount {} as fee", amount);
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: No VAT found for LOC Activation, using full amount {} as fee",
+                                    amount);
                             feeAmount = amount;
                         }
-                        
+
                         if (isReversal) {
                             // Reversal: Swap DR/CR
                             this.helper.createCreditJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
@@ -283,7 +294,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                                 this.helper.createDebitJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
                                         transactionDate, vatAmount);
                             }
-                            log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee REVERSAL - CR 100062 {}, DR 300004 {}, DR 200065 {}",
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee REVERSAL - CR 100062 {}, DR 300004 {}, DR 200065 {}",
                                     amount, feeAmount, vatAmount);
                         } else {
                             // Normal: DR 100062 (total), CR 300004 (fee), CR 200065 (VAT)
@@ -295,12 +307,14 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                                 this.helper.createCreditJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
                                         transactionDate, vatAmount);
                             }
-                            log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee - DR 100062 {}, CR 300004 {}, CR 200065 {}",
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee - DR 100062 {}, CR 300004 {}, CR 200065 {}",
                                     amount, feeAmount, vatAmount);
                         }
                         processedTransactionIndices.add(i);
                     } else {
-                        log.error("LOC Activation GL Accounts (100062, 300004, or 200065) not found, using default logic for this transaction");
+                        log.error(
+                                "LOC Activation GL Accounts (100062, 300004, or 200065) not found, using default logic for this transaction");
                         // Do NOT mark as processed - let parent handle it
                     }
                 } else {
@@ -558,49 +572,44 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     }
 
     /**
-     * Get the tax amount from the LOC charge linked to this savings account.
-     * This queries the LOC directly using the settlement savings account ID (more reliable approach),
-     * similar to how the LOC API returns charge information.
-     * 
-     * @param savingsAccountId The savings account ID
+     * Get the tax amount from the LOC charge linked to this savings account. This queries the LOC directly using the
+     * settlement savings account ID (more reliable approach), similar to how the LOC API returns charge information.
+     *
+     * @param savingsAccountId
+     *            The savings account ID
      * @return The tax amount from the LOC charges, or ZERO if not found
      */
     private BigDecimal getLOCChargeTaxAmountBySavingsAccount(Long savingsAccountId) {
         try {
             // Query the LOC charges directly using the settlement savings account ID
             // This is more reliable than querying through the paid_by table
-            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit loc " +
-                    "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " +
-                    "WHERE loc.settlement_savings_account_id = ? " +
-                    "AND lc.is_active = true " +
-                    "AND lc.is_paid_derived = false " +
-                    "AND lc.waived = false";
-            
+            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit loc "
+                    + "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " + "WHERE loc.settlement_savings_account_id = ? "
+                    + "AND lc.is_active = true " + "AND lc.is_paid_derived = false " + "AND lc.waived = false";
+
             BigDecimal taxAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, savingsAccountId);
-            
+
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
                 log.info("CustomAccrualBasedAccountingProcessorForSavings: Found LOC charge tax amount {} for savings account {}",
                         taxAmount, savingsAccountId);
                 return taxAmount;
             }
-            
+
             // If no unpaid charges found, try to get from recently paid charges (within last few seconds)
             // This handles the case where the charge was just paid but journal entries are being created
-            String sqlPaid = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit loc " +
-                    "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " +
-                    "WHERE loc.settlement_savings_account_id = ? " +
-                    "AND lc.is_active = true";
-            
+            String sqlPaid = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit loc "
+                    + "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " + "WHERE loc.settlement_savings_account_id = ? "
+                    + "AND lc.is_active = true";
+
             taxAmount = jdbcTemplate.queryForObject(sqlPaid, BigDecimal.class, savingsAccountId);
-            
+
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("CustomAccrualBasedAccountingProcessorForSavings: Found LOC charge tax amount {} (from all charges) for savings account {}",
+                log.info(
+                        "CustomAccrualBasedAccountingProcessorForSavings: Found LOC charge tax amount {} (from all charges) for savings account {}",
                         taxAmount, savingsAccountId);
                 return taxAmount;
             }
-            
+
             return BigDecimal.ZERO;
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             log.debug("CustomAccrualBasedAccountingProcessorForSavings: No LOC found for savings account {}", savingsAccountId);
@@ -613,11 +622,12 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     }
 
     /**
-     * Get the tax amount from the LOC charge linked to this savings transaction.
-     * This queries the m_line_of_credit_charge_paid_by table to find the linked LOC charge,
-     * then gets the tax_amount from the m_line_of_credit_charge table.
-     * 
-     * @param transactionId The savings transaction ID (e.g., "S12345")
+     * Get the tax amount from the LOC charge linked to this savings transaction. This queries the
+     * m_line_of_credit_charge_paid_by table to find the linked LOC charge, then gets the tax_amount from the
+     * m_line_of_credit_charge table.
+     *
+     * @param transactionId
+     *            The savings transaction ID (e.g., "S12345")
      * @return The tax amount from the LOC charge, or ZERO if not found
      */
     private BigDecimal getLOCChargeTaxAmount(String transactionId) {
@@ -628,19 +638,18 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
 
             // Query the LOC charge tax amount via the paid_by link table
             // The m_line_of_credit_charge has a tax_amount column that stores the actual configured tax
-            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit_charge_paid_by pb " +
-                    "JOIN m_line_of_credit_charge lc ON lc.id = pb.line_of_credit_charge_id " +
-                    "WHERE pb.savings_account_transaction_id = ?";
-            
+            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit_charge_paid_by pb "
+                    + "JOIN m_line_of_credit_charge lc ON lc.id = pb.line_of_credit_charge_id "
+                    + "WHERE pb.savings_account_transaction_id = ?";
+
             BigDecimal taxAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, transactionNumericId);
-            
+
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
                 log.info("CustomAccrualBasedAccountingProcessorForSavings: Found LOC charge tax amount {} for savings transaction {}",
                         taxAmount, transactionId);
                 return taxAmount;
             }
-            
+
             return BigDecimal.ZERO;
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             log.debug("CustomAccrualBasedAccountingProcessorForSavings: No LOC charge found for savings transaction {}", transactionId);
