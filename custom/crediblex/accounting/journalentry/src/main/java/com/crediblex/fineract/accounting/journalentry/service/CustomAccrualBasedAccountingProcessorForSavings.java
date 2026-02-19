@@ -457,7 +457,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
             return LOC_ACTIVATION_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
             log.debug(
-                    "CustomAccrualBasedAccountingProcessorForSavings: Error checking LOC Activation loan product for loanProductId {}: {}",
+                    "CustomAccrualBasedAccountingProcessorForSavings: Error checking LOC Activation savings product for savingsProductId {}: {}",
                     savingsProductId, e.getMessage());
             return false;
         }
