@@ -115,13 +115,13 @@ public class LocChargeAllocationService {
             chargeRepository.save(charge);
             paidByRepository.delete(paid);
         }
-        log.debug("Reversed LOC charge allocations for original savings txn {} (reversal txn {}), skipTaxJournalEntries={}",
-                originalId, reversalTxn.getId(), skipTaxJournalEntries);
+        log.debug("Reversed LOC charge allocations for original savings txn {} (reversal txn {}), skipTaxJournalEntries={}", originalId,
+                reversalTxn.getId(), skipTaxJournalEntries);
     }
 
     /**
-     * Check if savings product is LOC Activation.
-     * Queries product short_name from database to identify LOC Activation products.
+     * Check if savings product is LOC Activation. Queries product short_name from database to identify LOC Activation
+     * products.
      */
     private boolean isLOCActivationSavingsProduct(Long savingsProductId) {
         if (savingsProductId == null) {
