@@ -141,7 +141,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // LOC Activation: Skip journal entries entirely - handled elsewhere
                 if (savingsProductId != null && isLOCActivationSavingsProduct(savingsProductId)) {
                     log.info(
-                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation loan product detected - Skipping journal entries for normal deposit");
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation savings product detected - Skipping journal entries for normal deposit");
                     processedTransactionIndices.add(i);
                     continue;
                 }
