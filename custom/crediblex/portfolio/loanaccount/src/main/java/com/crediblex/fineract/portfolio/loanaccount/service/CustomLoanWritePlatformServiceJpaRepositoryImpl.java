@@ -56,6 +56,7 @@ import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.MultiException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.exception.UnsupportedParameterException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -315,7 +316,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 throw e;
             }
             // For multi-tranche, we've already validated - continue with disbursement
-        } catch (org.apache.fineract.infrastructure.core.exception.UnsupportedParameterException e) {
+        } catch (UnsupportedParameterException e) {
             // This customization supports an optional "auto-withdraw" step after a successful disbursement to savings,
             // so users don't have to manually withdraw funds from the destination savings account.
             //
@@ -341,7 +342,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             } else {
                 // If both ignorable and non-ignorable parameters are present, core will send everything back to the UI.
                 // Sanitize the exception so the response only reports the truly unsupported parameters.
-                throw new org.apache.fineract.infrastructure.core.exception.UnsupportedParameterException(nonIgnorable);
+                final UnsupportedParameterException sanitized = new UnsupportedParameterException(nonIgnorable);
+                sanitized.initCause(e);
+                throw sanitized;
             }
         }
 
