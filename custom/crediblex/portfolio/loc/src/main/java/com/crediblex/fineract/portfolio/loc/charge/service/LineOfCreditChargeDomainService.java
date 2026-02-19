@@ -113,11 +113,16 @@ public class LineOfCreditChargeDomainService {
     /**
      * Pay a charge amount.
      *
-     * @param c the LOC charge
-     * @param payment the payment amount
-     * @param advanceRecurringCycle whether to advance recurring cycle
-     * @param savingsTransaction the savings transaction (for journal entry linking)
-     * @param skipTaxJournalEntries if true, skip creating tax journal entries (used when savings processor handles them)
+     * @param c
+     *            the LOC charge
+     * @param payment
+     *            the payment amount
+     * @param advanceRecurringCycle
+     *            whether to advance recurring cycle
+     * @param savingsTransaction
+     *            the savings transaction (for journal entry linking)
+     * @param skipTaxJournalEntries
+     *            if true, skip creating tax journal entries (used when savings processor handles them)
      * @return the remaining outstanding amount
      */
     public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment, boolean advanceRecurringCycle,
@@ -128,8 +133,10 @@ public class LineOfCreditChargeDomainService {
         recalculateOutstanding(c);
 
         // Create journal entries for the tax portion if transaction is provided
-        // Skip if skipTaxJournalEntries is true (e.g., when savings processor handles tax journal entries for LOC Activation)
-        if (!skipTaxJournalEntries && savingsTransaction != null && c.getTaxAmountDefaulted() != null && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
+        // Skip if skipTaxJournalEntries is true (e.g., when savings processor handles tax journal entries for LOC
+        // Activation)
+        if (!skipTaxJournalEntries && savingsTransaction != null && c.getTaxAmountDefaulted() != null
+                && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
             createJournalEntriesForChargeTax(c, savingsTransaction, false);
         }
 

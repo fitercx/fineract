@@ -769,7 +769,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                 continue;
             }
 
-            // Pass skipTaxJournalEntries=true because the savings processor (CustomCashBasedAccountingProcessorForSavings)
+            // Pass skipTaxJournalEntries=true because the savings processor
+            // (CustomCashBasedAccountingProcessorForSavings)
             // already handles the complete journal entries for LOC Activation including VAT
             locChargeDomainService.pay(charge, outstanding, false, aggregateTxn, true);
             locChargeRepository.save(charge);
