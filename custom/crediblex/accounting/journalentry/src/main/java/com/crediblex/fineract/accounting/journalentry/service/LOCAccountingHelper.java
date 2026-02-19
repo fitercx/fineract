@@ -25,9 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Shared utility class for LOC (Line of Credit) accounting operations.
- * Contains common methods used by both CustomCashBasedAccountingProcessorForSavings
- * and CustomAccrualBasedAccountingProcessorForSavings.
+ * Shared utility class for LOC (Line of Credit) accounting operations. Contains common methods used by both
+ * CustomCashBasedAccountingProcessorForSavings and CustomAccrualBasedAccountingProcessorForSavings.
  */
 @Slf4j
 @Component
@@ -56,10 +55,11 @@ public class LOCAccountingHelper {
     private final JdbcTemplate jdbcTemplate;
 
     /**
-     * Check if savings product is LOC Activation.
-     * Queries product short_name from database to identify LOC Activation products.
+     * Check if savings product is LOC Activation. Queries product short_name from database to identify LOC Activation
+     * products.
      *
-     * @param savingsProductId The savings product ID
+     * @param savingsProductId
+     *            The savings product ID
      * @return true if it's an LOC Activation savings product
      */
     public boolean isLOCActivationSavingsProduct(Long savingsProductId) {
@@ -72,17 +72,18 @@ public class LOCAccountingHelper {
             String shortName = jdbcTemplate.queryForObject(sql, String.class, savingsProductId);
             return LOC_ACTIVATION_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
-            log.debug("LOCAccountingHelper: Error checking LOC Activation savings product for savingsProductId {}: {}",
-                    savingsProductId, e.getMessage());
+            log.debug("LOCAccountingHelper: Error checking LOC Activation savings product for savingsProductId {}: {}", savingsProductId,
+                    e.getMessage());
             return false;
         }
     }
 
     /**
-     * Check if loan product is LOC Receivable.
-     * Queries product short_name from database to identify LOC Receivable products.
+     * Check if loan product is LOC Receivable. Queries product short_name from database to identify LOC Receivable
+     * products.
      *
-     * @param loanProductId The loan product ID
+     * @param loanProductId
+     *            The loan product ID
      * @return true if it's an LOC Receivable loan product
      */
     public boolean isLOCReceivableLoanProduct(Long loanProductId) {
@@ -95,17 +96,18 @@ public class LOCAccountingHelper {
             String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
             return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
-            log.debug("LOCAccountingHelper: Error checking LOC Receivable loan product for loanProductId {}: {}",
-                    loanProductId, e.getMessage());
+            log.debug("LOCAccountingHelper: Error checking LOC Receivable loan product for loanProductId {}: {}", loanProductId,
+                    e.getMessage());
             return false;
         }
     }
 
     /**
-     * Check if loan product is RBF (Revenue Based Financing).
-     * Queries product short_name from database to identify RBF products.
+     * Check if loan product is RBF (Revenue Based Financing). Queries product short_name from database to identify RBF
+     * products.
      *
-     * @param loanProductId The loan product ID
+     * @param loanProductId
+     *            The loan product ID
      * @return true if it's an RBF loan product
      */
     public boolean isRBFLoanProduct(Long loanProductId) {
@@ -118,53 +120,45 @@ public class LOCAccountingHelper {
             String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
             return RBF_PRODUCT_SHORT_NAME.equals(shortName);
         } catch (Exception e) {
-            log.debug("LOCAccountingHelper: Error checking RBF loan product for loanProductId {}: {}",
-                    loanProductId, e.getMessage());
+            log.debug("LOCAccountingHelper: Error checking RBF loan product for loanProductId {}: {}", loanProductId, e.getMessage());
             return false;
         }
     }
 
     /**
-     * Get the tax amount from the LOC charge linked to this savings account.
-     * This queries the LOC directly using the settlement savings account ID (more reliable approach),
-     * similar to how the LOC API returns charge information.
+     * Get the tax amount from the LOC charge linked to this savings account. This queries the LOC directly using the
+     * settlement savings account ID (more reliable approach), similar to how the LOC API returns charge information.
      *
-     * @param savingsAccountId The savings account ID
+     * @param savingsAccountId
+     *            The savings account ID
      * @return The tax amount from the LOC charges, or ZERO if not found
      */
     public BigDecimal getLOCChargeTaxAmountBySavingsAccount(Long savingsAccountId) {
         try {
             // Query the LOC charges directly using the settlement savings account ID
             // This is more reliable than querying through the paid_by table
-            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit loc " +
-                    "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " +
-                    "WHERE loc.settlement_savings_account_id = ? " +
-                    "AND lc.is_active = true " +
-                    "AND lc.is_paid_derived = false " +
-                    "AND lc.waived = false";
+            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit loc "
+                    + "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " + "WHERE loc.settlement_savings_account_id = ? "
+                    + "AND lc.is_active = true " + "AND lc.is_paid_derived = false " + "AND lc.waived = false";
 
             BigDecimal taxAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, savingsAccountId);
 
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("LOCAccountingHelper: Found LOC charge tax amount {} for savings account {}",
-                        taxAmount, savingsAccountId);
+                log.info("LOCAccountingHelper: Found LOC charge tax amount {} for savings account {}", taxAmount, savingsAccountId);
                 return taxAmount;
             }
 
             // If no unpaid charges found, try to get from all active charges
             // This handles the case where the charge was just paid but journal entries are being created
-            String sqlPaid = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit loc " +
-                    "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " +
-                    "WHERE loc.settlement_savings_account_id = ? " +
-                    "AND lc.is_active = true";
+            String sqlPaid = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit loc "
+                    + "JOIN m_line_of_credit_charge lc ON lc.line_of_credit_id = loc.id " + "WHERE loc.settlement_savings_account_id = ? "
+                    + "AND lc.is_active = true";
 
             taxAmount = jdbcTemplate.queryForObject(sqlPaid, BigDecimal.class, savingsAccountId);
 
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("LOCAccountingHelper: Found LOC charge tax amount {} (from all charges) for savings account {}",
-                        taxAmount, savingsAccountId);
+                log.info("LOCAccountingHelper: Found LOC charge tax amount {} (from all charges) for savings account {}", taxAmount,
+                        savingsAccountId);
                 return taxAmount;
             }
 
@@ -173,18 +167,19 @@ public class LOCAccountingHelper {
             log.debug("LOCAccountingHelper: No LOC found for savings account {}", savingsAccountId);
             return BigDecimal.ZERO;
         } catch (Exception e) {
-            log.warn("LOCAccountingHelper: Error getting LOC charge tax amount for savings account {}: {}",
-                    savingsAccountId, e.getMessage());
+            log.warn("LOCAccountingHelper: Error getting LOC charge tax amount for savings account {}: {}", savingsAccountId,
+                    e.getMessage());
             return BigDecimal.ZERO;
         }
     }
 
     /**
-     * Get the tax amount from the LOC charge linked to this savings transaction.
-     * This queries the m_line_of_credit_charge_paid_by table to find the linked LOC charge,
-     * then gets the tax_amount from the m_line_of_credit_charge table.
+     * Get the tax amount from the LOC charge linked to this savings transaction. This queries the
+     * m_line_of_credit_charge_paid_by table to find the linked LOC charge, then gets the tax_amount from the
+     * m_line_of_credit_charge table.
      *
-     * @param transactionId The savings transaction ID (e.g., "S12345")
+     * @param transactionId
+     *            The savings transaction ID (e.g., "S12345")
      * @return The tax amount from the LOC charge, or ZERO if not found
      */
     public BigDecimal getLOCChargeTaxAmount(String transactionId) {
@@ -194,16 +189,14 @@ public class LOCAccountingHelper {
             Long transactionNumericId = Long.parseLong(numericId);
 
             // Query the LOC charge tax amount via the paid_by link table
-            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " +
-                    "FROM m_line_of_credit_charge_paid_by pb " +
-                    "JOIN m_line_of_credit_charge lc ON lc.id = pb.line_of_credit_charge_id " +
-                    "WHERE pb.savings_account_transaction_id = ?";
+            String sql = "SELECT COALESCE(SUM(lc.tax_amount), 0) " + "FROM m_line_of_credit_charge_paid_by pb "
+                    + "JOIN m_line_of_credit_charge lc ON lc.id = pb.line_of_credit_charge_id "
+                    + "WHERE pb.savings_account_transaction_id = ?";
 
             BigDecimal taxAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, transactionNumericId);
 
             if (taxAmount != null && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("LOCAccountingHelper: Found LOC charge tax amount {} for savings transaction {}",
-                        taxAmount, transactionId);
+                log.info("LOCAccountingHelper: Found LOC charge tax amount {} for savings transaction {}", taxAmount, transactionId);
                 return taxAmount;
             }
 
@@ -212,8 +205,7 @@ public class LOCAccountingHelper {
             log.debug("LOCAccountingHelper: No LOC charge found for savings transaction {}", transactionId);
             return BigDecimal.ZERO;
         } catch (Exception e) {
-            log.warn("LOCAccountingHelper: Error getting LOC charge tax amount for transaction {}: {}",
-                    transactionId, e.getMessage());
+            log.warn("LOCAccountingHelper: Error getting LOC charge tax amount for transaction {}: {}", transactionId, e.getMessage());
             return BigDecimal.ZERO;
         }
     }
