@@ -58,8 +58,8 @@ public class LOCAccountingHelper {
     private final GLAccountRepository glAccountRepository;
 
     /**
-     * Get GL 200040 account (RBF Loan Payable - Working Capital - Revenue Finance).
-     * Looks up by GL code to avoid hardcoding account ID.
+     * Get GL 200040 account (RBF Loan Payable - Working Capital - Revenue Finance). Looks up by GL code to avoid
+     * hardcoding account ID.
      *
      * @return The GLAccount for RBF Loan Payable, or null if not found
      */
@@ -73,8 +73,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting).
-     * Looks up by GL code to avoid hardcoding account ID.
+     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting). Looks up by GL code to avoid
+     * hardcoding account ID.
      *
      * @return The GLAccount for Receivable LOC Loan Payable, or null if not found
      */
