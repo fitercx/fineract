@@ -442,7 +442,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     }
 
     /**
-     * Check if loan product is LOC Activation Queries product short_name from database to identify LOC Activation
+     * Check if savings product is LOC Activation Queries product short_name from database to identify LOC Activation
      * products
      */
     private boolean isLOCActivationSavingsProduct(Long savingsProductId) {
