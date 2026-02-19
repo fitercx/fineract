@@ -4,6 +4,7 @@ import com.crediblex.fineract.accounting.journalentry.service.CustomAccrualBased
 import com.crediblex.fineract.accounting.journalentry.service.CustomAccrualBasedAccountingProcessorForSavings;
 import com.crediblex.fineract.accounting.journalentry.service.CustomCashBasedAccountingProcessorForLoan;
 import com.crediblex.fineract.accounting.journalentry.service.CustomCashBasedAccountingProcessorForSavings;
+import com.crediblex.fineract.accounting.journalentry.service.LOCAccountingHelper;
 import org.apache.fineract.accounting.closure.domain.GLClosureRepository;
 import org.apache.fineract.accounting.financialactivityaccount.domain.FinancialActivityAccountRepositoryWrapper;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
@@ -53,15 +54,15 @@ public class CustomJournalEntryConfigurationBeans {
     @Bean
     @Primary
     public CustomCashBasedAccountingProcessorForSavings cashBasedAccountingProcessorForSavings(AccountingProcessorHelper helper,
-            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate) {
-        return new CustomCashBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate);
+            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate, LOCAccountingHelper locAccountingHelper) {
+        return new CustomCashBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate, locAccountingHelper);
     }
 
     @Bean
     @Primary
     public CustomAccrualBasedAccountingProcessorForSavings accrualBasedAccountingProcessorForSavings(AccountingProcessorHelper helper,
-            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate) {
-        return new CustomAccrualBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate);
+            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate, LOCAccountingHelper locAccountingHelper) {
+        return new CustomAccrualBasedAccountingProcessorForSavings(helper, glAccountRepository, jdbcTemplate, locAccountingHelper);
     }
 
 }
