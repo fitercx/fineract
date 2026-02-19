@@ -21,6 +21,8 @@ package com.crediblex.fineract.accounting.journalentry.service;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.accounting.glaccount.domain.GLAccount;
+import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -53,6 +55,37 @@ public class LOCAccountingHelper {
     public static final String RBF_GL_CODE = "200040";
 
     private final JdbcTemplate jdbcTemplate;
+    private final GLAccountRepository glAccountRepository;
+
+    /**
+     * Get GL 200040 account (RBF Loan Payable - Working Capital - Revenue Finance).
+     * Looks up by GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for RBF Loan Payable, or null if not found
+     */
+    public GLAccount getRBFGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting).
+     * Looks up by GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for Receivable LOC Loan Payable, or null if not found
+     */
+    public GLAccount getReceivableLOCGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
 
     /**
      * Check if savings product is LOC Activation. Queries product short_name from database to identify LOC Activation

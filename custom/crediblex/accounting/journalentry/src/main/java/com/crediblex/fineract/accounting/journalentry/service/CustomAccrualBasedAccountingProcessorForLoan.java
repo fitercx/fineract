@@ -31,12 +31,6 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAccountingProcessorForLoan {
 
-    // Hardcoded RBF Configuration
-    private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
-    private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
-    private static final String RECEIVABLE_LOC_PRODUCT_SHORT_NAME = "LRL";
-    private static final String RECEIVABLE_LOC_GL_CODE = "200041"; // Loan Payable - Invoice Discounting
-
     @Autowired
     protected CustomAccountingProcessorHelper customAccountingProcessorHelper;
 
@@ -49,53 +43,12 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
     @Autowired
     private org.apache.fineract.accounting.glaccount.domain.GLAccountRepository glAccountRepository;
 
+    @Autowired
+    private LOCAccountingHelper locAccountingHelper;
+
     public CustomAccrualBasedAccountingProcessorForLoan(AccountingProcessorHelper helper,
             JournalEntryWritePlatformService journalEntryWritePlatformService) {
         super(helper, journalEntryWritePlatformService);
-    }
-
-    /**
-     * Check if the loan product is RBF (Revenue Based Financing) product
-     *
-     * @param loanProductId
-     *            The loan product ID
-     * @return true if RBF product, false otherwise
-     */
-    private boolean isRBFProduct(Long loanProductId) {
-        if (loanProductId == null) {
-            return false;
-        }
-
-        try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return RBF_PRODUCT_SHORT_NAME.equals(shortName);
-        } catch (Exception e) {
-            // If query fails, default to non-RBF (use old Liability Transfer)
-            return false;
-        }
-    }
-
-    /**
-     * Check if the loan product is Receivable LOC product
-     *
-     * @param loanProductId
-     *            The loan product ID
-     * @return true if Receivable LOC product, false otherwise
-     */
-    private boolean isReceivableLOCProduct(Long loanProductId) {
-        if (loanProductId == null) {
-            return false;
-        }
-
-        try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return RECEIVABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
-        } catch (Exception e) {
-            // If query fails, default to non-Receivable LOC (use old Liability Transfer)
-            return false;
-        }
     }
 
     @Override
@@ -206,12 +159,12 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             // - RBF products: Use GL 200040 directly
             // - Receivable LOC products: Use GL 200041 directly
             // - Other products: Use LIABILITY_TRANSFER financial activity
-            if (isRBFProduct(loanProductId)) {
+            if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                 log.info("CustomAccrualBasedAccountingProcessorForLoan: RBF product detected - Using GL 200040 for loan product {}",
                         loanProductId);
 
                 // Get GL 200040 account
-                GLAccount rbfGLAccount = getRBFGLAccount();
+                GLAccount rbfGLAccount = locAccountingHelper.getRBFGLAccount();
                 if (rbfGLAccount == null) {
                     log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 200040 not found, falling back to LIABILITY_TRANSFER");
                     this.helper.createCreditJournalEntryForLoan(office, currencyCode,
@@ -223,13 +176,13 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             loanDTO.getNetDisbursalAmount(), rbfGLAccount);
                     log.info("CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200040 for RBF disbursement");
                 }
-            } else if (isReceivableLOCProduct(loanProductId)) {
+            } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
                 log.info(
                         "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 200041 for loan product {}",
                         loanProductId);
 
                 // Get GL 200041 account
-                GLAccount receivableLOCGLAccount = getReceivableLOCGLAccount();
+                GLAccount receivableLOCGLAccount = locAccountingHelper.getReceivableLOCGLAccount();
                 if (receivableLOCGLAccount == null) {
                     log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 200041 not found, falling back to LIABILITY_TRANSFER");
                     this.helper.createCreditJournalEntryForLoan(office, currencyCode,
@@ -335,7 +288,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                         transactionDate, totalVatForTransaction, loanTransactionDTO.getFeePayments());
             } else {
                 // For RBF loans with foreclosure charges, use Early Settlement Fee Revenue (GL 300002)
-                if (isRBFProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
+                if (locAccountingHelper.isRBFLoanProduct(loanProductId) && isForeclosureCharge(loanTransactionDTO)) {
                     GLAccount earlySettlementFeeRevenue = glAccountRepository.findOneByGlCode("300002").orElse(null);
                     if (earlySettlementFeeRevenue != null) {
                         this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
@@ -400,7 +353,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             } else if (loanTransactionDTO.getTransactionType().isRepayment()) {
                 // For repayments: Use INCOME_FROM_RECOVERY, but for RBF products use GL 300015 instead
                 GLAccount account;
-                if (isRBFProduct(loanProductId)) {
+                if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income on repayments
                     account = glAccountRepository.findOneByGlCode("300015").orElse(null);
                     if (account == null) {
@@ -429,7 +382,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
                 // instead of the default INCOME_FROM_PENALTIES account
                 GLAccount account;
-                if (isRBFProduct(loanProductId)) {
+                if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income
                     account = glAccountRepository.findOneByGlCode("300015").orElse(null);
                     if (account == null) {
@@ -538,7 +491,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     // - RBF products: Use GL 210003 (Working Capital Loan)
                     // - Receivable LOC products: Use GL 210003 (Working Capital Loan)
                     // - Other products: Use LIABILITY_TRANSFER financial activity
-                    if (isRBFProduct(loanProductId)) {
+                    if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                         log.info("CustomAccrualBasedAccountingProcessorForLoan: RBF product detected - Using GL 210003 for repayment");
                         // Get GL 210003 account (Working Capital Loan)
                         GLAccount rbfRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
@@ -554,7 +507,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                     AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
                                     loanId, transactionId, transactionDate, totalDebitAmount);
                         }
-                    } else if (isReceivableLOCProduct(loanProductId)) {
+                    } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
                         log.info(
                                 "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 210003 for repayment");
                         // Get GL 210003 account (Working Capital Loan)
@@ -656,32 +609,6 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.AccrualAccountsForLoan.INTEREST_ON_LOANS.getValue(), loanProductId, paymentTypeId, loanId,
                     transactionId, transactionDate, periodInterest);
-        }
-    }
-
-    /**
-     * Get GL 200040 account (RBF Loan Payable) Looks up by GL code to avoid hardcoding account ID
-     */
-    private GLAccount getRBFGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Get GL 200041 account (Receivable LOC Loan Payable - Invoice Discounting) Looks up by GL code to avoid hardcoding
-     * account ID
-     */
-    private GLAccount getReceivableLOCGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(RECEIVABLE_LOC_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForLoan: Error finding GL account {}: {}", RECEIVABLE_LOC_GL_CODE,
-                    e.getMessage());
-            return null;
         }
     }
 

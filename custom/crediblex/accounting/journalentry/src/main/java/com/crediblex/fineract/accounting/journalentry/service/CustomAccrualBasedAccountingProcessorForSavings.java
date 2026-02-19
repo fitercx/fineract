@@ -33,7 +33,6 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
 
     // Hardcoded RBF Configuration
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF"; // RBF loan product short_name
-    private static final String RBF_GL_CODE = "200040"; // Loan Payable - Working Capital - Revenue Finance
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF withdrawal payment type
 
     // Hardcoded LOC Receivable Configuration
@@ -47,7 +46,6 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                                                                                 // Receivable - Current Liability
 
     // Hardcoded LOC Activation Configuration
-    private static final String LOC_ACTIVATION_PRODUCT_SHORT_NAME = "LAA"; // LOC Activation loan product short_name
     private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
 
     // LOC Activation Processing Fee GL Codes
@@ -175,7 +173,7 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
                     // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
                     log.info("CustomAccrualBasedAccountingProcessorForSavings: RBF manual withdrawal - DR 200040, CR Bank");
-                    GLAccount rbfGLAccount = getRBFGLAccount();
+                    GLAccount rbfGLAccount = locAccountingHelper.getRBFGLAccount();
                     GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
                             AccrualAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
                     if (rbfGLAccount != null && bankAccount != null) {
@@ -406,18 +404,6 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
             log.debug("CustomAccrualBasedAccountingProcessorForSavings: Error checking RBF loan product for loanProductId {}: {}",
                     loanProductId, e.getMessage());
             return false;
-        }
-    }
-
-    /**
-     * Get GL 200040 account (RBF Loan Payable) Looks up by GL code to avoid hardcoding account ID
-     */
-    private GLAccount getRBFGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(RBF_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomAccrualBasedAccountingProcessorForSavings: Error finding GL account {}: {}", RBF_GL_CODE, e.getMessage());
-            return null;
         }
     }
 
