@@ -46,17 +46,30 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
     private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
                                                                                 // Receivable - Current Liability
 
+    // Hardcoded LOC Activation Configuration
+    private static final String LOC_ACTIVATION_PRODUCT_SHORT_NAME = "LAA"; // LOC Activation loan product short_name
+    private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
+
+    // LOC Activation Processing Fee GL Codes
+    private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
+                                                                         // Asset
+    private static final String LOC_ACTIVATION_FEE_INCOME_GL_CODE = "300004"; // Loan Servicing / Processing Fee Income
+                                                                              // - Revenue
+    private static final String LOC_ACTIVATION_VAT_GL_CODE = "200065"; // Value Added Tax - VAT - Current Liability
+
     private final AccountingProcessorHelper helper;
     private final GLAccountRepository glAccountRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final LOCAccountingHelper locAccountingHelper;
 
     @Autowired
     public CustomAccrualBasedAccountingProcessorForSavings(AccountingProcessorHelper accountingProcessorHelper,
-            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate) {
+            GLAccountRepository glAccountRepository, JdbcTemplate jdbcTemplate, LOCAccountingHelper locAccountingHelper) {
         super(accountingProcessorHelper);
         this.helper = accountingProcessorHelper;
         this.glAccountRepository = glAccountRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.locAccountingHelper = locAccountingHelper;
     }
 
     @Override
@@ -125,7 +138,16 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // Non-RBF/Non-LOC Receivable: Use default parent logic - mark for later processing
                 processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isDeposit() && !savingsTransactionDTO.isAccountTransfer()) {
-                // Normal deposits (not account transfers) - ensure they use GL 100062, not payment_type-specific GL
+                // Normal deposits (not account transfers)
+
+                // LOC Activation: Skip journal entries entirely - handled elsewhere
+                if (savingsProductId != null && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation savings product detected - Skipping journal entries for normal deposit");
+                    processedTransactionIndices.add(i);
+                    continue;
+                }
+
                 // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
                 // 100062
                 if (paymentTypeId != null && paymentTypeId == 5L) {
@@ -193,6 +215,112 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     }
                 } else {
                     // Not LOC Receivable product but has payment_type=73, use default logic
+                    // Do NOT mark as processed - let parent handle it
+                }
+            } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
+                    && paymentTypeId != null && paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID)) {
+                // LOC Activation Processing Fee withdrawal with payment_type=1
+                Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
+                if (linkedLoanProductId == null && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
+                    // LOC Activation Processing Fee withdrawal:
+                    // DR 100062 (Client Receivable Clearing Acc - Current Asset) - Total amount
+                    // CR 300004 (Loan Servicing / Processing Fee Income - Revenue) - Fee amount (excluding VAT)
+                    // CR 200065 (Value Added Tax - VAT - Current Liability) - VAT amount
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee withdrawal - DR 100062, CR 300004, CR 200065");
+
+                    GLAccount debitAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_DEBIT_GL_CODE).orElse(null);
+                    GLAccount feeIncomeAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_FEE_INCOME_GL_CODE).orElse(null);
+                    GLAccount vatAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_VAT_GL_CODE).orElse(null);
+
+                    if (debitAccount != null && feeIncomeAccount != null && vatAccount != null) {
+                        // Get the tax/VAT amount from the LOC charge linked to this savings account
+                        // The LOC charge has the actual tax amount configured (not hardcoded 5%)
+                        BigDecimal vatAmount = BigDecimal.ZERO;
+                        BigDecimal feeAmount = amount;
+
+                        // First, try to get VAT from taxPayments in the SavingsTransactionDTO
+                        java.util.List<org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO> taxPaymentsList = savingsTransactionDTO
+                                .getTaxPayments();
+                        if (taxPaymentsList != null && !taxPaymentsList.isEmpty()) {
+                            for (org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO taxPayment : taxPaymentsList) {
+                                if (taxPayment.getAmount() != null && taxPayment.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                                    vatAmount = vatAmount.add(taxPayment.getAmount());
+                                }
+                            }
+                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                feeAmount = amount.subtract(vatAmount);
+                                log.info("CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from taxPayments, fee amount = {}",
+                                        vatAmount, feeAmount);
+                            }
+                        }
+
+                        // Fallback 1: Query the LOC charges directly using the settlement savings account ID
+                        // This is more reliable than querying through the paid_by table (similar to LOC API approach)
+                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
+                            vatAmount = locAccountingHelper.getLOCChargeTaxAmountBySavingsAccount(savingsId);
+                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                feeAmount = amount.subtract(vatAmount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charges (by savings account), fee amount = {}",
+                                        vatAmount, feeAmount);
+                            }
+                        }
+
+                        // Fallback 2: Query the LOC charge via paid_by link table (legacy approach)
+                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
+                            vatAmount = locAccountingHelper.getLOCChargeTaxAmount(transactionId);
+                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                feeAmount = amount.subtract(vatAmount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForSavings: Got VAT {} from LOC charge (by transaction), fee amount = {}",
+                                        vatAmount, feeAmount);
+                            }
+                        }
+
+                        // If still no VAT found, the charge might not have tax configured - use full amount as fee
+                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: No VAT found for LOC Activation, using full amount {} as fee",
+                                    amount);
+                            feeAmount = amount;
+                        }
+
+                        if (isReversal) {
+                            // Reversal: Swap DR/CR
+                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
+                                    transactionDate, amount);
+                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId,
+                                    transactionDate, feeAmount);
+                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                this.helper.createDebitJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
+                                        transactionDate, vatAmount);
+                            }
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee REVERSAL - CR 100062 {}, DR 300004 {}, DR 200065 {}",
+                                    amount, feeAmount, vatAmount);
+                        } else {
+                            // Normal: DR 100062 (total), CR 300004 (fee), CR 200065 (VAT)
+                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
+                                    transactionDate, amount);
+                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId,
+                                    transactionDate, feeAmount);
+                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                this.helper.createCreditJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
+                                        transactionDate, vatAmount);
+                            }
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForSavings: LOC Activation processing fee - DR 100062 {}, CR 300004 {}, CR 200065 {}",
+                                    amount, feeAmount, vatAmount);
+                        }
+                        processedTransactionIndices.add(i);
+                    } else {
+                        log.error(
+                                "LOC Activation GL Accounts (100062, 300004, or 200065) not found, using default logic for this transaction");
+                        // Do NOT mark as processed - let parent handle it
+                    }
+                } else {
+                    // Not LOC Activation product but has payment_type=1, use default logic
                     // Do NOT mark as processed - let parent handle it
                 }
             }
