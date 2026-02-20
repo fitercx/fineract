@@ -34,14 +34,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
-import org.apache.fineract.organisation.office.domain.Office;
-import org.apache.fineract.organisation.office.domain.OfficeRepository;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -57,11 +55,25 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private final OdooJournalEntryService odooJournalEntryService;
     private final LoanMonthlyAccrualJobAuditRepository loanMonthlyAccrualJobAuditRepository;
     private final GLAccountRepository glAccountRepository;
-    private final OfficeRepository officeRepository;
+    private final JdbcTemplate jdbcTemplate;
 
-    // GL Account codes for accrual journal entries
-    private static final String INTEREST_INCOME_GL_CODE = "300000";
-    private static final String INTEREST_RECEIVABLE_GL_CODE = "100034";
+    // Product Short Names
+    private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
+    private static final String LPLL_PRODUCT_SHORT_NAME = "LPLL";
+    private static final String LRL_PRODUCT_SHORT_NAME = "LRL";
+
+    // GL Account codes for RBF accrual journal entries (default)
+    private static final String RBF_INTEREST_INCOME_GL_CODE = "300000";
+    private static final String RBF_INTEREST_RECEIVABLE_GL_CODE = "100034";
+
+    // GL Account codes for LPLL (LOC Payable) accrual journal entries
+    private static final String LPLL_INTEREST_INCOME_GL_CODE = "300009";
+    private static final String LPLL_INTEREST_RECEIVABLE_GL_CODE = "100036";
+
+    // GL Account codes for LRL (LOC Receivable) accrual journal entries
+    private static final String LRL_INTEREST_INCOME_GL_CODE = "300008";
+    private static final String LRL_INTEREST_RECEIVABLE_GL_CODE = "100035";
+
     private static final String ODOO_ACCRUAL_JOURNAL_CODE = "ACCR";
     private static final String ODOO_EARLY_CLOSURE_JOURNAL_CODE = "BNK8";
 
@@ -236,22 +248,29 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 return;
             }
 
-            // Get GL accounts for accrual entries
-            GLAccount interestIncomeAccount = glAccountRepository.findOneByGlCode(INTEREST_INCOME_GL_CODE).orElseThrow(
-                    () -> new RuntimeException("Interest Income GL Account with code " + INTEREST_INCOME_GL_CODE + " not found"));
-
-            GLAccount interestReceivableAccount = glAccountRepository.findOneByGlCode(INTEREST_RECEIVABLE_GL_CODE).orElseThrow(
-                    () -> new RuntimeException("Interest Receivable GL Account with code " + INTEREST_RECEIVABLE_GL_CODE + " not found"));
-
-            // Get head office (adjust this logic based on your office structure)
-            Office headOffice = officeRepository.findById(1L).orElseThrow(() -> new RuntimeException("Head Office not found"));
-
             int successCount = 0;
             int failureCount = 0;
 
             for (LoanMonthlyAccrualJobAudit accrualAudit : unpostedAccruals) {
                 try {
-                    createAccrualJournalEntries(accrualAudit, interestIncomeAccount, interestReceivableAccount, headOffice);
+                    // Get the loan product short name to determine GL codes
+                    String productShortName = getLoanProductShortName(accrualAudit.getLoanId());
+
+                    // Get GL codes based on product type
+                    String interestIncomeGlCode = getInterestIncomeGlCodeForProduct(productShortName);
+                    String interestReceivableGlCode = getInterestReceivableGlCodeForProduct(productShortName);
+
+                    log.info("Processing accrual for Loan ID: {}, Product: {}, using GL codes: Income={}, Receivable={}",
+                            accrualAudit.getLoanId(), productShortName, interestIncomeGlCode, interestReceivableGlCode);
+
+                    // Validate GL accounts exist before posting
+                    glAccountRepository.findOneByGlCode(interestIncomeGlCode).orElseThrow(
+                            () -> new RuntimeException("Interest Income GL Account with code " + interestIncomeGlCode + " not found"));
+
+                    glAccountRepository.findOneByGlCode(interestReceivableGlCode).orElseThrow(() -> new RuntimeException(
+                            "Interest Receivable GL Account with code " + interestReceivableGlCode + " not found"));
+
+                    createAccrualJournalEntries(accrualAudit, interestIncomeGlCode, interestReceivableGlCode);
 
                     // Mark as posted to Odoo
                     accrualAudit.setPostedToOdoo(true);
@@ -276,11 +295,87 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
+     * Get the Interest Income GL code based on the loan product short name.
+     *
+     * @param productShortName
+     *            The loan product short name
+     * @return The appropriate Interest Income GL code
+     */
+    private String getInterestIncomeGlCodeForProduct(String productShortName) {
+        if (productShortName == null) {
+            log.warn("Product short name is null, using default RBF GL code");
+            return RBF_INTEREST_INCOME_GL_CODE;
+        }
+
+        return switch (productShortName) {
+            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_INCOME_GL_CODE;
+            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_INCOME_GL_CODE;
+            case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_INCOME_GL_CODE;
+            default -> {
+                log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
+                yield RBF_INTEREST_INCOME_GL_CODE;
+            }
+        };
+    }
+
+    /**
+     * Get the Interest Receivable GL code based on the loan product short name.
+     *
+     * @param productShortName
+     *            The loan product short name
+     * @return The appropriate Interest Receivable GL code
+     */
+    private String getInterestReceivableGlCodeForProduct(String productShortName) {
+        if (productShortName == null) {
+            log.warn("Product short name is null, using default RBF GL code");
+            return RBF_INTEREST_RECEIVABLE_GL_CODE;
+        }
+
+        return switch (productShortName) {
+            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_RECEIVABLE_GL_CODE;
+            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_RECEIVABLE_GL_CODE;
+            case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_RECEIVABLE_GL_CODE;
+            default -> {
+                log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
+                yield RBF_INTEREST_RECEIVABLE_GL_CODE;
+            }
+        };
+    }
+
+    /**
+     * Get the loan product short name for a given loan ID by querying the database.
+     *
+     * @param loanId
+     *            The loan ID
+     * @return The loan product short name, or null if not found
+     */
+    private String getLoanProductShortName(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT lp.short_name FROM m_loan l " + "JOIN m_product_loan lp ON l.product_id = lp.id " + "WHERE l.id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, loanId);
+        } catch (Exception e) {
+            log.warn("Failed to get loan product short name for loan ID {}: {}", loanId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Post accrual journal entries directly to Odoo without creating database records. Creates debit and credit journal
      * lines on-the-fly and posts them to Odoo.
+     *
+     * @param accrualAudit
+     *            The accrual audit record containing loan and amount details
+     * @param interestIncomeGlCode
+     *            The GL code for interest income (credit account)
+     * @param interestReceivableGlCode
+     *            The GL code for interest receivable (debit account)
      */
-    private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, GLAccount interestIncomeAccount,
-            GLAccount interestReceivableAccount, Office office) {
+    private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, String interestIncomeGlCode,
+            String interestReceivableGlCode) {
 
         String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getId() + "_" + System.currentTimeMillis();
         BigDecimal accrualAmount = accrualAudit.getTotalInterestAccrualDerived();
@@ -290,8 +385,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         try {
             // Post accrual journal entries directly to Odoo without creating database records
             Long odooMoveId = odooJournalEntryService.postAccrualJournalEntriesToOdoo(accrualAudit.getLoanId(), transactionId,
-                    transactionDate, description, accrualAmount, INTEREST_INCOME_GL_CODE, // Credit account (300000)
-                    INTEREST_RECEIVABLE_GL_CODE, // Debit account (100034)
+                    transactionDate, description, accrualAmount, interestIncomeGlCode, // Credit account
+                                                                                       // (product-specific)
+                    interestReceivableGlCode, // Debit account (product-specific)
                     ODOO_ACCRUAL_JOURNAL_CODE);
 
             if (odooMoveId != null) {
