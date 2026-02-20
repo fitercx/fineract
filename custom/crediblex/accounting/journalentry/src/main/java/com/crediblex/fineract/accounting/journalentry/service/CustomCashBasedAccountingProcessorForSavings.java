@@ -41,8 +41,6 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
     private static final Long DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
     private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
-    private static final Set<Long> MANUAL_WITHDRAWAL_PAYMENT_TYPE_IDS = Set.of(RBF_PAYMENT_TYPE_ID, DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID,
-            PROCESSING_FEE_PAYMENT_TYPE_ID);
 
     // LOC Activation Processing Fee GL Codes
     private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
@@ -255,7 +253,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     processedTransactionIndices.add(i);
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && MANUAL_WITHDRAWAL_PAYMENT_TYPE_IDS.contains(paymentTypeId)) {
+                    && paymentTypeId != null) {
                 boolean processed = handleManualWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId,
                         transactionDate, amount, paymentTypeId, isReversal, savingsTransactionDTO);
                 if (processed) {
@@ -399,21 +397,16 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     paymentTypeId, isReversal);
         }
 
-        // LOC Receivable/Payable withdrawal handling
-        if (paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID) && linkedLoanProductId != null) {
-            boolean receivableProcessed = false;
-            boolean payableProcessed = false;
+        // LOC Receivable withdrawal handling (disbursement OR refund)
+        if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
+            return handleLOCReceivableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
+                    paymentTypeId);
+        }
 
-            if (locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                receivableProcessed = handleLOCReceivableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId,
-                        transactionDate, amount, paymentTypeId);
-            }
-            if (locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
-                payableProcessed = handleLOCPayableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId,
-                        transactionDate, amount, paymentTypeId);
-            }
-
-            return receivableProcessed || payableProcessed;
+        // LOC Payable withdrawal handling (disbursement OR refund)
+        if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
+            return handleLOCPayableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
+                    paymentTypeId);
         }
 
         // LOC Activation Processing Fee withdrawal handling
@@ -460,26 +453,50 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Handles LOC Receivable withdrawal journal entries. DR 200041 (Loan Payable - Invoice Discounting), CR Bank
+     * Handles LOC Receivable withdrawal journal entries. - Payment type 73 (DISBURSEMENT_OF_INVOICE): DR 200041 (Loan
+     * Payable - Invoice Discounting), CR Bank - Other payment types (refund): DR 200086 (Invoice Discounting Clearing),
+     * CR 100062 (Client Receivable Clearing)
      */
     private boolean handleLOCReceivableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
 
-        log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");
+        // Check if this is a disbursement withdrawal (payment type 73) or a refund withdrawal (other payment types)
+        if (paymentTypeId != null && paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID)) {
+            // Disbursement withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR Bank
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable disbursement withdrawal - DR 200041, CR Bank");
 
-        GLAccount locLoanPayableAccount = locAccountingHelper.getReceivableLOCGLAccount();
-        GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId, CashAccountsForSavings.SAVINGS_REFERENCE.getValue(),
-                paymentTypeId);
+            GLAccount locLoanPayableAccount = locAccountingHelper.getReceivableLOCGLAccount();
+            GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                    CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
 
-        if (locLoanPayableAccount == null || bankAccount == null) {
-            log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic for this transaction");
-            return false;
+            if (locLoanPayableAccount == null || bankAccount == null) {
+                log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, locLoanPayableAccount, savingsId, transactionId,
+                    transactionDate, amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
+                    amount);
+        } else {
+            // Refund withdrawal: Opposite of deposit (DR 200086, CR 100062)
+            // Deposit was: DR 100062 (Client Receivable Clearing), CR 200086 (Invoice Discounting Clearing)
+            // Refund is: DR 200086 (Invoice Discounting Clearing), CR 100062 (Client Receivable Clearing)
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable refund withdrawal - DR 200086, CR 100062");
+
+            GLAccount invoiceDiscountingClearingAccount = locAccountingHelper.getLOCReceivableCreditGLAccount(); // 200086
+            GLAccount clientReceivableAccount = locAccountingHelper.getLOCReceivableDebitGLAccount(); // 100062
+
+            if (invoiceDiscountingClearingAccount == null || clientReceivableAccount == null) {
+                log.error("LOC Receivable GL Accounts (200086 or 100062) not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, invoiceDiscountingClearingAccount, savingsId, transactionId,
+                    transactionDate, amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, clientReceivableAccount, savingsId, transactionId,
+                    transactionDate, amount);
         }
-
-        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locLoanPayableAccount, savingsId, transactionId,
-                transactionDate, amount);
-        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
-                amount);
 
         return true;
     }
