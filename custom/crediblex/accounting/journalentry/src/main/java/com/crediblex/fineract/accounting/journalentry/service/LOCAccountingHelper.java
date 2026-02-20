@@ -136,8 +136,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Payable deposits. Looks up by
-     * GL code to avoid hardcoding account ID.
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Payable deposits. Looks up by GL
+     * code to avoid hardcoding account ID.
      *
      * @return The GLAccount for LOC Receivable Debit, or null if not found
      */
@@ -151,8 +151,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200080 account (LOC - Clearing Account) for LOC Payable refunds. Looks up
-     * by GL code to avoid hardcoding account ID.
+     * Get GL 200080 account (LOC - Clearing Account) for LOC Payable refunds. Looks up by GL code to avoid hardcoding
+     * account ID.
      *
      * @return The GLAccount for LOC Payable Credit, or null if not found
      */
@@ -164,7 +164,6 @@ public class LOCAccountingHelper {
             return null;
         }
     }
-
 
     /**
      * Check if loan product is Payable LOC. Queries product short_name from database to identify Payable LOC products.

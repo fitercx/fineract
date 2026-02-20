@@ -41,8 +41,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
     private static final Long DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
     private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
-    private static final Set<Long> MANUAL_WITHDRAWAL_PAYMENT_TYPE_IDS = Set.of(RBF_PAYMENT_TYPE_ID,
-            DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID, PROCESSING_FEE_PAYMENT_TYPE_ID);
+    private static final Set<Long> MANUAL_WITHDRAWAL_PAYMENT_TYPE_IDS = Set.of(RBF_PAYMENT_TYPE_ID, DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID,
+            PROCESSING_FEE_PAYMENT_TYPE_ID);
 
     // LOC Activation Processing Fee GL Codes
     private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
@@ -185,7 +185,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     }
                     continue;
                 }
-                if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)){
+                if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
                     // LOC Payable Normal Deposit: DR 100062 (Client Receivable Clearing), CR 200080
                     // (LOC - Clearing Account)
                     log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable normal deposit - DR 100062, CR 200080");
@@ -511,7 +511,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
         } else {
             // Refund withdrawal: Opposite of deposit (DR 200080, CR 100062)
             // Deposit was: DR 100062 (Client Receivable Clearing), CR 200080 (LOC - Clearing Account)
-            // Refund is:   DR 200080 (LOC - Clearing Account), CR 100062 (Client Receivable Clearing)
+            // Refund is: DR 200080 (LOC - Clearing Account), CR 100062 (Client Receivable Clearing)
             log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable refund withdrawal - DR 200080, CR 100062");
 
             GLAccount clearingAccount = locAccountingHelper.getLOCPayableCreditGLAccount(); // 200080
