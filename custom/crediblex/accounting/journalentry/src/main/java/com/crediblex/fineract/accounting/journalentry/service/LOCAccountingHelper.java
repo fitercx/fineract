@@ -39,6 +39,7 @@ public class LOCAccountingHelper {
     public static final String LOC_ACTIVATION_PRODUCT_SHORT_NAME = "LAA";
     public static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL";
     public static final String RBF_PRODUCT_SHORT_NAME = "RBF";
+    public static final String PAYABLE_LOC_PRODUCT_SHORT_NAME = "LPLL";
 
     // Payment Type IDs
     public static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L;
@@ -51,8 +52,11 @@ public class LOCAccountingHelper {
     public static final String LOC_ACTIVATION_VAT_GL_CODE = "200065";
     public static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062";
     public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086";
+    public static final String LOC_PAYABLE_DEBIT_GL_CODE = "100062";
+    public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
     public static final String RBF_GL_CODE = "200040";
+    public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
 
     private final JdbcTemplate jdbcTemplate;
     private final GLAccountRepository glAccountRepository;
@@ -84,6 +88,104 @@ public class LOCAccountingHelper {
         } catch (Exception e) {
             log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Get GL 200042 account (Payable LOC Loan Payable). Looks up by GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for Payable LOC Loan Payable, or null if not found
+     */
+    public GLAccount getPayableLOCGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(PAYABLE_LOC_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", PAYABLE_LOC_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits. Looks up by
+     * GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for LOC Receivable Debit, or null if not found
+     */
+    public GLAccount getLOCReceivableDebitGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_DEBIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_RECEIVABLE_DEBIT_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200086 account (Invoice Discounting - Clearing - Current Liability) for LOC Receivable deposits. Looks up
+     * by GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for LOC Receivable Credit, or null if not found
+     */
+    public GLAccount getLOCReceivableCreditGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_CREDIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_RECEIVABLE_CREDIT_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Payable deposits. Looks up by
+     * GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for LOC Receivable Debit, or null if not found
+     */
+    public GLAccount getLOCPayableDebitGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_PAYABLE_DEBIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_PAYABLE_DEBIT_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 200080 account (LOC - Clearing Account) for LOC Payable refunds. Looks up
+     * by GL code to avoid hardcoding account ID.
+     *
+     * @return The GLAccount for LOC Payable Credit, or null if not found
+     */
+    public GLAccount getLOCPayableCreditGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_PAYABLE_CREDIT_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_PAYABLE_CREDIT_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+
+    /**
+     * Check if loan product is Payable LOC. Queries product short_name from database to identify Payable LOC products.
+     *
+     * @param loanProductId
+     *            The loan product ID
+     * @return true if it's a Payable LOC loan product
+     */
+    public boolean isPayableLOCProduct(Long loanProductId) {
+        if (loanProductId == null) {
+            return false;
+        }
+
+        try {
+            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
+            String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+        } catch (Exception e) {
+            log.debug("LOCAccountingHelper: Error checking Payable LOC loan product for loanProductId {}: {}", loanProductId,
+                    e.getMessage());
+            return false;
         }
     }
 
