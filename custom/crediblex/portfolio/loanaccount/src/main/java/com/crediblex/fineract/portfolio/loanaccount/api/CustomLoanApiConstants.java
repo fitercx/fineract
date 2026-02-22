@@ -18,4 +18,10 @@ public final class CustomLoanApiConstants {
      */
     public static final String WITHDRAWAL_AMOUNT_PARAM = "withdrawalAmount";
 
+    /**
+     * Required when {@link #AUTO_WITHDRAW_FROM_SAVINGS_PARAM} is true. Payment type id to use for the savings
+     * withdrawal transaction created by the custom auto-withdraw step.
+     */
+    public static final String WITHDRAWAL_PAYMENT_TYPE_ID_PARAM = "withdrawalPaymentTypeId";
+
 }

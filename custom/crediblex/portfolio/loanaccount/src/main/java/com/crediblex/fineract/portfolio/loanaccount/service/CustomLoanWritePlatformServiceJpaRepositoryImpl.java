@@ -325,15 +325,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // - withdrawalAmount: optional override for the amount to withdraw (otherwise defaults to the net disbursed
             // amount).
             //
-            // Core Fineract's disbursement validator may flag these as unsupported; ignore the exception only when the
-            // reported unsupported parameters are limited to the above two fields.
+            // Note: withdrawalPaymentTypeId is validated by the custom withdrawal step (and is required when
+            // autoWithdrawFromSavings is true). Core's disbursement validator should not see it, but if it ever does,
+            // we do NOT treat it as ignorable.
+            //
+            // Core Fineract's disbursement validator may flag the two parameters above as unsupported; ignore the
+            // exception only when the reported unsupported parameters are limited to those two fields.
             final List<String> unsupported = e.getUnsupportedParameters();
             if (unsupported == null || unsupported.isEmpty()) {
                 throw e;
             }
 
             final Set<String> ignorable = Set.of(CustomLoanApiConstants.AUTO_WITHDRAW_FROM_SAVINGS_PARAM,
-                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM);
+                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM, CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
             final List<String> nonIgnorable = unsupported.stream().filter(p -> !ignorable.contains(p)).toList();
 
             if (nonIgnorable.isEmpty()) {
@@ -343,7 +347,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 // If both ignorable and non-ignorable parameters are present, core will send everything back to the UI.
                 // Sanitize the exception so the response only reports the truly unsupported parameters.
                 final UnsupportedParameterException sanitized = new UnsupportedParameterException(nonIgnorable);
-                sanitized.initCause(e);
+                sanitized.addSuppressed(e);
                 throw sanitized;
             }
         }
@@ -823,13 +827,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(originalCommand.dateFormat()).withLocale(locale);
         final LocalDate transactionDate = originalCommand.localDateValueOfParameterNamed("actualDisbursementDate");
 
-        // Savings withdrawal requires a paymentTypeId
-        Long paymentTypeId = null;
-        if (originalCommand.parameterExists("paymentTypeId")) {
-            paymentTypeId = originalCommand.longValueOfParameterNamed("paymentTypeId");
-        }
-        if (paymentTypeId == null) {
-            paymentTypeId = resolveDefaultPaymentTypeIdForInvoiceDisbursement();
+        // Savings withdrawal requires a paymentTypeId (must be provided by the frontend when auto-withdraw is enabled)
+        final Long paymentTypeId = originalCommand.longValueOfParameterNamed(CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
+        if (paymentTypeId == null || paymentTypeId <= 0L) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disburse.to.savings.auto.withdraw.payment.type.required",
+                    "Parameter '" + CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM
+                            + "' is required and must be a positive number when autoWithdrawFromSavings is true",
+                    CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
         }
 
         final JsonObject json = new JsonObject();
