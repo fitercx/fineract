@@ -167,7 +167,8 @@ public class SlackNotificationService {
             sb.append(String.format("Amount: `%s`", entry.getAmount().toPlainString()));
         }
 
-        sb.append("\n:exclamation: _Error: ").append(entry.getTruncatedErrorMessage(150)).append("_");
+        sb.append("\n:exclamation: _Error: ").append(entry.getErrorMessage() != null ? entry.getErrorMessage() : "Unknown error")
+                .append("_");
 
         return sb.toString();
     }
