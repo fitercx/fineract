@@ -166,8 +166,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get the loan product short name for a given loan ID by querying the database.
-     * This joins m_loan with m_product_loan to get the product short name.
+     * Get the loan product short name for a given loan ID by querying the database. This joins m_loan with
+     * m_product_loan to get the product short name.
      *
      * @param loanId
      *            The loan ID (not loan product ID)
