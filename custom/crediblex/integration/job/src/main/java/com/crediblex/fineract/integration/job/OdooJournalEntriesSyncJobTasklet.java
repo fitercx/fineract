@@ -18,11 +18,13 @@
  */
 package com.crediblex.fineract.integration.job;
 
+import com.crediblex.fineract.integration.odoo.domain.FailedEntryDetail;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
 import com.crediblex.fineract.integration.odoo.service.EntryProcessingResult;
 import com.crediblex.fineract.integration.odoo.service.JournalEntryOdooTrackingService;
 import com.crediblex.fineract.integration.odoo.service.OdooJournalEntryService;
+import com.crediblex.fineract.integration.odoo.service.SlackNotificationService;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAudit;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanMonthlyAccrualJobAuditRepository;
 import java.math.BigDecimal;
@@ -56,6 +58,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private final LoanMonthlyAccrualJobAuditRepository loanMonthlyAccrualJobAuditRepository;
     private final GLAccountRepository glAccountRepository;
     private final JdbcTemplate jdbcTemplate;
+
+    // Optional: Slack notification service (only available if slack.enabled=true)
+    private SlackNotificationService slackNotificationService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSlackNotificationService(SlackNotificationService slackNotificationService) {
+        this.slackNotificationService = slackNotificationService;
+    }
 
     // Product Short Names
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
@@ -101,6 +111,9 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             int failureCount = 0;
             int movesCreated = 0;
 
+            // List to collect failed entry details for Slack notification
+            List<FailedEntryDetail> failedEntryDetails = new ArrayList<>();
+
             // Process entries grouped by loan ID
             for (Map.Entry<Long, List<JournalEntryOdooSync>> loanGroup : entriesByLoanId.entrySet()) {
                 Long loanId = loanGroup.getKey();
@@ -121,6 +134,18 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         for (JournalEntryOdooSync sync : loanEntries) {
                             journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), errorMsg);
                             failureCount++;
+
+                            // Collect failed entry details for Slack notification
+                            failedEntryDetails.add(FailedEntryDetail.builder()
+                                    .journalEntryId(sync.getJournalEntry().getId())
+                                    .loanId(sync.getLoanId())
+                                    .businessEventType(sync.getBusinessEventType())
+                                    .glAccountCode(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getGlCode() : null)
+                                    .glAccountName(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getName() : null)
+                                    .amount(sync.getJournalEntry().getAmount())
+                                    .transactionDate(sync.getJournalEntry().getTransactionDate())
+                                    .errorMessage(errorMsg)
+                                    .build());
                         }
                         continue;
                     }
@@ -172,6 +197,18 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     for (JournalEntryOdooSync sync : loanEntries) {
                         journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), detailedErrorMsg);
                         failureCount++;
+
+                        // Collect failed entry details for Slack notification
+                        failedEntryDetails.add(FailedEntryDetail.builder()
+                                .journalEntryId(sync.getJournalEntry().getId())
+                                .loanId(sync.getLoanId())
+                                .businessEventType(sync.getBusinessEventType())
+                                .glAccountCode(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getGlCode() : null)
+                                .glAccountName(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getName() : null)
+                                .amount(sync.getJournalEntry().getAmount())
+                                .transactionDate(sync.getJournalEntry().getTransactionDate())
+                                .errorMessage(detailedErrorMsg)
+                                .build());
                     }
                 }
             }
@@ -218,12 +255,29 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     for (JournalEntryOdooSync sync : cashMarginEntries) {
                         journalEntryOdooTrackingService.markAsFailed(sync.getJournalEntry().getId(), detailedErrorMsg);
                         failureCount++;
+
+                        // Collect failed entry details for Slack notification
+                        failedEntryDetails.add(FailedEntryDetail.builder()
+                                .journalEntryId(sync.getJournalEntry().getId())
+                                .loanId(sync.getLoanId())
+                                .businessEventType(sync.getBusinessEventType())
+                                .glAccountCode(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getGlCode() : null)
+                                .glAccountName(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getName() : null)
+                                .amount(sync.getJournalEntry().getAmount())
+                                .transactionDate(sync.getJournalEntry().getTransactionDate())
+                                .errorMessage(detailedErrorMsg)
+                                .build());
                     }
                 }
             }
 
             log.info("Odoo Journal Entries Sync Job completed - Success: {}, Failures: {}, Moves Created: {}", successCount, failureCount,
                     movesCreated);
+
+            // Send Slack notification if there are failures
+            if (failureCount > 0 && slackNotificationService != null) {
+                slackNotificationService.sendOdooSyncFailureNotification(failureCount, successCount, failedEntryDetails);
+            }
 
         } catch (Exception e) {
             log.error("Error during Odoo Journal Entries Sync Job execution", e);
