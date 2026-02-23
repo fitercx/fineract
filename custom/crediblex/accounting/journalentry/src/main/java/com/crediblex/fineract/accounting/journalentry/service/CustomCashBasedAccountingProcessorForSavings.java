@@ -36,21 +36,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccountingProcessorForSavings {
 
-    // Hardcoded RBF Configuration
-    private static final String RBF_PRODUCT_SHORT_NAME = "RBF"; // RBF loan product short_name
-
-    // Hardcoded LOC Receivable Configuration
-    private static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL"; // LOC Receivable loan product short_name
-    private static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
-                                                                         // Asset
-    private static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086"; // Invoice Discounting - Clearing - Current
-                                                                          // Liability
-    private static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041"; // Loan Payable - Invoice Discounting -
-                                                                                // Receivable - Current Liability
-
     // Payment Type IDs
     private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
-    private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
+    private static final Long DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
     private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
 
     // LOC Activation Processing Fee GL Codes
@@ -105,17 +93,24 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             if (savingsTransactionDTO.getTransactionType().isDeposit() && savingsTransactionDTO.isAccountTransfer()) {
                 // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
-                if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isRBFLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: RBF loan product detected - Skipping journal entries for deposit (loan disbursement)");
                     // Skip journal entry creation for RBF deposits
                     processedTransactionIndices.add(i);
                     continue;
                 }
-                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: LOC Receivable loan product detected - Skipping journal entries for deposit (loan disbursement)");
                     // Skip journal entry creation for LOC Receivable deposits - handled on loan side
+                    processedTransactionIndices.add(i);
+                    continue;
+                }
+                if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for deposit (loan disbursement)");
+                    // Skip journal entry creation for LOC Payable deposits - handled on loan side
                     processedTransactionIndices.add(i);
                     continue;
                 }
@@ -130,20 +125,28 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && savingsTransactionDTO.isAccountTransfer()) {
                 // Check if the linked loan product is RBF or LOC Receivable (not the savings product)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
-                if (linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isRBFLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: RBF loan product detected - Skipping journal entries for withdrawal (loan repayment)");
                     // Skip journal entry creation for RBF withdrawals
                     processedTransactionIndices.add(i);
                     continue;
                 }
-                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
                     log.info(
                             "CustomCashBasedAccountingProcessorForSavings: LOC Receivable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
                     // Skip journal entry creation for LOC Receivable withdrawals - handled on loan side
+                    processedTransactionIndices.add(i);
                     continue;
                 }
-                // Non-RBF/Non-LOC Receivable: Use default parent logic
+                if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForSavings: LOC Payable loan product detected - Skipping journal entries for withdrawal (loan repayment)");
+                    // Skip journal entry creation for LOC Payable withdrawals - handled on loan side
+                    processedTransactionIndices.add(i);
+                    continue;
+                }
+                // Non-RBF/Non-LOC Receivable/Non-LOC Payable: Use default parent logic
                 this.helper.createCashBasedJournalEntriesAndReversalsForSavings(office, currencyCode,
                         CashAccountsForSavings.SAVINGS_CONTROL.getValue(), FinancialActivity.LIABILITY_TRANSFER.getValue(),
                         savingsProductId, paymentTypeId, savingsId, transactionId, transactionDate, amount, isReversal);
@@ -161,12 +164,12 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     continue;
                 }
 
-                if (linkedLoanProductId != null && isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
                     // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086
                     // (Invoice Discounting Clearing)
                     log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
-                    GLAccount debitAccount = getLOCReceivableDebitGLAccount();
-                    GLAccount creditAccount = getLOCReceivableCreditGLAccount();
+                    GLAccount debitAccount = locAccountingHelper.getLOCReceivableDebitGLAccount();
+                    GLAccount creditAccount = locAccountingHelper.getLOCReceivableCreditGLAccount();
                     if (debitAccount != null && creditAccount != null) {
                         this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
                                 transactionDate, amount);
@@ -179,6 +182,25 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     }
                     continue;
                 }
+                if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
+                    // LOC Payable Normal Deposit: DR 100062 (Client Receivable Clearing), CR 200080
+                    // (LOC - Clearing Account)
+                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable normal deposit - DR 100062, CR 200080");
+                    GLAccount debitAccount = locAccountingHelper.getLOCPayableDebitGLAccount();
+                    GLAccount creditAccount = locAccountingHelper.getLOCPayableCreditGLAccount();
+                    if (debitAccount != null && creditAccount != null) {
+                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, creditAccount, savingsId, transactionId,
+                                transactionDate, amount);
+                        processedTransactionIndices.add(i);
+                    } else {
+                        log.error("LOC Payable GL Accounts (100062 or 200080) not found, using default logic for this transaction");
+                        // Do NOT mark as processed - let parent handle it
+                    }
+                    continue;
+                }
+
                 // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
                 // 100062
                 Long effectivePaymentTypeId = paymentTypeId;
@@ -230,161 +252,12 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     processedTransactionIndices.add(i);
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null
-                    && (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) || paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID)
-                            || paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID))) {
-                // Manual withdrawal with payment_type=5 (RBF) or payment_type=73 (LOC Receivable)
-                Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
-
-                if (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) && linkedLoanProductId != null && isRBFLoanProduct(linkedLoanProductId)) {
-                    // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
-                    // For reversals: CR 200040 (RBF Loan Payable), DR 100003 (Bank) - swap the entries
-                    GLAccount rbfGLAccount = locAccountingHelper.getRBFGLAccount();
-                    GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
-                            CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
-                    if (rbfGLAccount != null && bankAccount != null) {
-                        if (isReversal) {
-                            // Reversal: Swap DR/CR - CR 200040, DR 100003
-                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            log.info("CustomCashBasedAccountingProcessorForSavings: RBF withdrawal REVERSAL - CR 200040, DR 100003");
-                        } else {
-                            // Normal: DR 200040, CR 100003
-                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            log.info("CustomCashBasedAccountingProcessorForSavings: RBF withdrawal - DR 200040, CR 100003");
-                        }
-                        processedTransactionIndices.add(i);
-                    } else {
-                        log.error("RBF GL Account 200040 or Bank Account not found, using default logic for this transaction");
-                        // Do NOT mark as processed - let parent handle it
-                    }
-                } else if (paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID) && linkedLoanProductId != null
-                        && isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
-                    // 100003 (Bank)
-                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");
-                    GLAccount locLoanPayableAccount = getLOCReceivableLoanPayableGLAccount();
-                    GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
-                            CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
-                    if (locLoanPayableAccount != null && bankAccount != null) {
-                        this.helper.createDebitJournalEntryForSavings(office, currencyCode, locLoanPayableAccount, savingsId, transactionId,
-                                transactionDate, amount);
-                        this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId,
-                                transactionDate, amount);
-                        processedTransactionIndices.add(i);
-                    } else {
-                        log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic for this transaction");
-                        // Do NOT mark as processed - let parent handle it
-                    }
-                } else if (paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID) && linkedLoanProductId == null
-                        && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
-                    // LOC Activation Processing Fee withdrawal:
-                    // DR 100062 (Client Receivable Clearing Acc - Current Asset) - Total amount
-                    // CR 300004 (Loan Servicing / Processing Fee Income - Revenue) - Fee amount (excluding VAT)
-                    // CR 200065 (Value Added Tax - VAT - Current Liability) - VAT amount
-                    log.info(
-                            "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee withdrawal - DR 100062, CR 300004, CR 200065");
-
-                    GLAccount debitAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_DEBIT_GL_CODE).orElse(null);
-                    GLAccount feeIncomeAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_FEE_INCOME_GL_CODE).orElse(null);
-                    GLAccount vatAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_VAT_GL_CODE).orElse(null);
-
-                    if (debitAccount != null && feeIncomeAccount != null && vatAccount != null) {
-                        // Get the tax/VAT amount from the LOC charge linked to this savings account
-                        // The LOC charge has the actual tax amount configured (not hardcoded 5%)
-                        BigDecimal vatAmount = BigDecimal.ZERO;
-                        BigDecimal feeAmount = amount;
-
-                        // First, try to get VAT from taxPayments in the SavingsTransactionDTO
-                        List<org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO> taxPaymentsList = savingsTransactionDTO
-                                .getTaxPayments();
-                        if (taxPaymentsList != null && !taxPaymentsList.isEmpty()) {
-                            for (org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO taxPayment : taxPaymentsList) {
-                                if (taxPayment.getAmount() != null && taxPayment.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                                    vatAmount = vatAmount.add(taxPayment.getAmount());
-                                }
-                            }
-                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                feeAmount = amount.subtract(vatAmount);
-                                log.info("CustomCashBasedAccountingProcessorForSavings: Got VAT {} from taxPayments, fee amount = {}",
-                                        vatAmount, feeAmount);
-                            }
-                        }
-
-                        // Fallback 1: Query the LOC charges directly using the settlement savings account ID
-                        // This is more reliable than querying through the paid_by table (similar to LOC API approach)
-                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
-                            vatAmount = locAccountingHelper.getLOCChargeTaxAmountBySavingsAccount(savingsId);
-                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                feeAmount = amount.subtract(vatAmount);
-                                log.info(
-                                        "CustomCashBasedAccountingProcessorForSavings: Got VAT {} from LOC charges (by savings account), fee amount = {}",
-                                        vatAmount, feeAmount);
-                            }
-                        }
-
-                        // Fallback 2: Query the LOC charge via paid_by link table (legacy approach)
-                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
-                            vatAmount = locAccountingHelper.getLOCChargeTaxAmount(transactionId);
-                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                feeAmount = amount.subtract(vatAmount);
-                                log.info(
-                                        "CustomCashBasedAccountingProcessorForSavings: Got VAT {} from LOC charge (by transaction), fee amount = {}",
-                                        vatAmount, feeAmount);
-                            }
-                        }
-
-                        // If still no VAT found, the charge might not have tax configured - use full amount as fee
-                        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
-                            log.info(
-                                    "CustomCashBasedAccountingProcessorForSavings: No VAT found for LOC Activation, using full amount {} as fee",
-                                    amount);
-                            feeAmount = amount;
-                        }
-
-                        if (isReversal) {
-                            // Reversal: Swap DR/CR
-                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId,
-                                    transactionDate, feeAmount);
-                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                this.helper.createDebitJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
-                                        transactionDate, vatAmount);
-                            }
-                            log.info(
-                                    "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee REVERSAL - CR 100062 {}, DR 300004 {}, DR 200065 {}",
-                                    amount, feeAmount, vatAmount);
-                        } else {
-                            // Normal: DR 100062 (total), CR 300004 (fee), CR 200065 (VAT)
-                            this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId,
-                                    transactionDate, amount);
-                            this.helper.createCreditJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId,
-                                    transactionDate, feeAmount);
-                            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                this.helper.createCreditJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId,
-                                        transactionDate, vatAmount);
-                            }
-                            log.info(
-                                    "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee - DR 100062 {}, CR 300004 {}, CR 200065 {}",
-                                    amount, feeAmount, vatAmount);
-                        }
-                        processedTransactionIndices.add(i);
-                    } else {
-                        log.error(
-                                "LOC Activation GL Accounts (100062, 300004, or 200065) not found, using default logic for this transaction");
-                        // Do NOT mark as processed - let parent handle it
-                    }
-                } else {
-                    // Payment type matched but product type didn't, use default logic
-                    // Do NOT mark as processed - let parent handle it
+                    && paymentTypeId != null) {
+                boolean processed = handleManualWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId,
+                        transactionDate, amount, paymentTypeId, isReversal, savingsTransactionDTO);
+                if (processed) {
+                    processedTransactionIndices.add(i);
                 }
-
             }
             // For all other transaction types that were not explicitly handled, they will be processed by parent below
         }
@@ -468,89 +341,6 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Check if loan product is RBF Queries product short_name from database to identify RBF products
-     */
-    private boolean isRBFLoanProduct(Long loanProductId) {
-        if (loanProductId == null) {
-            return false;
-        }
-
-        try {
-            // Query product short_name from database
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return RBF_PRODUCT_SHORT_NAME.equals(shortName);
-        } catch (Exception e) {
-            log.debug("CustomCashBasedAccountingProcessorForSavings: Error checking RBF loan product for loanProductId {}: {}",
-                    loanProductId, e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Check if loan product is LOC Receivable Queries product short_name from database to identify LOC Receivable
-     * products
-     */
-    private boolean isLOCReceivableLoanProduct(Long loanProductId) {
-        if (loanProductId == null) {
-            return false;
-        }
-
-        try {
-            // Query product short_name from database
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = this.jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
-        } catch (Exception e) {
-            log.debug("CustomCashBasedAccountingProcessorForSavings: Error checking LOC Receivable loan product for loanProductId {}: {}",
-                    loanProductId, e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Get GL 100062 account (Client Receivable Clearing Acc - Current Asset) for LOC Receivable deposits Looks up by GL
-     * code to avoid hardcoding account ID
-     */
-    private GLAccount getLOCReceivableDebitGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_DEBIT_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_DEBIT_GL_CODE,
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Get GL 200086 account (Invoice Discounting - Clearing - Current Liability) for LOC Receivable deposits Looks up
-     * by GL code to avoid hardcoding account ID
-     */
-    private GLAccount getLOCReceivableCreditGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_CREDIT_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_CREDIT_GL_CODE,
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Get GL 200041 account (Loan Payable - Invoice Discounting - Receivable - Current Liability) for LOC Receivable
-     * manual withdrawals Looks up by GL code to avoid hardcoding account ID
-     */
-    private GLAccount getLOCReceivableLoanPayableGLAccount() {
-        try {
-            return glAccountRepository.findOneByGlCode(LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE).orElse(null);
-        } catch (Exception e) {
-            log.error("CustomCashBasedAccountingProcessorForSavings: Error finding GL account {}: {}", LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE,
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    /**
      * Get SAVINGS_CONTROL account for the savings product
      */
     private GLAccount getSavingsControlAccount(Long savingsProductId, Long paymentTypeId) {
@@ -585,6 +375,282 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
         } catch (org.springframework.dao.DataAccessException e) {
             log.warn("CustomCashBasedAccountingProcessorForSavings: Error finding SAVINGS_CONTROL account: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Handles manual withdrawal transactions for RBF, LOC Receivable, LOC Payable, and LOC Activation products.
+     *
+     * @return true if the transaction was processed, false if it should be handled by parent
+     */
+    private boolean handleManualWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId, String transactionId,
+            LocalDate transactionDate, BigDecimal amount, Long paymentTypeId, boolean isReversal,
+            SavingsTransactionDTO savingsTransactionDTO) {
+
+        Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
+
+        // RBF withdrawal handling
+        if (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) && linkedLoanProductId != null
+                && locAccountingHelper.isRBFLoanProduct(linkedLoanProductId)) {
+            return handleRBFWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
+                    paymentTypeId, isReversal);
+        }
+
+        // LOC Receivable withdrawal handling (disbursement OR refund)
+        if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
+            return handleLOCReceivableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
+                    paymentTypeId);
+        }
+
+        // LOC Payable withdrawal handling (disbursement OR refund)
+        if (linkedLoanProductId != null && locAccountingHelper.isPayableLOCProduct(linkedLoanProductId)) {
+            return handleLOCPayableWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
+                    paymentTypeId);
+        }
+
+        // LOC Activation Processing Fee withdrawal handling
+        if (paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID) && linkedLoanProductId == null
+                && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
+            return handleLOCActivationProcessingFeeWithdrawal(office, currencyCode, savingsId, transactionId, transactionDate, amount,
+                    isReversal, savingsTransactionDTO);
+        }
+
+        // Payment type matched but product type didn't - let parent handle it
+        return false;
+    }
+
+    /**
+     * Handles RBF withdrawal journal entries. DR 200040 (RBF Loan Payable), CR Bank For reversals: CR 200040, DR Bank
+     */
+    private boolean handleRBFWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId, String transactionId,
+            LocalDate transactionDate, BigDecimal amount, Long paymentTypeId, boolean isReversal) {
+
+        GLAccount rbfGLAccount = locAccountingHelper.getRBFGLAccount();
+        GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId, CashAccountsForSavings.SAVINGS_REFERENCE.getValue(),
+                paymentTypeId);
+
+        if (rbfGLAccount == null || bankAccount == null) {
+            log.error("RBF GL Account 200040 or Bank Account not found, using default logic for this transaction");
+            return false;
+        }
+
+        if (isReversal) {
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId, transactionDate,
+                    amount);
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
+                    amount);
+            log.info("CustomCashBasedAccountingProcessorForSavings: RBF withdrawal REVERSAL - CR 200040, DR Bank");
+        } else {
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, rbfGLAccount, savingsId, transactionId, transactionDate,
+                    amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
+                    amount);
+            log.info("CustomCashBasedAccountingProcessorForSavings: RBF withdrawal - DR 200040, CR Bank");
+        }
+
+        return true;
+    }
+
+    /**
+     * Handles LOC Receivable withdrawal journal entries. - Payment type 73 (DISBURSEMENT_OF_INVOICE): DR 200041 (Loan
+     * Payable - Invoice Discounting), CR Bank - Other payment types (refund): DR 200086 (Invoice Discounting Clearing),
+     * CR 100062 (Client Receivable Clearing)
+     */
+    private boolean handleLOCReceivableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
+            String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
+
+        // Check if this is a disbursement withdrawal (payment type 73) or a refund withdrawal (other payment types)
+        if (paymentTypeId != null && paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID)) {
+            // Disbursement withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR Bank
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable disbursement withdrawal - DR 200041, CR Bank");
+
+            GLAccount locLoanPayableAccount = locAccountingHelper.getReceivableLOCGLAccount();
+            GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                    CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+
+            if (locLoanPayableAccount == null || bankAccount == null) {
+                log.error("LOC Receivable GL Account 200041 or Bank Account not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, locLoanPayableAccount, savingsId, transactionId,
+                    transactionDate, amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
+                    amount);
+        } else {
+            // Refund withdrawal: Opposite of deposit (DR 200086, CR 100062)
+            // Deposit was: DR 100062 (Client Receivable Clearing), CR 200086 (Invoice Discounting Clearing)
+            // Refund is: DR 200086 (Invoice Discounting Clearing), CR 100062 (Client Receivable Clearing)
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable refund withdrawal - DR 200086, CR 100062");
+
+            GLAccount invoiceDiscountingClearingAccount = locAccountingHelper.getLOCReceivableCreditGLAccount(); // 200086
+            GLAccount clientReceivableAccount = locAccountingHelper.getLOCReceivableDebitGLAccount(); // 100062
+
+            if (invoiceDiscountingClearingAccount == null || clientReceivableAccount == null) {
+                log.error("LOC Receivable GL Accounts (200086 or 100062) not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, invoiceDiscountingClearingAccount, savingsId, transactionId,
+                    transactionDate, amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, clientReceivableAccount, savingsId, transactionId,
+                    transactionDate, amount);
+        }
+
+        return true;
+    }
+
+    /**
+     * Handles LOC Payable withdrawal journal entries. DR 200042 (Loan Payable - Payable LOC), CR Bank
+     */
+    private boolean handleLOCPayableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
+            String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
+
+        // Check if this is a disbursement withdrawal (payment type 73) or a refund withdrawal (other payment types)
+        if (paymentTypeId != null && paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID)) {
+            // Disbursement withdrawal: DR 200042 (Loan Payable - Payable LOC), CR Bank
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable disbursement withdrawal - DR 200042, CR Bank");
+
+            GLAccount locPayableLoanPayableAccount = locAccountingHelper.getPayableLOCGLAccount();
+            GLAccount bankAccount = getLinkedGLAccountForSavingsProduct(savingsProductId,
+                    CashAccountsForSavings.SAVINGS_REFERENCE.getValue(), paymentTypeId);
+
+            if (locPayableLoanPayableAccount == null || bankAccount == null) {
+                log.error("LOC Payable GL Account 200042 or Bank Account not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, locPayableLoanPayableAccount, savingsId, transactionId,
+                    transactionDate, amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
+                    amount);
+        } else {
+            // Refund withdrawal: Opposite of deposit (DR 200080, CR 100062)
+            // Deposit was: DR 100062 (Client Receivable Clearing), CR 200080 (LOC - Clearing Account)
+            // Refund is: DR 200080 (LOC - Clearing Account), CR 100062 (Client Receivable Clearing)
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable refund withdrawal - DR 200080, CR 100062");
+
+            GLAccount clearingAccount = locAccountingHelper.getLOCPayableCreditGLAccount(); // 200080
+            GLAccount clientReceivableAccount = locAccountingHelper.getLOCPayableDebitGLAccount(); // 100062
+
+            if (clearingAccount == null || clientReceivableAccount == null) {
+                log.error("LOC Payable GL Accounts (200080 or 100062) not found, using default logic for this transaction");
+                return false;
+            }
+
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, clearingAccount, savingsId, transactionId, transactionDate,
+                    amount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, clientReceivableAccount, savingsId, transactionId,
+                    transactionDate, amount);
+        }
+
+        return true;
+    }
+
+    /**
+     * Handles LOC Activation Processing Fee withdrawal journal entries. DR 100062 (Client Receivable Clearing Acc), CR
+     * 300004 (Processing Fee Income), CR 200065 (VAT)
+     */
+    private boolean handleLOCActivationProcessingFeeWithdrawal(Office office, String currencyCode, Long savingsId, String transactionId,
+            LocalDate transactionDate, BigDecimal amount, boolean isReversal, SavingsTransactionDTO savingsTransactionDTO) {
+
+        log.info(
+                "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee withdrawal - DR 100062, CR 300004, CR 200065");
+
+        GLAccount debitAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_DEBIT_GL_CODE).orElse(null);
+        GLAccount feeIncomeAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_FEE_INCOME_GL_CODE).orElse(null);
+        GLAccount vatAccount = glAccountRepository.findOneByGlCode(LOC_ACTIVATION_VAT_GL_CODE).orElse(null);
+
+        if (debitAccount == null || feeIncomeAccount == null || vatAccount == null) {
+            log.error("LOC Activation GL Accounts (100062, 300004, or 200065) not found, using default logic for this transaction");
+            return false;
+        }
+
+        // Calculate VAT and fee amounts
+        BigDecimal vatAmount = calculateVATAmount(savingsTransactionDTO, savingsId, transactionId);
+        BigDecimal feeAmount = vatAmount.compareTo(BigDecimal.ZERO) > 0 ? amount.subtract(vatAmount) : amount;
+
+        if (vatAmount.compareTo(BigDecimal.ZERO) == 0) {
+            log.info("CustomCashBasedAccountingProcessorForSavings: No VAT found for LOC Activation, using full amount {} as fee", amount);
+        }
+
+        // Create journal entries
+        createLOCActivationJournalEntries(office, currencyCode, savingsId, transactionId, transactionDate, amount, feeAmount, vatAmount,
+                debitAccount, feeIncomeAccount, vatAccount, isReversal);
+
+        return true;
+    }
+
+    /**
+     * Calculates the VAT amount for LOC Activation processing fee from various sources.
+     */
+    private BigDecimal calculateVATAmount(SavingsTransactionDTO savingsTransactionDTO, Long savingsId, String transactionId) {
+        BigDecimal vatAmount = BigDecimal.ZERO;
+
+        // First, try to get VAT from taxPayments in the SavingsTransactionDTO
+        List<org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO> taxPaymentsList = savingsTransactionDTO.getTaxPayments();
+        if (taxPaymentsList != null && !taxPaymentsList.isEmpty()) {
+            for (org.apache.fineract.accounting.journalentry.data.TaxPaymentDTO taxPayment : taxPaymentsList) {
+                if (taxPayment.getAmount() != null && taxPayment.getAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    vatAmount = vatAmount.add(taxPayment.getAmount());
+                }
+            }
+            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                log.info("CustomCashBasedAccountingProcessorForSavings: Got VAT {} from taxPayments", vatAmount);
+                return vatAmount;
+            }
+        }
+
+        // Fallback 1: Query the LOC charges directly using the settlement savings account ID
+        vatAmount = locAccountingHelper.getLOCChargeTaxAmountBySavingsAccount(savingsId);
+        if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("CustomCashBasedAccountingProcessorForSavings: Got VAT {} from LOC charges (by savings account)", vatAmount);
+            return vatAmount;
+        }
+
+        // Fallback 2: Query the LOC charge via paid_by link table (legacy approach)
+        vatAmount = locAccountingHelper.getLOCChargeTaxAmount(transactionId);
+        if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("CustomCashBasedAccountingProcessorForSavings: Got VAT {} from LOC charge (by transaction)", vatAmount);
+            return vatAmount;
+        }
+
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * Creates journal entries for LOC Activation processing fee withdrawal.
+     */
+    private void createLOCActivationJournalEntries(Office office, String currencyCode, Long savingsId, String transactionId,
+            LocalDate transactionDate, BigDecimal totalAmount, BigDecimal feeAmount, BigDecimal vatAmount, GLAccount debitAccount,
+            GLAccount feeIncomeAccount, GLAccount vatAccount, boolean isReversal) {
+
+        if (isReversal) {
+            // Reversal: Swap DR/CR
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId, transactionDate,
+                    totalAmount);
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId, transactionDate,
+                    feeAmount);
+            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                this.helper.createDebitJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId, transactionDate,
+                        vatAmount);
+            }
+            log.info(
+                    "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee REVERSAL - CR 100062 {}, DR 300004 {}, DR 200065 {}",
+                    totalAmount, feeAmount, vatAmount);
+        } else {
+            // Normal: DR 100062 (total), CR 300004 (fee), CR 200065 (VAT)
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, debitAccount, savingsId, transactionId, transactionDate,
+                    totalAmount);
+            this.helper.createCreditJournalEntryForSavings(office, currencyCode, feeIncomeAccount, savingsId, transactionId,
+                    transactionDate, feeAmount);
+            if (vatAmount.compareTo(BigDecimal.ZERO) > 0) {
+                this.helper.createCreditJournalEntryForSavings(office, currencyCode, vatAccount, savingsId, transactionId, transactionDate,
+                        vatAmount);
+            }
+            log.info(
+                    "CustomCashBasedAccountingProcessorForSavings: LOC Activation processing fee - DR 100062 {}, CR 300004 {}, CR 200065 {}",
+                    totalAmount, feeAmount, vatAmount);
         }
     }
 

@@ -65,7 +65,7 @@ public class OdooJournalEntryService {
 
             boolean isDebit = fineractEntry.isDebitEntry();
 
-            Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode, null, isDebit);
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(fineractAccountCode, null, isDebit, null);
             if (journalId == null) {
                 log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
                         fineractEntry.getId(), fineractAccountCode, null, isDebit);
@@ -348,7 +348,7 @@ public class OdooJournalEntryService {
             }
 
             // Group entries by journal using business event type from tracking records
-            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs);
+            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, loanId);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
@@ -405,9 +405,9 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Group journal entries by their target journal based on GL codes, business event type and debit flag
+     * Group journal entries by their target journal based on GL codes, business event type, debit flag and loan ID
      */
-    private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs) {
+    private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs, Long loanId) {
         Map<Integer, List<JournalEntry>> groupedEntries = new HashMap<>();
 
         for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
@@ -418,15 +418,16 @@ public class OdooJournalEntryService {
             String businessEventType = sync.getBusinessEventType();
             boolean isDebit = entry.isDebitEntry();
 
-            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
+            Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit, loanId);
 
             if (journalId != null) {
                 groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
-                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}) to journal {}", entry.getId(), glCode,
-                        businessEventType, isDebit, journalId);
+                log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}, loanId: {}) to journal {}",
+                        entry.getId(), glCode, businessEventType, isDebit, loanId, journalId);
             } else {
-                log.info("Skipping journal entry {} with GL code {}, business event type {} and isDebit {} - no journal mapping found",
-                        entry.getId(), glCode, businessEventType, isDebit);
+                log.info(
+                        "Skipping journal entry {} with GL code {}, business event type {}, isDebit {} and loanId {} - no journal mapping found",
+                        entry.getId(), glCode, businessEventType, isDebit, loanId);
             }
         }
 
@@ -744,7 +745,7 @@ public class OdooJournalEntryService {
             }
 
             // Group entries by journal using business event type from tracking records
-            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs);
+            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, null);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for business event {} - all entries skipped", businessEventType);
@@ -1076,12 +1077,12 @@ public class OdooJournalEntryService {
                 String businessEventType = sync.getBusinessEventType();
                 boolean isDebit = entry.isDebitEntry();
 
-                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit);
+                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit, loanId);
                 if (journalId != null) {
                     entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
                 } else {
-                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s", glCode,
-                            businessEventType, isDebit);
+                    String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s, loanId: %d",
+                            glCode, businessEventType, isDebit, loanId);
                     failedEntryIds.put(entry.getId(), error);
                 }
             }
@@ -1198,7 +1199,9 @@ public class OdooJournalEntryService {
                 String glCode = entry.getGlAccount().getGlCode();
                 boolean isDebit = entry.isDebitEntry();
 
-                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, sync.getBusinessEventType(), isDebit);
+                // For business event processing, loanId may be available from the sync record
+                Long entryLoanId = sync.getLoanId();
+                Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, sync.getBusinessEventType(), isDebit, entryLoanId);
                 if (journalId != null) {
                     entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
                 } else {

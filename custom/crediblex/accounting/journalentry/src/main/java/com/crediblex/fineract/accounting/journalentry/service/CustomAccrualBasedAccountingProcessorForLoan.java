@@ -195,6 +195,24 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     log.info(
                             "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
                 }
+            } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
+                log.info("CustomAccrualBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200042 account
+                GLAccount payableLOCGLAccount = locAccountingHelper.getPayableLOCGLAccount();
+                if (payableLOCGLAccount == null) {
+                    log.warn("CustomAccrualBasedAccountingProcessorForLoan: GL 200042 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // Payable LOC: Credit GL 200042 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), payableLOCGLAccount);
+                    log.info(
+                            "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200042 for Payable LOC disbursement");
+                }
             } else {
                 log.debug("CustomAccrualBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
                 this.helper.createCreditJournalEntryForLoan(office, currencyCode,

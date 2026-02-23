@@ -214,12 +214,31 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                     log.info(
                             "CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200041 for Receivable LOC disbursement");
                 }
+            } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
+                log.info("CustomCashBasedAccountingProcessorForLoan: Payable LOC product detected - Using GL 200042 for loan product {}",
+                        loanProductId);
+
+                // Get GL 200042 account
+                GLAccount payableLOCGLAccount = locAccountingHelper.getPayableLOCGLAccount();
+                if (payableLOCGLAccount == null) {
+                    log.warn("CustomCashBasedAccountingProcessorForLoan: GL 200042 not found, falling back to LIABILITY_TRANSFER");
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode,
+                            AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
+                            transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
+                } else {
+                    // Payable LOC: Credit GL 200042 directly
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            loanDTO.getNetDisbursalAmount(), payableLOCGLAccount);
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForLoan: Journal entry created with GL 200042 for Payable LOC disbursement");
+                }
             } else {
                 log.debug("CustomCashBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
                 this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                         AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId, loanId,
                         transactionId, transactionDate, loanDTO.getNetDisbursalAmount());
             }
+
         } else {
             this.helper.createCreditJournalEntryForLoan(office, currencyCode,
                     AccountingConstants.CashAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
