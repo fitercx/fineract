@@ -769,17 +769,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .build();
     }
 
-    private Long resolveDefaultPaymentTypeIdForInvoiceDisbursement() {
-        try {
-            return this.paymentTypeRepositoryWrapper.findAll().stream().filter(pt -> {
-                final String name = pt.getName();
-                return (name != null && name.equalsIgnoreCase("Disbursement of Invoice"));
-            }).map(pt -> pt.getId() == null ? 1L : pt.getId()).findFirst().orElse(1L);
-        } catch (Exception e) {
-            return 1L;
-        }
-    }
-
     private boolean shouldAutoWithdrawFromSavings(final JsonCommand command) {
         if (command == null) {
             return false;
