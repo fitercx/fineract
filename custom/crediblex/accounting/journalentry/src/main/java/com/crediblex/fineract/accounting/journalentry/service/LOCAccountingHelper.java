@@ -166,6 +166,28 @@ public class LOCAccountingHelper {
     }
 
     /**
+     * Get the loan product short name for a given loan ID by querying the database. This joins m_loan with
+     * m_product_loan to get the product short name.
+     *
+     * @param loanId
+     *            The loan ID (not loan product ID)
+     * @return The loan product short name, or null if not found
+     */
+    public String getLoanProductShortNameByLoanId(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT lp.short_name FROM m_loan l " + "JOIN m_product_loan lp ON l.product_id = lp.id " + "WHERE l.id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, loanId);
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Failed to get loan product short name for loan ID {}: {}", loanId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Check if loan product is Payable LOC. Queries product short_name from database to identify Payable LOC products.
      *
      * @param loanProductId

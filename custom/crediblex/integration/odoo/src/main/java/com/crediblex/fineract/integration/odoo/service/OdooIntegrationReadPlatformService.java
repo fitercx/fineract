@@ -63,9 +63,15 @@ public interface OdooIntegrationReadPlatformService {
      *
      * @param glCode
      *            GL account code
+     * @param businessEventType
+     *            Business event type
+     * @param isDebit
+     *            Whether the entry is a debit
+     * @param loanId
+     *            Loan ID to determine product type (can be null for non-loan entries)
      * @return Journal ID or null if not found
      */
-    Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit);
+    Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit, Long loanId);
 
     Integer getJournalIdByOdooCode(String odooCode);
 
