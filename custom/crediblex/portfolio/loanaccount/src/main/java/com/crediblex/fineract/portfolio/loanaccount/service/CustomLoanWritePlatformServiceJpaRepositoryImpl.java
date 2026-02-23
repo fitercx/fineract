@@ -149,7 +149,6 @@ import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequired
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
-import org.apache.fineract.portfolio.paymenttype.domain.PaymentTypeRepositoryWrapper;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecks;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.domain.PostDatedChecksRepository;
 import org.apache.fineract.portfolio.repaymentwithpostdatedchecks.service.RepaymentWithPostDatedChecksAssembler;
@@ -194,7 +193,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private LineOfCreditRepository lineOfCreditRepository;
     private final CustomLoanDisbursementService customLoanDisbursementService;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
-    private final PaymentTypeRepositoryWrapper paymentTypeRepositoryWrapper;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -240,8 +238,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             PlatformTransactionManager platformTransactionManager, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
             LocStatusAggregationUtils locStatusAggregationUtils, CustomLoanDisbursementService customLoanDisbursementService,
-            SavingsAccountWritePlatformService savingsAccountWritePlatformService,
-            PaymentTypeRepositoryWrapper paymentTypeRepositoryWrapper) {
+            SavingsAccountWritePlatformService savingsAccountWritePlatformService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -274,7 +271,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.locStatusAggregationUtils = locStatusAggregationUtils;
         this.customLoanDisbursementService = customLoanDisbursementService;
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
-        this.paymentTypeRepositoryWrapper = paymentTypeRepositoryWrapper;
     }
 
     @PostConstruct
@@ -323,7 +319,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // Two custom request parameters control this behavior:
             // - autoWithdrawFromSavings: when true, triggers a savings withdrawal immediately after disbursement.
             // - withdrawalAmount: optional override for the amount to withdraw (otherwise defaults to the net disbursed
-            // amount).
+            // - withdrawalPaymentTypeId: payment type ID for the withdrawal transaction.
             //
             // Note: withdrawalPaymentTypeId is validated by the custom withdrawal step (and is required when
             // autoWithdrawFromSavings is true). Core's disbursement validator should not see it, but if it ever does,
@@ -782,6 +778,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     private BigDecimal resolveWithdrawalAmount(final JsonCommand command, final BigDecimal defaultAmount) {
+        if (defaultAmount == null || defaultAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disburse.to.savings.auto.withdraw.invalid.default.amount",
+                    "Net disbursal amount must be greater than zero to perform auto-withdraw");
+        }
+
         BigDecimal amount = null;
         if (command.parameterExists(CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM)) {
             amount = command.bigDecimalValueOfParameterNamed(CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM);
@@ -791,8 +792,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disburse.to.savings.auto.withdraw.invalid.amount",
-                    "Withdrawal amount must be greater than zero");
+                    "Withdrawal amount is required and must be greater than zero", CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM);
         }
+
+        // Upper bound: cannot withdraw more than the net amount that was actually disbursed to savings.
+        if (amount.compareTo(defaultAmount) > 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disburse.to.savings.auto.withdraw.amount.exceeds.net.disbursal",
+                    "Withdrawal amount must be less than or equal to the net disbursed amount (" + defaultAmount + ")",
+                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM);
+        }
+
         return amount;
     }
 
@@ -818,6 +827,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final DateTimeFormatter fmt = DateTimeFormatter.ofPattern(originalCommand.dateFormat()).withLocale(locale);
         final LocalDate transactionDate = originalCommand.localDateValueOfParameterNamed("actualDisbursementDate");
 
+        log.info(
+                "Performing auto-withdrawal from savings triggered by loan disbursement: savingsAccountId={}, loanId={}, amount={}, transactionDate={}",
+                savingsAccountId, originalCommand.getLoanId(), withdrawalAmount, transactionDate);
+
         // Savings withdrawal requires a paymentTypeId (must be provided by the frontend when auto-withdraw is enabled)
         final Long paymentTypeId = originalCommand.longValueOfParameterNamed(CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
         if (paymentTypeId == null || paymentTypeId <= 0L) {
@@ -828,7 +841,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         final JsonObject json = new JsonObject();
-        json.addProperty("locale", locale.toLanguageTag());
+        json.addProperty("locale", originalCommand.locale());
         json.addProperty("dateFormat", originalCommand.dateFormat());
         json.addProperty("transactionDate", fmt.format(transactionDate));
         json.addProperty("transactionAmount", withdrawalAmount);
