@@ -346,9 +346,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             } else {
                 // If both ignorable and non-ignorable parameters are present, core will send everything back to the UI.
                 // Sanitize the exception so the response only reports the truly unsupported parameters.
-                final UnsupportedParameterException sanitized = new UnsupportedParameterException(nonIgnorable);
-                sanitized.addSuppressed(e);
-                throw sanitized;
+                // IMPORTANT: preserve the original exception instance to satisfy Checkstyle
+                // (AvoidHidingCauseException).
+                e.getUnsupportedParameters().clear();
+                e.getUnsupportedParameters().addAll(nonIgnorable);
+                throw e;
             }
         }
 
