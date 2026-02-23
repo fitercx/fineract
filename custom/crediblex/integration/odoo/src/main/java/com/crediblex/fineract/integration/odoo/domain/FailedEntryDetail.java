@@ -77,7 +77,8 @@ public class FailedEntryDetail {
     /**
      * Returns a truncated error message for display
      *
-     * @param maxLength Maximum length of the error message
+     * @param maxLength
+     *            Maximum length of the error message
      * @return Truncated error message
      */
     public String getTruncatedErrorMessage(int maxLength) {

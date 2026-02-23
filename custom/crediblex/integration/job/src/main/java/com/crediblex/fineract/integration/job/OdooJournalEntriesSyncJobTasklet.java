@@ -136,16 +136,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                             failureCount++;
 
                             // Collect failed entry details for Slack notification
-                            failedEntryDetails.add(FailedEntryDetail.builder().journalEntryId(sync.getJournalEntry().getId())
-                                    .loanId(sync.getLoanId()).businessEventType(sync.getBusinessEventType())
-                                    .glAccountCode(sync.getJournalEntry().getGlAccount() != null
-                                            ? sync.getJournalEntry().getGlAccount().getGlCode()
-                                            : null)
-                                    .glAccountName(
-                                            sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getName()
-                                                    : null)
-                                    .amount(sync.getJournalEntry().getAmount()).transactionDate(sync.getJournalEntry().getTransactionDate())
-                                    .errorMessage(errorMsg).build());
+                            failedEntryDetails.add(createFailedEntryDetail(sync, errorMsg));
                         }
                         continue;
                     }
@@ -165,18 +156,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                             // Find the corresponding sync entry to get full details
                             loanEntries.stream().filter(sync -> sync.getJournalEntry().getId().equals(failedEntryId)).findFirst()
-                                    .ifPresent(sync -> failedEntryDetails
-                                            .add(FailedEntryDetail.builder().journalEntryId(sync.getJournalEntry().getId())
-                                                    .loanId(sync.getLoanId()).businessEventType(sync.getBusinessEventType())
-                                                    .glAccountCode(sync.getJournalEntry().getGlAccount() != null
-                                                            ? sync.getJournalEntry().getGlAccount().getGlCode()
-                                                            : null)
-                                                    .glAccountName(sync.getJournalEntry().getGlAccount() != null
-                                                            ? sync.getJournalEntry().getGlAccount().getName()
-                                                            : null)
-                                                    .amount(sync.getJournalEntry().getAmount())
-                                                    .transactionDate(sync.getJournalEntry().getTransactionDate()).errorMessage(errorMsg)
-                                                    .build()));
+                                    .ifPresent(sync -> failedEntryDetails.add(createFailedEntryDetail(sync, errorMsg)));
                         }
                     }
 
@@ -222,18 +202,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         failureCount++;
 
                         // Collect failed entry details for Slack notification
-                        failedEntryDetails
-                                .add(FailedEntryDetail.builder().journalEntryId(sync.getJournalEntry().getId()).loanId(sync.getLoanId())
-                                        .businessEventType(sync.getBusinessEventType())
-                                        .glAccountCode(sync.getJournalEntry().getGlAccount() != null
-                                                ? sync.getJournalEntry().getGlAccount().getGlCode()
-                                                : null)
-                                        .glAccountName(sync.getJournalEntry().getGlAccount() != null
-                                                ? sync.getJournalEntry().getGlAccount().getName()
-                                                : null)
-                                        .amount(sync.getJournalEntry().getAmount())
-                                        .transactionDate(sync.getJournalEntry().getTransactionDate()).errorMessage(detailedErrorMsg)
-                                        .build());
+                        failedEntryDetails.add(createFailedEntryDetail(sync, detailedErrorMsg));
                     }
                 }
             }
@@ -265,18 +234,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                             // Find the corresponding sync entry to get full details
                             cashMarginEntries.stream().filter(sync -> sync.getJournalEntry().getId().equals(failedEntryId)).findFirst()
-                                    .ifPresent(sync -> failedEntryDetails
-                                            .add(FailedEntryDetail.builder().journalEntryId(sync.getJournalEntry().getId())
-                                                    .loanId(sync.getLoanId()).businessEventType(sync.getBusinessEventType())
-                                                    .glAccountCode(sync.getJournalEntry().getGlAccount() != null
-                                                            ? sync.getJournalEntry().getGlAccount().getGlCode()
-                                                            : null)
-                                                    .glAccountName(sync.getJournalEntry().getGlAccount() != null
-                                                            ? sync.getJournalEntry().getGlAccount().getName()
-                                                            : null)
-                                                    .amount(sync.getJournalEntry().getAmount())
-                                                    .transactionDate(sync.getJournalEntry().getTransactionDate()).errorMessage(errorMsg)
-                                                    .build()));
+                                    .ifPresent(sync -> failedEntryDetails.add(createFailedEntryDetail(sync, errorMsg)));
                         }
                     }
 
@@ -305,18 +263,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                         failureCount++;
 
                         // Collect failed entry details for Slack notification
-                        failedEntryDetails
-                                .add(FailedEntryDetail.builder().journalEntryId(sync.getJournalEntry().getId()).loanId(sync.getLoanId())
-                                        .businessEventType(sync.getBusinessEventType())
-                                        .glAccountCode(sync.getJournalEntry().getGlAccount() != null
-                                                ? sync.getJournalEntry().getGlAccount().getGlCode()
-                                                : null)
-                                        .glAccountName(sync.getJournalEntry().getGlAccount() != null
-                                                ? sync.getJournalEntry().getGlAccount().getName()
-                                                : null)
-                                        .amount(sync.getJournalEntry().getAmount())
-                                        .transactionDate(sync.getJournalEntry().getTransactionDate()).errorMessage(detailedErrorMsg)
-                                        .build());
+                        failedEntryDetails.add(createFailedEntryDetail(sync, detailedErrorMsg));
                     }
                 }
             }
@@ -878,5 +825,26 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                 throw fallbackException;
             }
         }
+    }
+
+    /**
+     * Creates a FailedEntryDetail object from a JournalEntryOdooSync and error message.
+     * Helper method to reduce code duplication when collecting failed entry details for Slack notification.
+     *
+     * @param sync     The JournalEntryOdooSync object containing entry details
+     * @param errorMsg The error message describing the failure
+     * @return A FailedEntryDetail object populated with the entry details and error message
+     */
+    private FailedEntryDetail createFailedEntryDetail(JournalEntryOdooSync sync, String errorMsg) {
+        return FailedEntryDetail.builder()
+                .journalEntryId(sync.getJournalEntry().getId())
+                .loanId(sync.getLoanId())
+                .businessEventType(sync.getBusinessEventType())
+                .glAccountCode(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getGlCode() : null)
+                .glAccountName(sync.getJournalEntry().getGlAccount() != null ? sync.getJournalEntry().getGlAccount().getName() : null)
+                .amount(sync.getJournalEntry().getAmount())
+                .transactionDate(sync.getJournalEntry().getTransactionDate())
+                .errorMessage(errorMsg)
+                .build();
     }
 }

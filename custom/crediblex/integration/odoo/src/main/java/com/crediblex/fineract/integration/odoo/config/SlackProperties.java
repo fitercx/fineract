@@ -18,15 +18,12 @@
  */
 package com.crediblex.fineract.integration.odoo.config;
 
-import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * Configuration properties for Slack integration.
- * Used to send notifications when Odoo sync failures occur.
+ * Configuration properties for Slack integration. Used to send notifications when Odoo sync failures occur.
  */
-@Data
 @Component
 @ConfigurationProperties(prefix = "slack")
 public class SlackProperties {
@@ -37,8 +34,7 @@ public class SlackProperties {
     private Boolean enabled = false;
 
     /**
-     * Slack Incoming Webhook URL
-     * Format: https://hooks.slack.com/services/XXXXX/YYYYY/ZZZZZ
+     * Slack Incoming Webhook URL Format: https://hooks.slack.com/services/XXXXX/YYYYY/ZZZZZ
      */
     private String webhookUrl;
 
@@ -71,4 +67,69 @@ public class SlackProperties {
      * Maximum number of failed entries to show in detail
      */
     private Integer maxFailedEntriesToShow = 10;
+
+    // Getters and Setters
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public String getWebhookUrl() {
+        return webhookUrl;
+    }
+
+    public void setWebhookUrl(String webhookUrl) {
+        this.webhookUrl = webhookUrl;
+    }
+
+    public String getChannel() {
+        return channel;
+    }
+
+    public void setChannel(String channel) {
+        this.channel = channel;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getIconEmoji() {
+        return iconEmoji;
+    }
+
+    public void setIconEmoji(String iconEmoji) {
+        this.iconEmoji = iconEmoji;
+    }
+
+    public Integer getConnectTimeout() {
+        return connectTimeout;
+    }
+
+    public void setConnectTimeout(Integer connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
+    public Integer getReadTimeout() {
+        return readTimeout;
+    }
+
+    public void setReadTimeout(Integer readTimeout) {
+        this.readTimeout = readTimeout;
+    }
+
+    public Integer getMaxFailedEntriesToShow() {
+        return maxFailedEntriesToShow;
+    }
+
+    public void setMaxFailedEntriesToShow(Integer maxFailedEntriesToShow) {
+        this.maxFailedEntriesToShow = maxFailedEntriesToShow;
+    }
 }

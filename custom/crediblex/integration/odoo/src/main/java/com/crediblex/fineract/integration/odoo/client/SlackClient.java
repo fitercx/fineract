@@ -20,7 +20,6 @@ package com.crediblex.fineract.integration.odoo.client;
 
 import com.crediblex.fineract.integration.odoo.config.SlackProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.Map;
@@ -41,28 +40,22 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "slack.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "slack.enabled", havingValue = "true", matchIfMissing = false)
 public class SlackClient {
 
     private final SlackProperties slackProperties;
     private final ObjectMapper objectMapper;
-    private CloseableHttpClient httpClient;
+    private final CloseableHttpClient httpClient;
 
     public SlackClient(SlackProperties slackProperties, ObjectMapper objectMapper) {
         this.slackProperties = slackProperties;
         this.objectMapper = objectMapper;
-    }
 
-    @PostConstruct
-    public void init() {
-        RequestConfig config = RequestConfig.custom()
-                .setConnectTimeout(Timeout.ofMilliseconds(slackProperties.getConnectTimeout()))
-                .setResponseTimeout(Timeout.ofMilliseconds(slackProperties.getReadTimeout()))
-                .build();
+        // Configure HTTP client with timeouts
+        RequestConfig config = RequestConfig.custom().setConnectTimeout(Timeout.ofMilliseconds(slackProperties.getConnectTimeout()))
+                .setResponseTimeout(Timeout.ofMilliseconds(slackProperties.getReadTimeout())).build();
 
-        this.httpClient = HttpClients.custom()
-                .setDefaultRequestConfig(config)
-                .build();
+        this.httpClient = HttpClients.custom().setDefaultRequestConfig(config).build();
 
         log.info("SlackClient initialized with webhook URL configured: {}",
                 slackProperties.getWebhookUrl() != null && !slackProperties.getWebhookUrl().isEmpty());
@@ -82,7 +75,8 @@ public class SlackClient {
     /**
      * Send a message to Slack via incoming webhook.
      *
-     * @param payload The Slack message payload (can include blocks, attachments, etc.)
+     * @param payload
+     *            The Slack message payload (can include blocks, attachments, etc.)
      * @return true if message was sent successfully, false otherwise
      */
     public boolean sendMessage(Map<String, Object> payload) {

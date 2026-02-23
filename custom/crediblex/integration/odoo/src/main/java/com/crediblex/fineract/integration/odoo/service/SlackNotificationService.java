@@ -38,7 +38,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "slack.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "slack.enabled", havingValue = "true", matchIfMissing = false)
 public class SlackNotificationService {
 
     private final SlackClient slackClient;
@@ -49,9 +49,12 @@ public class SlackNotificationService {
     /**
      * Send a notification to Slack about Odoo sync failures.
      *
-     * @param failureCount    Total number of failed entries
-     * @param successCount    Total number of successful entries
-     * @param failedEntries   List of failed entry details
+     * @param failureCount
+     *            Total number of failed entries
+     * @param successCount
+     *            Total number of successful entries
+     * @param failedEntries
+     *            List of failed entry details
      */
     public void sendOdooSyncFailureNotification(int failureCount, int successCount, List<FailedEntryDetail> failedEntries) {
         if (failureCount == 0) {
@@ -126,7 +129,8 @@ public class SlackNotificationService {
         blocks.add(createDividerBlock());
 
         // Action guidance
-        blocks.add(createContextBlock(":information_source: Please check the application logs and `journal_entry_odoo_sync` table for more details."));
+        blocks.add(createContextBlock(
+                ":information_source: Please check the application logs and `journal_entry_odoo_sync` table for more details."));
 
         payload.put("blocks", blocks);
 
