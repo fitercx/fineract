@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="0054-make-invoice-due-date-nullable" author="copilot">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="m_loan_line_of_credit_params" columnName="invoice_due_date"/>
+        </preConditions>
+        <comment>Make invoice_due_date nullable in m_loan_line_of_credit_params</comment>
+        <dropNotNullConstraint tableName="m_loan_line_of_credit_params" columnName="invoice_due_date" columnDataType="DATE"/>
+    </changeSet>
+
+</databaseChangeLog>

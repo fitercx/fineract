@@ -685,9 +685,9 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
             }
 
             // Invoice related parameter validations (only validate if at least one provided)
+            // Note: invoiceDueDate is optional and not included in this check
             boolean anyInvoiceParamProvided = this.fromApiJsonHelper.parameterExists(LoanAccountAdditionalProperties.INVOICE_NO, element)
                     || this.fromApiJsonHelper.parameterExists(LoanAccountAdditionalProperties.INVOICE_DATE, element)
-                    || this.fromApiJsonHelper.parameterExists(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, element)
                     || this.fromApiJsonHelper.parameterExists(LoanAccountAdditionalProperties.INVOICE_CURRENCY, element);
 
             if (anyInvoiceParamProvided) {
@@ -716,14 +716,11 @@ public class CredibleXLoanApplicationValidator extends LoanApplicationValidator 
                 } else {
                     baseDataValidator.reset().parameter(LoanAccountAdditionalProperties.INVOICE_DATE).value(null).notNull();
                 }
-                // invoiceDueDate
+                // invoiceDueDate (optional - only validate if provided)
                 LocalDate invoiceDueDate = null;
                 if (this.fromApiJsonHelper.parameterExists(LoanAccountAdditionalProperties.INVOICE_DUE_DATE, element)) {
                     invoiceDueDate = this.fromApiJsonHelper.extractLocalDateNamed(LoanAccountAdditionalProperties.INVOICE_DUE_DATE,
                             element);
-                    baseDataValidator.reset().parameter(LoanAccountAdditionalProperties.INVOICE_DUE_DATE).value(invoiceDueDate).notNull();
-                } else {
-                    baseDataValidator.reset().parameter(LoanAccountAdditionalProperties.INVOICE_DUE_DATE).value(null).notNull();
                 }
                 // Cross-field validation: due date not before invoice date
                 if (invoiceDate != null && invoiceDueDate != null && invoiceDueDate.isBefore(invoiceDate)) {
