@@ -53,7 +53,7 @@
         </sql>
     </changeSet>
 
-    <!-- Make accrual_month not null and enforce one row per loan per month -->
+    <!-- Make accrual_month not null (uniqueness to be added after data cleanup) -->
     <changeSet author="CredibleX" id="3">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <columnExists tableName="m_loan_monthly_accrual_job_run_audit" columnName="accrual_month"/>
@@ -61,9 +61,6 @@
         <addNotNullConstraint tableName="m_loan_monthly_accrual_job_run_audit"
                               columnName="accrual_month"
                               columnDataType="date"/>
-        <addUniqueConstraint tableName="m_loan_monthly_accrual_job_run_audit"
-                             columnNames="loan_id, accrual_month"
-                             constraintName="uq_m_loan_monthly_accrual_job_run_audit_loan_month"/>
     </changeSet>
 
 </databaseChangeLog>
