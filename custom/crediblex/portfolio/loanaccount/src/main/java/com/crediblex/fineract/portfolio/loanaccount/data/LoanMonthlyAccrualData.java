@@ -19,6 +19,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import lombok.Builder;
 import lombok.Data;
 
@@ -29,4 +30,5 @@ public class LoanMonthlyAccrualData {
     private Long loanId;
     private BigDecimal totalInterestAccrualDerived;
     private String accrualTransactionIds;
+    private LocalDate accrualMonthDate;
 }

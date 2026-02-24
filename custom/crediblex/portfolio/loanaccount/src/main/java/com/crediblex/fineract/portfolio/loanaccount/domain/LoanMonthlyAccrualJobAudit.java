@@ -68,18 +68,24 @@ public final class LoanMonthlyAccrualJobAudit extends AbstractAuditableWithUTCDa
     @Column(name = "generated_on_date")
     private LocalDate generatedOnDate;
 
+    @Column(name = "accrual_month")
+    private LocalDate accrualMonth;
+
     private LoanMonthlyAccrualJobAudit(final Long loanId, final String accrualTransactionIds, final BigDecimal totalInterestAccrualDerived,
-            final boolean postedToOdoo, final LocalDate generatedOnDate) {
+            final boolean postedToOdoo, final LocalDate generatedOnDate, final LocalDate accrualMonth) {
         this.loanId = loanId;
         this.accrualTransactionIds = accrualTransactionIds;
         this.totalInterestAccrualDerived = totalInterestAccrualDerived;
         this.postedToOdoo = postedToOdoo;
         this.generatedOnDate = generatedOnDate;
+        this.accrualMonth = accrualMonth;
     }
 
     public static LoanMonthlyAccrualJobAudit createNew(final Long loanId, final String accrualTransactionIds,
-            final BigDecimal totalInterestAccrualDerived, final boolean postedToOdoo, final LocalDate generatedOnDate) {
-        return new LoanMonthlyAccrualJobAudit(loanId, accrualTransactionIds, totalInterestAccrualDerived, postedToOdoo, generatedOnDate);
+            final BigDecimal totalInterestAccrualDerived, final boolean postedToOdoo, final LocalDate generatedOnDate,
+            final LocalDate accrualMonth) {
+        return new LoanMonthlyAccrualJobAudit(loanId, accrualTransactionIds, totalInterestAccrualDerived, postedToOdoo, generatedOnDate,
+                accrualMonth);
     }
 
     public void setPostedToOdoo(final boolean postedToOdoo) {

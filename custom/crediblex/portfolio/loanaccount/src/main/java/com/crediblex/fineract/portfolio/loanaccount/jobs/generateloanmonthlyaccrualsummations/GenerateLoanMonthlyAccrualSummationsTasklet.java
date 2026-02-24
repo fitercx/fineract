@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.jobs.exception.JobExecutionException;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
@@ -51,14 +50,15 @@ public class GenerateLoanMonthlyAccrualSummationsTasklet implements Tasklet {
         log.info("Total Loan Monthly Accrual Summations to be processed: {}", LoanMonthlyAccrualList.size());
         if (!LoanMonthlyAccrualList.isEmpty()) {
             final List<Throwable> exceptions = new ArrayList<>();
-            final LocalDate generatedOnDate = DateUtils.getBusinessLocalDate();
             for (final LoanMonthlyAccrualData loanMonthlyAccrualData : LoanMonthlyAccrualList) {
                 log.info("Processing Loan Monthly Accrual Summation for Loan ID: {} with Total Interest Accrual Derived: {}",
                         loanMonthlyAccrualData.getLoanId(), loanMonthlyAccrualData.getTotalInterestAccrualDerived());
                 try {
+                    final LocalDate accrualMonthDate = loanMonthlyAccrualData.getAccrualMonthDate();
+                    final LocalDate generatedOnDate = accrualMonthDate.withDayOfMonth(accrualMonthDate.lengthOfMonth());
                     final LoanMonthlyAccrualJobAudit loanMonthlyAccrualJobAudit = LoanMonthlyAccrualJobAudit.createNew(
                             loanMonthlyAccrualData.getLoanId(), loanMonthlyAccrualData.getAccrualTransactionIds(),
-                            loanMonthlyAccrualData.getTotalInterestAccrualDerived(), false, generatedOnDate);
+                            loanMonthlyAccrualData.getTotalInterestAccrualDerived(), false, generatedOnDate, accrualMonthDate);
                     this.loanMonthlyAccrualJobAuditRepository.saveAndFlush(loanMonthlyAccrualJobAudit);
                     this.updateLoanTransactionsAsProcessed(loanMonthlyAccrualData.getAccrualTransactionIds());
                     log.info("Successfully processed Loan Monthly Accrual Summation for Loan ID: {} ", loanMonthlyAccrualData.getLoanId());
@@ -86,6 +86,7 @@ public class GenerateLoanMonthlyAccrualSummationsTasklet implements Tasklet {
         final String sql = """
                 SELECT
                     mlt.loan_id AS "loanId",
+                    date_trunc('month', mlt.transaction_date)::date AS "accrualMonth",
                     SUM(mlt.interest_portion_derived) AS "totalInterestAccrualDerived",
                     STRING_AGG(mlt.id::TEXT, ',' ORDER BY mlt.id) AS "accrualTransactionIds"
                 FROM m_loan_transaction mlt
@@ -93,12 +94,11 @@ public class GenerateLoanMonthlyAccrualSummationsTasklet implements Tasklet {
                     AND COALESCE(mlt.interest_portion_derived, 0) > 0
                     AND mlt.is_reversed = FALSE
                     AND COALESCE(mlt.is_processed_by_monthly_job, FALSE) = FALSE
-                GROUP BY mlt.loan_id
-                ORDER BY mlt.loan_id
+                GROUP BY mlt.loan_id, date_trunc('month', mlt.transaction_date)
+                ORDER BY mlt.loan_id, "accrualMonth"
                 """;
-        return jdbcTemplate.query(sql,
-                (rs, rowNum) -> LoanMonthlyAccrualData.builder().loanId(rs.getLong("loanId"))
-                        .accrualTransactionIds(rs.getString("accrualTransactionIds"))
-                        .totalInterestAccrualDerived(rs.getBigDecimal("totalInterestAccrualDerived")).build());
+        return jdbcTemplate.query(sql, (rs, rowNum) -> LoanMonthlyAccrualData.builder().loanId(rs.getLong("loanId"))
+                .accrualMonthDate(rs.getDate("accrualMonth").toLocalDate()).accrualTransactionIds(rs.getString("accrualTransactionIds"))
+                .totalInterestAccrualDerived(rs.getBigDecimal("totalInterestAccrualDerived")).build());
     }
 }
