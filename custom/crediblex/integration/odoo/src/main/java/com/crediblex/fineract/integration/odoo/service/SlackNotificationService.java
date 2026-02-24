@@ -73,7 +73,7 @@ public class SlackNotificationService {
             }
         } catch (Exception e) {
             // Log but don't throw - Slack notification should not break the job
-            log.error("Error sending Slack notification for Odoo sync failures: {}", e.getMessage(), e);
+            log.error("Error sending Slack notification for Odoo sync failures", e);
         }
     }
 
@@ -98,9 +98,8 @@ public class SlackNotificationService {
         blocks.add(createHeaderBlock(":x: Odoo Journal Entry Sync Failed"));
 
         // Summary section
-        String summaryText = String.format(
-                "*Summary:*\n:red_circle: *%d entries failed* to post to Odoo\n:white_check_mark: %d entries posted successfully\n:clock1: %s",
-                failureCount, successCount, LocalDateTime.now().format(TIMESTAMP_FORMATTER));
+        String summaryText = "*Summary:*\n:red_circle: *" + failureCount + " entries failed* to post to Odoo\n:white_check_mark: "
+                + successCount + " entries posted successfully\n:clock1: " + LocalDateTime.now().format(TIMESTAMP_FORMATTER);
         blocks.add(createSectionBlock(summaryText));
 
         // Divider

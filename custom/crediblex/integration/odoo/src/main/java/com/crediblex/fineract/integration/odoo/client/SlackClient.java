@@ -108,7 +108,7 @@ public class SlackClient {
             });
 
         } catch (Exception e) {
-            log.error("Exception while sending Slack message: {}", e.getMessage(), e);
+            log.error("Exception while sending Slack message", e);
             return false;
         }
     }
