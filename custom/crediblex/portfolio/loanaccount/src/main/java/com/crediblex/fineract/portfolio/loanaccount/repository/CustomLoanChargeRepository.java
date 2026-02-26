@@ -86,6 +86,15 @@ public interface CustomLoanChargeRepository extends JpaRepository<LoanCharge, Lo
     @Query("""
             SELECT lc FROM LoanCharge lc
             WHERE lc.loan.id = :loanId
+            AND lc.dueDate = :dueDate
+            AND lc.chargeTime = :chargeTimeValue
+            """)
+    List<LoanCharge> findByLoanIdAndExactDueDate(@Param("loanId") Long loanId, @Param("dueDate") LocalDate dueDate,
+            @Param("chargeTimeValue") Integer chargeTimeValue);
+
+    @Query("""
+            SELECT lc FROM LoanCharge lc
+            WHERE lc.loan.id = :loanId
             AND lc.dueDate >= :fromDate
             AND lc.dueDate <= :toDate
             AND lc.chargeTime = :chargeTimeValue

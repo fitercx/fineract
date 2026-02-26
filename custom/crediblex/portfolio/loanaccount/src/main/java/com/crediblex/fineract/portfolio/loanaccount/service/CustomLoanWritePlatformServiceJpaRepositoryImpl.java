@@ -63,6 +63,7 @@ import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
 import org.apache.fineract.infrastructure.event.business.BusinessEventListener;
+import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanUndoDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanDisbursalTransactionBusinessEvent;
@@ -1536,14 +1537,25 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Get the transaction details before calling parent method
         LoanTransaction transactionToAdjust = this.loanTransactionRepository.findByIdAndLoanId(transactionId, loanId)
                 .orElseThrow(() -> new LoanTransactionNotFoundException(transactionId, loanId));
+        final BigDecimal requestedTransactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+
+        // Prevent undo of CHARGE_ADJUSTMENT transactions created by "reverse paid charge".
+        // These are audit trail transactions tied to inactive charges and should remain immutable.
+        if (requestedTransactionAmount != null && requestedTransactionAmount.compareTo(BigDecimal.ZERO) == 0
+                && isChargeAdjustmentForReversedPaidCharge(transactionToAdjust)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.adjustment.undo.not.allowed",
+                    "Undo is not allowed for charge adjustment transaction " + transactionId
+                            + " because it was created by reverse paid charge flow.",
+                    transactionId);
+        }
 
         // Capture old custom loan status before the adjustment (if present)
         Loan loanBefore = this.loanAssembler.assembleFrom(loanId);
         CustomLoanStatus oldCustomLoanStatus = loanBefore.hasCustomStatus() ? loanBefore.getCustomLoanStatus() : null;
 
         // Check if this is a repayment transaction being reversed
-        boolean isRepaymentReversal = transactionToAdjust.isRepayment()
-                && command.bigDecimalValueOfParameterNamed("transactionAmount").compareTo(BigDecimal.ZERO) == 0;
+        boolean isRepaymentReversal = transactionToAdjust.isRepayment() && requestedTransactionAmount != null
+                && requestedTransactionAmount.compareTo(BigDecimal.ZERO) == 0;
 
         BigDecimal repaymentAmount = null;
         if (isRepaymentReversal) {
@@ -1618,6 +1630,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         }
 
         return result;
+    }
+
+    private boolean isChargeAdjustmentForReversedPaidCharge(LoanTransaction transaction) {
+        if (transaction == null || !transaction.isChargeAdjustment()) {
+            return false;
+        }
+        Set<LoanChargePaidBy> chargesPaid = transaction.getLoanChargesPaid();
+        if (chargesPaid == null || chargesPaid.isEmpty()) {
+            return false;
+        }
+        return chargesPaid.stream().map(LoanChargePaidBy::getLoanCharge).filter(java.util.Objects::nonNull)
+                .anyMatch(loanCharge -> !loanCharge.isActive());
     }
 
     private void updateLocBalance(Long loanId, BigDecimal amount, LocalDate transactionDate, LineOfCreditTransactionType transactionType,
@@ -1978,6 +2002,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             loan.updateLoanSummaryAndStatus();
             loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
             saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            // CRITICAL: refresh arrears aging + inArrears flags after due date shift
+            // LoanArrearsAgingServiceImpl listens to this and updates m_loan_arrears_aging.
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
