@@ -667,9 +667,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         selectedEmiNumbers, loanId, resolvedCountByInstallment);
             }
 
+            String emiSelectionLabel = selectedEmiNumbers.isEmpty() ? "ALL with overdue charges" : selectedEmiNumbers.toString();
             log.info("EMI-mode bulk removal enabled for loan {}. Expanded charge set from {} to {} charges for EMI(s): {}", loanId,
-                    loanCharges.size(), expandedLoanCharges.size(),
-                    selectedEmiNumbers.isEmpty() ? "ALL with overdue charges" : selectedEmiNumbers);
+                    loanCharges.size(), expandedLoanCharges.size(), emiSelectionLabel);
             loanCharges = expandedLoanCharges;
         }
         // NOTE: Date-based removal (when removeCompleteEmiOverdue is false) should NOT expand - only remove charges for
@@ -708,10 +708,11 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             boolean wasActive = charge.isActive();
             boolean isOverdue = charge.getChargeTimeType() != null && charge.getChargeTimeType().isOverdueInstallment();
 
-            log.debug("Processing charge {}: active={}, isOverdue={}, installment={}", chargeId, wasActive, isOverdue,
-                    charge.getOverdueInstallmentCharge() != null && charge.getOverdueInstallmentCharge().getInstallment() != null
+            Object installmentNum = charge.getOverdueInstallmentCharge() != null
+                    && charge.getOverdueInstallmentCharge().getInstallment() != null
                             ? charge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber()
-                            : "N/A");
+                            : "N/A";
+            log.debug("Processing charge {}: active={}, isOverdue={}, installment={}", chargeId, wasActive, isOverdue, installmentNum);
 
             if (inactivateOverdueLoanCharge(charge)) {
                 deactivatedChargeIds.add(chargeId);
@@ -1196,7 +1197,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     verifyCharge != null ? !verifyCharge.isActive() : "N/A");
             return true;
         } catch (Exception e) {
-            log.error("Error deactivating charge {}: {}", chargeId, e.getMessage(), e);
+            log.error("Error deactivating charge {}", chargeId, e);
             return false;
         }
     }
