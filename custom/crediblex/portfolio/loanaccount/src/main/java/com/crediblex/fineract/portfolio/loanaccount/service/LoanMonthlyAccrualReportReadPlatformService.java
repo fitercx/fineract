@@ -172,7 +172,7 @@ public class LoanMonthlyAccrualReportReadPlatformService {
                 loanId, ACCRUAL_TRANSACTION_TYPE);
     }
 
-    private static class ScheduleInstallment {
+    private static final class ScheduleInstallment {
 
         LocalDate dueDate;
         BigDecimal principalDue;
