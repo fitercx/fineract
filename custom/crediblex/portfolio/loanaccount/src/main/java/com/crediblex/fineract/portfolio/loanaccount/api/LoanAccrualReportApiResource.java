@@ -86,7 +86,7 @@ public class LoanAccrualReportApiResource {
     }
 
     @Schema(description = "Accrual report row")
-    private static class AccrualReportRowSchema {
+    private static final class AccrualReportRowSchema {
 
         @Schema(example = "1")
         public int index;
