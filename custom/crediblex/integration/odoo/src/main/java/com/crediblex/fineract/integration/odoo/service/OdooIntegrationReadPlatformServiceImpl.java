@@ -18,6 +18,7 @@
  */
 package com.crediblex.fineract.integration.odoo.service;
 
+import com.crediblex.fineract.accounting.journalentry.service.LOCAccountingHelper;
 import com.crediblex.fineract.integration.odoo.client.OdooApiClient;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -45,6 +46,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private static final String ERROR_KEY = "error";
 
     private final OdooApiClient odooApiClient;
+    private final LOCAccountingHelper locAccountingHelper;
 
     // Cache for account mappings to avoid repeated Odoo calls
     private final Map<String, Integer> accountMappingCache = new ConcurrentHashMap<>();
@@ -153,35 +155,60 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     }
 
     /**
-     * Get journal ID based on GL account code, business event type and debit flag
+     * Get journal ID based on GL account code, business event type, debit flag and loan ID
      */
-    public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    @Override
+    public Integer getJournalIdForGlCode(String glCode, String businessEventType, boolean isDebit, Long loanId) {
         if (glCode == null) {
             log.warn("GL code is null, no journal available");
             return null;
         }
 
-        // Find which journal this GL code belongs to based on business event type and debit flag
-        String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        // Find which journal this GL code belongs to based on business event type, debit flag and product type
+        String journalCode = findJournalCodeForGlCode(glCode, businessEventType, isDebit, loanId);
         if (journalCode != null) {
-            log.debug("GL code {} with business event type {} and isDebit {} mapped to journal {}", glCode, businessEventType, isDebit,
-                    journalCode);
+            log.debug("GL code {} with business event type {} and isDebit {} for loan {} mapped to journal {}", glCode, businessEventType,
+                    isDebit, loanId, journalCode);
             return getJournalIdByOdooCode(journalCode);
         } else {
-            log.debug("No specific journal mapping found for GL code {} with business event type {} and isDebit {}, skipping journal entry",
-                    glCode, businessEventType, isDebit);
+            log.debug(
+                    "No specific journal mapping found for GL code {} with business event type {} and isDebit {} for loan {}, skipping journal entry",
+                    glCode, businessEventType, isDebit, loanId);
             return null;
         }
     }
 
     /**
-     * Find journal code for a given GL code, business event type and debit flag
+     * Find journal code for a given GL code, business event type, debit flag and loan ID
      */
-    private String findJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    private String findJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit, Long loanId) {
         if (glCode == null) {
             return null;
         }
 
+        // Determine the product type based on loan ID using LOCAccountingHelper
+        String productShortName = locAccountingHelper.getLoanProductShortNameByLoanId(loanId);
+
+        // For RBF products (or when product is unknown/null), use RBF mappings
+        // This maintains backward compatibility
+        if (productShortName == null || LOCAccountingHelper.RBF_PRODUCT_SHORT_NAME.equals(productShortName)) {
+            return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
+
+        // For Payable LOC (LPLL) products
+        if (LOCAccountingHelper.PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(productShortName)) {
+            return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
+
+        // For other products, fall back to RBF mappings as default
+        log.debug("Product '{}' not explicitly mapped, using RBF journal mappings as fallback", productShortName);
+        return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
+    }
+
+    /**
+     * Find journal code for RBF product GL codes
+     */
+    private String findRbfJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
@@ -214,14 +241,6 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             if ("100062".equals(glCode) && isDebit) {
                 return "BNK9";
             }
-        }
-
-        // BNK9 journal for SAVINGS_DEPOSIT during disbursement i.e. deposit money to savings account
-        if ("SAVINGS_DEPOSIT".equals(businessEventType)) {
-            // When GL code is 210003
-            if ("210003".equals(glCode)) {
-                return "BNK9";
-            }
             // When GL code is 200040 and it's a debit transaction
             if ("200040".equals(glCode) && isDebit) {
                 return "BNK9";
@@ -246,6 +265,31 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
         if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
             return "BNK8";
+        }
+
+        return null; // No mapping found
+    }
+
+    /**
+     * Find journal code for Payable LOC (LPLL) product GL codes
+     */
+    private String findPayableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+        // BNK5 journal for DISBURSEMENT business events with specific GL codes
+        if ("DISBURSEMENT".equals(businessEventType) && Set.of("100033", "200042").contains(glCode)) {
+            return "BNK5";
+        }
+
+        // BNK6 journal for SAVINGS_WITHDRAWAL business events i.e. Spend Money from bank
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200042", "100003").contains(glCode)) {
+            return "BNK6";
+        }
+
+        if ("SAVINGS_DEPOSIT".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
+            return "BNK9";
+        }
+
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
+            return "BNK6";
         }
 
         return null; // No mapping found

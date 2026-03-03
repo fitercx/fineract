@@ -10,6 +10,8 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeR
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -36,6 +38,7 @@ import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -69,6 +72,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -83,6 +87,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidat
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanArrearsAgingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeReadPlatformService;
@@ -151,6 +156,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final JournalEntryRepository journalEntryRepository;
     private final OfficeRepositoryWrapper officeRepositoryWrapper;
     private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
+    private final LoanArrearsAgingService loanArrearsAgingService;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
             ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
@@ -180,7 +186,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             GLAccountRepository glAccountRepository, JournalEntryRepository journalEntryRepository,
             OfficeRepositoryWrapper officeRepositoryWrapper, SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
-            SavingsAccountTransactionRepository savingsAccountTransactionRepository) {
+            SavingsAccountTransactionRepository savingsAccountTransactionRepository, LoanArrearsAgingService loanArrearsAgingService) {
 
         super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
                 accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
@@ -223,6 +229,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.glAccountRepository = glAccountRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.officeRepositoryWrapper = officeRepositoryWrapper;
+        this.loanArrearsAgingService = loanArrearsAgingService;
     }
 
     @Override
@@ -367,6 +374,13 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 existingTransactionIds, existingReversedTransactionIds, loanInstallmentNumber, scheduleGeneratorDTO, accruedCharge,
                 externalId);
 
+        // Safety net: keep repayment schedule charge portions aligned with active charges after single-charge waiver.
+        if (hasRepaymentScheduleChargeMismatch(loan)) {
+            log.warn("Detected charge mismatch after waiving charge {} on loan {}. Running full installment charge recalculation.",
+                    loanChargeId, loanId);
+            recalculateInstallmentChargesFromActiveLoanCharges(loan);
+        }
+
         if (loan.isInterestBearingAndInterestRecalculationEnabled()
                 && DateUtils.isBefore(loanCharge.getDueLocalDate(), DateUtils.getBusinessLocalDate())) {
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -499,7 +513,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         waiveLoanChargeTransaction.getLoanChargesPaid().add(loanChargePaidBy);
         loan.addLoanTransaction(waiveLoanChargeTransaction);
 
-        // Handle schedule regeneration and transaction reprocessing manually
+        // Reprocess loan schedule/transactions so waived component stays on the correct installment.
+        // This mirrors core behavior and prevents overdue charge portions from drifting to another EMI.
+        if (!loanCharge.isDueAtDisbursement() && loanCharge.isPaidOrPartiallyPaid(loan.getCurrency())) {
+            reprocessLoanTransactionsService.reprocessTransactions(loan);
+        } else {
+            final LoanRepaymentScheduleProcessingWrapper wrapper = new LoanRepaymentScheduleProcessingWrapper();
+            wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
+                    loan.getActiveCharges());
+        }
 
         loan.updateLoanSummaryDerivedFields();
         loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
@@ -512,31 +534,198 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     public CommandProcessingResult deactivateOverdueLoanCharge(Long loanId, JsonCommand command) {
         LocalDate fromDueDate = command.dateValueOfParameterNamed("dueDate");
         LocalDate toDueDate = command.dateValueOfParameterNamed("toDueDate");
+        boolean removeCompleteEmiOverdue = command.hasParameter("removeCompleteEmiOverdue")
+                && command.booleanPrimitiveValueOfParameterNamed("removeCompleteEmiOverdue");
+        if (fromDueDate == null && toDueDate != null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.deactivate.overdue.invalid.date.filter",
+                    "Start date (dueDate) is required when end date (toDueDate) is provided.");
+        }
+        if (fromDueDate != null && toDueDate != null && toDueDate.isBefore(fromDueDate)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.deactivate.overdue.invalid.date.range",
+                    "End date (toDueDate) cannot be before start date (dueDate).");
+        }
+        // Determine removal mode:
+        // - removeCompleteEmiOverdue=true with no dates = Remove all overdue charges for all EMIs that have overdue
+        // charges
+        // - fromDueDate=null and removeCompleteEmiOverdue=false = Remove ALL overdue charges
+        // - fromDueDate provided = Date-based removal
+        boolean isRemoveAll = (fromDueDate == null && !removeCompleteEmiOverdue);
+        boolean isRemoveEmiOnly = (fromDueDate == null && removeCompleteEmiOverdue);
 
         List<LoanCharge> loanCharges;
         Integer overdueChargeTimeValue = ChargeTimeType.OVERDUE_INSTALLMENT.getValue();
-        if (fromDueDate == null) {
+        if (isRemoveAll) {
             // Remove all: get all active overdue charges
+            loanCharges = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, overdueChargeTimeValue);
+        } else if (isRemoveEmiOnly) {
+            // Remove complete EMI overdue charges: get all active overdue charges (we'll filter by EMI later)
             loanCharges = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, overdueChargeTimeValue);
         } else if (toDueDate != null) {
             // Date range: get charges within the range
             loanCharges = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, toDueDate, overdueChargeTimeValue);
         } else {
-            // Single date or from date onwards: get all charges from the date
-            loanCharges = customLoanChargeRepository.findByLoanIdAndFromDueDate(loanId, fromDueDate, overdueChargeTimeValue);
+            // Single date: get charges for exact date (toDueDate will be set to same as fromDueDate by UI)
+            loanCharges = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, fromDueDate, overdueChargeTimeValue);
         }
 
-        // Track which charges were actually deactivated (collect their IDs for accounting reversal)
-        int totalChargesFound = loanCharges.size();
-        List<Long> deactivatedChargeIds = new ArrayList<>();
-        loanCharges.forEach(charge -> {
-            if (inactivateOverdueLoanCharge(charge)) {
-                deactivatedChargeIds.add(charge.getId());
+        // Build schedule installments for robust overdue-charge -> EMI mapping.
+        // Some overdue charges may not carry LoanOverdueInstallmentCharge relation, so we must fallback to due-date
+        // window mapping.
+        Loan loanForMapping = loanAssembler.assembleFrom(loanId);
+        List<LoanRepaymentScheduleInstallment> scheduleInstallmentsForMapping = new ArrayList<>(
+                loanForMapping.getRepaymentScheduleInstallments());
+        scheduleInstallmentsForMapping.sort((left, right) -> {
+            if (left == null || right == null) {
+                return 0;
             }
+            if (left.getInstallmentNumber() != null && right.getInstallmentNumber() != null) {
+                return left.getInstallmentNumber().compareTo(right.getInstallmentNumber());
+            }
+            if (left.getDueDate() != null && right.getDueDate() != null) {
+                return left.getDueDate().compareTo(right.getDueDate());
+            }
+            return 0;
         });
+
+        // EMI-only mode: remove all overdue charges for selected EMIs (or all EMIs if none selected)
+        // NOTE: Date-based removal should NOT expand to all EMI charges - only remove charges for the specific date(s)
+        if (isRemoveEmiOnly && !loanCharges.isEmpty()) {
+            // Check if specific EMI numbers are provided
+            Set<Integer> selectedEmiNumbers = new HashSet<>();
+            if (command.hasParameter("selectedEmiNumbers")) {
+                JsonArray emiNumbersArray = command.arrayOfParameterNamed("selectedEmiNumbers");
+                if (emiNumbersArray != null && emiNumbersArray.size() > 0) {
+                    for (JsonElement element : emiNumbersArray) {
+                        if (element != null && !element.isJsonNull()) {
+                            selectedEmiNumbers.add(element.getAsInt());
+                        }
+                    }
+                    log.info("EMI-mode removal with specific EMI numbers: {}", selectedEmiNumbers);
+                }
+            }
+
+            // Get all active overdue charges
+            List<LoanCharge> allActiveOverdueCharges = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId,
+                    overdueChargeTimeValue);
+            List<LoanCharge> expandedLoanCharges = new ArrayList<>();
+            Set<Integer> impactedInstallmentNumbers = new HashSet<>();
+
+            // If no specific EMIs are selected, derive impacted EMIs from the initial candidate set.
+            if (selectedEmiNumbers.isEmpty()) {
+                for (LoanCharge initialCharge : loanCharges) {
+                    Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(initialCharge,
+                            scheduleInstallmentsForMapping);
+                    if (resolvedInstallmentNumber != null) {
+                        impactedInstallmentNumbers.add(resolvedInstallmentNumber);
+                    }
+                }
+                log.info("EMI-mode without explicit selectedEmiNumbers. Derived impacted installment numbers: {}",
+                        impactedInstallmentNumbers);
+            }
+
+            for (LoanCharge charge : allActiveOverdueCharges) {
+                if (!charge.isOverdueInstallmentCharge()) {
+                    continue;
+                }
+                Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(charge, scheduleInstallmentsForMapping);
+                if (resolvedInstallmentNumber == null) {
+                    log.debug("Skipping overdue charge {} in EMI-mode because no installment could be resolved (dueDate: {})",
+                            charge.getId(), charge.getDueDate());
+                    continue;
+                }
+
+                boolean includeCharge = false;
+
+                if (!selectedEmiNumbers.isEmpty()) {
+                    // If specific EMIs are selected, only include charges for those EMIs
+                    includeCharge = selectedEmiNumbers.contains(resolvedInstallmentNumber);
+                } else {
+                    // If no specific EMIs selected, include all charges from derived impacted EMIs
+                    includeCharge = impactedInstallmentNumbers.contains(resolvedInstallmentNumber);
+                }
+
+                if (includeCharge) {
+                    expandedLoanCharges.add(charge);
+                }
+            }
+
+            // Helpful diagnostics for production debugging in case UI-selected EMI doesn't map to any active charge.
+            if (!selectedEmiNumbers.isEmpty() && expandedLoanCharges.isEmpty()) {
+                Map<Integer, Integer> resolvedCountByInstallment = new HashMap<>();
+                for (LoanCharge charge : allActiveOverdueCharges) {
+                    if (!charge.isOverdueInstallmentCharge()) {
+                        continue;
+                    }
+                    Integer resolved = resolveInstallmentNumberForOverdueCharge(charge, scheduleInstallmentsForMapping);
+                    if (resolved != null) {
+                        resolvedCountByInstallment.merge(resolved, 1, Integer::sum);
+                    }
+                }
+                log.warn(
+                        "Selected EMI numbers {} mapped to zero active overdue charges for loan {}. "
+                                + "Resolved active overdue charge counts by installment: {}",
+                        selectedEmiNumbers, loanId, resolvedCountByInstallment);
+            }
+
+            String emiSelectionLabel = selectedEmiNumbers.isEmpty() ? "ALL with overdue charges" : selectedEmiNumbers.toString();
+            log.info("EMI-mode bulk removal enabled for loan {}. Expanded charge set from {} to {} charges for EMI(s): {}", loanId,
+                    loanCharges.size(), expandedLoanCharges.size(), emiSelectionLabel);
+            loanCharges = expandedLoanCharges;
+        }
+        // NOTE: Date-based removal (when removeCompleteEmiOverdue is false) should NOT expand - only remove charges for
+        // the specific date(s)
+
+        // CRITICAL: Collect affected installment numbers BEFORE deactivating charges
+        // This ensures we can properly identify which installments need recalculation
+        Set<Integer> affectedInstallmentNumbers = new HashSet<>();
+        for (LoanCharge charge : loanCharges) {
+            Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(charge, scheduleInstallmentsForMapping);
+            if (resolvedInstallmentNumber != null) {
+                affectedInstallmentNumbers.add(resolvedInstallmentNumber);
+            }
+        }
+        log.info("Charges to be deactivated will affect installments: {}", affectedInstallmentNumbers);
+
+        // Track which charges were actually deactivated (collect their IDs for accounting reversal)
+        // CRITICAL: Reload charges from repository to ensure we have managed entities
+        List<LoanCharge> chargesToDeactivate = new ArrayList<>();
+        for (LoanCharge charge : loanCharges) {
+            if (charge.getId() != null) {
+                loanChargeRepository.findById(charge.getId()).ifPresent(chargesToDeactivate::add);
+            }
+        }
+
+        int totalChargesFound = loanCharges.size();
+        int managedChargesFound = chargesToDeactivate.size();
+        List<Long> deactivatedChargeIds = new ArrayList<>();
+        List<Long> failedChargeIds = new ArrayList<>();
+
+        log.info("Attempting to deactivate {} charges for loan {} (found {} managed entities)", totalChargesFound, loanId,
+                managedChargesFound);
+
+        for (LoanCharge charge : chargesToDeactivate) {
+            Long chargeId = charge.getId();
+            boolean wasActive = charge.isActive();
+            boolean isOverdue = charge.getChargeTimeType() != null && charge.getChargeTimeType().isOverdueInstallment();
+
+            Object installmentNum = charge.getOverdueInstallmentCharge() != null
+                    && charge.getOverdueInstallmentCharge().getInstallment() != null
+                            ? charge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber()
+                            : "N/A";
+            log.debug("Processing charge {}: active={}, isOverdue={}, installment={}", chargeId, wasActive, isOverdue, installmentNum);
+
+            if (inactivateOverdueLoanCharge(charge)) {
+                deactivatedChargeIds.add(chargeId);
+                log.info("Successfully deactivated charge {} (was active: {})", chargeId, wasActive);
+            } else {
+                failedChargeIds.add(chargeId);
+                log.warn("Failed to deactivate charge {} (was active: {}, isOverdue: {})", chargeId, wasActive, isOverdue);
+            }
+        }
         long deactivatedCount = deactivatedChargeIds.size();
 
-        log.info("Found {} overdue charges for loan {}, successfully deactivated {}", totalChargesFound, loanId, deactivatedCount);
+        log.info("Found {} overdue charges for loan {}, successfully deactivated {} (isRemoveAll: {}). Failed: {}", totalChargesFound,
+                loanId, deactivatedCount, isRemoveAll, failedChargeIds);
 
         // Reload loan to get updated state
         Loan loan = loanAssembler.assembleFrom(loanId);
@@ -547,40 +736,48 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // Find and reverse accrual transactions linked to the deactivated charges
                 List<Long> reversedTransactionIds = reverseAccrualTransactionsForCharges(loan, deactivatedChargeIds);
 
-                // ✅ FIX: Use targeted recalculation - only recalculate affected installments
-                // Find which installments are affected by the deactivated charges
-                Set<LoanRepaymentScheduleInstallment> affectedInstallments = new HashSet<>();
-                for (LoanCharge deactivatedCharge : loanCharges) {
-                    if (deactivatedChargeIds.contains(deactivatedCharge.getId())) {
-                        if (deactivatedCharge.isOverdueInstallmentCharge() && deactivatedCharge.getDueLocalDate() != null) {
-                            // Find the installment matching this charge's due date
-                            LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
-                                    .filter(inst -> inst.getDueDate().equals(deactivatedCharge.getDueLocalDate())).findFirst().orElse(null);
+                // ✅ FIX: When "Remove All" is selected, recalculate ALL installments to clear all charges
+                // Otherwise, only recalculate affected installments
+                if (isRemoveAll) {
+                    log.info("Remove All selected - recalculating ALL installments to clear all charges");
+                    recalculateInstallmentChargesFromActiveLoanCharges(loan);
+                } else {
+                    // ✅ Targeted recalculation - only recalculate affected installments
+                    // Use the installment numbers collected BEFORE deactivation
+                    Set<LoanRepaymentScheduleInstallment> affectedInstallments = new HashSet<>();
 
-                            if (affectedInstallment != null) {
-                                affectedInstallments.add(affectedInstallment);
-                                log.info("Installment {} (due: {}) is affected by deactivated charge {}",
-                                        affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(),
-                                        deactivatedCharge.getId());
-                            } else {
-                                log.warn("Could not find installment for deactivated charge {} with due date {}", deactivatedCharge.getId(),
-                                        deactivatedCharge.getDueLocalDate());
-                            }
+                    // Find installments from the loan's schedule using the collected installment numbers
+                    for (LoanRepaymentScheduleInstallment scheduleInstallment : loan.getRepaymentScheduleInstallments()) {
+                        if (scheduleInstallment.getInstallmentNumber() != null
+                                && affectedInstallmentNumbers.contains(scheduleInstallment.getInstallmentNumber())) {
+                            affectedInstallments.add(scheduleInstallment);
+                            log.info("Found affected installment {} (due: {}) for recalculation",
+                                    scheduleInstallment.getInstallmentNumber(), scheduleInstallment.getDueDate());
                         }
+                    }
+
+                    // Recalculate charges for ONLY the affected installments
+                    if (!affectedInstallments.isEmpty()) {
+                        log.info("Recalculating charges for {} affected installments after bulk removal: {}", affectedInstallments.size(),
+                                affectedInstallmentNumbers);
+                        for (LoanRepaymentScheduleInstallment affectedInstallment : affectedInstallments) {
+                            recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
+                            log.info("Recalculated charges for installment {} (due: {})", affectedInstallment.getInstallmentNumber(),
+                                    affectedInstallment.getDueDate());
+                        }
+                    } else {
+                        // Fallback: If no installments found, do full recalculation (safety net)
+                        log.warn("No affected installments found for installment numbers {}, falling back to full recalculation",
+                                affectedInstallmentNumbers);
+                        recalculateInstallmentChargesFromActiveLoanCharges(loan);
                     }
                 }
 
-                // Recalculate charges for ONLY the affected installments
-                if (!affectedInstallments.isEmpty()) {
-                    log.info("Recalculating charges for {} affected installments after bulk removal", affectedInstallments.size());
-                    for (LoanRepaymentScheduleInstallment affectedInstallment : affectedInstallments) {
-                        recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-                        log.info("Recalculated charges for installment {} (due: {})", affectedInstallment.getInstallmentNumber(),
-                                affectedInstallment.getDueDate());
-                    }
-                } else {
-                    // Fallback: If no installments found, do full recalculation (safety net)
-                    log.warn("No affected installments found for deactivated charges, falling back to full recalculation");
+                // Safety net: ensure repayment schedule charge portions are fully in sync with active charges.
+                // If any mismatch remains after targeted updates, do a full schedule charge recalculation.
+                if (hasRepaymentScheduleChargeMismatch(loan)) {
+                    log.warn("Detected charge mismatch between repayment schedule and active charges for loan {}. "
+                            + "Running full installment charge recalculation.", loanId);
                     recalculateInstallmentChargesFromActiveLoanCharges(loan);
                 }
 
@@ -588,6 +785,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 loan.updateLoanScheduleDependentDerivedFields();
                 loan.updateLoanSummaryAndStatus();
                 loanRepositoryWrapper.saveAndFlush(loan);
+                // Ensure m_loan_arrears_aging is refreshed in the same flow for partial deactivations too.
+                loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
+                businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
 
                 // Post journal entries to reverse accounting entries for the reversed accrual transactions
                 // Only post entries for fully reversed transactions (not partially updated ones)
@@ -690,18 +890,20 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // Update schedule/summary from charges only (like our bulk overdue deactivation flow).
         // IMPORTANT: Only recalculate the specific installment that was affected by the reversed charge,
         // not all installments, to prevent removing charges from other periods.
-        if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
-            // Find the installment that matches the reversed charge's due date
-            LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
-                    .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate())).findFirst().orElse(null);
-
-            if (affectedInstallment != null) {
-                // Only recalculate the affected installment
-                recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-                log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
-                        affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
+        if (loanCharge.isOverdueInstallmentCharge()) {
+            // ✅ Use the LoanOverdueInstallmentCharge relationship (consistent with recalculation logic)
+            if (loanCharge.getOverdueInstallmentCharge() != null) {
+                LoanRepaymentScheduleInstallment affectedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
+                if (affectedInstallment != null) {
+                    // Only recalculate the affected installment
+                    recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
+                    log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
+                            affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
+                } else {
+                    log.warn("Reversed charge {} has no linked installment", loanChargeId);
+                }
             } else {
-                log.warn("Could not find installment with due date {} for reversed charge {}", loanCharge.getDueLocalDate(), loanChargeId);
+                log.warn("Reversed charge {} has no LoanOverdueInstallmentCharge relationship", loanChargeId);
             }
         }
         // For non-overdue charges, recalculate all installments (shouldn't happen for our use case)
@@ -946,26 +1148,58 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
      * exceptions.
      */
     private boolean inactivateOverdueLoanCharge(LoanCharge loanCharge) {
+        if (loanCharge == null) {
+            log.warn("Cannot deactivate null charge");
+            return false;
+        }
+
+        Long chargeId = loanCharge.getId();
+        if (chargeId == null) {
+            log.warn("Cannot deactivate charge with null ID");
+            return false;
+        }
+
         // Skip if not an overdue installment charge
-        if (!loanCharge.getChargeTimeType().isOverdueInstallment()) {
-            log.warn("Skipping charge {} - not an overdue installment charge", loanCharge.getId());
+        if (loanCharge.getChargeTimeType() == null || !loanCharge.getChargeTimeType().isOverdueInstallment()) {
+            log.warn("Skipping charge {} - not an overdue installment charge (chargeTimeType: {})", chargeId,
+                    loanCharge.getChargeTimeType() != null ? loanCharge.getChargeTimeType().getValue() : "null");
             return false;
         }
 
         // Skip if already inactive
         if (!loanCharge.isActive()) {
-            log.debug("Skipping charge {} - already inactive", loanCharge.getId());
+            log.debug("Skipping charge {} - already inactive", chargeId);
             return false;
         }
 
-        // Deactivate the charge
-        loanCharge.setActive(false);
-        loanChargeRepository.saveAndFlush(loanCharge);
+        try {
+            // The charge should already be a managed entity (we reload it before calling this method)
+            // But verify it's active before deactivating
+            if (!loanCharge.isActive()) {
+                log.debug("Charge {} is already inactive, skipping", chargeId);
+                return false;
+            }
 
-        businessEventNotifierService.notifyPostBusinessEvent(new LoanUpdateChargeBusinessEvent(loanCharge));
+            // Deactivate the charge
+            loanCharge.setActive(false);
+            loanChargeRepository.saveAndFlush(loanCharge);
 
-        log.info("Successfully deactivated overdue charge {}", loanCharge.getId());
-        return true;
+            // Verify the deactivation persisted
+            LoanCharge verifyCharge = loanChargeRepository.findById(chargeId).orElse(null);
+            if (verifyCharge != null && verifyCharge.isActive()) {
+                log.error("Charge {} deactivation did not persist! Still active after saveAndFlush", chargeId);
+                return false;
+            }
+
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanUpdateChargeBusinessEvent(loanCharge));
+
+            log.info("Successfully deactivated overdue charge {} (verified inactive: {})", chargeId,
+                    verifyCharge != null ? !verifyCharge.isActive() : "N/A");
+            return true;
+        } catch (Exception e) {
+            log.error("Error deactivating charge {}", chargeId, e);
+            return false;
+        }
     }
 
     /**
@@ -1319,28 +1553,31 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
      * Keeping it for potential future use.
      */
     private void updateRepaymentScheduleForReversedCharge(Loan loan, LoanCharge loanCharge, BigDecimal reversedAmount) {
-        if (!loanCharge.isOverdueInstallmentCharge() || loanCharge.getDueLocalDate() == null) {
+        if (!loanCharge.isOverdueInstallmentCharge()) {
             return; // Only update schedule for overdue installment charges
         }
 
-        // Find the installment that matches the reversed charge's due date
-        LoanRepaymentScheduleInstallment affectedInstallment = loan.getRepaymentScheduleInstallments().stream()
-                .filter(inst -> inst.getDueDate().equals(loanCharge.getDueLocalDate())).findFirst().orElse(null);
-
-        if (affectedInstallment != null) {
-            // Only recalculate the affected installment to prevent affecting other periods
-            recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-            log.info("Updated repayment schedule for reversed charge {} - installment {} (due: {}) will show reduced penalty amount",
-                    loanCharge.getId(), affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate());
+        // ✅ Use the LoanOverdueInstallmentCharge relationship (consistent with recalculation logic)
+        if (loanCharge.getOverdueInstallmentCharge() != null) {
+            LoanRepaymentScheduleInstallment affectedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
+            if (affectedInstallment != null) {
+                // Only recalculate the affected installment to prevent affecting other periods
+                recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
+                log.info("Updated repayment schedule for reversed charge {} - installment {} (due: {}) will show reduced penalty amount",
+                        loanCharge.getId(), affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate());
+            } else {
+                log.warn("Reversed charge {} has no linked installment", loanCharge.getId());
+            }
         } else {
-            log.warn("Could not find installment with due date {} for reversed charge {}", loanCharge.getDueLocalDate(),
-                    loanCharge.getId());
+            log.warn("Reversed charge {} has no LoanOverdueInstallmentCharge relationship", loanCharge.getId());
         }
     }
 
     /**
      * Recalculates charge portions for a specific installment based on currently active loan charges. This ensures only
      * the affected installment is updated, preventing removal of charges from other periods.
+     *
+     * CRITICAL: Uses installment ID matching to avoid detached entity issues.
      */
     private void recalculateInstallmentChargesForSpecificInstallment(Loan loan, LoanRepaymentScheduleInstallment installment) {
         MonetaryCurrency currency = loan.getCurrency();
@@ -1351,6 +1588,25 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         Money feeWrittenOff = Money.zero(currency);
         Money penaltyWrittenOff = Money.zero(currency);
 
+        // Build sorted schedule installments for robust overdue-charge mapping
+        List<LoanRepaymentScheduleInstallment> sortedInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
+        sortedInstallments.sort((left, right) -> {
+            if (left == null || right == null) {
+                return 0;
+            }
+            if (left.getInstallmentNumber() != null && right.getInstallmentNumber() != null) {
+                return left.getInstallmentNumber().compareTo(right.getInstallmentNumber());
+            }
+            if (left.getDueDate() != null && right.getDueDate() != null) {
+                return left.getDueDate().compareTo(right.getDueDate());
+            }
+            return 0;
+        });
+
+        // Target identifiers
+        Integer targetInstallmentNumber = installment.getInstallmentNumber();
+        LocalDate targetDueDate = installment.getDueDate();
+
         // Sum up all ACTIVE charges for this specific installment
         for (LoanCharge loanCharge : loan.getLoanCharges()) {
             if (!loanCharge.isActive()) {
@@ -1360,15 +1616,23 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             // Check if this charge applies to this installment
             boolean appliesToInstallment = false;
 
-            if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
-                // Overdue charges are linked by due date
-                appliesToInstallment = installment.getDueDate().equals(loanCharge.getDueLocalDate());
+            if (loanCharge.isOverdueInstallmentCharge()) {
+                Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(loanCharge, sortedInstallments);
+                appliesToInstallment = (resolvedInstallmentNumber != null && targetInstallmentNumber != null
+                        && resolvedInstallmentNumber.equals(targetInstallmentNumber));
             } else if (loanCharge.isInstalmentFee()) {
                 // Installment fees apply to specific installments via LoanInstallmentCharge
                 for (LoanInstallmentCharge installmentCharge : loanCharge.installmentCharges()) {
-                    if (installmentCharge.getRepaymentInstallment().equals(installment)) {
-                        appliesToInstallment = true;
-                        break;
+                    LoanRepaymentScheduleInstallment feeInstallment = installmentCharge.getRepaymentInstallment();
+                    if (feeInstallment != null) {
+                        // Match by installment number + due date (stable identifiers)
+                        if (targetInstallmentNumber != null && feeInstallment.getInstallmentNumber() != null && targetDueDate != null
+                                && feeInstallment.getDueDate() != null
+                                && targetInstallmentNumber.equals(feeInstallment.getInstallmentNumber())
+                                && targetDueDate.equals(feeInstallment.getDueDate())) {
+                            appliesToInstallment = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1404,6 +1668,21 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private void recalculateInstallmentChargesFromActiveLoanCharges(Loan loan) {
         MonetaryCurrency currency = loan.getCurrency();
 
+        // Build sorted schedule installments for robust overdue-charge mapping
+        List<LoanRepaymentScheduleInstallment> sortedInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
+        sortedInstallments.sort((left, right) -> {
+            if (left == null || right == null) {
+                return 0;
+            }
+            if (left.getInstallmentNumber() != null && right.getInstallmentNumber() != null) {
+                return left.getInstallmentNumber().compareTo(right.getInstallmentNumber());
+            }
+            if (left.getDueDate() != null && right.getDueDate() != null) {
+                return left.getDueDate().compareTo(right.getDueDate());
+            }
+            return 0;
+        });
+
         // For each installment, recalculate total penalty and fee charges from active loan charges
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
             Money totalFee = Money.zero(currency);
@@ -1412,6 +1691,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             Money penaltyWaived = Money.zero(currency);
             Money feeWrittenOff = Money.zero(currency);
             Money penaltyWrittenOff = Money.zero(currency);
+
+            Integer targetInstallmentNumber = installment.getInstallmentNumber();
+            LocalDate targetDueDate = installment.getDueDate();
 
             // Sum up all ACTIVE charges for this installment
             for (LoanCharge loanCharge : loan.getLoanCharges()) {
@@ -1422,13 +1704,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // Check if this charge applies to this installment
                 boolean appliesToInstallment = false;
 
-                if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
-                    // Overdue charges are linked by due date
-                    appliesToInstallment = installment.getDueDate().equals(loanCharge.getDueLocalDate());
+                if (loanCharge.isOverdueInstallmentCharge()) {
+                    Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(loanCharge, sortedInstallments);
+                    appliesToInstallment = (resolvedInstallmentNumber != null && targetInstallmentNumber != null
+                            && resolvedInstallmentNumber.equals(targetInstallmentNumber));
                 } else if (loanCharge.isInstalmentFee()) {
                     // Installment fees apply to specific installments via LoanInstallmentCharge
                     for (LoanInstallmentCharge installmentCharge : loanCharge.installmentCharges()) {
-                        if (installmentCharge.getRepaymentInstallment().equals(installment)) {
+                        LoanRepaymentScheduleInstallment feeInstallment = installmentCharge.getRepaymentInstallment();
+                        if (feeInstallment != null && targetInstallmentNumber != null && feeInstallment.getInstallmentNumber() != null
+                                && targetDueDate != null && feeInstallment.getDueDate() != null
+                                && targetInstallmentNumber.equals(feeInstallment.getInstallmentNumber())
+                                && targetDueDate.equals(feeInstallment.getDueDate())) {
                             appliesToInstallment = true;
                             break;
                         }
@@ -1454,6 +1741,156 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
             log.debug("Updated installment {} - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), totalFee, totalPenalty);
         }
+    }
+
+    /**
+     * Resolves the target EMI installment number for an overdue charge.
+     * <p>
+     * Resolution order: 1) Due-date window mapping against repayment schedule installments: (fromDate, dueDate] when
+     * fromDate exists, otherwise (prevDueDate, currentDueDate]. 2) Direct LoanOverdueInstallmentCharge link as
+     * fallback.
+     *
+     * We intentionally prefer date-window mapping because overdue-charge direct links can point to the previous EMI
+     * while the repayment schedule view is rendered by due-date windows.
+     * </p>
+     */
+    private Integer resolveInstallmentNumberForOverdueCharge(LoanCharge loanCharge,
+            List<LoanRepaymentScheduleInstallment> sortedInstallments) {
+        if (loanCharge == null || !loanCharge.isOverdueInstallmentCharge()) {
+            return null;
+        }
+
+        if (sortedInstallments == null || sortedInstallments.isEmpty() || loanCharge.getDueDate() == null) {
+            if (loanCharge.getOverdueInstallmentCharge() != null && loanCharge.getOverdueInstallmentCharge().getInstallment() != null
+                    && loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber() != null) {
+                return loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
+            }
+            return null;
+        }
+
+        LocalDate chargeDueDate = loanCharge.getDueDate();
+        LocalDate prevDueDate = null;
+        LoanRepaymentScheduleInstallment lastValid = null;
+
+        for (LoanRepaymentScheduleInstallment current : sortedInstallments) {
+            if (current == null || current.getInstallmentNumber() == null || current.getDueDate() == null) {
+                continue;
+            }
+
+            LocalDate currentDueDate = current.getDueDate();
+            LocalDate currentFromDate = current.getFromDate();
+
+            // Preferred mapping when fromDate is available: (fromDate, dueDate]
+            if (currentFromDate != null) {
+                if (chargeDueDate.isAfter(currentFromDate) && !chargeDueDate.isAfter(currentDueDate)) {
+                    return current.getInstallmentNumber();
+                }
+            }
+
+            // First valid installment: anything on/before its due date maps here.
+            if (prevDueDate == null) {
+                if (!chargeDueDate.isAfter(currentDueDate)) {
+                    return current.getInstallmentNumber();
+                }
+            } else {
+                // Regular window: (prevDueDate, currentDueDate]
+                if (chargeDueDate.isAfter(prevDueDate) && !chargeDueDate.isAfter(currentDueDate)) {
+                    return current.getInstallmentNumber();
+                }
+            }
+
+            prevDueDate = currentDueDate;
+            lastValid = current;
+        }
+
+        // If chargeDueDate is after the last schedule due date, map to the last installment as a safe fallback.
+        if (lastValid != null && lastValid.getInstallmentNumber() != null) {
+            return lastValid.getInstallmentNumber();
+        }
+
+        // Fallback to direct relationship if date-based mapping did not resolve.
+        if (loanCharge.getOverdueInstallmentCharge() != null && loanCharge.getOverdueInstallmentCharge().getInstallment() != null
+                && loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber() != null) {
+            return loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
+        }
+
+        return null;
+    }
+
+    private boolean isSameInstallment(LoanRepaymentScheduleInstallment left, LoanRepaymentScheduleInstallment right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left.getId() != null && right.getId() != null) {
+            return left.getId().equals(right.getId());
+        }
+        return left.getInstallmentNumber() != null && left.getInstallmentNumber().equals(right.getInstallmentNumber())
+                && left.getDueDate() != null && left.getDueDate().equals(right.getDueDate());
+    }
+
+    private boolean hasRepaymentScheduleChargeMismatch(Loan loan) {
+        MonetaryCurrency currency = loan.getCurrency();
+
+        // Build sorted schedule installments for robust overdue-charge mapping
+        List<LoanRepaymentScheduleInstallment> sortedInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
+        sortedInstallments.sort((left, right) -> {
+            if (left == null || right == null) {
+                return 0;
+            }
+            if (left.getInstallmentNumber() != null && right.getInstallmentNumber() != null) {
+                return left.getInstallmentNumber().compareTo(right.getInstallmentNumber());
+            }
+            if (left.getDueDate() != null && right.getDueDate() != null) {
+                return left.getDueDate().compareTo(right.getDueDate());
+            }
+            return 0;
+        });
+
+        for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            Money expectedFee = Money.zero(currency);
+            Money expectedPenalty = Money.zero(currency);
+
+            // Get the target installment ID and number for matching (use the actual installment from loan's schedule)
+            Integer targetInstallmentNumber = installment.getInstallmentNumber();
+            LocalDate targetDueDate = installment.getDueDate();
+
+            for (LoanCharge loanCharge : loan.getLoanCharges()) {
+                if (!loanCharge.isActive()) {
+                    continue;
+                }
+                boolean appliesToInstallment = false;
+                if (loanCharge.isOverdueInstallmentCharge()) {
+                    Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(loanCharge, sortedInstallments);
+                    appliesToInstallment = (resolvedInstallmentNumber != null && targetInstallmentNumber != null
+                            && resolvedInstallmentNumber.equals(targetInstallmentNumber));
+                } else if (loanCharge.isInstalmentFee()) {
+                    for (LoanInstallmentCharge installmentCharge : loanCharge.installmentCharges()) {
+                        LoanRepaymentScheduleInstallment feeInstallment = installmentCharge.getRepaymentInstallment();
+                        if (feeInstallment != null && targetInstallmentNumber != null && feeInstallment.getInstallmentNumber() != null
+                                && targetDueDate != null && feeInstallment.getDueDate() != null
+                                && targetInstallmentNumber.equals(feeInstallment.getInstallmentNumber())
+                                && targetDueDate.equals(feeInstallment.getDueDate())) {
+                            appliesToInstallment = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (appliesToInstallment) {
+                    if (loanCharge.isPenaltyCharge()) {
+                        expectedPenalty = expectedPenalty.plus(loanCharge.getAmount(currency));
+                    } else {
+                        expectedFee = expectedFee.plus(loanCharge.getAmount(currency));
+                    }
+                }
+            }
+
+            if (!installment.getFeeChargesCharged(currency).isEqualTo(expectedFee)
+                    || !installment.getPenaltyChargesCharged(currency).isEqualTo(expectedPenalty)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

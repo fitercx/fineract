@@ -107,13 +107,36 @@ public class LineOfCreditChargeDomainService {
 
     public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment, boolean advanceRecurringCycle,
             SavingsAccountTransaction savingsTransaction) {
+        return pay(c, payment, advanceRecurringCycle, savingsTransaction, false);
+    }
+
+    /**
+     * Pay a charge amount.
+     *
+     * @param c
+     *            the LOC charge
+     * @param payment
+     *            the payment amount
+     * @param advanceRecurringCycle
+     *            whether to advance recurring cycle
+     * @param savingsTransaction
+     *            the savings transaction (for journal entry linking)
+     * @param skipTaxJournalEntries
+     *            if true, skip creating tax journal entries (used when savings processor handles them)
+     * @return the remaining outstanding amount
+     */
+    public BigDecimal pay(LineOfCreditCharge c, BigDecimal payment, boolean advanceRecurringCycle,
+            SavingsAccountTransaction savingsTransaction, boolean skipTaxJournalEntries) {
         require(payment != null && payment.compareTo(BigDecimal.ZERO) > 0, "payment must be > 0");
         BigDecimal toPay = payment.min(c.getAmountOutstanding());
         c.setAmountPaid(ns(c.getAmountPaid()).add(toPay));
         recalculateOutstanding(c);
 
         // Create journal entries for the tax portion if transaction is provided
-        if (savingsTransaction != null && c.getTaxAmountDefaulted() != null && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
+        // Skip if skipTaxJournalEntries is true (e.g., when savings processor handles tax journal entries for LOC
+        // Activation)
+        if (!skipTaxJournalEntries && savingsTransaction != null && c.getTaxAmountDefaulted() != null
+                && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
             createJournalEntriesForChargeTax(c, savingsTransaction, false);
         }
 
@@ -200,6 +223,23 @@ public class LineOfCreditChargeDomainService {
     }
 
     public void unpay(LineOfCreditCharge c, BigDecimal amount, SavingsAccountTransaction reversalTransaction) {
+        unpay(c, amount, reversalTransaction, false);
+    }
+
+    /**
+     * Reverse a charge payment.
+     *
+     * @param c
+     *            the LOC charge
+     * @param amount
+     *            the amount to reverse
+     * @param reversalTransaction
+     *            the savings reversal transaction (for journal entry linking)
+     * @param skipTaxJournalEntries
+     *            if true, skip creating tax reversal journal entries (used when savings processor handles them)
+     */
+    public void unpay(LineOfCreditCharge c, BigDecimal amount, SavingsAccountTransaction reversalTransaction,
+            boolean skipTaxJournalEntries) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
@@ -212,7 +252,10 @@ public class LineOfCreditChargeDomainService {
         recalculateOutstanding(c);
 
         // Create reversal journal entries for the tax portion if transaction is provided
-        if (reversalTransaction != null && c.getTaxAmountDefaulted() != null && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
+        // Skip if skipTaxJournalEntries is true (e.g., when savings processor handles tax journal entries for LOC
+        // Activation)
+        if (!skipTaxJournalEntries && reversalTransaction != null && c.getTaxAmountDefaulted() != null
+                && c.getTaxAmountDefaulted().compareTo(BigDecimal.ZERO) > 0) {
             createJournalEntriesForChargeTax(c, reversalTransaction, true);
         }
         // We are not rolling back dueDate if cycle already advanced. Future enhancement could track previous due date.
