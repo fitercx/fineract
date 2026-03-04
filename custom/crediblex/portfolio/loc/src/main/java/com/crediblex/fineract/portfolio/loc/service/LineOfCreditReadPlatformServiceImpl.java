@@ -308,6 +308,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.advance_percentage as advancePercentage,
                     STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
                     STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan,
+                    MIN(mr.duedate) as dueDate,
                     COALESCE(SUM(COALESCE(mr.penalty_charges_amount, 0)
                                  - COALESCE(mr.penalty_charges_completed_derived, 0)
                                  - COALESCE(mr.penalty_charges_writtenoff_derived, 0)
@@ -431,6 +432,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String invoiceNumber = rs.getString("invoiceNumber");
             final BigDecimal totalOverpaidDerived = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalOverpaidDerived");
             final String buyerSupplierDetail = rs.getString("buyerSupplierLoan");
+            final LocalDate invoiceDueDate = JdbcSupport.getLocalDate(rs, "dueDate");
 
             final LocalDate overdueSinceDate = JdbcSupport.getLocalDate(rs, "overdueSinceDate");
             Boolean inArrears = (overdueSinceDate != null);
@@ -474,6 +476,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             BigDecimal lateFee = penaltyDue != null ? penaltyDue : BigDecimal.ZERO;
             summaryData.getAdditionalProperties().put("daysPastDue", daysPastDue);
             summaryData.getAdditionalProperties().put("lateFee", lateFee);
+            summaryData.getAdditionalProperties().put("invoiceDueDate", invoiceDueDate);
             return summaryData;
         }
 
