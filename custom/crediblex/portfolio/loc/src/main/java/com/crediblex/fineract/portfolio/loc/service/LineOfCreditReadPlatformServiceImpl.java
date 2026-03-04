@@ -306,6 +306,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.amount_in_facility_currency as amountInFacilityCurrency,
                     mlcp.invoice_amount as invoiceAmount,
                     mlcp.advance_percentage as advancePercentage,
+                    mlcp.disburse_in_invoice_currency as disburseInInvoiceCurrency,
                     STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
                     STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan,
                     MIN(mr.duedate) as dueDate,
@@ -338,7 +339,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
                     l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
-                    mlcp.amount_in_facility_currency, mlcp.advance_percentage,
+                    mlcp.amount_in_facility_currency, mlcp.advance_percentage, mlcp.disburse_in_invoice_currency,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
                     loc.tenor_days, loc.annual_interest_rate
                     """;
@@ -445,6 +446,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal advancePercentage = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "advancePercentage");
             final BigDecimal annualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
             final BigDecimal penaltyDue = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "penaltyDue");
+            final boolean disburseInInvoiceCurrency = rs.getBoolean("disburseInInvoiceCurrency");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -464,6 +466,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
             summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
             summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
+            summaryData.getAdditionalProperties().put("disburseInInvoiceCurrency", disburseInInvoiceCurrency);
+
             // New properties
             Integer daysPastDue = 0; // default to zero when not applicable
             if (overdueSinceDate != null) {
