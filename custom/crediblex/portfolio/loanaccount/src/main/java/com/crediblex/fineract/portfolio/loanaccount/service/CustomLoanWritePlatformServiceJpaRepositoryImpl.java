@@ -441,6 +441,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             LoanTransaction disbursementTransaction = null;
             if (isAccountTransfer) {
+                // Validate actualDisbursementDate is present before fee calculation
+                if (actualDisbursementDate == null) {
+                    throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.date.required",
+                            "Actual disbursement date is required for loan disbursement to savings account.");
+                }
+
                 // Use same per-tranche fee/tax as CustomLoanDisbursementService so savings gets net amount every
                 // tranche
                 CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
