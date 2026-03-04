@@ -77,9 +77,9 @@ import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepository
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationType;
 import org.apache.fineract.portfolio.account.domain.AccountAssociations;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
-import org.apache.fineract.portfolio.account.domain.AccountAssociationType;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
 import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
@@ -2078,18 +2078,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.insufficient.collection.account.balance",
                     "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
                             + "This loan has 'Short Disbursal' disabled, which requires the processing fee to be deposited in the collection account before disbursement. "
-                            + "Processing Fee Required: " + totalProcessingFee + ", "
-                            + "Available Balance in Collection Account: " + availableBalance + ". "
-                            + "Please deposit at least " + totalProcessingFee.subtract(availableBalance) + " more into the collection account (ID: "
-                            + collectionAccount.getId() + ") before disbursing. "
+                            + "Processing Fee Required: " + totalProcessingFee + ", " + "Available Balance in Collection Account: "
+                            + availableBalance + ". " + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
+                            + " more into the collection account (ID: " + collectionAccount.getId() + ") before disbursing. "
                             + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
                     totalProcessingFee, availableBalance, collectionAccount.getId());
         }
     }
 
     /**
-     * Gets the linked savings account for a loan (used for fee collection).
-     * Fetches a fresh copy from the database to ensure we have the current balance.
+     * Gets the linked savings account for a loan (used for fee collection). Fetches a fresh copy from the database to
+     * ensure we have the current balance.
      *
      * @param loan
      *            the loan
@@ -2171,12 +2170,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Get fresh balance to validate before withdrawal
         BigDecimal availableBalance = getFreshSavingsAccountBalance(collectionAccount.getId());
         if (availableBalance.compareTo(totalProcessingFee) < 0) {
-            throw new GeneralPlatformDomainRuleException(
-                    "error.msg.loan.disbursement.insufficient.collection.account.balance",
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.insufficient.collection.account.balance",
                     "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
-                            + "Processing Fee Required: " + totalProcessingFee + ", "
-                            + "Available Balance in Collection Account: " + availableBalance + ". "
-                            + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
+                            + "Processing Fee Required: " + totalProcessingFee + ", " + "Available Balance in Collection Account: "
+                            + availableBalance + ". " + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
                             + " more into the collection account (ID: " + collectionAccount.getId() + ") before disbursing. "
                             + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
                     totalProcessingFee, availableBalance, collectionAccount.getId());
@@ -2210,11 +2207,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     totalProcessingFee, collectionAccount.getId(), loan.getId());
 
         } catch (Exception e) {
-            log.error("Failed to withdraw processing fee from collection account {} for loan {}. Error: {}",
-                    collectionAccount.getId(), loan.getId(), e.getMessage(), e);
+            log.error("Failed to withdraw processing fee from collection account {} for loan {}. Error: {}", collectionAccount.getId(),
+                    loan.getId(), e.getMessage(), e);
 
-            throw new GeneralPlatformDomainRuleException(
-                    "error.msg.loan.disbursement.rbf.processing.fee.withdrawal.failed",
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.rbf.processing.fee.withdrawal.failed",
                     "RBF Loan Disbursement Failed: Unable to withdraw processing fee from collection account. " + "Error: "
                             + e.getMessage(),
                     loan.getId(), collectionAccount.getId(), totalProcessingFee);
