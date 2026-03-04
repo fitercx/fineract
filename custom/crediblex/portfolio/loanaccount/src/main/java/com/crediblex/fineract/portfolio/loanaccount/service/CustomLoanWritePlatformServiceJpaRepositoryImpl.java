@@ -77,7 +77,9 @@ import org.apache.fineract.organisation.workingdays.domain.WorkingDaysRepository
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
+import org.apache.fineract.portfolio.account.domain.AccountAssociations;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
+import org.apache.fineract.portfolio.account.domain.AccountAssociationType;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
 import org.apache.fineract.portfolio.account.domain.AccountTransferTransaction;
@@ -162,6 +164,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -194,6 +197,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private LineOfCreditRepository lineOfCreditRepository;
     private final CustomLoanDisbursementService customLoanDisbursementService;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
+    private final AccountAssociationsRepository accountAssociationRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -239,7 +244,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             PlatformTransactionManager platformTransactionManager, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
             LocStatusAggregationUtils locStatusAggregationUtils, CustomLoanDisbursementService customLoanDisbursementService,
-            SavingsAccountWritePlatformService savingsAccountWritePlatformService) {
+            SavingsAccountWritePlatformService savingsAccountWritePlatformService, JdbcTemplate jdbcTemplate) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -272,6 +277,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.locStatusAggregationUtils = locStatusAggregationUtils;
         this.customLoanDisbursementService = customLoanDisbursementService;
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
+        this.accountAssociationRepository = accountAssociationRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @PostConstruct
@@ -292,6 +299,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Load loan first to check if it's multi-tranche
         Loan loan = loanAssembler.assembleFrom(loanId);
+
+        // Validate collection account balance when isShortDisbursal=false (upfront fee collection required)
+        validateCollectionAccountForNonShortDisbursal(loan, command);
 
         // Fix: Validate multi-tranche disbursement date against specific tranche's expected date
         // before calling core validator (which validates against loan-level expected date)
@@ -435,10 +445,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 // tranche
                 CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
                         .calculateFeeAndTaxForTrancheDisbursement(loan, actualDisbursementDate);
-                BigDecimal chargeReducableFromDisbursement = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
-                loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
 
-                Money netDisbursementAmount = amountToDisburse.minus(feeAndTax.fee()).minus(feeAndTax.tax());
+                Money netDisbursementAmount;
+                if (loan.isShortDisbursalEnabled()) {
+                    // Short disbursal: deduct fees from disbursement amount (existing behavior)
+                    BigDecimal chargeReducableFromDisbursement = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
+                    loan.getSummary().setTotalChargesPayableByPrincipalDeduction(chargeReducableFromDisbursement);
+                    netDisbursementAmount = amountToDisburse.minus(feeAndTax.fee()).minus(feeAndTax.tax());
+                } else {
+                    // Full disbursal: collect processing fee from collection account before disbursement
+                    // The fee was deposited upfront by the client, we withdraw it now
+                    loan.getSummary().setTotalChargesPayableByPrincipalDeduction(BigDecimal.ZERO);
+                    netDisbursementAmount = amountToDisburse;
+                    // Withdraw processing fee from linked savings/collection account
+                    withdrawProcessingFeeFromCollectionAccount(loan, feeAndTax, actualDisbursementDate);
+                }
                 disburseLoanToSavings(loan, command, amountToDisburse, netDisbursementAmount, paymentDetail);
 
                 // Optional: auto-withdraw from the destination savings account (same DB transaction)
@@ -2010,6 +2031,194 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
                 .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    /**
+     * Validates that the linked savings/collection account has sufficient balance to cover processing fees when
+     * isShortDisbursal=false (upfront fee collection required before disbursement).
+     *
+     * When isShortDisbursal=false, processing fees must be collected from the collection account BEFORE disbursement,
+     * instead of being deducted from the disbursed amount (short disbursal).
+     *
+     * @param loan
+     *            the loan to validate
+     * @param command
+     *            the disbursement command
+     */
+    private void validateCollectionAccountForNonShortDisbursal(final Loan loan, final JsonCommand command) {
+        // Skip validation if short disbursal is enabled (default behavior)
+        if (loan.isShortDisbursalEnabled()) {
+            return;
+        }
+
+        final LocalDate actualDisbursementDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
+
+        // Calculate the processing fee for this disbursement
+        CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
+                .calculateFeeAndTaxForTrancheDisbursement(loan, actualDisbursementDate);
+        BigDecimal totalProcessingFee = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
+
+        // If no processing fee, no validation needed
+        if (totalProcessingFee.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        // Get the linked savings account (collection account)
+        SavingsAccount collectionAccount = getLinkedSavingsAccount(loan);
+        if (collectionAccount == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.no.collection.account",
+                    "Loan disbursement with isShortDisbursal=false requires a linked savings/collection account to collect processing fees upfront.");
+        }
+
+        // Get fresh balance directly from database, bypassing Hibernate cache
+        BigDecimal availableBalance = getFreshSavingsAccountBalance(collectionAccount.getId());
+
+        // Validate sufficient funds
+        if (availableBalance.compareTo(totalProcessingFee) < 0) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.insufficient.collection.account.balance",
+                    "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
+                            + "This loan has 'Short Disbursal' disabled, which requires the processing fee to be deposited in the collection account before disbursement. "
+                            + "Processing Fee Required: " + totalProcessingFee + ", "
+                            + "Available Balance in Collection Account: " + availableBalance + ". "
+                            + "Please deposit at least " + totalProcessingFee.subtract(availableBalance) + " more into the collection account (ID: "
+                            + collectionAccount.getId() + ") before disbursing. "
+                            + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
+                    totalProcessingFee, availableBalance, collectionAccount.getId());
+        }
+    }
+
+    /**
+     * Gets the linked savings account for a loan (used for fee collection).
+     * Fetches a fresh copy from the database to ensure we have the current balance.
+     *
+     * @param loan
+     *            the loan
+     * @return the linked savings account, or null if not found
+     */
+    private SavingsAccount getLinkedSavingsAccount(final Loan loan) {
+        // Try to get linked savings from account associations
+        AccountAssociations accountAssociations = accountAssociationRepository.findByLoanIdAndType(loan.getId(),
+                AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION.getValue());
+        if (accountAssociations != null && accountAssociations.linkedSavingsAccount() != null) {
+            // Fetch fresh from repository to ensure we have the current balance
+            Long savingsAccountId = accountAssociations.linkedSavingsAccount().getId();
+            return savingsAccountRepositoryWrapper.findOneWithNotFoundDetection(savingsAccountId);
+        }
+        return null;
+    }
+
+    /**
+     * Gets the fresh account balance directly from the database, bypassing Hibernate cache.
+     *
+     * @param savingsAccountId
+     *            the savings account ID
+     * @return the current account balance from the database
+     */
+    private BigDecimal getFreshSavingsAccountBalance(final Long savingsAccountId) {
+        String sql = "SELECT account_balance_derived FROM m_savings_account WHERE id = ?";
+        BigDecimal balance = jdbcTemplate.queryForObject(sql, BigDecimal.class, savingsAccountId);
+        return balance != null ? balance : BigDecimal.ZERO;
+    }
+
+    /**
+     * Gets the first available payment type ID from the database. This is used as a default when no specific payment
+     * type is provided for internal transactions like processing fee withdrawals.
+     *
+     * @return the first payment type ID, defaults to 1L if none found
+     */
+    private Long getDefaultPaymentTypeId() {
+        String sql = "SELECT id FROM m_payment_type ORDER BY order_position LIMIT 1";
+        try {
+            Long paymentTypeId = jdbcTemplate.queryForObject(sql, Long.class);
+            return paymentTypeId != null ? paymentTypeId : 1L;
+        } catch (Exception e) {
+            log.warn("Could not retrieve default payment type, using default ID 1: {}", e.getMessage());
+            return 1L; // Fallback to ID 1 if query fails
+        }
+    }
+
+    /**
+     * Withdraws processing fee from the linked savings/collection account when isShortDisbursal=false. This method is
+     * called during disbursement to withdraw the processing fee from the collection account where it was deposited
+     * upfront by the client.
+     *
+     * This performs a simple savings withdrawal - no loan charge payment is involved since the loan is not yet active.
+     * The withdrawal creates the accounting entry: DR Savings Account (Asset), CR Fee Income (Revenue)
+     *
+     * @param loan
+     *            the loan being disbursed
+     * @param feeAndTax
+     *            the calculated fee and tax amounts
+     * @param disbursementDate
+     *            the disbursement date
+     */
+    private void withdrawProcessingFeeFromCollectionAccount(final Loan loan,
+            final CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax, final LocalDate disbursementDate) {
+
+        BigDecimal totalProcessingFee = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
+
+        // Skip if no fee to collect
+        if (totalProcessingFee.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        SavingsAccount collectionAccount = getLinkedSavingsAccount(loan);
+        if (collectionAccount == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.no.collection.account",
+                    "Cannot collect processing fee: no linked savings/collection account found for loan ID: " + loan.getId());
+        }
+
+        // Get fresh balance to validate before withdrawal
+        BigDecimal availableBalance = getFreshSavingsAccountBalance(collectionAccount.getId());
+        if (availableBalance.compareTo(totalProcessingFee) < 0) {
+            throw new GeneralPlatformDomainRuleException(
+                    "error.msg.loan.disbursement.insufficient.collection.account.balance",
+                    "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
+                            + "Processing Fee Required: " + totalProcessingFee + ", "
+                            + "Available Balance in Collection Account: " + availableBalance + ". "
+                            + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
+                            + " more into the collection account (ID: " + collectionAccount.getId() + ") before disbursing. "
+                            + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
+                    totalProcessingFee, availableBalance, collectionAccount.getId());
+        }
+
+        // Perform savings withdrawal
+        try {
+            final String txnNote = "RBF Processing fee collection for loan disbursement - Loan ID: " + loan.getId();
+            final DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH);
+            final Long paymentTypeId = getDefaultPaymentTypeId();
+
+            final JsonObject json = new JsonObject();
+            json.addProperty("locale", "en");
+            json.addProperty("dateFormat", "dd MMMM yyyy");
+            json.addProperty("transactionDate", fmt.format(disbursementDate));
+            json.addProperty("transactionAmount", totalProcessingFee);
+            json.addProperty("paymentTypeId", paymentTypeId);
+            json.addProperty("note", txnNote);
+
+            final String withdrawalJson = json.toString();
+            final JsonElement parsed = fromApiJsonHelper.parse(withdrawalJson);
+
+            final JsonCommand withdrawalCommand = JsonCommand.from(withdrawalJson, parsed, fromApiJsonHelper, "SAVINGSACCOUNT",
+                    collectionAccount.getId(), null, null, loan.getClientId(), null, collectionAccount.getId(), null, null, null, null,
+                    null, null, null);
+
+            savingsAccountWritePlatformService.withdrawal(collectionAccount.getId(), withdrawalCommand);
+
+            log.info(
+                    "Withdrew processing fee {} from collection account {} for loan {} (isShortDisbursal=false, full disbursement with upfront fee collection)",
+                    totalProcessingFee, collectionAccount.getId(), loan.getId());
+
+        } catch (Exception e) {
+            log.error("Failed to withdraw processing fee from collection account {} for loan {}. Error: {}",
+                    collectionAccount.getId(), loan.getId(), e.getMessage(), e);
+
+            throw new GeneralPlatformDomainRuleException(
+                    "error.msg.loan.disbursement.rbf.processing.fee.withdrawal.failed",
+                    "RBF Loan Disbursement Failed: Unable to withdraw processing fee from collection account. " + "Error: "
+                            + e.getMessage(),
+                    loan.getId(), collectionAccount.getId(), totalProcessingFee);
+        }
     }
 
     private void validateNoOverdueChargesForInstallment(final Loan loan, final LoanRepaymentScheduleInstallment installment) {
