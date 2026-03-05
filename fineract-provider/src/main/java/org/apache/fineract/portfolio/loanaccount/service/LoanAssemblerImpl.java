@@ -328,12 +328,10 @@ public class LoanAssemblerImpl implements LoanAssembler {
         if (isShortDisbursal != null) {
             loan.setShortDisbursalEnabled(isShortDisbursal);
         } else {
-            // Default to true for factor rate products when not explicitly set
-            final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
-            if (factorRateProductEnabled) {
-                loan.setShortDisbursalEnabled(true);
-            }
-            // For non-RBF products, if not provided, defaults to true (existing behavior via entity default)
+            // Default to true when not explicitly set (backward compatible behavior)
+            // This ensures fees are deducted from disbursement amount (short disbursal)
+            // rather than requiring collection from savings account
+            loan.setShortDisbursalEnabled(true);
         }
     }
 
