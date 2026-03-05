@@ -2216,10 +2216,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             log.error("Failed to withdraw processing fee from collection account {} for loan {}. Error: {}", collectionAccount.getId(),
                     loan.getId(), e.getMessage(), e);
 
-            throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.rbf.processing.fee.withdrawal.failed",
+            // Rethrow platform exceptions directly to preserve their semantics
+            if (e instanceof AbstractPlatformDomainRuleException) {
+                throw e;
+            }
+
+            // Wrap other exceptions with proper cause chain
+            throw new RuntimeException(
                     "RBF Loan Disbursement Failed: Unable to withdraw processing fee from collection account. " + "Error: "
                             + e.getMessage(),
-                    loan.getId(), collectionAccount.getId(), totalProcessingFee);
+                    e);
         }
     }
 
