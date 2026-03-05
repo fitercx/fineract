@@ -277,8 +277,9 @@ public class LoanLineOfCreditParams {
         }
 
         // Optional: disburse in invoice currency
-        if (jsonCommand != null && jsonCommand.parameterExists("disburseInInvoiceCurrency")) {
-            final Boolean value = jsonCommand.booleanObjectValueOfParameterNamed("disburseInInvoiceCurrency");
+        if (jsonCommand != null && jsonCommand.parameterExists(LoanAccountAdditionalProperties.DISBURSE_IN_INVOICE_CURRENCY)) {
+            final Boolean value = jsonCommand
+                    .booleanObjectValueOfParameterNamed(LoanAccountAdditionalProperties.DISBURSE_IN_INVOICE_CURRENCY);
             params.setDisburseInInvoiceCurrency(Boolean.TRUE.equals(value));
         } else {
             params.setDisburseInInvoiceCurrency(false);

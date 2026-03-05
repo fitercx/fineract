@@ -312,11 +312,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.disburse_in_invoice_currency as disburseInInvoiceCurrency,
                     STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
                     STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan,
-                    MIN(mr.duedate) as dueDate,
-                    COALESCE(SUM(COALESCE(mr.penalty_charges_amount, 0)
-                                 - COALESCE(mr.penalty_charges_completed_derived, 0)
-                                 - COALESCE(mr.penalty_charges_writtenoff_derived, 0)
-                                 - COALESCE(mr.penalty_charges_waived_derived, 0)), 0) as penaltyDue
+                    mr_agg.dueDate as dueDate,
+                    COALESCE(mr_agg.penaltyDue, 0) as penaltyDue
                     FROM m_line_of_credit loc
                     LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
                     LEFT JOIN m_loan l ON l.id = mlcp.loan_id
@@ -325,7 +322,19 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab_loc ON mlocab_loc.line_of_credit_id = loc.id
-                    LEFT JOIN m_loan_repayment_schedule mr ON mr.loan_id = l.id
+                    LEFT JOIN (
+                        SELECT
+                            mr.loan_id,
+                            MIN(mr.duedate) as dueDate,
+                            COALESCE(SUM(
+                                COALESCE(mr.penalty_charges_amount, 0)
+                                - COALESCE(mr.penalty_charges_completed_derived, 0)
+                                - COALESCE(mr.penalty_charges_writtenoff_derived, 0)
+                                - COALESCE(mr.penalty_charges_waived_derived, 0)
+                            ), 0) as penaltyDue
+                        FROM m_loan_repayment_schedule mr
+                        GROUP BY mr.loan_id
+                    ) mr_agg ON mr_agg.loan_id = l.id
 
                     """;
         }
@@ -344,7 +353,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
                     mlcp.amount_in_facility_currency, mlcp.advance_percentage, mlcp.disburse_in_invoice_currency,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
-                    loc.tenor_days, loc.annual_interest_rate
+                    loc.tenor_days, loc.annual_interest_rate,
+                    mr_agg.dueDate, mr_agg.penaltyDue
                     """;
         }
 
@@ -480,7 +490,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             // New properties
             Integer daysPastDue = 0; // default to zero when not applicable
             if (overdueSinceDate != null) {
-                daysPastDue = Math.toIntExact(ChronoUnit.DAYS.between(overdueSinceDate, DateUtils.getLocalDateOfTenant()));
+                daysPastDue = Math.toIntExact(ChronoUnit.DAYS.between(overdueSinceDate, DateUtils.getBusinessLocalDate()));
                 if (daysPastDue < 0) {
                     daysPastDue = 0;
                 }
