@@ -300,6 +300,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.annual_nominal_interest_rate as loanAnnualNominalInterestRate,
                     la.overdue_since_date_derived as overdueSinceDate,
                     mlcp.invoice_no as invoiceNumber,
+                    mlcp.invoice_currency as invoiceCurrency,
                     mlcp.approved_receivable_amount as approvedReceivableAmount,
                     mlcp.amount_after_advance as amountAfterAdvance,
                     mlcp.approved_payable_amount as approvedPayableAmount,
@@ -337,7 +338,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.external_id, l.currency_digits, l.currency_multiplesof,
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
-                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
+                    l.fixed_emi_amount, mlcp.invoice_no, mlcp.invoice_currency, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
                     mlcp.amount_in_facility_currency, mlcp.advance_percentage, mlcp.disburse_in_invoice_currency,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
@@ -447,6 +448,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal annualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
             final BigDecimal penaltyDue = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "penaltyDue");
             final boolean disburseInInvoiceCurrency = rs.getBoolean("disburseInInvoiceCurrency");
+            final String invoiceCurrency = rs.getString("invoiceCurrency");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -467,6 +469,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
             summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
             summaryData.getAdditionalProperties().put("disburseInInvoiceCurrency", disburseInInvoiceCurrency);
+            summaryData.getAdditionalProperties().put("invoiceCurrency", invoiceCurrency);
 
             // New properties
             Integer daysPastDue = 0; // default to zero when not applicable
