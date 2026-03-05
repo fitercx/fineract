@@ -327,8 +327,14 @@ public class LoanAssemblerImpl implements LoanAssembler {
         final Boolean isShortDisbursal = command.booleanPrimitiveValueOfParameterNamed(LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME);
         if (isShortDisbursal != null) {
             loan.setShortDisbursalEnabled(isShortDisbursal);
+        } else {
+            // Default to true for factor rate products when not explicitly set
+            final boolean factorRateProductEnabled = loan.getLoanProduct().isFactorRateProductEnabled();
+            if (factorRateProductEnabled) {
+                loan.setShortDisbursalEnabled(true);
+            }
+            // For non-RBF products, if not provided, defaults to true (existing behavior via entity default)
         }
-        // If not provided, defaults to true (existing behavior)
     }
 
     // TODO: Review... it might be better somewhere else and rethink due to the account number generation logic is
