@@ -136,6 +136,9 @@ public class LoanLineOfCreditParams {
     @Column(name = "requested_amount", precision = 19, scale = 6)
     private BigDecimal requestedAmount;
 
+    @Column(name = "disburse_in_invoice_currency", nullable = false)
+    private boolean disburseInInvoiceCurrency;
+
     // Auto-compute fields before persistence
     @PrePersist
     @PreUpdate
@@ -271,6 +274,14 @@ public class LoanLineOfCreditParams {
 
         if (jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT) != null) {
             params.setRequestedAmount(jsonCommand.bigDecimalValueOfParameterNamed(LoanAccountAdditionalProperties.REQUESTED_AMOUNT));
+        }
+
+        // Optional: disburse in invoice currency
+        if (jsonCommand != null && jsonCommand.parameterExists("disburseInInvoiceCurrency")) {
+            final Boolean value = jsonCommand.booleanObjectValueOfParameterNamed("disburseInInvoiceCurrency");
+            params.setDisburseInInvoiceCurrency(Boolean.TRUE.equals(value));
+        } else {
+            params.setDisburseInInvoiceCurrency(false);
         }
 
         // Note: amountInFacilityCurrency and approvedPayableAmount are auto-computed in @PrePersist

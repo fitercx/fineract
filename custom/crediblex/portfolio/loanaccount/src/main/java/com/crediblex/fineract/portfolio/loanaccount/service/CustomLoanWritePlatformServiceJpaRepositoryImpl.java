@@ -334,7 +334,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             final Set<String> ignorable = Set.of(CustomLoanApiConstants.AUTO_WITHDRAW_FROM_SAVINGS_PARAM,
-                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM, CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
+                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM, CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM,
+                    CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM);
             final List<String> nonIgnorable = unsupported.stream().filter(p -> !ignorable.contains(p)).toList();
 
             if (nonIgnorable.isEmpty()) {
@@ -658,6 +659,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
         boolean isDrawdown = invoice.isPresent();
         changes.put("isDrawdown", isDrawdown);
+
+        // Persist the optional disburseInInvoiceCurrency flag for drawdown loans
+        if (isDrawdown) {
+            final boolean disburseInInvoiceCurrency = command != null && Boolean.TRUE
+                    .equals(command.booleanObjectValueOfParameterNamed(CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM));
+            LoanLineOfCreditParams locParams = invoice.get();
+            locParams.setDisburseInInvoiceCurrency(disburseInInvoiceCurrency);
+            loanLineOfCreditParamsRepository.saveAndFlush(locParams);
+            changes.put(CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM, disburseInInvoiceCurrency);
+        }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loan.getId())
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
