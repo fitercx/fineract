@@ -2222,10 +2222,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             // Wrap other exceptions with proper cause chain
-            throw new RuntimeException(
-                    "RBF Loan Disbursement Failed: Unable to withdraw processing fee from collection account. " + "Error: "
-                            + e.getMessage(),
-                    e);
+            throw new RuntimeException("RBF Loan Disbursement Failed: Unable to withdraw processing fee from collection account. "
+                    + "Error: " + e.getMessage(), e);
         }
     }
 

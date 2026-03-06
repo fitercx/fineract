@@ -1378,6 +1378,8 @@ final class LoansApiResourceSwagger {
         public String lineOfCreditId;
         @Schema(example = "false")
         public Boolean factorRateEnabled;
+        @Schema(example = "true", description = "Flag to indicate if short disbursal is enabled. When false, processing fees will be collected from collection account before disbursement.")
+        public Boolean isShortDisbursal;
         @Schema(example = "343434")
         public String invoiceNo;
         @Schema(example = "10 October 2025")
