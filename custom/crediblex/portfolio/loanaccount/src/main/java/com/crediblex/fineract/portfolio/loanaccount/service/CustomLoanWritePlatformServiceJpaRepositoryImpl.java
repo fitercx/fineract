@@ -2213,8 +2213,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     totalProcessingFee, collectionAccount.getId(), loan.getId());
 
         } catch (Exception e) {
-            log.error("Failed to withdraw processing fee from collection account {} for loan {}. Error: {}", collectionAccount.getId(),
-                    loan.getId(), e.getMessage(), e);
+            log.error("Failed to withdraw processing fee from collection account {} for loan {}", collectionAccount.getId(),
+                    loan.getId(), e);
 
             // Rethrow platform exceptions directly to preserve their semantics
             if (e instanceof AbstractPlatformDomainRuleException) {
