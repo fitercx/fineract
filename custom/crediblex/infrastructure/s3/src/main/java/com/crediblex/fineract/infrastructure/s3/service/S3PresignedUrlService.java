@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
- * <p>
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -16,15 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.infrastructure.s3.service;
 
-package com.crediblex.fineract.infrastructure.starter;
+import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlRequestData;
+import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlResponseData;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.ComponentScans;
+/**
+ * Service interface for generating S3 presigned URLs.
+ */
+public interface S3PresignedUrlService {
 
-@AutoConfiguration
-@ComponentScans({ @ComponentScan({ "com.crediblex.fineract.infrastructure.datatables", "com.crediblex.fineract.commands",
-        "com.crediblex.fineract.infrastructure.starter", "com.crediblex.fineract.infrastructure.jobs",
-        "com.crediblex.fineract.infrastructure.s3" }) })
-public class CrediblexInfrastructureAutoConfiguration {}
+    /**
+     * Generates presigned PUT URLs for multiple files in batch.
+     *
+     * @param request the request containing file metadata for each file
+     * @return response containing presigned URL results for each file
+     */
+    PresignedUrlResponseData generatePresignedUrls(PresignedUrlRequestData request);
+}
