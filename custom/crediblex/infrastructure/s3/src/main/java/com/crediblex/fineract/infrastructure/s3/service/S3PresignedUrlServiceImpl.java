@@ -41,16 +41,10 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @Slf4j
 public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
 
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
-            "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "text/plain", "text/csv",
-            "application/zip", "application/x-zip-compressed"
-    );
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
+            "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv",
+            "application/zip", "application/x-zip-compressed");
 
     private static final String UPLOADS_PREFIX = "uploads";
 
@@ -62,9 +56,7 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
         List<PresignedUrlItemResponse> responses = new ArrayList<>();
 
         if (request.getFiles() == null || request.getFiles().isEmpty()) {
-            return PresignedUrlResponseData.builder()
-                    .urls(responses)
-                    .build();
+            return PresignedUrlResponseData.builder().urls(responses).build();
         }
 
         for (FileMetadataRequest fileMetadata : request.getFiles()) {
@@ -72,9 +64,7 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
             responses.add(response);
         }
 
-        return PresignedUrlResponseData.builder()
-                .urls(responses)
-                .build();
+        return PresignedUrlResponseData.builder().urls(responses).build();
     }
 
     private PresignedUrlItemResponse generatePresignedUrlForFile(FileMetadataRequest fileMetadata) {
@@ -92,32 +82,20 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
             String objectKey = generateObjectKey(fileMetadata);
 
             // Create presigned URL
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(s3Config.getBucketName())
-                    .key(objectKey)
-                    .contentType(fileMetadata.getContentType())
-                    .contentLength(fileMetadata.getFileSize())
-                    .build();
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(s3Config.getBucketName()).key(objectKey)
+                    .contentType(fileMetadata.getContentType()).contentLength(fileMetadata.getFileSize()).build();
 
             Long expirationMinutes = s3Config.getPresignedUrlExpirationMinutes();
             PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofMinutes(expirationMinutes))
-                    .putObjectRequest(putObjectRequest)
-                    .build();
+                    .signatureDuration(Duration.ofMinutes(expirationMinutes)).putObjectRequest(putObjectRequest).build();
 
             PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
 
             log.debug("Generated presigned URL for file: {} with key: {}", fileName, objectKey);
 
-            return PresignedUrlItemResponse.builder()
-                    .uploadCorrelationId(correlationId)
-                    .fileName(fileName)
-                    .presignedUrl(presignedRequest.url().toString())
-                    .objectKey(objectKey)
-                    .expiresInSeconds(expirationMinutes * 60)
-                    .success(true)
-                    .errorMessage(null)
-                    .build();
+            return PresignedUrlItemResponse.builder().uploadCorrelationId(correlationId).fileName(fileName)
+                    .presignedUrl(presignedRequest.url().toString()).objectKey(objectKey).expiresInSeconds(expirationMinutes * 60)
+                    .success(true).errorMessage(null).build();
 
         } catch (Exception e) {
             log.error("Failed to generate presigned URL for file: {} with correlationId: {}", fileName, correlationId, e);
@@ -164,14 +142,7 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
     }
 
     private PresignedUrlItemResponse buildErrorResponse(String correlationId, String fileName, String errorMessage) {
-        return PresignedUrlItemResponse.builder()
-                .uploadCorrelationId(correlationId)
-                .fileName(fileName)
-                .presignedUrl(null)
-                .objectKey(null)
-                .expiresInSeconds(null)
-                .success(false)
-                .errorMessage(errorMessage)
-                .build();
+        return PresignedUrlItemResponse.builder().uploadCorrelationId(correlationId).fileName(fileName).presignedUrl(null).objectKey(null)
+                .expiresInSeconds(null).success(false).errorMessage(errorMessage).build();
     }
 }

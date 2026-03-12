@@ -51,33 +51,21 @@ public class S3PresignedUrlApiResource {
     @POST
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(
-            summary = "Generate presigned URLs for file uploads",
-            description = "Generates presigned PUT URLs for multiple files in batch. " +
-                    "Each file metadata in the request will receive a corresponding presigned URL in the response. " +
-                    "Individual failures do not affect other files in the batch."
-    )
+    @Operation(summary = "Generate presigned URLs for file uploads", description = "Generates presigned PUT URLs for multiple files in batch. "
+            + "Each file metadata in the request will receive a corresponding presigned URL in the response. "
+            + "Individual failures do not affect other files in the batch.")
     @ApiResponses(value = {
-            @ApiResponse(
-                    responseCode = "200",
-                    description = "Presigned URLs generated successfully",
-                    content = @Content(schema = @Schema(implementation = PresignedUrlResponseData.class))
-            ),
+            @ApiResponse(responseCode = "200", description = "Presigned URLs generated successfully", content = @Content(schema = @Schema(implementation = PresignedUrlResponseData.class))),
             @ApiResponse(responseCode = "400", description = "Invalid request"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "500", description = "Internal server error")
-    })
+            @ApiResponse(responseCode = "500", description = "Internal server error") })
     public PresignedUrlResponseData generatePresignedUrls(
-            @Parameter(
-                    description = "Request containing file metadata for presigned URL generation",
-                    required = true
-            ) final PresignedUrlRequestData request) {
+            @Parameter(description = "Request containing file metadata for presigned URL generation", required = true) final PresignedUrlRequestData request) {
 
         // Ensure user is authenticated
         this.securityContext.authenticatedUser();
 
-        log.info("Generating presigned URLs for {} files", 
-                request.getFiles() != null ? request.getFiles().size() : 0);
+        log.info("Generating presigned URLs for {} files", request.getFiles() != null ? request.getFiles().size() : 0);
 
         return s3PresignedUrlService.generatePresignedUrls(request);
     }

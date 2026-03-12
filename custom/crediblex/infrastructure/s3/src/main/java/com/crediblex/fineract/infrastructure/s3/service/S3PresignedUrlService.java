@@ -29,7 +29,8 @@ public interface S3PresignedUrlService {
     /**
      * Generates presigned PUT URLs for multiple files in batch.
      *
-     * @param request the request containing file metadata for each file
+     * @param request
+     *            the request containing file metadata for each file
      * @return response containing presigned URL results for each file
      */
     PresignedUrlResponseData generatePresignedUrls(PresignedUrlRequestData request);
