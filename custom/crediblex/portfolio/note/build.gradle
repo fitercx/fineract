@@ -17,10 +17,16 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract Note with Documents'
+
+group = 'com.crediblex.fineract.portfolio.note'
+
+base {
+    archivesName = 'crediblex-fineract-note'
+}
+
+apply from: 'dependencies.gradle'

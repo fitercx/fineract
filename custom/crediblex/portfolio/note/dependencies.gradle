@@ -18,9 +18,21 @@
  */
 
 dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+    implementation(project(':fineract-core'))
+    implementation(project(':fineract-provider'))
+    implementation(project(':fineract-document'))
+    implementation(project(':fineract-loan'))
+    implementation(project(':custom:crediblex:infrastructure:s3'))
+
+    // AWS SDK for S3 presigned URLs
+    implementation 'software.amazon.awssdk:s3:2.25.16'
+
+    // Spring Security for PlatformSecurityContext
+    implementation 'org.springframework.security:spring-security-core'
+
+    // JAX-RS API
+    implementation 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
+
+    // Swagger/OpenAPI annotations
+    implementation 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.20'
 }
