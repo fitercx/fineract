@@ -46,12 +46,15 @@ public final class LoanAccountAdditionalProperties {
     public static String FUNDED_AMOUNT_IN_INVOICE_CURRENCY = "fundedAmountInInvoiceCurrency";
     public static String REQUESTED_AMOUNT = "requestedAmount";
 
+    /** Request param to control whether disbursement should happen in invoice currency. */
+    public static String DISBURSE_IN_INVOICE_CURRENCY = "disburseInInvoiceCurrency";
+
     public static Collection<String> getAllLoanAccountAdditionalPropertiesParameters() {
         return List.of(INVOICE_NO, INVOICE_DATE, INVOICE_AMOUNT, INVOICE_DUE_DATE, INVOICE_CURRENCY, DISAPPROVED_AMOUNT,
                 APPROVED_RECEIVABLE_AMOUNT, ADVANCE_PERCENTAGE, AMOUNT_AFTER_ADVANCE, BUYER_DETAILS, EXCHANGE_RATE, MARKUP,
                 AMOUNT_IN_FACILITY_CURRENCY, APPROVED_PAYABLE_AMOUNT, SUPPLIER_DETAILS, LINE_OF_CREDIT_ID, LOC_TYPE, FACTOR_RATE_ENABLED,
                 INVOICE_AMOUNT_IN_AED, DISAPPROVED_AMOUNT_IN_AED, APPROVED_INVOICE_AMOUNT_IN_AED, AMOUNT_AFTER_ADVANCE_IN_AED,
-                REQUESTED_AMOUNT_IN_AED, FUNDED_AMOUNT_IN_INVOICE_CURRENCY, REQUESTED_AMOUNT);
+                REQUESTED_AMOUNT_IN_AED, FUNDED_AMOUNT_IN_INVOICE_CURRENCY, REQUESTED_AMOUNT, DISBURSE_IN_INVOICE_CURRENCY);
     }
 
 }
