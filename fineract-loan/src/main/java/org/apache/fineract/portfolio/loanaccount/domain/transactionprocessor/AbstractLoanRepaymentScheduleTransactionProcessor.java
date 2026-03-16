@@ -84,6 +84,16 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         return getCode().equalsIgnoreCase(s) || getName().equalsIgnoreCase(s);
     }
 
+    /**
+     * Factory method for the repayment schedule processing wrapper. Override in subclasses to use a
+     * custom wrapper (e.g. for LPI same-month assignment). The installments are provided so
+     * subclasses can derive loan context (e.g. disbursement date) for conditional behavior.
+     */
+    protected LoanRepaymentScheduleProcessingWrapper createLoanRepaymentScheduleProcessingWrapper(
+            List<LoanRepaymentScheduleInstallment> installments) {
+        return new LoanRepaymentScheduleProcessingWrapper();
+    }
+
     @Override
     public ChangedTransactionDetail reprocessLoanTransactions(final LocalDate disbursementDate,
             final List<LoanTransaction> transactionsPostDisbursement, final MonetaryCurrency currency,
@@ -105,7 +115,7 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
 
         // re-process loan charges over repayment periods (picking up on waived
         // loan charges)
-        final LoanRepaymentScheduleProcessingWrapper wrapper = new LoanRepaymentScheduleProcessingWrapper();
+        final LoanRepaymentScheduleProcessingWrapper wrapper = createLoanRepaymentScheduleProcessingWrapper(installments);
         wrapper.reprocess(currency, disbursementDate, installments, charges);
 
         final ChangedTransactionDetail changedTransactionDetail = new ChangedTransactionDetail();

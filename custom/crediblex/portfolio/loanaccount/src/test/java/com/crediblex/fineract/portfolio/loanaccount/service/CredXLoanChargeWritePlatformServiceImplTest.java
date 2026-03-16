@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.crediblex.fineract.portfolio.loanaccount.configuration.LpiSameMonthProperties;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -189,6 +190,9 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     @Mock
     private LoanAccountingBridgeMapper loanAccountingBridgeMapper;
 
+    @Mock
+    private LpiSameMonthProperties lpiSameMonthProperties;
+
     // Additional dependencies from parent class
     @Mock
     private LoanAccountDomainService loanAccountDomainService;
@@ -265,6 +269,24 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
         // Setup loan charge read platform service
         when(loanChargeReadPlatformService.retrieveLoanChargesPaidBy(anyLong(), any(), any())).thenReturn(Collections.emptyList());
+
+        // Setup loan schedule/charges for wrapper.reprocess() in waive flow (else branch)
+        LoanRepaymentScheduleInstallment mockInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        MonetaryCurrency testCurrency = MonetaryCurrency.fromCurrencyData(new CurrencyData(CURRENCY_CODE, 2, 1));
+        Money zeroMoney = Money.zero(testCurrency);
+        when(mockInstallment.getInstallmentNumber()).thenReturn(1);
+        when(mockInstallment.isDownPayment()).thenReturn(false);
+        when(mockInstallment.isRecalculatedInterestComponent()).thenReturn(false);
+        when(mockInstallment.getLoan()).thenReturn(loan);
+        when(mockInstallment.getFromDate()).thenReturn(BUSINESS_DATE);
+        when(mockInstallment.getDueDate()).thenReturn(BUSINESS_DATE);
+        when(mockInstallment.getInterestCharged(any(MonetaryCurrency.class))).thenReturn(zeroMoney);
+        when(mockInstallment.getPrincipal(any(MonetaryCurrency.class))).thenReturn(zeroMoney);
+        when(mockInstallment.getFeeChargesCharged(any(MonetaryCurrency.class))).thenReturn(zeroMoney);
+        when(mockInstallment.getPenaltyChargesCharged(any(MonetaryCurrency.class))).thenReturn(zeroMoney);
+        when(mockInstallment.getTaxChargesCharged(any(MonetaryCurrency.class))).thenReturn(zeroMoney);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(Collections.singletonList(mockInstallment));
+        when(loan.getActiveCharges()).thenReturn(Collections.emptySet());
     }
 
     @AfterEach
