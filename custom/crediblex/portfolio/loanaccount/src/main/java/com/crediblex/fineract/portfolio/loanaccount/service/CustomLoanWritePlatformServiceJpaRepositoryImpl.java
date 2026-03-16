@@ -317,10 +317,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // This customization supports an optional "auto-withdraw" step after a successful disbursement to savings,
             // so users don't have to manually withdraw funds from the destination savings account.
             //
-            // Two custom request parameters control this behavior:
+            // Three custom request parameters control this behavior:
             // - autoWithdrawFromSavings: when true, triggers a savings withdrawal immediately after disbursement.
             // - withdrawalAmount: optional override for the amount to withdraw (otherwise defaults to the net disbursed
             // - withdrawalPaymentTypeId: payment type ID for the withdrawal transaction.
+            // - disburseInInvoiceCurrency: when true, indicates the drawdown should be disbursed in invoice currency
+            // (for LOC loans)
             //
             // Note: withdrawalPaymentTypeId is validated by the custom withdrawal step (and is required when
             // autoWithdrawFromSavings is true). Core's disbursement validator should not see it, but if it ever does,
@@ -334,7 +336,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
 
             final Set<String> ignorable = Set.of(CustomLoanApiConstants.AUTO_WITHDRAW_FROM_SAVINGS_PARAM,
-                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM, CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM);
+                    CustomLoanApiConstants.WITHDRAWAL_AMOUNT_PARAM, CustomLoanApiConstants.WITHDRAWAL_PAYMENT_TYPE_ID_PARAM,
+                    CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM);
             final List<String> nonIgnorable = unsupported.stream().filter(p -> !ignorable.contains(p)).toList();
 
             if (nonIgnorable.isEmpty()) {
@@ -658,6 +661,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
         boolean isDrawdown = invoice.isPresent();
         changes.put("isDrawdown", isDrawdown);
+
+        // Persist the optional disburseInInvoiceCurrency flag for drawdown loans
+        if (isDrawdown) {
+            LoanLineOfCreditParams locParams = invoice.get();
+            if (command != null && command.parameterExists(CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM)) {
+                final Boolean disburseInInvoiceCurrency = command
+                        .booleanObjectValueOfParameterNamed(CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM);
+                final boolean valueToPersist = Boolean.TRUE.equals(disburseInInvoiceCurrency);
+                locParams.setDisburseInInvoiceCurrency(valueToPersist);
+                loanLineOfCreditParamsRepository.saveAndFlush(locParams);
+                changes.put(CustomLoanApiConstants.DISBURSE_IN_INVOICE_CURRENCY_PARAM, valueToPersist);
+            }
+        }
 
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loan.getId())
                 .withEntityExternalId(loan.getExternalId()).withSubEntityId(disbursalTransactionId)
