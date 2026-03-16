@@ -99,7 +99,7 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
 
         } catch (Exception e) {
             log.error("Failed to generate presigned URL for file: {} with correlationId: {}", fileName, correlationId, e);
-            return buildErrorResponse(correlationId, fileName, "Failed to generate presigned URL: " + e.getMessage());
+            return buildErrorResponse(correlationId, fileName, "Failed to generate presigned URL");
         }
     }
 

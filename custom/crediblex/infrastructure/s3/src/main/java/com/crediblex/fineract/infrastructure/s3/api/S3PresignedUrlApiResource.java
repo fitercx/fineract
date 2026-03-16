@@ -22,9 +22,9 @@ import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlRequestData;
 import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlResponseData;
 import com.crediblex.fineract.infrastructure.s3.service.S3PresignedUrlService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,13 +54,13 @@ public class S3PresignedUrlApiResource {
     @Operation(summary = "Generate presigned URLs for file uploads", description = "Generates presigned PUT URLs for multiple files in batch. "
             + "Each file metadata in the request will receive a corresponding presigned URL in the response. "
             + "Individual failures do not affect other files in the batch.")
+    @RequestBody(description = "Request containing file metadata for presigned URL generation", required = true, content = @Content(schema = @Schema(implementation = PresignedUrlRequestData.class)))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Presigned URLs generated successfully", content = @Content(schema = @Schema(implementation = PresignedUrlResponseData.class))),
             @ApiResponse(responseCode = "400", description = "Invalid request"),
             @ApiResponse(responseCode = "401", description = "Unauthorized"),
             @ApiResponse(responseCode = "500", description = "Internal server error") })
-    public PresignedUrlResponseData generatePresignedUrls(
-            @Parameter(description = "Request containing file metadata for presigned URL generation", required = true) final PresignedUrlRequestData request) {
+    public PresignedUrlResponseData generatePresignedUrls(final PresignedUrlRequestData request) {
 
         // Ensure user is authenticated
         this.securityContext.authenticatedUser();

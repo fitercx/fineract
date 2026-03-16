@@ -17,22 +17,17 @@
  * under the License.
  */
 
-ext {
-    awsSdkVersion = '2.25.16'
-}
-
 dependencies {
     implementation(project(':fineract-core'))
     implementation(project(':fineract-provider'))
 
-    // AWS SDK v2 for S3
-    implementation platform("software.amazon.awssdk:bom:${awsSdkVersion}")
+    // AWS SDK v2 for S3 (uses repo-managed BOM version)
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:s3-transfer-manager'
 
     // JAX-RS API
-    implementation 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
+    implementation 'jakarta.ws.rs:jakarta.ws.rs-api'
 
-    // Swagger/OpenAPI annotations
-    implementation 'io.swagger.core.v3:swagger-annotations-jakarta:2.2.20'
+    // Swagger/OpenAPI annotations (uses repo-managed version)
+    implementation 'io.swagger.core.v3:swagger-annotations-jakarta'
 }

@@ -25,6 +25,7 @@ import com.crediblex.fineract.portfolio.note.domain.NoteDocument;
 import com.crediblex.fineract.portfolio.note.domain.NoteDocumentRepository;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -76,14 +77,15 @@ public class NoteWithDocumentsReadServiceImpl implements NoteWithDocumentsReadSe
         Map<Long, List<NoteDocumentData>> documentsByNoteId = noteDocuments.stream().collect(
                 Collectors.groupingBy(nd -> nd.getNote().getId(), Collectors.mapping(this::mapToNoteDocumentData, Collectors.toList())));
 
-        // Map each note with its documents
+        // Map each note with its documents and sort by createdOn descending (newest first)
         return notes.stream()
                 .map(note -> mapToNoteWithDocuments(note, documentsByNoteId.getOrDefault(note.getId(), Collections.emptyList())))
+                .sorted(Comparator.comparing(NoteWithDocumentsData::getCreatedOn, Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
     }
 
     private List<NoteDocumentData> getDocumentsForNote(Long noteId) {
-        List<NoteDocument> noteDocuments = noteDocumentRepository.findByNoteIdOrderByDisplayOrderAsc(noteId);
+        List<NoteDocument> noteDocuments = noteDocumentRepository.findByNote_IdOrderByDisplayOrderAsc(noteId);
         return noteDocuments.stream().map(this::mapToNoteDocumentData).collect(Collectors.toList());
     }
 

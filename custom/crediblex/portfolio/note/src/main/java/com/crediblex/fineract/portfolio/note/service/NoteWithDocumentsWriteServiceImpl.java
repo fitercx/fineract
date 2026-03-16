@@ -22,14 +22,13 @@ import com.crediblex.fineract.portfolio.note.data.NoteDocumentRequest;
 import com.crediblex.fineract.portfolio.note.data.NoteWithDocumentsRequest;
 import com.crediblex.fineract.portfolio.note.domain.NoteDocument;
 import com.crediblex.fineract.portfolio.note.domain.NoteDocumentRepository;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
-import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.documentmanagement.domain.Document;
 import org.apache.fineract.infrastructure.documentmanagement.domain.DocumentRepository;
 import org.apache.fineract.infrastructure.documentmanagement.domain.StorageType;
@@ -37,12 +36,12 @@ import org.apache.fineract.portfolio.client.domain.Client;
 import org.apache.fineract.portfolio.client.domain.ClientRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
-import org.apache.fineract.portfolio.note.data.NoteRequest;
 import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.note.domain.NoteType;
 import org.apache.fineract.portfolio.note.exception.NoteNotFoundException;
 import org.apache.fineract.portfolio.note.exception.NoteResourceNotSupportedException;
+import org.apache.fineract.portfolio.note.service.NoteReadPlatformService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,8 +57,7 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
     private final DocumentRepository documentRepository;
     private final ClientRepositoryWrapper clientRepository;
     private final LoanRepositoryWrapper loanRepository;
-    private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
-    private final DefaultToApiJsonSerializer<NoteRequest> toApiJsonSerializer;
+    private final NoteReadPlatformService noteReadPlatformService;
 
     @Override
     @Transactional
@@ -71,7 +69,7 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
 
         // Create the note first
         Note note = createNote(noteType, resourceId, request.getNote());
-        noteRepository.saveAndFlush(note);
+        noteRepository.saveAndFlush(note); // Need flush to get the note ID for document association
 
         // Create documents and associations
         if (request.getDocuments() != null && !request.getDocuments().isEmpty()) {
@@ -95,11 +93,11 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
 
         Note note = noteRepository.findById(noteId).orElseThrow(() -> new NoteNotFoundException(noteId));
 
-        // Note: Note text updates should use the standard notes API
-        // This endpoint focuses on updating document attachments
+        // Validate that the note belongs to the specified resource
+        validateNoteOwnership(note, noteType, resourceId);
 
         // Remove existing document associations and create new ones
-        noteDocumentRepository.deleteByNoteId(noteId);
+        noteDocumentRepository.deleteByNote_Id(noteId);
 
         if (request.getDocuments() != null && !request.getDocuments().isEmpty()) {
             createDocumentsForNote(note, request.getDocuments());
@@ -121,8 +119,11 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
 
         Note note = noteRepository.findById(noteId).orElseThrow(() -> new NoteNotFoundException(noteId));
 
+        // Validate that the note belongs to the specified resource
+        validateNoteOwnership(note, noteType, resourceId);
+
         // Delete document associations (not the actual documents - they stay in S3)
-        noteDocumentRepository.deleteByNoteId(noteId);
+        noteDocumentRepository.deleteByNote_Id(noteId);
 
         // Delete the note
         noteRepository.delete(note);
@@ -130,6 +131,12 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
         log.info("Deleted note with ID {} for {} {}", noteId, resourceType, resourceId);
 
         return new CommandProcessingResultBuilder().withEntityId(noteId).build();
+    }
+
+    private void validateNoteOwnership(Note note, NoteType noteType, Long resourceId) {
+        // Use the read service to verify note exists for this resource
+        // This will throw NoteNotFoundException if note doesn't belong to the resource
+        noteReadPlatformService.retrieveNote(note.getId(), resourceId, noteType.getValue());
     }
 
     private Note createNote(NoteType noteType, Long resourceId, String noteText) {
@@ -140,13 +147,15 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
             case LOAN:
                 Loan loan = loanRepository.findOneWithNotFoundDetection(resourceId);
                 return Note.loanNote(loan, noteText);
-            // Add more cases as needed for other note types
             default:
                 throw new NoteResourceNotSupportedException(noteType.getApiUrl());
         }
     }
 
     private void createDocumentsForNote(Note note, List<NoteDocumentRequest> documentRequests) {
+        List<Document> documents = new ArrayList<>();
+        List<NoteDocument> noteDocuments = new ArrayList<>();
+
         int displayOrder = 0;
         for (NoteDocumentRequest docRequest : documentRequests) {
             // Create Document entity for S3 storage
@@ -154,14 +163,21 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
                     StringUtils.defaultIfBlank(docRequest.getName(), docRequest.getFileName()), docRequest.getFileName(),
                     docRequest.getSize(), docRequest.getContentType(), docRequest.getDescription(), docRequest.getS3ObjectKey(),
                     StorageType.S3);
-            documentRepository.saveAndFlush(document);
-
-            // Create the note-document association
-            NoteDocument noteDocument = NoteDocument.create(note, document, displayOrder++);
-            noteDocumentRepository.save(noteDocument);
-
-            log.debug("Created document {} for note {} with S3 key {}", document.getId(), note.getId(), docRequest.getS3ObjectKey());
+            documents.add(document);
         }
+
+        // Batch save all documents
+        documentRepository.saveAll(documents);
+
+        // Create note-document associations
+        for (Document document : documents) {
+            NoteDocument noteDocument = NoteDocument.create(note, document, displayOrder++);
+            noteDocuments.add(noteDocument);
+            log.debug("Created document {} for note {} with S3 key {}", document.getId(), note.getId(), document.getLocation());
+        }
+
+        // Batch save all note-document associations
+        noteDocumentRepository.saveAll(noteDocuments);
     }
 
     private CommandProcessingResult buildCommandProcessingResult(Note note, NoteType noteType, Long resourceId) {

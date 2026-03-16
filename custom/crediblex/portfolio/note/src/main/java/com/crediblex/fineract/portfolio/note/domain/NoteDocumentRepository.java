@@ -28,12 +28,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface NoteDocumentRepository extends JpaRepository<NoteDocument, Long>, JpaSpecificationExecutor<NoteDocument> {
 
-    List<NoteDocument> findByNoteIdOrderByDisplayOrderAsc(Long noteId);
+    List<NoteDocument> findByNote_IdOrderByDisplayOrderAsc(Long noteId);
 
     @Query("SELECT nd FROM NoteDocument nd WHERE nd.note.id IN :noteIds ORDER BY nd.note.id, nd.displayOrder")
     List<NoteDocument> findByNoteIdInOrderByDisplayOrderAsc(@Param("noteIds") List<Long> noteIds);
 
-    void deleteByNoteId(Long noteId);
+    void deleteByNote_Id(Long noteId);
 
-    boolean existsByNoteIdAndDocumentId(Long noteId, Long documentId);
+    boolean existsByNote_IdAndDocument_Id(Long noteId, Long documentId);
 }
