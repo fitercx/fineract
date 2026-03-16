@@ -85,9 +85,9 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
     }
 
     /**
-     * Factory method for the repayment schedule processing wrapper. Override in subclasses to use a
-     * custom wrapper (e.g. for LPI same-month assignment). The installments are provided so
-     * subclasses can derive loan context (e.g. disbursement date) for conditional behavior.
+     * Factory method for the repayment schedule processing wrapper. Override in subclasses to use a custom wrapper
+     * (e.g. for LPI same-month assignment). The installments are provided so subclasses can derive loan context (e.g.
+     * disbursement date) for conditional behavior.
      */
     protected LoanRepaymentScheduleProcessingWrapper createLoanRepaymentScheduleProcessingWrapper(
             List<LoanRepaymentScheduleInstallment> installments) {
