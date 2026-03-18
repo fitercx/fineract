@@ -200,7 +200,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
         }
 
-        if(LOCAccountingHelper.LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(productShortName)){
+        if (LOCAccountingHelper.LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(productShortName)) {
             return findReceivableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
         }
 
@@ -299,15 +299,16 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         return null; // No mapping found
     }
 
-        /**
-         * Find journal code for Receivable LOC product GL codes
-         */
-        private String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
-            // BNK5 journal for DISBURSEMENT business events with specific GL codes
-            if ("DISBURSEMENT".equals(businessEventType) && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041").contains(glCode)) {
-                return "BNK5";
-            }
-            if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200041", "100003").contains(glCode)) {
+    /**
+     * Find journal code for Receivable LOC product GL codes
+     */
+    private String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+        // BNK5 journal for DISBURSEMENT business events with specific GL codes
+        if ("DISBURSEMENT".equals(businessEventType)
+                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041").contains(glCode)) {
+            return "BNK5";
+        }
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200041", "100003").contains(glCode)) {
             return "BNK6";
         }
 
@@ -318,8 +319,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
             return "BNK6";
         }
-            return null; // No mapping found
-        }
+        return null; // No mapping found
+    }
 
     /**
      * Get journal ID by journal code from Odoo
