@@ -448,7 +448,7 @@ public class LineOfCreditBulkDisbursementServiceImpl implements LineOfCreditBulk
     /**
      * Row mapper for LoanBasicInfo.
      */
-    private static class LoanBasicInfoRowMapper implements RowMapper<LoanBasicInfo> {
+    private static final class LoanBasicInfoRowMapper implements RowMapper<LoanBasicInfo> {
 
         @Override
         public LoanBasicInfo mapRow(ResultSet rs, int rowNum) throws SQLException {
