@@ -86,8 +86,8 @@ public class LineOfCreditBulkDisbursementServiceImpl implements LineOfCreditBulk
         // Validate the request first
         validateBulkDisbursementRequest(lineOfCreditId, clientId, request);
 
-        // Get the Line of Credit
-        LineOfCredit lineOfCredit = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId);
+        // Verify the Line of Credit exists (throws exception if not found)
+        lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId);
 
         // Process each loan disbursement
         List<SingleLoanDisbursementResult> results = new ArrayList<>();
@@ -304,15 +304,15 @@ public class LineOfCreditBulkDisbursementServiceImpl implements LineOfCreditBulk
                         loanAccountNo, invoiceNo);
             }
         } catch (AbstractPlatformDomainRuleException e) {
-            log.error("Domain rule error disbursing loan {}: {}", loanId, e.getMessage());
+            log.error("Domain rule error disbursing loan {}", loanId, e);
             return SingleLoanDisbursementResult.failure(loanId, clientId, e.getGlobalisationMessageCode(), e.getDefaultUserMessage(),
                     loanAccountNo, invoiceNo);
         } catch (PlatformApiDataValidationException e) {
-            log.error("Validation error disbursing loan {}: {}", loanId, e.getMessage());
+            log.error("Validation error disbursing loan {}", loanId, e);
             String errorMessage = e.getErrors().stream().map(ApiParameterError::getDefaultUserMessage).collect(Collectors.joining("; "));
             return SingleLoanDisbursementResult.failure(loanId, clientId, "validation.error", errorMessage, loanAccountNo, invoiceNo);
         } catch (Exception e) {
-            log.error("Unexpected error disbursing loan {}: {}", loanId, e.getMessage(), e);
+            log.error("Unexpected error disbursing loan {}", loanId, e);
             return SingleLoanDisbursementResult.failure(loanId, clientId, "error.msg.disbursement.failed",
                     "Failed to disburse loan: " + e.getMessage(), loanAccountNo, invoiceNo);
         }
