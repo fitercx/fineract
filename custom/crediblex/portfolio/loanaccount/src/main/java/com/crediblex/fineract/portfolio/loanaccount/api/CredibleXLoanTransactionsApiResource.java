@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanReadPlatformServiceImpl;
 import io.micrometer.common.util.StringUtils;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,17 +43,20 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
     private final CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService;
     private final DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer;
+    private final DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer;
 
     public CredibleXLoanTransactionsApiResource(PlatformSecurityContext context, LoanReadPlatformService loanReadPlatformService,
             ApiRequestParameterHelper apiRequestParameterHelper, DefaultToApiJsonSerializer<LoanTransactionData> toApiJsonSerializer,
             PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService,
             PaymentTypeReadPlatformService paymentTypeReadPlatformService, LoanChargePaidByReadService loanChargePaidByReadService,
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService,
-            DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer) {
+            DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer,
+            DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer) {
         super(context, loanReadPlatformService, apiRequestParameterHelper, toApiJsonSerializer, commandsSourceWritePlatformService,
                 paymentTypeReadPlatformService, loanChargePaidByReadService);
         this.credibleXLoanReadPlatformService = credibleXLoanReadPlatformService;
         this.penaltyJsonSerializer = penaltyJsonSerializer;
+        this.futureLPIJsonSerializer = futureLPIJsonSerializer;
     }
 
     @GET
@@ -88,5 +92,42 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return this.penaltyJsonSerializer.serialize(settings, penaltiesData, this.responseDataParameters);
+    }
+
+    @GET
+    @Path("{loanId}/transactions/future-charges")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Calculate Future LPI Charges", description = "Calculates the Late Payment Interest (LPI) charges that would be applied if payment is made on a future date. "
+            + "This helps users understand the penalty amount they would incur if they delay payment.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FutureLPIChargesData.class))) })
+    public String calculateFutureLPICharges(@PathParam("loanId") @Parameter(description = "loanId", required = true) final Long loanId,
+            @QueryParam("transactionDate") @Parameter(description = "Future Transaction Date", required = true) final DateParam transactionDateParam,
+            @QueryParam("dateFormat") @Parameter(description = "dateFormat") final String rawDateFormat,
+            @QueryParam("locale") @Parameter(description = "locale") final String locale, @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
+
+        final DateFormat dateFormat = StringUtils.isBlank(rawDateFormat) ? new DateFormat("yyyy-MM-dd") : new DateFormat(rawDateFormat);
+        
+        if (transactionDateParam == null) {
+            throw new IllegalArgumentException("transactionDate parameter is required");
+        }
+        
+        final LocalDate futureDate = transactionDateParam.getDate("transactionDate", dateFormat, locale);
+        
+        // Validate that the date is not in the past
+        final LocalDate currentDate = DateUtils.getLocalDateOfTenant();
+        if (futureDate.isBefore(currentDate)) {
+            throw new IllegalArgumentException("Transaction date cannot be in the past");
+        }
+
+        // Call custom service method to compute future LPI charges
+        FutureLPIChargesData futureLPIData = this.credibleXLoanReadPlatformService.calculateFutureLPICharges(loanId, futureDate);
+
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
+        return this.futureLPIJsonSerializer.serialize(settings, futureLPIData, this.responseDataParameters);
     }
 }
