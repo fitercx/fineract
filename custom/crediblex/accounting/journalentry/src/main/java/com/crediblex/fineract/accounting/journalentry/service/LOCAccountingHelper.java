@@ -54,6 +54,12 @@ public class LOCAccountingHelper {
     public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086";
     public static final String LOC_PAYABLE_DEBIT_GL_CODE = "100062";
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
+    public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
+                                                                             // used for early/foreclosure closure debit
+    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200087"; // Used for normal closure (regular EMI)
+                                                                              // debit
+    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
+                                                                  // Receivable)
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
     public static final String RBF_GL_CODE = "200040";
     public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
@@ -162,6 +168,68 @@ public class LOCAccountingHelper {
         } catch (Exception e) {
             log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_PAYABLE_CREDIT_GL_CODE, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Get GL 200087 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
+     * debits. Used when a Payable LOC loan is closed through normal EMI payments.
+     *
+     * @return The GLAccount for LOC Payable Normal Closure, or null if not found
+     */
+    public GLAccount getLOCPayableNormalClosureGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 300017 account (Overdue Interest - LPI - LOC) for LOC penalty income. Used for both Payable LOC and
+     * Receivable LOC products instead of the default INCOME_FROM_PENALTIES account.
+     *
+     * @return The GLAccount for LOC LPI Income, or null if not found
+     */
+    public GLAccount getLOCLPIIncomeGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_LPI_INCOME_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_LPI_INCOME_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
+     * m_account_transfer_transactions and m_account_transfer_details tables to determine the transfer type. Returns
+     * true if the transfer type is LOAN_FORECLOSURE (type 4).
+     *
+     * @param transactionId
+     *            The loan transaction ID string (e.g., "L12345")
+     * @return true if this was a foreclosure account transfer, false otherwise
+     */
+    public boolean isForeclosureAccountTransfer(String transactionId) {
+        if (transactionId == null) {
+            return false;
+        }
+        try {
+            String numericId = transactionId.replace("L", "").trim();
+            Long transactionNumericId = Long.parseLong(numericId);
+
+            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transactions att "
+                    + "JOIN m_account_transfer_details atd ON att.account_transfer_details_id = atd.id "
+                    + "WHERE att.to_loan_transaction_id = ?";
+            Integer transferType = jdbcTemplate.queryForObject(sql, Integer.class, transactionNumericId);
+            // LOAN_FORECLOSURE = 4
+            return transferType != null && transferType == 4;
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            log.debug("LOCAccountingHelper: No account transfer found for loan transaction {}", transactionId);
+            return false;
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Error checking foreclosure transfer type for transaction {}: {}", transactionId, e.getMessage());
+            return false;
         }
     }
 
