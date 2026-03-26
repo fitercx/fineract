@@ -203,7 +203,7 @@ public class LOCAccountingHelper {
 
     /**
      * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
-     * m_account_transfer_transactions and m_account_transfer_details tables to determine the transfer type. Returns
+     * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns
      * true if the transfer type is LOAN_FORECLOSURE (type 4).
      *
      * @param transactionId
@@ -218,7 +218,7 @@ public class LOCAccountingHelper {
             String numericId = transactionId.replace("L", "").trim();
             Long transactionNumericId = Long.parseLong(numericId);
 
-            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transactions att "
+            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transaction att "
                     + "JOIN m_account_transfer_details atd ON att.account_transfer_details_id = atd.id "
                     + "WHERE att.to_loan_transaction_id = ?";
             Integer transferType = jdbcTemplate.queryForObject(sql, Integer.class, transactionNumericId);

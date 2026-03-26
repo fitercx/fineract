@@ -296,6 +296,15 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100033", "100036", "200080").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for REPAYMENT business events with specific GL codes
+        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
+            return "BNK8";
+        }
+
         return null; // No mapping found
     }
 
@@ -319,6 +328,16 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
             return "BNK6";
         }
+
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100033", "100036", "200080").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for REPAYMENT business events with specific GL codes
+        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
+            return "BNK8";
+        }
+
         return null; // No mapping found
     }
 
