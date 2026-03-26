@@ -56,7 +56,7 @@ public class LOCAccountingHelper {
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
                                                                              // used for early/foreclosure closure debit
-    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200087"; // Used for normal closure (regular EMI)
+    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200080"; // Used for normal closure (regular EMI)
                                                                               // debit
     public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
                                                                   // Receivable)
@@ -172,7 +172,7 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200087 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
+     * Get GL 200080 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
      * debits. Used when a Payable LOC loan is closed through normal EMI payments.
      *
      * @return The GLAccount for LOC Payable Normal Closure, or null if not found
