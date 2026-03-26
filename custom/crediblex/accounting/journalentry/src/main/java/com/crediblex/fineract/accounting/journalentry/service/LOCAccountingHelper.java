@@ -203,8 +203,8 @@ public class LOCAccountingHelper {
 
     /**
      * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
-     * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns
-     * true if the transfer type is LOAN_FORECLOSURE (type 4).
+     * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns true
+     * if the transfer type is LOAN_FORECLOSURE (type 4).
      *
      * @param transactionId
      *            The loan transaction ID string (e.g., "L12345")
