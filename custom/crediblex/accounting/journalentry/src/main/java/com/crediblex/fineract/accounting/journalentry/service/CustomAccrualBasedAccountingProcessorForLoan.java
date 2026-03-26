@@ -369,7 +369,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     accountMap.put(account, penaltiesAmount);
                 }
             } else if (loanTransactionDTO.getTransactionType().isRepayment()) {
-                // For repayments: Use INCOME_FROM_RECOVERY, but for RBF products use GL 300015 instead
+                // For repayments: Use INCOME_FROM_RECOVERY, but for RBF use GL 300015, for LOC products use GL 300017
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income on repayments
@@ -385,8 +385,23 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income on repayment, amount: {}",
                                 penaltiesAmount);
                     }
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
+                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                    account = locAccountingHelper.getLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income on repayment, amount: {}",
+                                penaltiesAmount);
+                    }
                 } else {
-                    // Non-RBF: Use default INCOME_FROM_RECOVERY
+                    // Non-RBF, non-LOC: Use default INCOME_FROM_RECOVERY
                     account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                             AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
                 }
@@ -398,6 +413,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 }
             } else if (isIncomeFromFee) {
                 // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
+                // For LOC Payable (LPLL) and LOC Receivable (LRL) products, use GL 300017 (Overdue Interest - LPI -
+                // LOC)
                 // instead of the default INCOME_FROM_PENALTIES account
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
@@ -412,6 +429,21 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     } else {
                         log.info(
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
+                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                    account = locAccountingHelper.getLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income, amount: {}",
                                 penaltiesAmount);
                     }
                 } else {
@@ -507,11 +539,12 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 } else if (loanTransactionDTO.isAccountTransfer()) {
                     // For account transfers (repayment from savings to loan):
                     // - RBF products: Use GL 210003 (Working Capital Loan)
-                    // - Receivable LOC products: Use GL 210003 (Working Capital Loan)
+                    // - Receivable LOC (LRL) products: Use GL 210003 (Working Capital Loan)
+                    // - Payable LOC (LPLL) products: Use GL 200080 for early/foreclosure closure, GL 200087 for normal
+                    // closure
                     // - Other products: Use LIABILITY_TRANSFER financial activity
                     if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                         log.info("CustomAccrualBasedAccountingProcessorForLoan: RBF product detected - Using GL 210003 for repayment");
-                        // Get GL 210003 account (Working Capital Loan)
                         GLAccount rbfRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
                         if (rbfRepaymentGLAccount != null) {
                             this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
@@ -528,7 +561,6 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
                         log.info(
                                 "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 210003 for repayment");
-                        // Get GL 210003 account (Working Capital Loan)
                         GLAccount receivableLOCRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
                         if (receivableLOCRepaymentGLAccount != null) {
                             this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
@@ -541,6 +573,44 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                                     AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
                                     loanId, transactionId, transactionDate, totalDebitAmount);
+                        }
+                    } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
+                        // LOC Payable (LPLL): Early closure (foreclosure) → GL 200080; Normal closure → GL 200087
+                        boolean isForeclosure = locAccountingHelper.isForeclosureAccountTransfer(transactionId);
+                        if (isForeclosure) {
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC early closure (foreclosure) detected - Using GL 200080 for loan product {}",
+                                    loanProductId);
+                            GLAccount earlyClosureGLAccount = locAccountingHelper.getLOCPayableCreditGLAccount();
+                            if (earlyClosureGLAccount != null) {
+                                this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                        totalDebitAmount, earlyClosureGLAccount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200080 for Payable LOC early closure");
+                            } else {
+                                log.warn(
+                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200080 not found for Payable LOC early closure, falling back to LIABILITY_TRANSFER");
+                                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
+                                        loanId, transactionId, transactionDate, totalDebitAmount);
+                            }
+                        } else {
+                            log.info(
+                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC normal closure detected - Using GL 200087 for loan product {}",
+                                    loanProductId);
+                            GLAccount normalClosureGLAccount = locAccountingHelper.getLOCPayableNormalClosureGLAccount();
+                            if (normalClosureGLAccount != null) {
+                                this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                                        totalDebitAmount, normalClosureGLAccount);
+                                log.info(
+                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200087 for Payable LOC normal closure");
+                            } else {
+                                log.warn(
+                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200087 not found for Payable LOC normal closure, falling back to LIABILITY_TRANSFER");
+                                this.helper.createDebitJournalEntryForLoan(office, currencyCode,
+                                        AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
+                                        loanId, transactionId, transactionDate, totalDebitAmount);
+                            }
                         }
                     } else {
                         log.debug("CustomAccrualBasedAccountingProcessorForLoan: Standard product, using default LIABILITY_TRANSFER");
