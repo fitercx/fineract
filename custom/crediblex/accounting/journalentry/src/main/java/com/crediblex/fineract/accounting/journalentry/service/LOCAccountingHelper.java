@@ -37,9 +37,11 @@ public class LOCAccountingHelper {
 
     // LOC Product Short Names
     public static final String LOC_ACTIVATION_PRODUCT_SHORT_NAME = "LAA";
-    public static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL";
     public static final String RBF_PRODUCT_SHORT_NAME = "RBF";
-    public static final String PAYABLE_LOC_PRODUCT_SHORT_NAME = "LPLL";
+
+    // LOC Product External IDs
+    public static final String LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID = "LOC_INVOICE_DISCOUNTING";
+    public static final String PAYABLE_LOC_PRODUCT_EXTERNAL_ID = "LOC_PAYABLE_FINANCING";
 
     // Payment Type IDs
     public static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L;
@@ -256,7 +258,29 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Check if loan product is Payable LOC. Queries product short_name from database to identify Payable LOC products.
+     * Get the loan product external ID for a given loan ID by querying the database. This joins m_loan with
+     * m_product_loan to get the product external_id.
+     *
+     * @param loanId
+     *            The loan ID (not loan product ID)
+     * @return The loan product external ID, or null if not found
+     */
+    public String getLoanProductExternalIdByLoanId(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT lp.external_id FROM m_loan l " + "JOIN m_product_loan lp ON l.product_id = lp.id " + "WHERE l.id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, loanId);
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Failed to get loan product external ID for loan ID {}: {}", loanId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if loan product is Payable LOC. Queries product external_id from database to identify Payable LOC products.
      *
      * @param loanProductId
      *            The loan product ID
@@ -268,9 +292,9 @@ public class LOCAccountingHelper {
         }
 
         try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+            String sql = "SELECT external_id FROM m_product_loan WHERE id = ?";
+            String externalId = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return PAYABLE_LOC_PRODUCT_EXTERNAL_ID.equals(externalId);
         } catch (Exception e) {
             log.debug("LOCAccountingHelper: Error checking Payable LOC loan product for loanProductId {}: {}", loanProductId,
                     e.getMessage());
@@ -303,7 +327,7 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Check if loan product is LOC Receivable. Queries product short_name from database to identify LOC Receivable
+     * Check if loan product is LOC Receivable. Queries product external_id from database to identify LOC Receivable
      * products.
      *
      * @param loanProductId
@@ -316,9 +340,9 @@ public class LOCAccountingHelper {
         }
 
         try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
+            String sql = "SELECT external_id FROM m_product_loan WHERE id = ?";
+            String externalId = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID.equals(externalId);
         } catch (Exception e) {
             log.debug("LOCAccountingHelper: Error checking LOC Receivable loan product for loanProductId {}: {}", loanProductId,
                     e.getMessage());

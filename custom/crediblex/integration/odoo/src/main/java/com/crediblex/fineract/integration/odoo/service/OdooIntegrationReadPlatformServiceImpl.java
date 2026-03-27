@@ -187,7 +187,18 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // Determine the product type based on loan ID using LOCAccountingHelper
+        String productExternalId = locAccountingHelper.getLoanProductExternalIdByLoanId(loanId);
         String productShortName = locAccountingHelper.getLoanProductShortNameByLoanId(loanId);
+
+        // For Payable LOC products (identified by external ID)
+        if (LOCAccountingHelper.PAYABLE_LOC_PRODUCT_EXTERNAL_ID.equals(productExternalId)) {
+            return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
+
+        // For Receivable LOC products (identified by external ID)
+        if (LOCAccountingHelper.LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID.equals(productExternalId)) {
+            return findReceivableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
 
         // For RBF products (or when product is unknown/null), use RBF mappings
         // This maintains backward compatibility
@@ -195,17 +206,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
         }
 
-        // For Payable LOC (LPLL) products
-        if (LOCAccountingHelper.PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(productShortName)) {
-            return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
-        }
-
-        if (LOCAccountingHelper.LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(productShortName)) {
-            return findReceivableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
-        }
-
         // For other products, fall back to RBF mappings as default
-        log.debug("Product '{}' not explicitly mapped, using RBF journal mappings as fallback", productShortName);
+        log.debug("Product external ID '{}' not explicitly mapped, using RBF journal mappings as fallback", productExternalId);
         return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
     }
 
