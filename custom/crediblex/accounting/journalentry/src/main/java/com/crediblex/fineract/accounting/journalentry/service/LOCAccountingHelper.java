@@ -56,7 +56,7 @@ public class LOCAccountingHelper {
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
                                                                              // used for early/foreclosure closure debit
-    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200087"; // Used for normal closure (regular EMI)
+    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200080"; // Used for normal closure (regular EMI)
                                                                               // debit
     public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
                                                                   // Receivable)
@@ -172,7 +172,7 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200087 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
+     * Get GL 200080 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
      * debits. Used when a Payable LOC loan is closed through normal EMI payments.
      *
      * @return The GLAccount for LOC Payable Normal Closure, or null if not found
@@ -203,8 +203,8 @@ public class LOCAccountingHelper {
 
     /**
      * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
-     * m_account_transfer_transactions and m_account_transfer_details tables to determine the transfer type. Returns
-     * true if the transfer type is LOAN_FORECLOSURE (type 4).
+     * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns true
+     * if the transfer type is LOAN_FORECLOSURE (type 4).
      *
      * @param transactionId
      *            The loan transaction ID string (e.g., "L12345")
@@ -218,7 +218,7 @@ public class LOCAccountingHelper {
             String numericId = transactionId.replace("L", "").trim();
             Long transactionNumericId = Long.parseLong(numericId);
 
-            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transactions att "
+            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transaction att "
                     + "JOIN m_account_transfer_details atd ON att.account_transfer_details_id = atd.id "
                     + "WHERE att.to_loan_transaction_id = ?";
             Integer transferType = jdbcTemplate.queryForObject(sql, Integer.class, transactionNumericId);

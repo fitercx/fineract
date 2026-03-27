@@ -540,7 +540,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     // For account transfers (repayment from savings to loan):
                     // - RBF products: Use GL 210003 (Working Capital Loan)
                     // - Receivable LOC (LRL) products: Use GL 210003 (Working Capital Loan)
-                    // - Payable LOC (LPLL) products: Use GL 200080 for early/foreclosure closure, GL 200087 for normal
+                    // - Payable LOC (LPLL) products: Use GL 200080 for early/foreclosure closure, GL 200080 for normal
                     // closure
                     // - Other products: Use LIABILITY_TRANSFER financial activity
                     if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
@@ -575,7 +575,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                     loanId, transactionId, transactionDate, totalDebitAmount);
                         }
                     } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
-                        // LOC Payable (LPLL): Early closure (foreclosure) → GL 200080; Normal closure → GL 200087
+                        // LOC Payable (LPLL): Early closure (foreclosure) → GL 200080; Normal closure → GL 200080
                         boolean isForeclosure = locAccountingHelper.isForeclosureAccountTransfer(transactionId);
                         if (isForeclosure) {
                             log.info(
@@ -596,17 +596,17 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             }
                         } else {
                             log.info(
-                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC normal closure detected - Using GL 200087 for loan product {}",
+                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC normal closure detected - Using GL 200080 for loan product {}",
                                     loanProductId);
                             GLAccount normalClosureGLAccount = locAccountingHelper.getLOCPayableNormalClosureGLAccount();
                             if (normalClosureGLAccount != null) {
                                 this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
                                         totalDebitAmount, normalClosureGLAccount);
                                 log.info(
-                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200087 for Payable LOC normal closure");
+                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200080 for Payable LOC normal closure");
                             } else {
                                 log.warn(
-                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200087 not found for Payable LOC normal closure, falling back to LIABILITY_TRANSFER");
+                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200080 not found for Payable LOC normal closure, falling back to LIABILITY_TRANSFER");
                                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                                         AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
                                         loanId, transactionId, transactionDate, totalDebitAmount);
