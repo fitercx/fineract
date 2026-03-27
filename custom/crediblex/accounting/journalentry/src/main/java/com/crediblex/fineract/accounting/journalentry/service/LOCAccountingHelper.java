@@ -258,6 +258,28 @@ public class LOCAccountingHelper {
     }
 
     /**
+     * Get the loan product external ID for a given loan ID by querying the database. This joins m_loan with
+     * m_product_loan to get the product external_id.
+     *
+     * @param loanId
+     *            The loan ID (not loan product ID)
+     * @return The loan product external ID, or null if not found
+     */
+    public String getLoanProductExternalIdByLoanId(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT lp.external_id FROM m_loan l " + "JOIN m_product_loan lp ON l.product_id = lp.id " + "WHERE l.id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, loanId);
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Failed to get loan product external ID for loan ID {}: {}", loanId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Check if loan product is Payable LOC. Queries product external_id from database to identify Payable LOC products.
      *
      * @param loanProductId
