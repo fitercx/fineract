@@ -37,9 +37,11 @@ public class LOCAccountingHelper {
 
     // LOC Product Short Names
     public static final String LOC_ACTIVATION_PRODUCT_SHORT_NAME = "LAA";
-    public static final String LOC_RECEIVABLE_PRODUCT_SHORT_NAME = "LRL";
     public static final String RBF_PRODUCT_SHORT_NAME = "RBF";
-    public static final String PAYABLE_LOC_PRODUCT_SHORT_NAME = "LPLL";
+
+    // LOC Product External IDs
+    public static final String LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID = "LOC_INVOICE_DISCOUNTING";
+    public static final String PAYABLE_LOC_PRODUCT_EXTERNAL_ID = "LOC_PAYABLE_FINANCING";
 
     // Payment Type IDs
     public static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L;
@@ -54,6 +56,12 @@ public class LOCAccountingHelper {
     public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086";
     public static final String LOC_PAYABLE_DEBIT_GL_CODE = "100062";
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
+    public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
+                                                                             // used for early/foreclosure closure debit
+    public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200080"; // Used for normal closure (regular EMI)
+                                                                              // debit
+    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
+                                                                  // Receivable)
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
     public static final String RBF_GL_CODE = "200040";
     public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
@@ -166,6 +174,68 @@ public class LOCAccountingHelper {
     }
 
     /**
+     * Get GL 200080 account (Payable Discounting / Financing - Normal Closure) for LOC Payable normal closure repayment
+     * debits. Used when a Payable LOC loan is closed through normal EMI payments.
+     *
+     * @return The GLAccount for LOC Payable Normal Closure, or null if not found
+     */
+    public GLAccount getLOCPayableNormalClosureGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get GL 300017 account (Overdue Interest - LPI - LOC) for LOC penalty income. Used for both Payable LOC and
+     * Receivable LOC products instead of the default INCOME_FROM_PENALTIES account.
+     *
+     * @return The GLAccount for LOC LPI Income, or null if not found
+     */
+    public GLAccount getLOCLPIIncomeGLAccount() {
+        try {
+            return glAccountRepository.findOneByGlCode(LOC_LPI_INCOME_GL_CODE).orElse(null);
+        } catch (Exception e) {
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_LPI_INCOME_GL_CODE, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
+     * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns true
+     * if the transfer type is LOAN_FORECLOSURE (type 4).
+     *
+     * @param transactionId
+     *            The loan transaction ID string (e.g., "L12345")
+     * @return true if this was a foreclosure account transfer, false otherwise
+     */
+    public boolean isForeclosureAccountTransfer(String transactionId) {
+        if (transactionId == null) {
+            return false;
+        }
+        try {
+            String numericId = transactionId.replace("L", "").trim();
+            Long transactionNumericId = Long.parseLong(numericId);
+
+            String sql = "SELECT atd.transfer_type " + "FROM m_account_transfer_transaction att "
+                    + "JOIN m_account_transfer_details atd ON att.account_transfer_details_id = atd.id "
+                    + "WHERE att.to_loan_transaction_id = ?";
+            Integer transferType = jdbcTemplate.queryForObject(sql, Integer.class, transactionNumericId);
+            // LOAN_FORECLOSURE = 4
+            return transferType != null && transferType == 4;
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            log.debug("LOCAccountingHelper: No account transfer found for loan transaction {}", transactionId);
+            return false;
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Error checking foreclosure transfer type for transaction {}: {}", transactionId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Get the loan product short name for a given loan ID by querying the database. This joins m_loan with
      * m_product_loan to get the product short name.
      *
@@ -188,7 +258,29 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Check if loan product is Payable LOC. Queries product short_name from database to identify Payable LOC products.
+     * Get the loan product external ID for a given loan ID by querying the database. This joins m_loan with
+     * m_product_loan to get the product external_id.
+     *
+     * @param loanId
+     *            The loan ID (not loan product ID)
+     * @return The loan product external ID, or null if not found
+     */
+    public String getLoanProductExternalIdByLoanId(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+
+        try {
+            String sql = "SELECT lp.external_id FROM m_loan l " + "JOIN m_product_loan lp ON l.product_id = lp.id " + "WHERE l.id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, loanId);
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Failed to get loan product external ID for loan ID {}: {}", loanId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if loan product is Payable LOC. Queries product external_id from database to identify Payable LOC products.
      *
      * @param loanProductId
      *            The loan product ID
@@ -200,9 +292,9 @@ public class LOCAccountingHelper {
         }
 
         try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(shortName);
+            String sql = "SELECT external_id FROM m_product_loan WHERE id = ?";
+            String externalId = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return PAYABLE_LOC_PRODUCT_EXTERNAL_ID.equals(externalId);
         } catch (Exception e) {
             log.debug("LOCAccountingHelper: Error checking Payable LOC loan product for loanProductId {}: {}", loanProductId,
                     e.getMessage());
@@ -235,7 +327,7 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Check if loan product is LOC Receivable. Queries product short_name from database to identify LOC Receivable
+     * Check if loan product is LOC Receivable. Queries product external_id from database to identify LOC Receivable
      * products.
      *
      * @param loanProductId
@@ -248,9 +340,9 @@ public class LOCAccountingHelper {
         }
 
         try {
-            String sql = "SELECT short_name FROM m_product_loan WHERE id = ?";
-            String shortName = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
-            return LOC_RECEIVABLE_PRODUCT_SHORT_NAME.equals(shortName);
+            String sql = "SELECT external_id FROM m_product_loan WHERE id = ?";
+            String externalId = jdbcTemplate.queryForObject(sql, String.class, loanProductId);
+            return LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID.equals(externalId);
         } catch (Exception e) {
             log.debug("LOCAccountingHelper: Error checking LOC Receivable loan product for loanProductId {}: {}", loanProductId,
                     e.getMessage());

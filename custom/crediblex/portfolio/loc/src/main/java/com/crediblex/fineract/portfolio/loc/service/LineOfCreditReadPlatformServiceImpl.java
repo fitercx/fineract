@@ -36,6 +36,7 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -49,6 +50,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.staff.data.StaffData;
 import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
@@ -298,14 +300,20 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.annual_nominal_interest_rate as loanAnnualNominalInterestRate,
                     la.overdue_since_date_derived as overdueSinceDate,
                     mlcp.invoice_no as invoiceNumber,
+                    mlcp.invoice_currency as invoiceCurrency,
+                    mlcp.exchange_rate as exchangeRate,
+                    mlcp.markup as markup,
                     mlcp.approved_receivable_amount as approvedReceivableAmount,
                     mlcp.amount_after_advance as amountAfterAdvance,
                     mlcp.approved_payable_amount as approvedPayableAmount,
                     mlcp.amount_in_facility_currency as amountInFacilityCurrency,
                     mlcp.invoice_amount as invoiceAmount,
                     mlcp.advance_percentage as advancePercentage,
+                    mlcp.disburse_in_invoice_currency as disburseInInvoiceCurrency,
                     STRING_AGG(DISTINCT mlocab_loc.name, ', ') as buyerSupplierLoc,
-                    STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan
+                    STRING_AGG(DISTINCT mlocab.name, ', ') as buyerSupplierLoan,
+                    mr_agg.dueDate as dueDate,
+                    COALESCE(mr_agg.penaltyDue, 0) as penaltyDue
                     FROM m_line_of_credit loc
                     LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.line_of_credit_id = loc.id
                     LEFT JOIN m_loan l ON l.id = mlcp.loan_id
@@ -314,6 +322,19 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     LEFT JOIN m_loan_approver_buyers_suppliers kcp ON kcp.loan_id = l.id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab ON mlocab.id = kcp.buyer_supplier_id
                     LEFT JOIN m_line_of_credit_approved_buyers mlocab_loc ON mlocab_loc.line_of_credit_id = loc.id
+                    LEFT JOIN (
+                        SELECT
+                            mr.loan_id,
+                            MIN(mr.duedate) as dueDate,
+                            COALESCE(SUM(
+                                COALESCE(mr.penalty_charges_amount, 0)
+                                - COALESCE(mr.penalty_charges_completed_derived, 0)
+                                - COALESCE(mr.penalty_charges_writtenoff_derived, 0)
+                                - COALESCE(mr.penalty_charges_waived_derived, 0)
+                            ), 0) as penaltyDue
+                        FROM m_loan_repayment_schedule mr
+                        GROUP BY mr.loan_id
+                    ) mr_agg ON mr_agg.loan_id = l.id
 
                     """;
         }
@@ -328,11 +349,12 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.external_id, l.currency_digits, l.currency_multiplesof,
                     l.submittedon_date, l.approvedon_date, l.expected_disbursedon_date,
                     l.disbursedon_date, l.closedon_date, l.net_disbursal_amount,
-                    l.fixed_emi_amount, mlcp.invoice_no, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
+                    l.fixed_emi_amount, mlcp.invoice_no, mlcp.invoice_currency, mlcp.exchange_rate, mlcp.markup, l.total_overpaid_derived, l.annual_nominal_interest_rate, la.overdue_since_date_derived,
                     mlcp.approved_receivable_amount, mlcp.amount_after_advance, mlcp.approved_payable_amount, mlcp.invoice_amount,
-                    mlcp.amount_in_facility_currency, mlcp.advance_percentage,
+                    mlcp.amount_in_facility_currency, mlcp.advance_percentage, mlcp.disburse_in_invoice_currency,
                     loc.start_date, loc.end_date, loc.currency, loc.cash_margin_value,
-                    loc.tenor_days, loc.annual_interest_rate
+                    loc.tenor_days, loc.annual_interest_rate,
+                    mr_agg.dueDate, mr_agg.penaltyDue
                     """;
         }
 
@@ -424,6 +446,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String invoiceNumber = rs.getString("invoiceNumber");
             final BigDecimal totalOverpaidDerived = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "totalOverpaidDerived");
             final String buyerSupplierDetail = rs.getString("buyerSupplierLoan");
+            final LocalDate invoiceDueDate = JdbcSupport.getLocalDate(rs, "dueDate");
 
             final LocalDate overdueSinceDate = JdbcSupport.getLocalDate(rs, "overdueSinceDate");
             Boolean inArrears = (overdueSinceDate != null);
@@ -435,6 +458,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal amountInFacilityCurrency = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amountInFacilityCurrency");
             final BigDecimal advancePercentage = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "advancePercentage");
             final BigDecimal annualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
+            final BigDecimal penaltyDue = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "penaltyDue");
+            final boolean disburseInInvoiceCurrency = rs.getBoolean("disburseInInvoiceCurrency");
+            final String invoiceCurrency = rs.getString("invoiceCurrency");
+            final BigDecimal exchangeRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "exchangeRate");
+            final BigDecimal markup = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "markup");
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, null, null, null, null, null,
                     null, null, null, null, null, null, approvedOnDate, null, null, null, expectedDisbursementDate, actualDisbursementDate,
@@ -454,6 +482,24 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
             summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
             summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
+            summaryData.getAdditionalProperties().put("disburseInInvoiceCurrency", disburseInInvoiceCurrency);
+            summaryData.getAdditionalProperties().put("invoiceCurrency", invoiceCurrency);
+            summaryData.getAdditionalProperties().put("exchangeRate", exchangeRate);
+            summaryData.getAdditionalProperties().put("markup", markup);
+
+            // New properties
+            Integer daysPastDue = 0; // default to zero when not applicable
+            if (overdueSinceDate != null) {
+                daysPastDue = Math.toIntExact(ChronoUnit.DAYS.between(overdueSinceDate, DateUtils.getBusinessLocalDate()));
+                if (daysPastDue < 0) {
+                    daysPastDue = 0;
+                }
+            }
+            // Ensure lateFee is always present as zero when not applicable
+            BigDecimal lateFee = penaltyDue != null ? penaltyDue : BigDecimal.ZERO;
+            summaryData.getAdditionalProperties().put("daysPastDue", daysPastDue);
+            summaryData.getAdditionalProperties().put("lateFee", lateFee);
+            summaryData.getAdditionalProperties().put("invoiceDueDate", invoiceDueDate);
             return summaryData;
         }
 

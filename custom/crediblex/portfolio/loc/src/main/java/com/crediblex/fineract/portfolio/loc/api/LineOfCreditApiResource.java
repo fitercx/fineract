@@ -21,6 +21,8 @@ package com.crediblex.fineract.portfolio.loc.api;
 
 import com.crediblex.fineract.portfolio.loc.commands.LineOfCreditCommandWrapperBuilder;
 import com.crediblex.fineract.portfolio.loc.data.AddVendorRequest;
+import com.crediblex.fineract.portfolio.loc.data.BulkLoanDisbursementRequest;
+import com.crediblex.fineract.portfolio.loc.data.BulkLoanDisbursementResponse;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditActionRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
@@ -28,6 +30,7 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.UpdateVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBulkDisbursementService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditTransactionReadPlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -84,9 +87,11 @@ public class LineOfCreditApiResource {
     private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditTransactionData> transactionToApiJsonSerializer;
     private final ToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
+    private final ToApiJsonSerializer<BulkLoanDisbursementResponse> bulkDisbursementResponseSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
+    private final LineOfCreditBulkDisbursementService bulkDisbursementService;
 
     @GET
     @Path("{clientId}/creditlines/template")
@@ -397,5 +402,32 @@ public class LineOfCreditApiResource {
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
         return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @POST
+    @Path("{clientId}/creditlines/{lineOfCreditId}/bulkdisburse")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Bulk Disburse Loans", description = "Disburses multiple approved loans under a Line of Credit in a single operation. "
+            + "Each loan must be in 'Approved' status and belong to the specified Line of Credit. "
+            + "The operation processes each loan independently, returning individual results for each disbursement. "
+            + "Partial failures are supported - some loans may succeed while others fail.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = BulkLoanDisbursementRequest.class)))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Bulk disbursement processed successfully", content = @Content(schema = @Schema(implementation = BulkLoanDisbursementResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Validation error in request"),
+            @ApiResponse(responseCode = "404", description = "Line of Credit or loans not found") })
+    public String bulkDisbursLoans(@PathParam("clientId") @Parameter(description = "Client ID") final Long clientId,
+            @PathParam("lineOfCreditId") @Parameter(description = "Line of Credit ID") final Long lineOfCreditId,
+            @Parameter(hidden = true) final BulkLoanDisbursementRequest request, @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+
+        final BulkLoanDisbursementResponse response = this.bulkDisbursementService.bulkDisburseLoansByLineOfCredit(lineOfCreditId, clientId,
+                request);
+
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
+        return this.bulkDisbursementResponseSerializer.serialize(settings, response);
     }
 }
