@@ -50,6 +50,8 @@ public final class LineOfCreditData implements Serializable {
     private BigDecimal maximumAmount;
     private BigDecimal availableBalance;
     private BigDecimal consumedAmount;
+    /** Administrative reserved amount — reduces the drawable available balance. */
+    private BigDecimal blockedAmount;
     private EnumOptionData status;
     private LocalDate startDate;
     private LocalDate endDate;

@@ -53,4 +53,16 @@ public interface LineOfCreditWritePlatformService {
     CommandProcessingResult updateVendor(Long lineOfCreditId, Long vendorId, JsonCommand command);
 
     CommandProcessingResult deleteVendor(Long lineOfCreditId, Long vendorId);
+
+    /**
+     * Block (reserve) a portion of the credit limit, preventing borrowers from drawing down against that amount.
+     * <p>
+     * Available Amount = Credit Limit − Blocked Amount − Consumed Amount
+     */
+    CommandProcessingResult blockAmount(Long lineOfCreditId, JsonCommand command);
+
+    /**
+     * Unblock (release) a previously blocked amount, restoring it to the drawable available balance.
+     */
+    CommandProcessingResult unblockAmount(Long lineOfCreditId, JsonCommand command);
 }

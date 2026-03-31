@@ -89,6 +89,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                      loc.maximum_amount as maximumAmount,
                      loc.available_balance as availableBalance,
                      loc.consumed_amount as consumedAmount,
+                     loc.blocked_amount as blockedAmount,
                      loc.total_draw_down_count_derived as totalDrawDownCountDerived,
                      loc.total_of_fees_derived as totalOfFeesDerived,
                      loc.net_outstanding_amount_derived as netOutstandingAmountDerived,
@@ -172,6 +173,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal maximumAmount = rs.getBigDecimal("maximumAmount");
             final BigDecimal availableBalance = rs.getBigDecimal("availableBalance");
             final BigDecimal consumedAmount = rs.getBigDecimal("consumedAmount");
+            final BigDecimal blockedAmount = rs.getBigDecimal("blockedAmount");
             final String activationStatus = rs.getString("activationStatus");
             final LocalDate startDate = JdbcSupport.getLocalDate(rs, "startDate");
             final LocalDate endDate = JdbcSupport.getLocalDate(rs, "endDate");
@@ -233,7 +235,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     .updatedByLastname(lastModifiedByLastName).updatedOnDate(lastModifiedDate).build();
 
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
-                    .availableBalance(availableBalance).consumedAmount(consumedAmount)
+                    .availableBalance(availableBalance).consumedAmount(consumedAmount).blockedAmount(blockedAmount)
                     .status(getActivationStatusEnumOptionData(activationStatus)).startDate(startDate).endDate(endDate)
                     .approvedCreditFacilityAmount(approvedCreditFacilityAmount).externalId(externalId).currency(currency)
                     .advancePercentage(advancePercentage).tenorDays(tenorDays).cashMarginType(cashMarginType)
@@ -270,6 +272,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     loc.maximum_amount as locCreditLimit,
                     loc.available_balance as locBalance,
                     loc.consumed_amount as locUtilizationAmount,
+                    loc.blocked_amount as locBlockedAmount,
                     loc.product_type as locType,
                     loc.va as accountNumber,
                     loc.activation_status as locActivationStatus,
@@ -343,7 +346,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             return """
                       GROUP BY
                     loc.id, loc.external_id, loc.maximum_amount, loc.available_balance,
-                    loc.consumed_amount, loc.product_type, loc.va, loc.activation_status,
+                    loc.consumed_amount, loc.blocked_amount, loc.product_type, loc.va, loc.activation_status,
                     l.id, l.account_no, lp.name, l.principal_disbursed_derived,
                     l.total_outstanding_derived, l.total_repayment_derived, l.loan_status_id,
                     l.external_id, l.currency_digits, l.currency_multiplesof,
@@ -394,6 +397,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final BigDecimal creditLimit = rs.getBigDecimal("locCreditLimit");
             final BigDecimal balance = rs.getBigDecimal("locBalance");
             final BigDecimal utilizationAmount = rs.getBigDecimal("locUtilizationAmount");
+            final BigDecimal blockedAmount = rs.getBigDecimal("locBlockedAmount");
             final String productType = rs.getString("locType");
             final String activationStatus = rs.getString("locActivationStatus");
             final String accountNumber = rs.getString("accountNumber");
@@ -408,7 +412,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     : Arrays.stream(buyerSupplier.split(",\\s*")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
 
             LineOfCreditData.LineOfCreditDataBuilder builder = LineOfCreditData.builder().id(id).productType(productType)
-                    .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount)
+                    .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount).blockedAmount(blockedAmount)
                     .status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId).accountNumber(accountNumber)
                     .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays)
                     .annualInterestRate(locAnnualInterestRate);

@@ -171,6 +171,24 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder blockAmount(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "BLOCKAMOUNT";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/blockamount";
+        return this;
+    }
+
+    public LineOfCreditCommandWrapperBuilder unblockAmount(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "UNBLOCKAMOUNT";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/unblockamount";
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder withJson(final String json) {
         this.json = json;
         return this;
