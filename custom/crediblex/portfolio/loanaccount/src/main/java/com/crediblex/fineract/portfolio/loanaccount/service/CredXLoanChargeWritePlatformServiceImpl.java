@@ -188,10 +188,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             LoanStatusWebhookPublisher loanStatusWebhookPublisher, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
             LocStatusAggregationUtils locStatusAggregationUtils, PlatformTransactionManager platformTransactionManager,
             GLAccountRepository glAccountRepository, JournalEntryRepository journalEntryRepository,
-            OfficeRepositoryWrapper officeRepositoryWrapper,             SavingsAccountWritePlatformService savingsAccountWritePlatformService,
+            OfficeRepositoryWrapper officeRepositoryWrapper, SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
-            SavingsAccountTransactionRepository savingsAccountTransactionRepository,
-            SavingsAccountRepository savingsAccountRepository,
+            SavingsAccountTransactionRepository savingsAccountTransactionRepository, SavingsAccountRepository savingsAccountRepository,
             SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper,
             LoanArrearsAgingService loanArrearsAgingService) {
 
@@ -1077,16 +1076,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                                 // type at the time of those prior calls). With the CHARGE_REVERSAL now counted
                                 // by calculateTotalDeposits, this recalculation ensures immediate consistency.
                                 try {
-                                    SavingsAccount reloadedAccount = savingsAccountRepository
-                                            .findById(savingsAccount.getId()).orElse(null);
+                                    SavingsAccount reloadedAccount = savingsAccountRepository.findById(savingsAccount.getId()).orElse(null);
                                     if (reloadedAccount != null) {
                                         reloadedAccount.getSummary().updateSummary(reloadedAccount.getCurrency(),
                                                 savingsAccountTransactionSummaryWrapper, reloadedAccount.getTransactions());
                                         savingsAccountRepository.saveAndFlush(reloadedAccount);
                                         log.info(
                                                 "Recalculated savings account {} summary after CHARGE_REVERSAL type update: accountBalance={}",
-                                                reloadedAccount.getId(),
-                                                reloadedAccount.getSummary().getAccountBalance());
+                                                reloadedAccount.getId(), reloadedAccount.getSummary().getAccountBalance());
                                     }
                                 } catch (Exception summaryException) {
                                     log.warn("Failed to recalculate savings account summary after CHARGE_REVERSAL type update: {}",
