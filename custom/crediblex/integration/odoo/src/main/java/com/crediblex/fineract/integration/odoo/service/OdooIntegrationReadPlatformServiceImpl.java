@@ -264,7 +264,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK8 journal for REPAYMENT business events with specific GL codes
-        if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
+        if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001", "300015").contains(glCode)) {
             return "BNK8";
         }
 
