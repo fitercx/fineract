@@ -38,6 +38,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
@@ -216,6 +217,54 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         this.dataValidator.validateForUpdate(command.json());
 
         final Map<String, Object> changes = lineOfCredit.update(command);
+        final JsonElement root = fromJsonHelper.parse(command.json());
+
+        // Handle blockedAmount updates - check directly in JSON since it may not be a registered command parameter
+        log.info("LOC Update: Checking for blockedAmount in payload");
+        log.info("LOC Update: Raw JSON = {}", command.json());
+        
+        // Check directly in the JSON object instead of using parameterExists
+        boolean hasBlockedAmount = root.isJsonObject() && root.getAsJsonObject().has("blockedAmount");
+        log.info("LOC Update: hasBlockedAmount (direct check) = {}", hasBlockedAmount);
+        
+        if (hasBlockedAmount) {
+            JsonElement blockedAmountElement = root.getAsJsonObject().get("blockedAmount");
+            log.info("LOC Update: blockedAmountElement = {}, isJsonNull = {}", blockedAmountElement, blockedAmountElement.isJsonNull());
+            
+            if (!blockedAmountElement.isJsonNull()) {
+                final BigDecimal newBlockedAmount = blockedAmountElement.getAsBigDecimal();
+                log.info("LOC Update: Extracted blockedAmount = {}", newBlockedAmount);
+                if (newBlockedAmount != null && newBlockedAmount.compareTo(BigDecimal.ZERO) >= 0) {
+                    // Ensure summary is initialized
+                    if (lineOfCredit.getSummary() == null) {
+                        log.info("LOC Update: Summary is null, initializing...");
+                        lineOfCredit.setSummary(LineOfCreditSummary.getInitialState());
+                    }
+                    final BigDecimal currentBlocked = lineOfCredit.getSummary().getBlockedAmount() != null
+                            ? lineOfCredit.getSummary().getBlockedAmount()
+                            : BigDecimal.ZERO;
+                    log.info("LOC Update: currentBlocked = {}, newBlockedAmount = {}", currentBlocked, newBlockedAmount);
+                    // Only update if value has changed
+                    if (newBlockedAmount.compareTo(currentBlocked) != 0) {
+                        log.info("LOC Update: Value changed, updating blockedAmount");
+                        lineOfCredit.getSummary().setBlockedAmount(newBlockedAmount);
+                        // Recalculate available balance: MaxLimit - Blocked - Consumed
+                        final BigDecimal consumed = lineOfCredit.getSummary().getConsumedAmount() != null
+                                ? lineOfCredit.getSummary().getConsumedAmount()
+                                : BigDecimal.ZERO;
+                        BigDecimal newAvailable = lineOfCredit.getMaximumAmount().subtract(newBlockedAmount).subtract(consumed);
+                        if (newAvailable.compareTo(BigDecimal.ZERO) < 0) {
+                            newAvailable = BigDecimal.ZERO;
+                        }
+                        lineOfCredit.getSummary().setAvailableBalance(newAvailable);
+                        changes.put("blockedAmount", newBlockedAmount);
+                        log.info("LOC Update: Set blockedAmount = {}, availableBalance = {}", newBlockedAmount, newAvailable);
+                    } else {
+                        log.info("LOC Update: Value unchanged, skipping update");
+                    }
+                }
+            }
+        }
 
         // handle settlement savings account update explicitly
         if (command.hasParameter("settlementSavingsAccountId")) {
@@ -234,7 +283,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         if (command.hasParameter("charges")) {
 
             // Build new charges list
-            JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray chargesArray = fromJsonHelper.extractJsonArrayNamed("charges", root);
             List<LineOfCreditCharge> newCharges = new ArrayList<>();
             if (chargesArray != null) {
@@ -278,7 +326,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // update/delete approved buyers if provided
         if (command.hasParameter("approvedBuyers")) {
-            JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray approvedBuyersArray = fromJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
             List<LineOfCreditApprovedBuyers> newApprovedBuyers = new ArrayList<>();
             if (approvedBuyersArray != null) {

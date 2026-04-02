@@ -86,6 +86,9 @@ public class LineOfCreditRequest {
     @Min(value = 1, message = "Maximum credit limit must be greater than 0")
     private BigDecimal maxCreditLimit;
 
+    @Schema(example = "1000", description = "Amount administratively blocked from the credit limit")
+    private BigDecimal blockedAmount;
+
     @Schema(example = "22 September 2025", description = "Start date of the line of credit")
     @NotNull(message = "Start date is required")
     private String startDate;
