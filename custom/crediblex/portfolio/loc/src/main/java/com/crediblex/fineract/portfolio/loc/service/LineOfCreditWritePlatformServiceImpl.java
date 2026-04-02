@@ -222,15 +222,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         // Handle blockedAmount updates - check directly in JSON since it may not be a registered command parameter
         log.info("LOC Update: Checking for blockedAmount in payload");
         log.info("LOC Update: Raw JSON = {}", command.json());
-        
+
         // Check directly in the JSON object instead of using parameterExists
         boolean hasBlockedAmount = root.isJsonObject() && root.getAsJsonObject().has("blockedAmount");
         log.info("LOC Update: hasBlockedAmount (direct check) = {}", hasBlockedAmount);
-        
+
         if (hasBlockedAmount) {
             JsonElement blockedAmountElement = root.getAsJsonObject().get("blockedAmount");
             log.info("LOC Update: blockedAmountElement = {}, isJsonNull = {}", blockedAmountElement, blockedAmountElement.isJsonNull());
-            
+
             if (!blockedAmountElement.isJsonNull()) {
                 final BigDecimal newBlockedAmount = blockedAmountElement.getAsBigDecimal();
                 log.info("LOC Update: Extracted blockedAmount = {}", newBlockedAmount);

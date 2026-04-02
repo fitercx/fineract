@@ -29,8 +29,8 @@ public class LineOfCreditSummary {
     private BigDecimal consumedAmount;
 
     /**
-     * Administrative blocked amount: a portion of the credit limit reserved by ops/credit teams (e.g., pending
-     * reviews, compliance holds). Borrowers cannot draw down against this reserved portion.
+     * Administrative blocked amount: a portion of the credit limit reserved by ops/credit teams (e.g., pending reviews,
+     * compliance holds). Borrowers cannot draw down against this reserved portion.
      * <p>
      * Available Amount = Credit Limit - Blocked Amount - Consumed Amount
      */

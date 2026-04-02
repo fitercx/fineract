@@ -289,7 +289,7 @@ public class LineOfCreditBalanceUpdateService {
 
                     // Graceful handling: Cap consumed amount at zero
                     // Set available balance using constraint:
-                    //   available = effectiveDrawableLimit - consumed = (creditLimit - blockedAmount) - 0
+                    // available = effectiveDrawableLimit - consumed = (creditLimit - blockedAmount) - 0
                     // This ensures we don't lose the excess amount silently - it's logged as a warning
                     lineOfCredit.getSummary().setConsumedAmount(BigDecimal.ZERO);
                     BigDecimal newAvailableBalance = lineOfCredit.getEffectiveDrawableLimit();
@@ -463,7 +463,7 @@ public class LineOfCreditBalanceUpdateService {
                         // Cap at zero to maintain data integrity
                         runningConsumedAmount = BigDecimal.ZERO;
                         // Adjust available balance to maintain constraint:
-                        //   available_balance + consumed_amount = effectiveDrawableLimit (creditLimit - blockedAmount)
+                        // available_balance + consumed_amount = effectiveDrawableLimit (creditLimit - blockedAmount)
                         runningAvailableBalance = lineOfCredit.getEffectiveDrawableLimit();
                     }
                 }
