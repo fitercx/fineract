@@ -52,6 +52,9 @@ public class S3Config {
     @Value("${AWS_S3_PRESIGNED_URL_EXPIRATION_MINUTES:15}")
     private Long presignedUrlExpirationMinutes;
 
+    @Value("${AWS_S3_MAX_FILE_SIZE_BYTES:52428800}")
+    private Long maxFileSizeBytes; // Default 50MB
+
     @Bean
     public S3Client s3Client() {
         return S3Client.builder().region(Region.of(region)).credentialsProvider(getCredentialsProvider()).build();

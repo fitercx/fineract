@@ -96,6 +96,9 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
         // Validate that the note belongs to the specified resource
         validateNoteOwnership(note, noteType, resourceId);
 
+        // Note: Note text updates should be done via the standard notes API
+        // This endpoint focuses on managing document attachments
+
         // Remove existing document associations and create new ones
         noteDocumentRepository.deleteByNote_Id(noteId);
 
@@ -158,6 +161,9 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
 
         int displayOrder = 0;
         for (NoteDocumentRequest docRequest : documentRequests) {
+            // Validate S3 object key to prevent unauthorized access to other resources
+            validateS3ObjectKey(docRequest.getS3ObjectKey());
+
             // Create Document entity for S3 storage
             Document document = Document.createNew(NOTES_ENTITY_TYPE, note.getId(),
                     StringUtils.defaultIfBlank(docRequest.getName(), docRequest.getFileName()), docRequest.getFileName(),
@@ -197,5 +203,22 @@ public class NoteWithDocumentsWriteServiceImpl implements NoteWithDocumentsWrite
         }
 
         return builder.build();
+    }
+
+    private void validateS3ObjectKey(String s3ObjectKey) {
+        if (s3ObjectKey == null || s3ObjectKey.isBlank()) {
+            throw new IllegalArgumentException("S3 object key is required");
+        }
+
+        // Validate the key starts with expected prefix (clients/)
+        // This prevents users from referencing arbitrary S3 objects
+        if (!s3ObjectKey.startsWith("clients/")) {
+            throw new IllegalArgumentException("Invalid S3 object key: must start with 'clients/'");
+        }
+
+        // Prevent path traversal attacks
+        if (s3ObjectKey.contains("..") || s3ObjectKey.contains("//")) {
+            throw new IllegalArgumentException("Invalid S3 object key: contains illegal characters");
+        }
     }
 }

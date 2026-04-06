@@ -26,6 +26,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -113,13 +114,14 @@ public class NotesWithDocumentsApiResource {
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Create a note with document attachments", description = "Creates a new note with optional document attachments. Documents should already be uploaded to S3 "
             + "using the presigned URL endpoint before calling this API.")
+    @RequestBody(description = "Note with documents request", required = true, content = @Content(schema = @Schema(implementation = NoteWithDocumentsRequest.class)))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Note created successfully", content = @Content(schema = @Schema(implementation = CommandProcessingResult.class))),
             @ApiResponse(responseCode = "400", description = "Invalid request") })
     public CommandProcessingResult createNote(
             @PathParam("resourceType") @Parameter(description = "Resource type: clients, loans, groups, etc.") final String resourceType,
             @PathParam("resourceId") @Parameter(description = "Resource ID") final Long resourceId,
-            @Parameter(description = "Note with documents request", required = true) final NoteWithDocumentsRequest request) {
+            final NoteWithDocumentsRequest request) {
 
         final NoteType noteType = NoteType.fromApiUrl(resourceType);
         if (noteType == null) {
@@ -136,14 +138,14 @@ public class NotesWithDocumentsApiResource {
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Update a note and its document attachments", description = "Updates an existing note and replaces its document attachments")
+    @RequestBody(description = "Note with documents request", required = true, content = @Content(schema = @Schema(implementation = NoteWithDocumentsRequest.class)))
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Note updated successfully", content = @Content(schema = @Schema(implementation = CommandProcessingResult.class))),
             @ApiResponse(responseCode = "404", description = "Note not found") })
     public CommandProcessingResult updateNote(
             @PathParam("resourceType") @Parameter(description = "Resource type: clients, loans, groups, etc.") final String resourceType,
             @PathParam("resourceId") @Parameter(description = "Resource ID") final Long resourceId,
-            @PathParam("noteId") @Parameter(description = "Note ID") final Long noteId,
-            @Parameter(description = "Note with documents request", required = true) final NoteWithDocumentsRequest request) {
+            @PathParam("noteId") @Parameter(description = "Note ID") final Long noteId, final NoteWithDocumentsRequest request) {
 
         final NoteType noteType = NoteType.fromApiUrl(resourceType);
         if (noteType == null) {

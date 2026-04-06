@@ -29,11 +29,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.documentmanagement.domain.Document;
+import org.apache.fineract.infrastructure.documentmanagement.domain.StorageType;
 import org.apache.fineract.portfolio.note.data.NoteData;
 import org.apache.fineract.portfolio.note.service.NoteReadPlatformService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -42,15 +43,22 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class NoteWithDocumentsReadServiceImpl implements NoteWithDocumentsReadService {
 
     private final NoteReadPlatformService noteReadPlatformService;
     private final NoteDocumentRepository noteDocumentRepository;
-    private final S3Presigner s3Presigner;
-    private final S3Config s3Config;
+    private final ObjectProvider<S3Presigner> s3PresignerProvider;
+    private final ObjectProvider<S3Config> s3ConfigProvider;
+
+    public NoteWithDocumentsReadServiceImpl(NoteReadPlatformService noteReadPlatformService, NoteDocumentRepository noteDocumentRepository,
+            ObjectProvider<S3Presigner> s3PresignerProvider, ObjectProvider<S3Config> s3ConfigProvider) {
+        this.noteReadPlatformService = noteReadPlatformService;
+        this.noteDocumentRepository = noteDocumentRepository;
+        this.s3PresignerProvider = s3PresignerProvider;
+        this.s3ConfigProvider = s3ConfigProvider;
+    }
 
     @Override
     public NoteWithDocumentsData retrieveNote(Long noteId, Long resourceId, Integer noteTypeId) {
@@ -93,13 +101,18 @@ public class NoteWithDocumentsReadServiceImpl implements NoteWithDocumentsReadSe
         Document document = noteDocument.getDocument();
         String location = document.getLocation();
 
-        // Generate presigned GET URL if location is an S3 key
+        // Generate presigned GET URL only for S3 storage type
         String presignedUrl = null;
         Long presignedUrlExpiresInSeconds = null;
 
-        if (location != null && !location.isEmpty()) {
+        S3Presigner s3Presigner = s3PresignerProvider.getIfAvailable();
+        S3Config s3Config = s3ConfigProvider.getIfAvailable();
+
+        // Only generate presigned URL if S3 is configured and document is stored in S3
+        if (document.storageType() == StorageType.S3 && s3Presigner != null && s3Config != null && location != null
+                && !location.isEmpty()) {
             try {
-                presignedUrl = generatePresignedGetUrl(location);
+                presignedUrl = generatePresignedGetUrl(s3Presigner, s3Config, location);
                 presignedUrlExpiresInSeconds = s3Config.getPresignedUrlExpirationMinutes() * 60;
             } catch (Exception e) {
                 log.warn("Failed to generate presigned URL for document {}: {}", document.getId(), e.getMessage());
@@ -112,7 +125,7 @@ public class NoteWithDocumentsReadServiceImpl implements NoteWithDocumentsReadSe
                 .presignedUrlExpiresInSeconds(presignedUrlExpiresInSeconds).build();
     }
 
-    private String generatePresignedGetUrl(String objectKey) {
+    private String generatePresignedGetUrl(S3Presigner s3Presigner, S3Config s3Config, String objectKey) {
         GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(s3Config.getBucketName()).key(objectKey).build();
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()

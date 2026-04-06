@@ -124,6 +124,11 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
             return "File size must be greater than 0";
         }
 
+        // Validate max file size to prevent DoS/excessive uploads
+        if (fileMetadata.getFileSize() > s3Config.getMaxFileSizeBytes()) {
+            return String.format("File size exceeds maximum allowed size of %d bytes", s3Config.getMaxFileSizeBytes());
+        }
+
         if (fileMetadata.getResourceType() == null || fileMetadata.getResourceType().isBlank()) {
             return "Resource type is required";
         }
@@ -143,17 +148,19 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
     private String generateObjectKey(FileMetadataRequest fileMetadata) {
         String sanitizedFileName = sanitizeFileName(fileMetadata.getFileName());
         String resourceType = fileMetadata.getResourceType().toLowerCase();
+        String correlationId = fileMetadata.getUploadCorrelationId();
 
-        // Structure: /clients/<id>/<filename> for client uploads
-        // Structure: /clients/<client_id>/loan_accounts/<loan_id>/<filename> for loan uploads
+        // Include correlationId in path to prevent overwrites when uploading files with same name
+        // Structure: /clients/<id>/<correlationId>/<filename> for client uploads
+        // Structure: /clients/<client_id>/loan_accounts/<loan_id>/<correlationId>/<filename> for loan uploads
         if (RESOURCE_TYPE_LOANS.equalsIgnoreCase(resourceType)) {
-            return String.format("clients/%d/loan_accounts/%d/%s", fileMetadata.getParentResourceId(), fileMetadata.getResourceId(),
-                    sanitizedFileName);
+            return String.format("clients/%d/loan_accounts/%d/%s/%s", fileMetadata.getParentResourceId(), fileMetadata.getResourceId(),
+                    correlationId, sanitizedFileName);
         } else if (RESOURCE_TYPE_CLIENTS.equalsIgnoreCase(resourceType)) {
-            return String.format("clients/%d/%s", fileMetadata.getResourceId(), sanitizedFileName);
+            return String.format("clients/%d/%s/%s", fileMetadata.getResourceId(), correlationId, sanitizedFileName);
         } else {
             // Fallback for other resource types
-            return String.format("%s/%d/%s", resourceType, fileMetadata.getResourceId(), sanitizedFileName);
+            return String.format("%s/%d/%s/%s", resourceType, fileMetadata.getResourceId(), correlationId, sanitizedFileName);
         }
     }
 
