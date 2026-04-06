@@ -105,8 +105,10 @@ import org.apache.fineract.portfolio.paymenttype.data.PaymentTypeData;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
 import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionRepository;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransactionSummaryWrapper;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
@@ -156,6 +158,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final JournalEntryRepository journalEntryRepository;
     private final OfficeRepositoryWrapper officeRepositoryWrapper;
     private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
+    private final SavingsAccountRepository savingsAccountRepository;
+    private final SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper;
     private final LoanArrearsAgingService loanArrearsAgingService;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
@@ -186,7 +190,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             GLAccountRepository glAccountRepository, JournalEntryRepository journalEntryRepository,
             OfficeRepositoryWrapper officeRepositoryWrapper, SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
-            SavingsAccountTransactionRepository savingsAccountTransactionRepository, LoanArrearsAgingService loanArrearsAgingService) {
+            SavingsAccountTransactionRepository savingsAccountTransactionRepository, SavingsAccountRepository savingsAccountRepository,
+            SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper,
+            LoanArrearsAgingService loanArrearsAgingService) {
 
         super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
                 accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
@@ -225,6 +231,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
         this.paymentTypeReadPlatformService = paymentTypeReadPlatformService;
         this.savingsAccountTransactionRepository = savingsAccountTransactionRepository;
+        this.savingsAccountRepository = savingsAccountRepository;
+        this.savingsAccountTransactionSummaryWrapper = savingsAccountTransactionSummaryWrapper;
         this.fromJsonHelper = fromApiJsonHelper;
         this.glAccountRepository = glAccountRepository;
         this.journalEntryRepository = journalEntryRepository;
@@ -1058,6 +1066,29 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                                 this.noteRepository.save(savingsTransactionNote);
                                 log.info("Created note on savings transaction {} for charge reversal detection: {}",
                                         savingsDepositTransactionId, chargeReversalNote);
+
+                                // After flipping the type to CHARGE_REVERSAL, the deposit() call above already ran
+                                // updateSummary counting this as a DEPOSIT. We now force a full summary
+                                // recalculation so totalDeposits correctly reflects the CHARGE_REVERSAL type.
+                                // Without this, the next deposit() on this account would recompute from scratch
+                                // and previously-flipped CHARGE_REVERSAL transactions from prior calls would be
+                                // excluded from totalDeposits (since calculateTotalDeposits only counted DEPOSIT
+                                // type at the time of those prior calls). With the CHARGE_REVERSAL now counted
+                                // by calculateTotalDeposits, this recalculation ensures immediate consistency.
+                                try {
+                                    SavingsAccount reloadedAccount = savingsAccountRepository.findById(savingsAccount.getId()).orElse(null);
+                                    if (reloadedAccount != null) {
+                                        reloadedAccount.getSummary().updateSummary(reloadedAccount.getCurrency(),
+                                                savingsAccountTransactionSummaryWrapper, reloadedAccount.getTransactions());
+                                        savingsAccountRepository.saveAndFlush(reloadedAccount);
+                                        log.info(
+                                                "Recalculated savings account {} summary after CHARGE_REVERSAL type update: accountBalance={}",
+                                                reloadedAccount.getId(), reloadedAccount.getSummary().getAccountBalance());
+                                    }
+                                } catch (Exception summaryException) {
+                                    log.warn("Failed to recalculate savings account summary after CHARGE_REVERSAL type update: {}",
+                                            summaryException.getMessage());
+                                }
                             }
                         }
                     }
