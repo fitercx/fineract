@@ -695,7 +695,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     + " llocp.invoice_amount_in_aed as invoiceAmountInAED, llocp.disapproved_amount_in_aed as disapprovedAmountInAED, "
                     + " llocp.approved_invoice_amount_in_aed as approvedInvoiceAmountInAED, llocp.amount_after_advance_in_aed as amountAfterAdvanceInAED, "
                     + " llocp.requested_amount_in_aed as requestedAmountInAED, llocp.funded_amount_in_invoice_currency as fundedAmountInInvoiceCurrency, "
-                    + " llocp.requested_amount as requestedAmount, " + " lp.penalty_grace_period as penaltyGracePeriod " ////
+                    + " llocp.requested_amount as requestedAmount, " + " lp.penalty_grace_period as penaltyGracePeriod, "
+                    + " l.is_short_disbursal as isShortDisbursal " ////
                     + " from m_loan l" //
                     + " join m_product_loan lp on lp.id = l.product_id" //
                     + " left join m_loan_recalculation_details lir on lir.loan_id = l.id join m_currency rc on rc."
@@ -1094,6 +1095,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
             final BigDecimal factorRate = rs.getBigDecimal("factorRate");
             final Integer penaltyGracePeriod = JdbcSupport.getInteger(rs, "penaltyGracePeriod");
+            final boolean isShortDisbursal = rs.getBoolean("isShortDisbursal");
 
             ExtendedLoanAccountData extendedLoanAccountData = ExtendedLoanAccountData.basicLoanDetails(id, accountNo, status, externalId,
                     clientId, clientAccountNo, clientName, clientOfficeId, clientExternalId, groupData, loanType, loanProductId,
@@ -1124,6 +1126,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
             extendedLoanAccountData.setFactorRate(factorRate);
             extendedLoanAccountData.setFactorRateEnabled(factorRateEnabled);
+            extendedLoanAccountData.setShortDisbursalEnabled(isShortDisbursal);
 
             return extendedLoanAccountData;
 

@@ -183,6 +183,8 @@ public interface LoanApiConstants {
     String FACTOR_RATE_PARAM_NAME = "factorRate";
     String FACTOR_RATE_ENABLED_PARAM_NAME = "factorRateEnabled";
 
+    String IS_SHORT_DISBURSAL_PARAM_NAME = "isShortDisbursal";
+
     String DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME = "destinationSavingsAccountId";
 
     // Loan Summary Transaction Types

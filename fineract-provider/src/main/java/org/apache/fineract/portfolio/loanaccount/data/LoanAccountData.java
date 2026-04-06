@@ -284,6 +284,7 @@ public class LoanAccountData {
     private BigDecimal factorRate;
     private BigDecimal factorRateLoanAmount;
     private Integer penaltyGracePeriod;
+    private boolean shortDisbursalEnabled;
 
     @Getter
     protected final Map<String, Object> additionalProperties = new HashMap<>();

@@ -437,4 +437,100 @@ public class LineOfCreditApiResourceSwagger {
         @Schema(example = "admin")
         public String createdBy;
     }
+
+    @Schema(description = "BulkLoanDisbursementRequest")
+    public static final class BulkLoanDisbursementRequest {
+
+        private BulkLoanDisbursementRequest() {}
+
+        @Schema(description = "List of individual loan disbursement requests", required = true)
+        public Collection<SingleLoanDisbursementRequest> loans;
+        @Schema(description = "Actual disbursement date for all loans", example = "2024-01-15")
+        public LocalDate actualDisbursementDate;
+        @Schema(description = "Date format pattern", example = "yyyy-MM-dd")
+        public String dateFormat;
+        @Schema(description = "Locale for formatting", example = "en")
+        public String locale;
+        @Schema(description = "Payment type ID", example = "1")
+        public Long paymentTypeId;
+        @Schema(description = "Whether to auto-withdraw from savings", example = "false")
+        public Boolean autoWithdrawFromSavings;
+        @Schema(description = "Payment type ID for withdrawal", example = "1")
+        public Long withdrawalPaymentTypeId;
+        @Schema(description = "Note for all disbursements")
+        public String note;
+    }
+
+    @Schema(description = "SingleLoanDisbursementRequest")
+    public static final class SingleLoanDisbursementRequest {
+
+        private SingleLoanDisbursementRequest() {}
+
+        @Schema(description = "Loan ID to disburse", required = true, example = "1")
+        public Long loanId;
+        @Schema(description = "Override disbursement date for this loan", example = "2024-01-15")
+        public LocalDate actualDisbursementDate;
+        @Schema(description = "Transaction amount", example = "10000.00")
+        public BigDecimal transactionAmount;
+        @Schema(description = "Disburse in invoice currency", example = "false")
+        public Boolean disburseInInvoiceCurrency;
+        @Schema(description = "Override withdrawal amount", example = "9500.00")
+        public BigDecimal withdrawalAmount;
+        @Schema(description = "External transaction ID", example = "EXT-001")
+        public String externalId;
+        @Schema(description = "Note for this loan")
+        public String note;
+    }
+
+    @Schema(description = "BulkLoanDisbursementResponse")
+    public static final class BulkLoanDisbursementResponse {
+
+        private BulkLoanDisbursementResponse() {}
+
+        @Schema(description = "Line of Credit ID", example = "1")
+        public Long lineOfCreditId;
+        @Schema(description = "Total loans requested", example = "5")
+        public Integer totalRequested;
+        @Schema(description = "Total successful disbursements", example = "4")
+        public Integer totalSuccessful;
+        @Schema(description = "Total failed disbursements", example = "1")
+        public Integer totalFailed;
+        @Schema(description = "Total amount disbursed", example = "50000.00")
+        public BigDecimal totalAmountDisbursed;
+        @Schema(description = "Overall status: COMPLETE, PARTIAL, or FAILED", example = "PARTIAL")
+        public String status;
+        @Schema(description = "Individual loan disbursement results")
+        public Collection<SingleLoanDisbursementResult> loanResults;
+    }
+
+    @Schema(description = "SingleLoanDisbursementResult")
+    public static final class SingleLoanDisbursementResult {
+
+        private SingleLoanDisbursementResult() {}
+
+        @Schema(description = "Loan ID", example = "1")
+        public Long loanId;
+        @Schema(description = "Client ID", example = "1")
+        public Long clientId;
+        @Schema(description = "Whether disbursement succeeded", example = "true")
+        public Boolean success;
+        @Schema(description = "Amount disbursed", example = "10000.00")
+        public BigDecimal amountDisbursed;
+        @Schema(description = "Net amount disbursed", example = "9500.00")
+        public BigDecimal netAmountDisbursed;
+        @Schema(description = "Transaction ID", example = "123")
+        public Long transactionId;
+        @Schema(description = "Resource ID", example = "1")
+        public Long resourceId;
+        @Schema(description = "Withdrawal amount", example = "9500.00")
+        public BigDecimal withdrawalAmount;
+        @Schema(description = "Error code if failed", example = "error.msg.loan.not.approved")
+        public String errorCode;
+        @Schema(description = "Error message if failed")
+        public String errorMessage;
+        @Schema(description = "Loan account number", example = "000000001")
+        public String loanAccountNo;
+        @Schema(description = "Invoice number", example = "INV-001")
+        public String invoiceNo;
+    }
 }
