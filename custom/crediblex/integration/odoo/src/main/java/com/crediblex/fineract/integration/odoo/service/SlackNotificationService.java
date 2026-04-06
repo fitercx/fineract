@@ -46,6 +46,12 @@ public class SlackNotificationService {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        log.info("SlackNotificationService initialized successfully - slack.enabled=true detected. Channel: {}, MaxFailedEntriesToShow: {}",
+                slackProperties.getChannel(), slackProperties.getMaxFailedEntriesToShow());
+    }
+
     /**
      * Send a notification to Slack about Odoo sync failures.
      *
@@ -57,13 +63,19 @@ public class SlackNotificationService {
      *            List of failed entry details
      */
     public void sendOdooSyncFailureNotification(int failureCount, int successCount, List<FailedEntryDetail> failedEntries) {
+        log.info("sendOdooSyncFailureNotification called - failureCount: {}, successCount: {}, failedEntries size: {}",
+                failureCount, successCount, failedEntries != null ? failedEntries.size() : "null");
+
         if (failureCount == 0) {
             log.debug("No failures to report, skipping Slack notification");
             return;
         }
 
         try {
+            log.info("Building Slack payload for Odoo sync failure notification...");
             Map<String, Object> payload = buildSlackPayload(failureCount, successCount, failedEntries);
+            log.info("Slack payload built successfully, attempting to send via SlackClient...");
+            log.debug("Slack channel configured: {}, username: {}", slackProperties.getChannel(), slackProperties.getUsername());
             boolean sent = slackClient.sendMessage(payload);
 
             if (sent) {

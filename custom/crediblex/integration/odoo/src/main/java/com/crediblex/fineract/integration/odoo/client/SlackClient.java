@@ -57,8 +57,17 @@ public class SlackClient {
 
         this.httpClient = HttpClients.custom().setDefaultRequestConfig(config).build();
 
-        log.info("SlackClient initialized with webhook URL configured: {}",
-                slackProperties.getWebhookUrl() != null && !slackProperties.getWebhookUrl().isEmpty());
+        String webhookUrl = slackProperties.getWebhookUrl();
+        boolean webhookConfigured = webhookUrl != null && !webhookUrl.isEmpty();
+        log.info("SlackClient initialized - webhookUrl configured: {}, webhookUrl length: {}, channel: {}, connectTimeout: {}ms, readTimeout: {}ms",
+                webhookConfigured,
+                webhookUrl != null ? webhookUrl.length() : 0,
+                slackProperties.getChannel(),
+                slackProperties.getConnectTimeout(),
+                slackProperties.getReadTimeout());
+        if (!webhookConfigured) {
+            log.warn("SlackClient initialized but webhook URL is NOT configured - Slack notifications will fail!");
+        }
     }
 
     @PreDestroy
@@ -80,9 +89,19 @@ public class SlackClient {
      * @return true if message was sent successfully, false otherwise
      */
     public boolean sendMessage(Map<String, Object> payload) {
-        if (slackProperties.getWebhookUrl() == null || slackProperties.getWebhookUrl().isEmpty()) {
-            log.error("Slack webhook URL is not configured");
+        String webhookUrl = slackProperties.getWebhookUrl();
+        log.info("SlackClient.sendMessage called - webhookUrl configured: {}, webhookUrl length: {}",
+                webhookUrl != null && !webhookUrl.isEmpty(),
+                webhookUrl != null ? webhookUrl.length() : 0);
+
+        if (webhookUrl == null || webhookUrl.isEmpty()) {
+            log.error("Slack webhook URL is not configured - check that 'slack.webhook-url' environment variable is set");
             return false;
+        }
+
+        // Log masked webhook URL for debugging (show first 40 chars + last 10 chars)
+        if (webhookUrl.length() > 60) {
+            log.debug("Using webhook URL: {}...{}", webhookUrl.substring(0, 40), webhookUrl.substring(webhookUrl.length() - 10));
         }
 
         try {

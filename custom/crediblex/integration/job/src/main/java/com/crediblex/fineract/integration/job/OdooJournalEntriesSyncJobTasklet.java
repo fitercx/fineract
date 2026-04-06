@@ -90,6 +90,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     @Override
     public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
         log.info("Starting Odoo Journal Entries Sync Job execution...");
+        log.info("Slack notification service availability: {}", slackNotificationService != null ? "AVAILABLE" : "NOT AVAILABLE (slack.enabled may not be 'true')");
 
         try {
             // Step 1: Process unposted loan accrual summations and create journal entries
@@ -282,8 +283,14 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
                     movesCreated);
 
             // Send Slack notification if there are failures
-            if (failureCount > 0 && slackNotificationService != null) {
-                slackNotificationService.sendOdooSyncFailureNotification(failureCount, successCount, failedEntryDetails);
+            if (failureCount > 0) {
+                if (slackNotificationService != null) {
+                    log.info("Attempting to send Slack notification for {} failures...", failureCount);
+                    slackNotificationService.sendOdooSyncFailureNotification(failureCount, successCount, failedEntryDetails);
+                } else {
+                    log.warn("Slack notification service is NOT available - cannot send failure notification for {} failures. " +
+                            "Ensure slack.enabled=true is set in environment configuration.", failureCount);
+                }
             }
 
         } catch (Exception e) {
