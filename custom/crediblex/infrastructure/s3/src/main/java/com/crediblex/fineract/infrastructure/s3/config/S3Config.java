@@ -33,26 +33,26 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
-@ConditionalOnProperty(name = "AWS_S3_BUCKET_NAME")
+@ConditionalOnProperty(name = "crediblex.s3.bucket-name")
 @Getter
 public class S3Config {
 
-    @Value("${AWS_S3_BUCKET_NAME}")
+    @Value("${crediblex.s3.bucket-name}")
     private String bucketName;
 
-    @Value("${AWS_S3_REGION:us-east-1}")
+    @Value("${crediblex.s3.region:us-east-1}")
     private String region;
 
-    @Value("${AWS_ACCESS_KEY_ID:}")
+    @Value("${crediblex.s3.access-key-id:}")
     private String accessKeyId;
 
-    @Value("${AWS_SECRET_ACCESS_KEY:}")
+    @Value("${crediblex.s3.secret-access-key:}")
     private String secretAccessKey;
 
-    @Value("${AWS_S3_PRESIGNED_URL_EXPIRATION_MINUTES:15}")
+    @Value("${crediblex.s3.presigned-url-expiration-minutes:15}")
     private Long presignedUrlExpirationMinutes;
 
-    @Value("${AWS_S3_MAX_FILE_SIZE_BYTES:52428800}")
+    @Value("${crediblex.s3.max-file-size-bytes:52428800}")
     private Long maxFileSizeBytes; // Default 50MB
 
     @Bean
