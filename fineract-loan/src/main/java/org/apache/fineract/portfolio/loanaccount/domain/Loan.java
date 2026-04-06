@@ -469,6 +469,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @Column(name = "is_restructured")
     private Boolean isRestructured = Boolean.FALSE;
 
+    @Setter()
+    @Column(name = "is_short_disbursal", nullable = false)
+    private boolean shortDisbursalEnabled = true;
+
     public static Loan newIndividualLoanApplication(final String accountNo, final Client client, final AccountType loanType,
             final LoanProduct loanProduct, final Fund fund, final Staff officer, final CodeValue loanPurpose,
             final LoanRepaymentScheduleTransactionProcessor transactionProcessingStrategy,

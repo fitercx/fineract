@@ -416,6 +416,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .externalId(reference)
                 .linkAccountId(savingsAccountId)
                 .lineOfCreditId(String.valueOf(createdLineOfCreditId))
+                .isShortDisbursal(true)
                 .invoiceNo(invoiceNo)
                 .invoiceDate(invoiceDate)
                 .invoiceDueDate(invoiceDueDate)

@@ -24,4 +24,7 @@ public final class CustomLoanApiConstants {
      */
     public static final String WITHDRAWAL_PAYMENT_TYPE_ID_PARAM = "withdrawalPaymentTypeId";
 
+    /** Optional flag indicating whether the drawdown should be disbursed in invoice currency. */
+    public static final String DISBURSE_IN_INVOICE_CURRENCY_PARAM = "disburseInInvoiceCurrency";
+
 }
