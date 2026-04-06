@@ -2,6 +2,8 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.ACTUAL_DISBURSEMENT_DATE;
 
+import com.crediblex.fineract.portfolio.loanaccount.configuration.LpiSameMonthProperties;
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredXLoanRepaymentScheduleProcessingWrapper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -58,6 +60,7 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
     private final LoanRefundValidator loanRefundValidator;
     private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
     private final LoanTransactionProcessingService loanTransactionProcessingService;
+    private final LpiSameMonthProperties lpiSameMonthProperties;
 
     @Override
     public LoanTransaction handleDownPayment(ScheduleGeneratorDTO scheduleGeneratorDTO, JsonCommand command,
@@ -146,6 +149,9 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
                     }
                 }
             }
+            // After processLatestTransaction, re-apply the CredX wrapper so the schedule continues to reflect
+            // LPI on each installment's own row rather than being redistributed by charge due-date.
+            applyCredXWrapperIfNeeded(loan);
         }
         if (reprocess) {
             if (loan.isCumulativeSchedule() && loan.isInterestBearingAndInterestRecalculationEnabled()) {
@@ -154,6 +160,10 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
                 loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
             }
             reprocessLoanTransactionsService.reprocessTransactions(loan);
+            // After full reprocess, re-apply the CredX wrapper to restore same-month LPI assignment.
+            // reprocessTransactions uses the DEFAULT date-based wrapper when the installment JPA back-reference to
+            // Loan is not loaded (lazy), which would otherwise redistribute LPI across periods by charge due-date.
+            applyCredXWrapperIfNeeded(loan);
         }
 
         loan.updateLoanSummaryDerivedFields();
@@ -175,6 +185,30 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
                 final String errorMessage = "The transaction amount cannot exceed threshold.";
                 throw new InvalidLoanStateTransitionException("transaction", "amount.exceeds.threshold", errorMessage);
             }
+        }
+    }
+
+    /**
+     * Re-applies the CredX same-month LPI wrapper for loans that qualify (disbursed on or after the configured cut-off
+     * date). This must be called after any {@code reprocessTransactions} or {@code processLatestTransaction} call in
+     * the repayment flow so that the schedule always shows LPI on each installment's own row.
+     *
+     * <p>
+     * Background: {@code reprocessTransactions} internally calls
+     * {@code createLoanRepaymentScheduleProcessingWrapper(installments)}. When the JPA back-reference from the
+     * installment to its {@link Loan} is not eagerly loaded (common in the repayment code path), that method falls back
+     * to the DEFAULT date-based wrapper instead of the CredX one, causing LPI charges to be redistributed by calendar
+     * due-date across installment rows. The ThreadLocal fix in the CredX processor guards against the lazy loading
+     * issue for {@code reprocessLoanTransactions} calls, but this explicit reapplication acts as a belt-and-suspenders
+     * safety net.
+     * </p>
+     */
+    private void applyCredXWrapperIfNeeded(final Loan loan) {
+        if (lpiSameMonthProperties != null && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate())) {
+            log.debug("LPI same-month: re-applying CredX wrapper after repayment for loanId={}", loan.getId());
+            final CredXLoanRepaymentScheduleProcessingWrapper wrapper = new CredXLoanRepaymentScheduleProcessingWrapper();
+            wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
+                    loan.getActiveCharges());
         }
     }
 

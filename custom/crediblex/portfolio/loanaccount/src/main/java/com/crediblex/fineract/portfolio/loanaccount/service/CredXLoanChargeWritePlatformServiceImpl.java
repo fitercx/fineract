@@ -216,8 +216,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
             SavingsAccountTransactionRepository savingsAccountTransactionRepository, SavingsAccountRepository savingsAccountRepository,
             SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper,
-            LoanArrearsAgingService loanArrearsAgingService,
-            LpiSameMonthProperties lpiSameMonthProperties) {
+            LoanArrearsAgingService loanArrearsAgingService, LpiSameMonthProperties lpiSameMonthProperties) {
 
         super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
                 accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
@@ -557,6 +556,13 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // This mirrors core behavior and prevents overdue charge portions from drifting to another EMI.
         if (!loanCharge.isDueAtDisbursement() && loanCharge.isPaidOrPartiallyPaid(loan.getCurrency())) {
             reprocessLoanTransactionsService.reprocessTransactions(loan);
+            // CredX: Re-apply same-month wrapper after reprocess to keep LPI on each installment's own row.
+            // The CredX processor's ThreadLocal fix is the primary guard, but this explicit call is a safety net
+            // for any code path where the installment JPA back-reference to Loan may not be loaded (lazy).
+            if (lpiSameMonthProperties != null && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate())) {
+                new CredXLoanRepaymentScheduleProcessingWrapper().reprocess(loan.getCurrency(), loan.getDisbursementDate(),
+                        loan.getRepaymentScheduleInstallments(), loan.getActiveCharges());
+            }
         } else {
             final org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper wrapper = lpiSameMonthProperties != null
                     && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate())
