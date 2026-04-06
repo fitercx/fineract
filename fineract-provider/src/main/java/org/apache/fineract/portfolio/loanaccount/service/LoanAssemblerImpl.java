@@ -305,6 +305,7 @@ public class LoanAssemblerImpl implements LoanAssembler {
         copyAdvancedPaymentRulesIfApplicable(transactionProcessingStrategyCode, loanProduct, loanApplication);
         loanApplication.setHelpers(defaultLoanLifecycleStateMachine);
         handleFactorRateProduct(loanApplication, command);
+        handleShortDisbursalFlag(loanApplication, command);
         loanChargeService.recalculateAllCharges(loanApplication);
         topUpLoanConfiguration(element, loanApplication);
         loanAccrualsProcessingService.reprocessExistingAccruals(loanApplication);
@@ -318,6 +319,19 @@ public class LoanAssemblerImpl implements LoanAssembler {
         if (factorRateProductEnabled) {
             loan.setFactorRate(factorRate);
             loan.setFactorRateEnabled(true);
+        }
+    }
+
+    private void handleShortDisbursalFlag(final Loan loan, final JsonCommand command) {
+        // Handle isShortDisbursal flag - defaults to true for backward compatibility
+        final Boolean isShortDisbursal = command.booleanPrimitiveValueOfParameterNamed(LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME);
+        if (isShortDisbursal != null) {
+            loan.setShortDisbursalEnabled(isShortDisbursal);
+        } else {
+            // Default to true when not explicitly set (backward compatible behavior)
+            // This ensures fees are deducted from disbursement amount (short disbursal)
+            // rather than requiring collection from savings account
+            loan.setShortDisbursalEnabled(true);
         }
     }
 
@@ -869,6 +883,13 @@ public class LoanAssemblerImpl implements LoanAssembler {
             final Boolean enableInstallmentLevelDelinquency = command
                     .booleanObjectValueOfParameterNamed(LoanProductConstants.ENABLE_INSTALLMENT_LEVEL_DELINQUENCY);
             loan.updateEnableInstallmentLevelDelinquency(enableInstallmentLevelDelinquency);
+        }
+
+        // update isShortDisbursal flag
+        if (command.isChangeInBooleanParameterNamed(LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME, loan.isShortDisbursalEnabled())) {
+            final Boolean isShortDisbursal = command.booleanObjectValueOfParameterNamed(LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME);
+            loan.setShortDisbursalEnabled(isShortDisbursal);
+            changes.put(LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME, isShortDisbursal);
         }
 
         if (changes.containsKey("recalculateLoanSchedule")) {

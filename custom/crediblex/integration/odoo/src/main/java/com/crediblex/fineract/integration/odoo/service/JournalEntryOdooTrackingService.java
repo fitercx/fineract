@@ -19,6 +19,7 @@
 package com.crediblex.fineract.integration.odoo.service;
 
 import com.crediblex.fineract.accounting.journalentry.SavingsJournalEntryCreatedBusinessEvent;
+import com.crediblex.fineract.accounting.journalentry.service.LOCAccountingHelper;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
 import com.crediblex.fineract.portfolio.accountdetails.service.CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl;
@@ -49,6 +50,7 @@ public class JournalEntryOdooTrackingService {
     private final LoanTransactionRepository loanTransactionRepository;
     private final SavingsAccountTransactionRepository savingsAccountTransactionRepository;
     private final CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl accountDetailsService;
+    private final LOCAccountingHelper locAccountingHelper;
 
     @PostConstruct
     public void addListeners() {
@@ -339,6 +341,24 @@ public class JournalEntryOdooTrackingService {
                                     transactionTypeEnum);
                             return "SAVINGS_DEPOSIT";
                         case 2:
+                            // Nested check: If savings product is LOC Activation, return LOC_ACTIVATION_FEE as business
+                            // event
+                            try {
+                                SavingsAccountTransaction savingsTransaction = savingsAccountTransactionRepository
+                                        .findById(savingsTransactionId).orElse(null);
+                                if (savingsTransaction != null && savingsTransaction.getSavingsAccount() != null
+                                        && savingsTransaction.getSavingsAccount().getProduct() != null) {
+                                    Long savingsProductId = savingsTransaction.getSavingsAccount().getProduct().getId();
+                                    if (locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
+                                        log.debug(
+                                                "Savings withdrawal from LOC Activation product, returning LOC_ACTIVATION_FEE business event");
+                                        return "LOC_ACTIVATION_FEE";
+                                    }
+                                }
+                            } catch (Exception e) {
+                                log.warn("Error checking LOC Activation savings product for savings transaction {}", savingsTransactionId,
+                                        e);
+                            }
                             log.debug("Savings transaction {} with type {} mapped to SAVINGS_WITHDRAWAL business event",
                                     savingsTransactionId, transactionTypeEnum);
                             return "SAVINGS_WITHDRAWAL";

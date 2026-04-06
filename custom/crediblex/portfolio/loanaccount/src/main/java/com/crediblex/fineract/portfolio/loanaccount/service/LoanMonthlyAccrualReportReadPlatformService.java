@@ -103,9 +103,14 @@ public class LoanMonthlyAccrualReportReadPlatformService {
                 closingPrincipal = BigDecimal.ZERO;
             }
 
-            BigDecimal interest = interestByMonth.getOrDefault(monthStart, BigDecimal.ZERO);
+            // Use schedule interest as primary source so the report totals always match the
+            // repayment schedule. Late-payment interest-recalculation jobs can post catch-up
+            // accrual transactions in the payment month (not the installment's own month),
+            // which inflates the transaction-date bucket. The schedule always carries the
+            // correct per-installment interest regardless of when the payment was made.
+            BigDecimal interest = scheduleInterestByMonth.getOrDefault(monthStart, BigDecimal.ZERO);
             if (interest == null || interest.compareTo(BigDecimal.ZERO) == 0) {
-                interest = scheduleInterestByMonth.getOrDefault(monthStart, BigDecimal.ZERO);
+                interest = interestByMonth.getOrDefault(monthStart, BigDecimal.ZERO);
             }
             // Actual Interest Accrued: full month for past; day-weighted up to businessDate for current month; null for
             // future

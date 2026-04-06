@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * {@link SavingsAccountTransaction}'s.
  */
 @Component
-public final class SavingsAccountTransactionSummaryWrapper {
+public class SavingsAccountTransactionSummaryWrapper {
 
     public BigDecimal calculateTotalDeposits(final MonetaryCurrency currency, final List<SavingsAccountTransaction> transactions) {
         Money total = Money.zero(currency);

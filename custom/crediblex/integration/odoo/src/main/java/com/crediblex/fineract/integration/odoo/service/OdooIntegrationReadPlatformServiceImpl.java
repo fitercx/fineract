@@ -187,7 +187,18 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // Determine the product type based on loan ID using LOCAccountingHelper
+        String productExternalId = locAccountingHelper.getLoanProductExternalIdByLoanId(loanId);
         String productShortName = locAccountingHelper.getLoanProductShortNameByLoanId(loanId);
+
+        // For Payable LOC products (identified by external ID)
+        if (LOCAccountingHelper.PAYABLE_LOC_PRODUCT_EXTERNAL_ID.equals(productExternalId)) {
+            return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
+
+        // For Receivable LOC products (identified by external ID)
+        if (LOCAccountingHelper.LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID.equals(productExternalId)) {
+            return findReceivableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
+        }
 
         // For RBF products (or when product is unknown/null), use RBF mappings
         // This maintains backward compatibility
@@ -195,13 +206,8 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
         }
 
-        // For Payable LOC (LPLL) products
-        if (LOCAccountingHelper.PAYABLE_LOC_PRODUCT_SHORT_NAME.equals(productShortName)) {
-            return findPayableLOCJournalCodeForGlCode(glCode, businessEventType, isDebit);
-        }
-
         // For other products, fall back to RBF mappings as default
-        log.debug("Product '{}' not explicitly mapped, using RBF journal mappings as fallback", productShortName);
+        log.debug("Product external ID '{}' not explicitly mapped, using RBF journal mappings as fallback", productExternalId);
         return findRbfJournalCodeForGlCode(glCode, businessEventType, isDebit);
     }
 
@@ -258,7 +264,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
         }
 
         // BNK8 journal for REPAYMENT business events with specific GL codes
-        if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001").contains(glCode)) {
+        if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001", "300015").contains(glCode)) {
             return "BNK8";
         }
 
@@ -290,6 +296,48 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
 
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
             return "BNK6";
+        }
+
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100033", "100036", "200080").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for REPAYMENT business events with specific GL codes
+        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
+            return "BNK8";
+        }
+
+        return null; // No mapping found
+    }
+
+    /**
+     * Find journal code for Receivable LOC product GL codes
+     */
+    private String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+        // BNK5 journal for DISBURSEMENT business events with specific GL codes
+        if ("DISBURSEMENT".equals(businessEventType)
+                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041").contains(glCode)) {
+            return "BNK5";
+        }
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200041", "100003").contains(glCode)) {
+            return "BNK6";
+        }
+
+        if ("SAVINGS_DEPOSIT".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
+            return "BNK9";
+        }
+
+        if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("100062", "200080").contains(glCode)) {
+            return "BNK6";
+        }
+
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100033", "100036", "200080").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK8 journal for REPAYMENT business events with specific GL codes
+        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
+            return "BNK8";
         }
 
         return null; // No mapping found

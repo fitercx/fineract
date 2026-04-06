@@ -136,6 +136,10 @@ import org.springframework.util.CollectionUtils;
 @SuppressWarnings({ "MemberName" })
 public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
+    public SavingsProduct getProduct() {
+        return this.product;
+    }
+
     private static final Logger LOG = LoggerFactory.getLogger(SavingsAccount.class);
 
     @Version
