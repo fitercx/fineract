@@ -21,6 +21,7 @@ package com.crediblex.fineract.integration.odoo.service;
 import com.crediblex.fineract.integration.odoo.client.SlackClient;
 import com.crediblex.fineract.integration.odoo.config.SlackProperties;
 import com.crediblex.fineract.integration.odoo.domain.FailedEntryDetail;
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ public class SlackNotificationService {
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    @jakarta.annotation.PostConstruct
+    @PostConstruct
     public void init() {
         log.info("SlackNotificationService initialized successfully - slack.enabled=true detected. Channel: {}, MaxFailedEntriesToShow: {}",
                 slackProperties.getChannel(), slackProperties.getMaxFailedEntriesToShow());

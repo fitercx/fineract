@@ -90,19 +90,15 @@ public class SlackClient {
      */
     public boolean sendMessage(Map<String, Object> payload) {
         String webhookUrl = slackProperties.getWebhookUrl();
-        log.info("SlackClient.sendMessage called - webhookUrl configured: {}, webhookUrl length: {}",
-                webhookUrl != null && !webhookUrl.isEmpty(),
-                webhookUrl != null ? webhookUrl.length() : 0);
+        log.debug("SlackClient.sendMessage called - webhookUrl configured: {}",
+                webhookUrl != null && !webhookUrl.isEmpty());
 
         if (webhookUrl == null || webhookUrl.isEmpty()) {
             log.error("Slack webhook URL is not configured - check that 'slack.webhook-url' environment variable is set");
             return false;
         }
 
-        // Log masked webhook URL for debugging (show first 40 chars + last 10 chars)
-        if (webhookUrl.length() > 60) {
-            log.debug("Using webhook URL: {}...{}", webhookUrl.substring(0, 40), webhookUrl.substring(webhookUrl.length() - 10));
-        }
+        log.debug("Using configured Slack webhook URL");
 
         try {
             HttpPost httpPost = new HttpPost(slackProperties.getWebhookUrl());
