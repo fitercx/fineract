@@ -42,4 +42,13 @@ public class FileMetadataRequest {
 
     @Schema(description = "Size of the file in bytes", example = "102400", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long fileSize;
+
+    @Schema(description = "Type of resource this file belongs to (clients, loans)", example = "clients", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String resourceType;
+
+    @Schema(description = "ID of the resource this file belongs to", example = "123", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long resourceId;
+
+    @Schema(description = "ID of the parent resource (e.g., client ID for loan uploads)", example = "456")
+    private Long parentResourceId;
 }

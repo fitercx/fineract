@@ -27,7 +27,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,7 +45,8 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
             "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv",
             "application/zip", "application/x-zip-compressed");
 
-    private static final String UPLOADS_PREFIX = "uploads";
+    private static final String RESOURCE_TYPE_CLIENTS = "clients";
+    private static final String RESOURCE_TYPE_LOANS = "loans";
 
     private final S3Presigner s3Presigner;
     private final S3Config s3Config;
@@ -124,13 +124,37 @@ public class S3PresignedUrlServiceImpl implements S3PresignedUrlService {
             return "File size must be greater than 0";
         }
 
+        if (fileMetadata.getResourceType() == null || fileMetadata.getResourceType().isBlank()) {
+            return "Resource type is required";
+        }
+
+        if (fileMetadata.getResourceId() == null) {
+            return "Resource ID is required";
+        }
+
+        // For loan uploads, parent resource ID (client ID) is required
+        if (RESOURCE_TYPE_LOANS.equalsIgnoreCase(fileMetadata.getResourceType()) && fileMetadata.getParentResourceId() == null) {
+            return "Parent resource ID (client ID) is required for loan uploads";
+        }
+
         return null; // No validation errors
     }
 
     private String generateObjectKey(FileMetadataRequest fileMetadata) {
-        String uniqueId = UUID.randomUUID().toString();
         String sanitizedFileName = sanitizeFileName(fileMetadata.getFileName());
-        return String.format("%s/%s/%s", UPLOADS_PREFIX, uniqueId, sanitizedFileName);
+        String resourceType = fileMetadata.getResourceType().toLowerCase();
+
+        // Structure: /clients/<id>/<filename> for client uploads
+        // Structure: /clients/<client_id>/loan_accounts/<loan_id>/<filename> for loan uploads
+        if (RESOURCE_TYPE_LOANS.equalsIgnoreCase(resourceType)) {
+            return String.format("clients/%d/loan_accounts/%d/%s", fileMetadata.getParentResourceId(), fileMetadata.getResourceId(),
+                    sanitizedFileName);
+        } else if (RESOURCE_TYPE_CLIENTS.equalsIgnoreCase(resourceType)) {
+            return String.format("clients/%d/%s", fileMetadata.getResourceId(), sanitizedFileName);
+        } else {
+            // Fallback for other resource types
+            return String.format("%s/%d/%s", resourceType, fileMetadata.getResourceId(), sanitizedFileName);
+        }
     }
 
     private String sanitizeFileName(String fileName) {
