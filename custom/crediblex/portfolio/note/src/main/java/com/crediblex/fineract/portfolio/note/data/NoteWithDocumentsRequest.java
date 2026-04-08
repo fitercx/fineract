@@ -16,11 +16,28 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.portfolio.note.data;
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Request DTO for creating a note with optional document attachments.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "Request to create a note with optional document attachments")
+public class NoteWithDocumentsRequest {
+
+    @Schema(description = "The note text content", example = "Meeting notes from client discussion", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String note;
+
+    @Schema(description = "List of document attachments for this note")
+    private List<NoteDocumentRequest> documents;
 }

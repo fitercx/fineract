@@ -22,5 +22,6 @@ dependencies {
     implementation(project(':fineract-provider'))
     implementation(project(':fineract-loan'))
     implementation(project(':custom:crediblex:infrastructure:jobs'))
+    implementation(project(':custom:crediblex:infrastructure:s3'))
     implementation 'org.liquibase:liquibase-core'
 }
