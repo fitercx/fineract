@@ -110,13 +110,13 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
 
         final DateFormat dateFormat = StringUtils.isBlank(rawDateFormat) ? new DateFormat("yyyy-MM-dd") : new DateFormat(rawDateFormat);
-        
+
         if (transactionDateParam == null) {
             throw new IllegalArgumentException("transactionDate parameter is required");
         }
-        
+
         final LocalDate futureDate = transactionDateParam.getDate("transactionDate", dateFormat, locale);
-        
+
         // Validate that the date is not in the past
         final LocalDate currentDate = DateUtils.getLocalDateOfTenant();
         if (futureDate.isBefore(currentDate)) {
