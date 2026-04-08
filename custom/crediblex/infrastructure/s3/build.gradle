@@ -17,10 +17,16 @@
  * under the License.
  */
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+plugins {
+    id 'java'
 }
+
+description = 'CredibleX Fineract S3 Integration'
+
+group = 'com.crediblex.fineract.s3'
+
+base {
+    archivesName = 'crediblex-fineract-s3'
+}
+
+apply from: 'dependencies.gradle'

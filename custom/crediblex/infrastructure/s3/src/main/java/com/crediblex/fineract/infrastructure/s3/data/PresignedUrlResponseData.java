@@ -16,11 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.infrastructure.s3.data;
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "Response containing list of presigned URL results")
+public class PresignedUrlResponseData {
+
+    @Schema(description = "List of presigned URL generation results")
+    private List<PresignedUrlItemResponse> urls;
 }

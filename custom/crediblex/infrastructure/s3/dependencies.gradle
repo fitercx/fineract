@@ -18,9 +18,16 @@
  */
 
 dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+    implementation(project(':fineract-core'))
+    implementation(project(':fineract-provider'))
+
+    // AWS SDK v2 for S3 (uses repo-managed BOM version)
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:s3-transfer-manager'
+
+    // JAX-RS API
+    implementation 'jakarta.ws.rs:jakarta.ws.rs-api'
+
+    // Swagger/OpenAPI annotations (uses repo-managed version)
+    implementation 'io.swagger.core.v3:swagger-annotations-jakarta'
 }

@@ -16,11 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.infrastructure.s3.service;
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlRequestData;
+import com.crediblex.fineract.infrastructure.s3.data.PresignedUrlResponseData;
+
+/**
+ * Service interface for generating S3 presigned URLs.
+ */
+public interface S3PresignedUrlService {
+
+    /**
+     * Generates presigned PUT URLs for multiple files in batch.
+     *
+     * @param request
+     *            the request containing file metadata for each file
+     * @return response containing presigned URL results for each file
+     */
+    PresignedUrlResponseData generatePresignedUrls(PresignedUrlRequestData request);
 }
