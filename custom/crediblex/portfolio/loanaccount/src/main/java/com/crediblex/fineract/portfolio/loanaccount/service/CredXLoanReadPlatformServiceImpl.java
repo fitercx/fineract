@@ -25,6 +25,7 @@ import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
@@ -88,11 +89,14 @@ import org.apache.fineract.portfolio.accountdetails.service.AccountEnumerations;
 import org.apache.fineract.portfolio.calendar.data.CalendarData;
 import org.apache.fineract.portfolio.calendar.service.CalendarReadPlatformService;
 import org.apache.fineract.portfolio.charge.data.ChargeData;
+import org.apache.fineract.portfolio.charge.domain.Charge;
+import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService;
 import org.apache.fineract.portfolio.client.domain.ClientEnumerations;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.common.domain.DaysInYearCustomStrategyType;
+import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.common.service.CommonEnumerations;
 import org.apache.fineract.portfolio.delinquency.data.DelinquencyRangeData;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
@@ -132,8 +136,10 @@ import org.apache.fineract.portfolio.loanaccount.exception.LoanNotFoundException
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleProcessingType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanTransactionMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargePaidByReadService;
@@ -1326,6 +1332,135 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
 
         return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue);
+    }
+
+    /**
+     * Calculates LPI charges that would be accrued up to {@code futureDate} but are not yet present as active overdue
+     * installment charges in the database.
+     *
+     * The existing "penalties template" UI call already returns currently accrued penalties (based on existing
+     * charges). This endpoint computes only the additional future portion so the UI can add it to the penalty amount
+     * due.
+     */
+    public FutureLPIChargesData calculateFutureLPICharges(final Long loanId, final LocalDate futureDate) {
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        if (futureDate == null || !futureDate.isAfter(businessDate)) {
+            // For current/past dates, no "future" LPI portion should be added.
+            final BackdatedRepaymentPenaltyDTO penaltiesTemplate = retrieveLoanPenaltiesTemplate(loanId,
+                    futureDate != null ? futureDate : businessDate);
+            final BigDecimal totalEMIAmount = penaltiesTemplate.getPrincipalOutstanding().add(penaltiesTemplate.getInterestOutstanding());
+            return FutureLPIChargesData.builder().futureDate(futureDate).totalLPIAmount(BigDecimal.ZERO).totalEMIAmount(totalEMIAmount)
+                    .overdueInstallments(0).message("No future LPI charges for the selected date").build();
+        }
+
+        final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
+        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
+        final long diffRaw = penaltyWaitPeriodValue + 1L - penaltyPostingWaitPeriodValue;
+        final long diff = diffRaw < 1L ? 1L : diffRaw;
+
+        // EMI (principal + interest) at the selected future date for UI display.
+        final BackdatedRepaymentPenaltyDTO penaltiesTemplate = retrieveLoanPenaltiesTemplate(loanId, futureDate);
+        final BigDecimal totalEMIAmount = penaltiesTemplate.getPrincipalOutstanding().add(penaltiesTemplate.getInterestOutstanding());
+
+        final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        final MonetaryCurrency currency = loan.getCurrency();
+
+        // LPI overdue installment charge definition (there should typically be one per product).
+        final Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
+                .filter((c) -> ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(c.getChargeTimeType()) && c.isLoanCharge()).findFirst();
+        if (optPenaltyCharge.isEmpty()) {
+            return FutureLPIChargesData.builder().futureDate(futureDate).totalLPIAmount(BigDecimal.ZERO).totalEMIAmount(totalEMIAmount)
+                    .overdueInstallments(0).message("No overdue charges configured for this loan/product").build();
+        }
+
+        final Charge chargeDefinition = optPenaltyCharge.get();
+
+        final Integer feeFrequency = chargeDefinition.feeFrequency();
+        final Integer feeInterval = chargeDefinition.feeInterval();
+
+        final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
+
+        BigDecimal additionalLPIAmount = BigDecimal.ZERO;
+        int overdueInstallmentsCount = 0;
+
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (installment == null || installment.getDueDate() == null) {
+                continue;
+            }
+            if (!installment.isNotFullyPaidOff()) {
+                continue; // completed installment
+            }
+            if (installment.isRecalculatedInterestComponent()) {
+                continue;
+            }
+
+            final LocalDate dueDate = installment.getDueDate();
+            final LocalDate firstStartDate = dueDate.plusDays(penaltyWaitPeriodValue + 1L);
+            if (firstStartDate.isAfter(futureDate)) {
+                continue; // penalty hasn't started accruing by this future date
+            }
+
+            final Integer periodNumber = installment.getInstallmentNumber();
+
+            // Generate the same scheduleDates that core uses when applying overdue charges,
+            // but stop at the selected future date instead of the current business date.
+            final java.util.Map<Integer, LocalDate> scheduleDates = new java.util.HashMap<>();
+            int frequencyNumber = 1;
+
+            if (feeFrequency == null) {
+                scheduleDates.put(frequencyNumber++, firstStartDate.minusDays(diff));
+            } else {
+                LocalDate start = firstStartDate;
+                while (!start.isAfter(futureDate)) {
+                    scheduleDates.put(frequencyNumber++, start.minusDays(diff));
+                    start = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency), feeInterval, start);
+                }
+            }
+
+            if (scheduleDates.isEmpty()) {
+                continue;
+            }
+
+            // Skip the occurrence sequence numbers already present as active overdue charges.
+            final Collection<Integer> existingFrequencyNumbers = this.customLoanChargeReadPlatformServiceImpl
+                    .retrieveOverdueInstallmentChargeFrequencyNumber(loan, chargeDefinition, periodNumber);
+            for (final Integer existing : existingFrequencyNumbers) {
+                scheduleDates.remove(existing);
+            }
+
+            if (scheduleDates.isEmpty()) {
+                continue; // nothing additional for this installment
+            }
+
+            overdueInstallmentsCount++;
+
+            // Build the additional loan charges in-memory to reuse the same derived-field calculations (caps/taxes).
+            final BigDecimal principalOverdue = installment.getPrincipalOutstanding(currency).getAmount();
+            final BigDecimal interestOverdue = installment.getInterestOutstanding(currency).getAmount();
+            final ChargeCalculationType chargeCalculationType = ChargeCalculationType.fromInt(chargeDefinition.getChargeCalculation());
+
+            for (final LocalDate chargeDueDate : scheduleDates.values()) {
+                BigDecimal amountPercentageAppliedTo = BigDecimal.ZERO;
+                switch (chargeCalculationType) {
+                    case PERCENT_OF_AMOUNT, PERCENT_OF_DISBURSEMENT_AMOUNT -> amountPercentageAppliedTo = principalOverdue;
+                    case PERCENT_OF_AMOUNT_AND_INTEREST -> amountPercentageAppliedTo = principalOverdue.add(interestOverdue);
+                    case PERCENT_OF_INTEREST -> amountPercentageAppliedTo = interestOverdue;
+                    default -> amountPercentageAppliedTo = BigDecimal.ZERO;
+                }
+
+                final LoanCharge additionalCharge = new LoanCharge(loan, chargeDefinition, amountPercentageAppliedTo,
+                        chargeDefinition.getAmount(), null, null, chargeDueDate, null, null, BigDecimal.ZERO, ExternalId.empty(),
+                        loan.isFactorRateEnabled(), loan.getFactorRate());
+
+                additionalLPIAmount = additionalLPIAmount.add(additionalCharge.amount());
+            }
+        }
+
+        final String message = additionalLPIAmount.compareTo(BigDecimal.ZERO) == 0 ? "No overdue charges for the selected date"
+                : "Additional LPI for the selected future date";
+
+        return FutureLPIChargesData.builder().futureDate(futureDate).totalLPIAmount(additionalLPIAmount).totalEMIAmount(totalEMIAmount)
+                .overdueInstallments(overdueInstallmentsCount).message(message).build();
     }
 
     private static final class LoanCurrencyDataMapper implements RowMapper<CurrencyData> {
