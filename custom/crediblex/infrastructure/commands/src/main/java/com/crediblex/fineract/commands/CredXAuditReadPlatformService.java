@@ -58,6 +58,10 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
         return "UNDOTRANSACTION".equalsIgnoreCase(data.getActionName()) && "SAVINGSACCOUNT".equalsIgnoreCase(data.getEntityName());
     }
 
+    private static boolean isSavingsDeposit(AuditData data) {
+        return "DEPOSIT".equalsIgnoreCase(data.getActionName()) && "SAVINGSACCOUNT".equalsIgnoreCase(data.getEntityName());
+    }
+
     public List<AuditData> retrieveAllEntriesToBeChecked(SQLBuilder extraCriteria, boolean includeJson) {
         // the optimal solution for this would have been to modify the query downstream
         // however, to minimize changes, let us enhance the data after it has been fetched
@@ -78,34 +82,38 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
         // Enhance the audit data
         for (AuditData data : auditData) {
+            AuditData enhancedData;
+
             // Case 1: LOANCHARGE WAIVE - use specialized query
             if (isWaiveCharge(data)) {
                 Long chargeId = data.getResourceId();
                 LoanChargeWaiveDetails.Result details = detailsMap.get(chargeId);
                 if (details != null) {
-                    ExtendedAuditData enhancedData = ExtendedAuditData.from(data, details.getClientName(), details.getLoanId(),
-                            details.getWaiveOffAmount());
-                    enhancedAuditData.add(enhancedData);
+                    enhancedData = ExtendedAuditData.from(data, details.getClientName(), details.getLoanId(), details.getWaiveOffAmount());
                 } else {
-                    enhancedAuditData.add(data);
+                    enhancedData = data;
                 }
-                continue;
             }
-
             // Case 2: SAVINGSACCOUNT UNDOTRANSACTION - enrich with clientName via savings account
-            if (isSavingsUndo(data)) {
-                enhancedAuditData.add(enrichSavingsUndoWithClient(data));
-                continue;
+            else if (isSavingsUndo(data)) {
+                enhancedData = enrichSavingsTransactionWithClient(data);
+            }
+            // Case 3: SAVINGSACCOUNT DEPOSIT - enrich with clientName via savings account
+            else if (isSavingsDeposit(data)) {
+                enhancedData = enrichSavingsTransactionWithClient(data);
+            }
+            // Default: no change
+            else {
+                enhancedData = data;
             }
 
-            // Default: no change
-            enhancedAuditData.add(data);
+            enhancedAuditData.add(enhancedData);
         }
 
         return enhancedAuditData;
     }
 
-    private AuditData enrichSavingsUndoWithClient(AuditData data) {
+    private AuditData enrichSavingsTransactionWithClient(AuditData data) {
         try {
             if (data.getClientName() != null && !data.getClientName().isBlank()) {
                 return data;
