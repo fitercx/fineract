@@ -38,6 +38,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNote;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditNoteType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransaction;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
@@ -216,6 +217,54 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         this.dataValidator.validateForUpdate(command.json());
 
         final Map<String, Object> changes = lineOfCredit.update(command);
+        final JsonElement root = fromJsonHelper.parse(command.json());
+
+        // Handle blockedAmount updates - check directly in JSON since it may not be a registered command parameter
+        log.info("LOC Update: Checking for blockedAmount in payload");
+        log.info("LOC Update: Raw JSON = {}", command.json());
+
+        // Check directly in the JSON object instead of using parameterExists
+        boolean hasBlockedAmount = root.isJsonObject() && root.getAsJsonObject().has("blockedAmount");
+        log.info("LOC Update: hasBlockedAmount (direct check) = {}", hasBlockedAmount);
+
+        if (hasBlockedAmount) {
+            JsonElement blockedAmountElement = root.getAsJsonObject().get("blockedAmount");
+            log.info("LOC Update: blockedAmountElement = {}, isJsonNull = {}", blockedAmountElement, blockedAmountElement.isJsonNull());
+
+            if (!blockedAmountElement.isJsonNull()) {
+                final BigDecimal newBlockedAmount = blockedAmountElement.getAsBigDecimal();
+                log.info("LOC Update: Extracted blockedAmount = {}", newBlockedAmount);
+                if (newBlockedAmount != null && newBlockedAmount.compareTo(BigDecimal.ZERO) >= 0) {
+                    // Ensure summary is initialized
+                    if (lineOfCredit.getSummary() == null) {
+                        log.info("LOC Update: Summary is null, initializing...");
+                        lineOfCredit.setSummary(LineOfCreditSummary.getInitialState());
+                    }
+                    final BigDecimal currentBlocked = lineOfCredit.getSummary().getBlockedAmount() != null
+                            ? lineOfCredit.getSummary().getBlockedAmount()
+                            : BigDecimal.ZERO;
+                    log.info("LOC Update: currentBlocked = {}, newBlockedAmount = {}", currentBlocked, newBlockedAmount);
+                    // Only update if value has changed
+                    if (newBlockedAmount.compareTo(currentBlocked) != 0) {
+                        log.info("LOC Update: Value changed, updating blockedAmount");
+                        lineOfCredit.getSummary().setBlockedAmount(newBlockedAmount);
+                        // Recalculate available balance: MaxLimit - Blocked - Consumed
+                        final BigDecimal consumed = lineOfCredit.getSummary().getConsumedAmount() != null
+                                ? lineOfCredit.getSummary().getConsumedAmount()
+                                : BigDecimal.ZERO;
+                        BigDecimal newAvailable = lineOfCredit.getMaximumAmount().subtract(newBlockedAmount).subtract(consumed);
+                        if (newAvailable.compareTo(BigDecimal.ZERO) < 0) {
+                            newAvailable = BigDecimal.ZERO;
+                        }
+                        lineOfCredit.getSummary().setAvailableBalance(newAvailable);
+                        changes.put("blockedAmount", newBlockedAmount);
+                        log.info("LOC Update: Set blockedAmount = {}, availableBalance = {}", newBlockedAmount, newAvailable);
+                    } else {
+                        log.info("LOC Update: Value unchanged, skipping update");
+                    }
+                }
+            }
+        }
 
         // handle settlement savings account update explicitly
         if (command.hasParameter("settlementSavingsAccountId")) {
@@ -234,7 +283,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         if (command.hasParameter("charges")) {
 
             // Build new charges list
-            JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray chargesArray = fromJsonHelper.extractJsonArrayNamed("charges", root);
             List<LineOfCreditCharge> newCharges = new ArrayList<>();
             if (chargesArray != null) {
@@ -278,7 +326,6 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // update/delete approved buyers if provided
         if (command.hasParameter("approvedBuyers")) {
-            JsonElement root = fromJsonHelper.parse(command.json());
             JsonArray approvedBuyersArray = fromJsonHelper.extractJsonArrayNamed("approvedBuyers", root);
             List<LineOfCreditApprovedBuyers> newApprovedBuyers = new ArrayList<>();
             if (approvedBuyersArray != null) {
@@ -1056,6 +1103,118 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         return new CommandProcessingResultBuilder().withEntityId(vendorId).withClientId(lineOfCredit.getClient().getId())
                 .withOfficeId(lineOfCredit.getClient().getOffice().getId()).withResourceIdAsString(String.valueOf(vendorId)).build();
+    }
+
+    /**
+     * Blocks (reserves) a specified amount from the LOC credit limit, reducing the available amount for borrowers.
+     * <p>
+     * Formula after blocking: Available Amount = Credit Limit − Blocked Amount − Consumed Amount
+     *
+     * @param lineOfCreditId
+     *            the LOC identifier
+     * @param command
+     *            must contain {@code amount} (positive BigDecimal) and optionally {@code note}
+     */
+    @Override
+    @Transactional
+    public CommandProcessingResult blockAmount(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (loc.getStatus() != LocStatus.ACTIVE && loc.getStatus() != LocStatus.APPROVED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.block.amount.invalid.state",
+                    "Blocked amount can only be set when LOC is ACTIVE or APPROVED", "state");
+        }
+
+        BigDecimal amountToBlock = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        if (amountToBlock == null || amountToBlock.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.block.amount.must.be.positive",
+                    "Amount to block must be greater than zero", ADJUSTED_CREDIT_LIMIT);
+        }
+
+        BigDecimal currentBlockedAmount = loc.getSummary().getBlockedAmount() != null ? loc.getSummary().getBlockedAmount()
+                : BigDecimal.ZERO;
+        BigDecimal newBlockedAmount = currentBlockedAmount.add(amountToBlock);
+
+        // Ensure the new blocked amount does not exceed the drawable available balance
+        // (i.e., we cannot block more than what is currently available for drawdown)
+        BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
+        if (amountToBlock.compareTo(currentAvailableBalance) > 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.block.amount.exceeds.available",
+                    "Amount to block (" + amountToBlock + ") exceeds current available balance (" + currentAvailableBalance + ")",
+                    ADJUSTED_CREDIT_LIMIT);
+        }
+
+        // Update blocked amount and recalculate available balance
+        loc.getSummary().setBlockedAmount(newBlockedAmount);
+        BigDecimal newAvailableBalance = currentAvailableBalance.subtract(amountToBlock);
+        loc.getSummary().setAvailableBalance(newAvailableBalance);
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.BLOCK_AMOUNT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousBlockedAmount", currentBlockedAmount);
+        changes.put("newBlockedAmount", newBlockedAmount);
+        changes.put("availableBalance", newAvailableBalance);
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    /**
+     * Unblocks (releases) a specified amount from the LOC blocked reserve, restoring it to the drawable available
+     * balance.
+     * <p>
+     * Formula after unblocking: Available Amount = Credit Limit − Blocked Amount − Consumed Amount
+     *
+     * @param lineOfCreditId
+     *            the LOC identifier
+     * @param command
+     *            must contain {@code amount} (positive BigDecimal) and optionally {@code note}
+     */
+    @Override
+    @Transactional
+    public CommandProcessingResult unblockAmount(Long lineOfCreditId, JsonCommand command) {
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        if (loc.getStatus() != LocStatus.ACTIVE && loc.getStatus() != LocStatus.APPROVED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.unblock.amount.invalid.state",
+                    "Blocked amount can only be released when LOC is ACTIVE or APPROVED", "state");
+        }
+
+        BigDecimal amountToUnblock = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        if (amountToUnblock == null || amountToUnblock.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.unblock.amount.must.be.positive",
+                    "Amount to unblock must be greater than zero", ADJUSTED_CREDIT_LIMIT);
+        }
+
+        BigDecimal currentBlockedAmount = loc.getSummary().getBlockedAmount() != null ? loc.getSummary().getBlockedAmount()
+                : BigDecimal.ZERO;
+
+        if (amountToUnblock.compareTo(currentBlockedAmount) > 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.unblock.amount.exceeds.blocked",
+                    "Amount to unblock (" + amountToUnblock + ") exceeds current blocked amount (" + currentBlockedAmount + ")",
+                    ADJUSTED_CREDIT_LIMIT);
+        }
+
+        BigDecimal newBlockedAmount = currentBlockedAmount.subtract(amountToUnblock);
+
+        // Update blocked amount and recalculate available balance
+        loc.getSummary().setBlockedAmount(newBlockedAmount);
+        BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
+        BigDecimal newAvailableBalance = currentAvailableBalance.add(amountToUnblock);
+        loc.getSummary().setAvailableBalance(newAvailableBalance);
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.UNBLOCK_AMOUNT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousBlockedAmount", currentBlockedAmount);
+        changes.put("newBlockedAmount", newBlockedAmount);
+        changes.put("availableBalance", newAvailableBalance);
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
     }
 
 }

@@ -467,4 +467,17 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     public boolean isCustomExpired() {
         return this.customLocStatus != null && this.customLocStatus.isExpired();
     }
+
+    /**
+     * Returns the effective maximum drawable amount for the LOC, factoring in any administratively blocked portion.
+     * <p>
+     * Effective Drawable Limit = Credit Limit (maximumAmount) - Blocked Amount
+     * <p>
+     * Available Amount = Effective Drawable Limit - Consumed Amount
+     */
+    public BigDecimal getEffectiveDrawableLimit() {
+        BigDecimal blocked = (this.summary != null && this.summary.getBlockedAmount() != null) ? this.summary.getBlockedAmount()
+                : BigDecimal.ZERO;
+        return this.maximumAmount.subtract(blocked);
+    }
 }
