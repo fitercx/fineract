@@ -16,6 +16,8 @@ import org.apache.fineract.commands.service.AuditReadPlatformServiceImpl;
 import org.apache.fineract.infrastructure.core.data.PaginationParameters;
 import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.security.utils.SQLBuilder;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccountRepository;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountData;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountReadPlatformService;
 import org.springframework.context.annotation.Primary;
@@ -29,6 +31,7 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
     private final AuditReadPlatformServiceImpl originalAuditReadPlatformService;
     private final EzySqlLoanChargeWaiverRepository loanChargeWaiverRepository;
     private final SavingsAccountReadPlatformService savingsAccountReadPlatformService;
+    private final SavingsAccountRepository savingsAccountRepository;
 
     @Override
     public List<AuditData> retrieveAuditEntries(SQLBuilder extraCriteria, boolean includeJson) {
@@ -115,26 +118,59 @@ public class CredXAuditReadPlatformService implements AuditReadPlatformService {
 
     private AuditData enrichSavingsTransactionWithClient(AuditData data) {
         try {
-            if (data.getClientName() != null && !data.getClientName().isBlank()) {
+            if (hasClientName(data)) {
                 return data;
             }
-            // Try to get savings account id from resourceId; if not, fallback to subresourceId
-            Long savingsId = data.getResourceId();
-            if (savingsId == null || savingsId <= 0) {
-                savingsId = data.getSubresourceId();
+
+            // For DEPOSIT action, resourceId is null and savings account number is available
+            // Try to get client name via savings account number first
+            String clientNameFromAccountNo = getClientNameFromSavingsAccountNo(data.getSavingsAccountNo());
+            if (clientNameFromAccountNo != null) {
+                return ExtendedAuditData.from(data, clientNameFromAccountNo, null, null);
             }
-            if (savingsId == null || savingsId <= 0) {
-                return data;
+
+            // Fallback: try to get savings account id from resourceId or subresourceId
+            String clientNameFromId = getClientNameFromSavingsId(data);
+            if (clientNameFromId != null) {
+                return ExtendedAuditData.from(data, clientNameFromId, null, null);
             }
-            SavingsAccountData savings = savingsAccountReadPlatformService.retrieveOne(savingsId);
-            if (savings == null || savings.getClientName() == null || savings.getClientName().isBlank()) {
-                return data;
-            }
-            return ExtendedAuditData.from(data, savings.getClientName(), null, null);
+
+            return data;
         } catch (Exception e) {
             // Be defensive: never break the audit listing
             return data;
         }
+    }
+
+    private boolean hasClientName(AuditData data) {
+        return data.getClientName() != null && !data.getClientName().isBlank();
+    }
+
+    private String getClientNameFromSavingsAccountNo(String savingsAccountNo) {
+        if (savingsAccountNo == null || savingsAccountNo.isBlank()) {
+            return null;
+        }
+        SavingsAccount savingsAccount = savingsAccountRepository.findSavingsAccountByAccountNumber(savingsAccountNo);
+        if (savingsAccount == null || savingsAccount.getClient() == null) {
+            return null;
+        }
+        String clientName = savingsAccount.getClient().getDisplayName();
+        return (clientName != null && !clientName.isBlank()) ? clientName : null;
+    }
+
+    private String getClientNameFromSavingsId(AuditData data) {
+        Long savingsId = data.getResourceId();
+        if (savingsId == null || savingsId <= 0) {
+            savingsId = data.getSubresourceId();
+        }
+        if (savingsId == null || savingsId <= 0) {
+            return null;
+        }
+        SavingsAccountData savings = savingsAccountReadPlatformService.retrieveOne(savingsId);
+        if (savings == null || savings.getClientName() == null || savings.getClientName().isBlank()) {
+            return null;
+        }
+        return savings.getClientName();
     }
 
 }
