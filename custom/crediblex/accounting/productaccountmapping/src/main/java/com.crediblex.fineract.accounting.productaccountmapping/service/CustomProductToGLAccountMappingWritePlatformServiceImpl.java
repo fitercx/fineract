@@ -92,10 +92,12 @@ public class CustomProductToGLAccountMappingWritePlatformServiceImpl extends Pro
                 ProductToGLAccountMapping existing = productToGLAccountMappingRepository.findCoreProductToFinAccountMapping(loanProductId,
                         PortfolioProductType.LOAN.getValue(), DEFERRED_INCOME.getValue());
 
+                if (existing == null) {
                     // Only create mapping if it doesn't exist
                     this.loanProductToGLAccountMappingHelper.saveLoanToLiabilityAccountMapping(element,
                             LoanProductAccountingParams.DEFERRED_INCOME_ACCOUNT_ID.getValue(), loanProductId, DEFERRED_INCOME.getValue());
                     log.debug("Created deferred income account mapping for loan product: {}", loanProductId);
+                } else {
                     log.debug("Deferred income account mapping already exists for loan product: {}, skipping creation", loanProductId);
                 }
             }
