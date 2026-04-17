@@ -44,6 +44,17 @@ public interface LineOfCreditWritePlatformService {
 
     CommandProcessingResult reduceCreditLimit(Long lineOfCreditId, JsonCommand command);
 
+    /**
+     * Adjust the credit limit to a new target amount. This method automatically determines whether to increase or
+     * decrease the limit based on the comparison of the new amount with the current effective limit at the given date.
+     * Supports decimal amounts for precise credit limit management.
+     *
+     * @param lineOfCreditId The ID of the line of credit to adjust
+     * @param command The JSON command containing: amount (new target limit), actionDate, locale, dateFormat, and optional note
+     * @return CommandProcessingResult with details of the adjustment
+     */
+    CommandProcessingResult adjustCreditLimit(Long lineOfCreditId, JsonCommand command);
+
     CommandProcessingResult undoCloseLineOfCredit(Long lineOfCreditId, JsonCommand command);
 
     CommandProcessingResult manageApprovedBuyers(Long lineOfCreditId, JsonCommand command);

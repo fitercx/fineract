@@ -169,6 +169,34 @@ public class LineOfCreditDataValidator {
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
 
+    /**
+     * Validates the payload for the unified adjust credit limit API.
+     * This method supports decimal amounts for precise credit limit management.
+     * The 'amount' parameter represents the new target approved facility amount.
+     *
+     * @param command The JSON command containing: amount, actionDate, locale, dateFormat, and optional note
+     */
+    public void validateForAdjustCreditLimit(JsonCommand command) {
+        final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
+        final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors).resource("line.of.credit");
+
+        // Validate 'amount' - the new target credit limit (supports decimals)
+        BigDecimal newCreditLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        baseDataValidator.reset().parameter(ADJUSTED_CREDIT_LIMIT).value(newCreditLimit).notNull().positiveAmount();
+
+        // Validate actionDate is provided
+        LocalDate actionDate = command.localDateValueOfParameterNamed("actionDate");
+        baseDataValidator.reset().parameter("actionDate").value(actionDate).notNull();
+
+        // Validate optional note
+        if (command.hasParameter("note")) {
+            String note = command.stringValueOfParameterNamed("note");
+            baseDataValidator.reset().parameter("note").value(note).notExceedingLengthOf(500);
+        }
+
+        throwExceptionIfValidationWarningsExist(dataValidationErrors);
+    }
+
     public void validateForManageApprovedBuyers(JsonCommand command) {
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors)
