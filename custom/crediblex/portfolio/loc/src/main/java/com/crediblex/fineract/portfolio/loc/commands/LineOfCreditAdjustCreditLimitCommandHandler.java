@@ -29,8 +29,8 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.springframework.stereotype.Service;
 
 /**
- * Command handler for adjusting credit limit. This unified handler automatically determines
- * whether to increase or decrease the credit limit based on the new target amount provided.
+ * Command handler for adjusting credit limit. This unified handler automatically determines whether to increase or
+ * decrease the credit limit based on the new target amount provided.
  */
 @Service
 @RequiredArgsConstructor

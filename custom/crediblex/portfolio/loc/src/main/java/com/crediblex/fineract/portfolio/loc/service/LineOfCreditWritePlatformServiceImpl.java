@@ -673,10 +673,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         // Calculate delta: difference between new limit and current credit limit
         BigDecimal delta = newLimit.subtract(currentCreditLimit);
-        
+
         // Update LOC balance - INCREMENT adds to available balance by the delta amount
         lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.INCREMENT);
-        
+
         // Update the maximum amount (credit limit) to the new target limit
         loc.setMaximumAmount(newLimit);
         this.lineOfCreditRepository.saveAndFlush(loc);
@@ -720,8 +720,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         BigDecimal delta = currentCreditLimit.subtract(newLimit);
 
         // Update LOC balance - DECREMENT reduces available balance by the delta amount
-        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate,
-                LineOfCreditTransactionType.DECREMENT);
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.DECREMENT);
 
         // Update the maximum amount (credit limit) to the new target limit
         loc.setMaximumAmount(newLimit);

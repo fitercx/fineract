@@ -170,11 +170,11 @@ public class LineOfCreditDataValidator {
     }
 
     /**
-     * Validates the payload for the unified adjust credit limit API.
-     * This method supports decimal amounts for precise credit limit management.
-     * The 'amount' parameter represents the new target approved facility amount.
+     * Validates the payload for the unified adjust credit limit API. This method supports decimal amounts for precise
+     * credit limit management. The 'amount' parameter represents the new target approved facility amount.
      *
-     * @param command The JSON command containing: amount, actionDate, locale, dateFormat, and optional note
+     * @param command
+     *            The JSON command containing: amount, actionDate, locale, dateFormat, and optional note
      */
     public void validateForAdjustCreditLimit(JsonCommand command) {
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();

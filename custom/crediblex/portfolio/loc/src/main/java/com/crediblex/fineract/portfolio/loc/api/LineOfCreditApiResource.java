@@ -200,8 +200,8 @@ public class LineOfCreditApiResource {
     public String performAction(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("action") @Parameter(description = "action", schema = @Schema(allowableValues = { "approve", "activate", "close",
-                    "deactivate", "manageapprovedbuyers", "increasecreditlimit", "decreasecreditlimit", "adjustcreditlimit", "undoclose", "reactivate",
-                    "blockamount", "unblockamount" })) final String action,
+                    "deactivate", "manageapprovedbuyers", "increasecreditlimit", "decreasecreditlimit", "adjustcreditlimit", "undoclose",
+                    "reactivate", "blockamount", "unblockamount" })) final String action,
             @Parameter(hidden = true) final String requestBody) {
 
         // Handle different request types based on action
