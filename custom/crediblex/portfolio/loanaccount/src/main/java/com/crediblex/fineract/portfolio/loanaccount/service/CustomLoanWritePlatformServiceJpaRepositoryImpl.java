@@ -109,10 +109,10 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
@@ -2078,9 +2078,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
     /**
      * Adjusts a single installment's due date while regenerating the remainder of the schedule so interest is
-     * recalculated for the affected installment onwards. Reuses the standard Loan Reschedule pipeline (create +
-     * approve a LoanRescheduleRequest with a DUE_DATE term variation) so behavior is identical to the Loan
-     * Reschedule > "Change Repayment Date" flow.
+     * recalculated for the affected installment onwards. Reuses the standard Loan Reschedule pipeline (create + approve
+     * a LoanRescheduleRequest with a DUE_DATE term variation) so behavior is identical to the Loan Reschedule > "Change
+     * Repayment Date" flow.
      */
     private CommandProcessingResult adjustInstallmentDateWithInterestRecalculation(final Loan loan,
             final LoanRepaymentScheduleInstallment installment, final LocalDate oldDueDate, final LocalDate newDueDate,
@@ -2171,14 +2171,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      * reschedule validator.
      */
     /**
-     * When the same installment has been adjusted before with interest recalculation, the prior active DUE_DATE
-     * term variation stores the originally requested target date as its {@code date_value}. If the working-day
-     * rule then shifted the actual installment forward (e.g. 2026-05-09 Sat -> 2026-05-11 Mon), the prior
-     * variation's {@code date_value} no longer equals the installment's current due date. The standard
+     * When the same installment has been adjusted before with interest recalculation, the prior active DUE_DATE term
+     * variation stores the originally requested target date as its {@code date_value}. If the working-day rule then
+     * shifted the actual installment forward (e.g. 2026-05-09 Sat -> 2026-05-11 Mon), the prior variation's
+     * {@code date_value} no longer equals the installment's current due date. The standard
      * {@code LoanRescheduleRequestWritePlatformServiceImpl.approve()} uses an exact-equality check
      * ({@code prior.date_value == new.applicable_date}) to chain reschedules; when it fails, the new variation's
-     * {@code applicable_date} is kept at a value the schedule generator never produces and the new reschedule
-     * becomes a no-op. Realign the prior variation so the chain works.
+     * {@code applicable_date} is kept at a value the schedule generator never produces and the new reschedule becomes a
+     * no-op. Realign the prior variation so the chain works.
      */
     private void alignPriorDueDateVariationForInstallment(final Loan loan, final LoanRepaymentScheduleInstallment installment,
             final LocalDate currentDueDate) {

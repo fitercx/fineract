@@ -51,8 +51,8 @@ public class CredXAdjustInstallmentDateDataValidator {
 
         // Optional: when true, schedule is regenerated and interest is recalculated following the same approach as
         // Loan Reschedule > Change Repayment Date.
-        final Boolean adjustWithInterestRecalculation = this.fromApiJsonHelper
-                .extractBooleanNamed("adjustWithInterestRecalculation", element);
+        final Boolean adjustWithInterestRecalculation = this.fromApiJsonHelper.extractBooleanNamed("adjustWithInterestRecalculation",
+                element);
         baseDataValidator.reset().parameter("adjustWithInterestRecalculation").value(adjustWithInterestRecalculation).ignoreIfNull()
                 .validateForBooleanValue();
 
