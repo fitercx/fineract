@@ -35,8 +35,6 @@ import io.cucumber.java.en.When;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -96,7 +94,8 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         Long settlementSavingsAccountId = savingsResponse != null && savingsResponse.body() != null ? savingsResponse.body().getResourceId() : null;
 
         String externalId = "LOC-" + System.nanoTime();
-        String interimReviewDate = LocalDate.now().plusMonths(6).format(DateTimeFormatter.ofPattern(DATE_FORMAT)); // Dynamic interim review date - always 6 months in future
+        // Use a future date for interim review (30 days from now) to avoid validation failures
+        String interimReviewDate = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern(DATE_FORMAT, java.util.Locale.ENGLISH));
 
         // Determine product type based on string parameter
         Integer productType = locType.equalsIgnoreCase("payable") ? 2 : 1; // 1=RECEIVABLE, 2=PAYABLE

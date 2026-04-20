@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                   http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    <changeSet id="1" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'ADJUST_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="ADJUST_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="ADJUST"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

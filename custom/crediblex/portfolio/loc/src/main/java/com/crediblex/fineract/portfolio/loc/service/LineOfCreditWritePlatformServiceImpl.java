@@ -614,6 +614,137 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     @Override
     @Transactional
+    public CommandProcessingResult adjustCreditLimit(Long lineOfCreditId, JsonCommand command) {
+        // Fetch LOC
+        final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
+
+        // Validate state (allow only ACTIVE or APPROVED to have limit adjusted)
+        if (loc.getStatus() != LocStatus.ACTIVE && loc.getStatus() != LocStatus.APPROVED) {
+            throw new PlatformApiDataValidationException("error.msg.loc.adjust.limit.invalid.state",
+                    "Credit limit can only be adjusted when LOC is ACTIVE or APPROVED", "state");
+        }
+
+        // Validate payload - expects 'amount' parameter which is the new target limit
+        dataValidator.validateForAdjustCreditLimit(command);
+
+        // Extract new target limit (the desired approved facility) - supports decimal amounts
+        BigDecimal newTargetLimit = command.bigDecimalValueOfParameterNamed(ADJUSTED_CREDIT_LIMIT);
+        LocalDate transactionDate = command.localDateValueOfParameterNamed("actionDate");
+
+        // Get the current credit limit (maximumAmount) - this is what we compare against
+        BigDecimal currentCreditLimit = loc.getMaximumAmount() == null ? BigDecimal.ZERO : loc.getMaximumAmount();
+
+        // Compare new target limit with current credit limit to determine if it's an increase or decrease
+        int comparison = newTargetLimit.compareTo(currentCreditLimit);
+
+        if (comparison == 0) {
+            // No change needed - new limit equals current limit
+            Map<String, Object> changes = new LinkedHashMap<>();
+            changes.put("previousLimit", currentCreditLimit);
+            changes.put("newLimit", newTargetLimit);
+            changes.put("adjustmentType", "NO_CHANGE");
+            changes.put("delta", BigDecimal.ZERO);
+            if (loc.getSummary() != null) {
+                changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+            }
+            return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+        } else if (comparison > 0) {
+            // New limit is greater than current - this is an INCREASE
+            return performCreditLimitIncrease(loc, newTargetLimit, currentCreditLimit, transactionDate, command);
+        } else {
+            // New limit is less than current - this is a DECREASE
+            return performCreditLimitDecrease(loc, newTargetLimit, currentCreditLimit, transactionDate, command);
+        }
+    }
+
+    private CommandProcessingResult performCreditLimitIncrease(LineOfCredit loc, BigDecimal newLimit, BigDecimal currentCreditLimit,
+            LocalDate transactionDate, JsonCommand command) {
+        Long lineOfCreditId = loc.getId();
+
+        // Ensure consumed amount (if any) does not exceed new limit (shouldn't happen for increase but defensive)
+        BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
+                ? loc.getSummary().getConsumedAmount()
+                : BigDecimal.ZERO;
+
+        if (consumed.compareTo(newLimit) > 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.increase.limit.consumed.exceeds.new.limit",
+                    "Consumed amount exceeds the proposed new credit limit", "amount");
+        }
+
+        // Calculate delta: difference between new limit and current credit limit
+        BigDecimal delta = newLimit.subtract(currentCreditLimit);
+
+        // Update LOC balance - INCREMENT adds to available balance by the delta amount
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.INCREMENT);
+
+        // Update the maximum amount (credit limit) to the new target limit
+        loc.setMaximumAmount(newLimit);
+        this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditIncreasedBusinessEvent(loc));
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.INCREASE_CREDIT_LIMIT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousLimit", currentCreditLimit);
+        changes.put("newLimit", newLimit);
+        changes.put("adjustmentType", "INCREASE");
+        changes.put("delta", delta);
+        if (loc.getSummary() != null) {
+            changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+        }
+
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    private CommandProcessingResult performCreditLimitDecrease(LineOfCredit loc, BigDecimal newLimit, BigDecimal currentCreditLimit,
+            LocalDate transactionDate, JsonCommand command) {
+        Long lineOfCreditId = loc.getId();
+
+        // Validate that new limit is positive
+        if (newLimit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.adjust.limit.must.be.positive",
+                    "New credit limit must be greater than zero", "amount");
+        }
+
+        // Validate against consumed amount - cannot set limit below already consumed
+        BigDecimal consumed = (loc.getSummary() != null && loc.getSummary().getConsumedAmount() != null)
+                ? loc.getSummary().getConsumedAmount()
+                : BigDecimal.ZERO;
+        if (newLimit.compareTo(consumed) < 0) {
+            throw new PlatformApiDataValidationException("error.msg.loc.adjust.limit.consumed.exceeds.new.limit",
+                    "Consumed amount exceeds the proposed new credit limit", "amount");
+        }
+
+        // Calculate the delta (how much we're reducing by)
+        BigDecimal delta = currentCreditLimit.subtract(newLimit);
+
+        // Update LOC balance - DECREMENT reduces available balance by the delta amount
+        lineOfCreditBalanceUpdateService.computeLocBalance(null, delta, loc, transactionDate, LineOfCreditTransactionType.DECREMENT);
+
+        // Update the maximum amount (credit limit) to the new target limit
+        loc.setMaximumAmount(newLimit);
+
+        this.lineOfCreditRepository.saveAndFlush(loc);
+        businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditDecreasedBusinessEvent(loc));
+
+        // Save note if provided
+        saveNoteIfProvided(loc, command, LineOfCreditNoteType.REDUCE_CREDIT_LIMIT);
+
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("previousLimit", currentCreditLimit);
+        changes.put("newLimit", newLimit);
+        changes.put("adjustmentType", "DECREASE");
+        changes.put("delta", delta.negate());
+        if (loc.getSummary() != null) {
+            changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+            changes.put("consumedAmount", loc.getSummary().getConsumedAmount());
+        }
+        return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
+    }
+
+    @Override
+    @Transactional
     public CommandProcessingResult undoCloseLineOfCredit(Long lineOfCreditId, JsonCommand command) {
         final LineOfCredit loc = this.lineOfCreditRepository.findOneWithNotFoundDetection(lineOfCreditId);
 

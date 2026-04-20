@@ -113,6 +113,15 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder adjustCreditLimit(Long lineOfCreditId, Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "ADJUST";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/lineofcredit/" + lineOfCreditId + "/adjustcreditlimit";
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder undoCloseLineOfCredit(Long lineOfCreditId, Long clientId) {
 
         this.clientId = clientId;

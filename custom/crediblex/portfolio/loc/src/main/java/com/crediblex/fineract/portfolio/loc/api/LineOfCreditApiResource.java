@@ -193,15 +193,15 @@ public class LineOfCreditApiResource {
     @Path("{clientId}/creditlines/{lineOfCreditId}/{action}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Perform Action on Line of Credit", description = "Performs various actions on a line of credit: approve, activate, close, deactivate, manageapprovedbuyers, blockamount, unblockamount")
+    @Operation(summary = "Perform Action on Line of Credit", description = "Performs various actions on a line of credit: approve, activate, close, deactivate, manageapprovedbuyers, blockamount, unblockamount, adjustcreditlimit")
     @RequestBody(required = false, content = @Content(schema = @Schema(implementation = LineOfCreditActionRequest.class)))
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = LineOfCreditApiResourceSwagger.PostLineOfCreditResponse.class))) })
     public String performAction(@PathParam("clientId") @Parameter(description = "clientId") final Long clientId,
             @PathParam("lineOfCreditId") @Parameter(description = "lineOfCreditId") final Long lineOfCreditId,
             @PathParam("action") @Parameter(description = "action", schema = @Schema(allowableValues = { "approve", "activate", "close",
-                    "deactivate", "manageapprovedbuyers", "increasecreditlimit", "decreasecreditlimit", "undoclose", "reactivate",
-                    "blockamount", "unblockamount" })) final String action,
+                    "deactivate", "manageapprovedbuyers", "increasecreditlimit", "decreasecreditlimit", "adjustcreditlimit", "undoclose",
+                    "reactivate", "blockamount", "unblockamount" })) final String action,
             @Parameter(hidden = true) final String requestBody) {
 
         // Handle different request types based on action
@@ -233,6 +233,7 @@ public class LineOfCreditApiResource {
             case "deactivate" -> builder.deactivateLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
             case "increasecreditlimit" -> builder.increaseCreditLimit(lineOfCreditId, clientId).withJson(jsonRequest).build();
             case "decreasecreditlimit" -> builder.decreaseCreditLimit(lineOfCreditId, clientId).withJson(jsonRequest).build();
+            case "adjustcreditlimit" -> builder.adjustCreditLimit(lineOfCreditId, clientId).withJson(jsonRequest).build();
             case "undoclose" -> builder.undoCloseLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
             case "reactivate" -> builder.reactivateLineOfCredit(lineOfCreditId, clientId).withJson(jsonRequest).build();
             case "manageapprovedbuyers" -> builder.manageApprovedBuyers(lineOfCreditId, clientId).withJson(jsonRequest).build();
