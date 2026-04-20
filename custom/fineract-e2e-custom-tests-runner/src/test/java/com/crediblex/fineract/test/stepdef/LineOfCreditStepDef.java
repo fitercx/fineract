@@ -94,7 +94,8 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         Long settlementSavingsAccountId = savingsResponse != null && savingsResponse.body() != null ? savingsResponse.body().getResourceId() : null;
 
         String externalId = "LOC-" + System.nanoTime();
-        String interimReviewDate = "10 April 2026"; // Default interim review date
+        // Use a future date for interim review (30 days from now) to avoid validation failures
+        String interimReviewDate = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern(DATE_FORMAT, java.util.Locale.ENGLISH));
 
         // Determine product type based on string parameter
         Integer productType = locType.equalsIgnoreCase("payable") ? 2 : 1; // 1=RECEIVABLE, 2=PAYABLE
