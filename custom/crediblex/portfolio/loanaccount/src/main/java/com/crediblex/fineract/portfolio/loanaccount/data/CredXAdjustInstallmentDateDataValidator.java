@@ -49,6 +49,18 @@ public class CredXAdjustInstallmentDateDataValidator {
         final LocalDate adjustmentDate = this.fromApiJsonHelper.extractLocalDateNamed("adjustmentDate", element);
         baseDataValidator.reset().parameter("adjustmentDate").value(adjustmentDate).notNull();
 
+        // Optional: when true, schedule is regenerated and interest is recalculated following the same approach as
+        // Loan Reschedule > Change Repayment Date.
+        final Boolean adjustWithInterestRecalculation = this.fromApiJsonHelper
+                .extractBooleanNamed("adjustWithInterestRecalculation", element);
+        baseDataValidator.reset().parameter("adjustWithInterestRecalculation").value(adjustWithInterestRecalculation).ignoreIfNull()
+                .validateForBooleanValue();
+
+        // Optional: reschedule reason code value id. When omitted with adjustWithInterestRecalculation=true, a default
+        // active LoanRescheduleReason code value is auto-selected.
+        final Long rescheduleReasonId = this.fromApiJsonHelper.extractLongNamed("rescheduleReasonId", element);
+        baseDataValidator.reset().parameter("rescheduleReasonId").value(rescheduleReasonId).ignoreIfNull().longGreaterThanZero();
+
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
 
@@ -59,6 +71,9 @@ public class CredXAdjustInstallmentDateDataValidator {
         params.add("adjustmentDate");
         params.add("locale");
         params.add("dateFormat");
+        params.add("adjustWithInterestRecalculation");
+        params.add("rescheduleReasonId");
+        params.add("rescheduleReasonComment");
         return params;
     }
 

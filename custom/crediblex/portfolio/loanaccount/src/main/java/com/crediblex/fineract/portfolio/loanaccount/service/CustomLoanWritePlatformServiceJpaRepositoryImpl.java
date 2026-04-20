@@ -6,6 +6,7 @@ import com.crediblex.fineract.infrastructure.commands.utils.LoanStatusAggregatio
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.loanaccount.api.CustomLoanApiConstants;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXAdjustInstallmentDateDataValidator;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
@@ -108,6 +109,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -125,6 +127,8 @@ import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanSc
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleHistoryWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
+import org.apache.fineract.portfolio.loanaccount.rescheduleloan.RescheduleLoansApiConstants;
+import org.apache.fineract.portfolio.loanaccount.rescheduleloan.service.LoanRescheduleRequestWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanApplicationValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
@@ -195,6 +199,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     // Autowire to avoid constructor signature change
     @Autowired(required = false)
     private LineOfCreditRepository lineOfCreditRepository;
+    @Autowired
+    private CredXAdjustInstallmentDateDataValidator adjustInstallmentDateDataValidator;
+    @Autowired
+    private LoanRescheduleRequestWritePlatformService loanRescheduleRequestWritePlatformService;
     private final CustomLoanDisbursementService customLoanDisbursementService;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
     private final AccountAssociationsRepository accountAssociationRepository;
@@ -1981,12 +1989,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     public CommandProcessingResult adjustInstallmentDate(final Long loanId, final JsonCommand command) {
+        // Validate request payload (installment number, new due date, adjustment date, optional flags)
+        this.adjustInstallmentDateDataValidator.validateForAdjustInstallmentDate(command.json());
+
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         checkClientOrGroupActive(loan);
 
         final Integer installmentNumber = command.integerValueOfParameterNamed("installmentNumber");
         final LocalDate newDueDate = command.localDateValueOfParameterNamed("newDueDate");
         final LocalDate adjustmentDate = command.localDateValueOfParameterNamed("adjustmentDate");
+        final Boolean adjustWithInterestRecalculationFlag = command.booleanObjectValueOfParameterNamed("adjustWithInterestRecalculation");
+        final boolean adjustWithInterestRecalculation = Boolean.TRUE.equals(adjustWithInterestRecalculationFlag);
 
         final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
         if (installment == null) {
@@ -1996,6 +2009,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         validateNoOverdueChargesForInstallment(loan, installment);
 
         final LocalDate oldDueDate = installment.getDueDate();
+
+        // Branch: if recalculation of interest is requested, delegate to the same pipeline used by
+        // Loan Reschedule > "Change Repayment Date" (creates + approves a LoanRescheduleRequest internally
+        // so that the schedule is regenerated and interest recalculated from the affected installment onward).
+        if (adjustWithInterestRecalculation && !oldDueDate.equals(newDueDate)) {
+            return adjustInstallmentDateWithInterestRecalculation(loan, installment, oldDueDate, newDueDate, adjustmentDate, command);
+        }
+
         final Map<String, Object> changes = new HashMap<>();
 
         if (!oldDueDate.equals(newDueDate)) {
@@ -2053,6 +2074,156 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return new CommandProcessingResultBuilder().withCommandId(command.commandId()).withEntityId(loanId)
                 .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    /**
+     * Adjusts a single installment's due date while regenerating the remainder of the schedule so interest is
+     * recalculated for the affected installment onwards. Reuses the standard Loan Reschedule pipeline (create +
+     * approve a LoanRescheduleRequest with a DUE_DATE term variation) so behavior is identical to the Loan
+     * Reschedule > "Change Repayment Date" flow.
+     */
+    private CommandProcessingResult adjustInstallmentDateWithInterestRecalculation(final Loan loan,
+            final LoanRepaymentScheduleInstallment installment, final LocalDate oldDueDate, final LocalDate newDueDate,
+            final LocalDate adjustmentDate, final JsonCommand originalCommand) {
+
+        final Long loanId = loan.getId();
+        final String dateFormat = originalCommand.hasParameter("dateFormat") ? originalCommand.dateFormat() : "yyyy-MM-dd";
+        final String locale = originalCommand.hasParameter("locale") ? originalCommand.locale() : "en";
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateFormat).withLocale(Locale.forLanguageTag(locale));
+        final LocalDate businessDate = adjustmentDate != null ? adjustmentDate : DateUtils.getBusinessLocalDate();
+
+        // Resolve (or auto-select) a LoanRescheduleReason code value. If the caller supplies one, honor it; otherwise
+        // pick any available active code value with code name "LoanRescheduleReason" so the caller does not have to
+        // enter a reason explicitly in this simplified flow.
+        Long rescheduleReasonId = originalCommand.longValueOfParameterNamed("rescheduleReasonId");
+        if (rescheduleReasonId == null) {
+            rescheduleReasonId = resolveDefaultLoanRescheduleReasonId();
+            if (rescheduleReasonId == null) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.no.reschedule.reason",
+                        "Interest recalculation requires a LoanRescheduleReason code value. Please configure at least one active value under the 'LoanRescheduleReason' code or supply 'rescheduleReasonId' in the request.",
+                        loanId);
+            }
+        }
+        final String rescheduleReasonComment = originalCommand.hasParameter("rescheduleReasonComment")
+                ? originalCommand.stringValueOfParameterNamed("rescheduleReasonComment")
+                : "Adjust Installment Date (with interest recalculation)";
+
+        // Chained-reschedule alignment: the schedule generator matches DUE_DATE variations by exact
+        // applicable_date against the original generator-produced date. After a prior reschedule + working-day
+        // rule push, the prior variation's date_value no longer equals the installment's current due date,
+        // which breaks approve()'s chain-equality check and silently no-ops subsequent reschedules. Realign
+        // any prior active DUE_DATE variation that affected this installment so the chain works.
+        alignPriorDueDateVariationForInstallment(loan, installment, oldDueDate);
+
+        // Build CREATE payload equivalent to what the Reschedule Loan > Change Repayment Date form would send.
+        final JsonObject createPayload = new JsonObject();
+        createPayload.addProperty("locale", locale);
+        createPayload.addProperty("dateFormat", dateFormat);
+        createPayload.addProperty(RescheduleLoansApiConstants.loanIdParamName, loanId);
+        createPayload.addProperty(RescheduleLoansApiConstants.rescheduleFromDateParamName, formatter.format(oldDueDate));
+        createPayload.addProperty(RescheduleLoansApiConstants.adjustedDueDateParamName, formatter.format(newDueDate));
+        createPayload.addProperty(RescheduleLoansApiConstants.submittedOnDateParamName, formatter.format(businessDate));
+        createPayload.addProperty(RescheduleLoansApiConstants.rescheduleReasonIdParamName, rescheduleReasonId);
+        createPayload.addProperty(RescheduleLoansApiConstants.rescheduleReasonCommentParamName, rescheduleReasonComment);
+        createPayload.addProperty(RescheduleLoansApiConstants.recalculateInterestParamName, true);
+
+        final String createJson = createPayload.toString();
+        final JsonElement createParsed = fromApiJsonHelper.parse(createJson);
+        final JsonCommand createCommand = JsonCommand.from(createJson, createParsed, fromApiJsonHelper,
+                RescheduleLoansApiConstants.ENTITY_NAME, null, null, loan.getGroupId(), loan.getClientId(), loanId, null, null,
+                "/rescheduleloans", null, null, null, null, ExternalId.empty());
+
+        final CommandProcessingResult createResult = this.loanRescheduleRequestWritePlatformService.create(createCommand);
+        final Long rescheduleRequestId = createResult.getResourceId();
+
+        // Immediately approve the just-created reschedule request. This triggers the standard recalculation pipeline
+        // (archive schedule, rebuild LoanApplicationTerms, rescheduleNextInstallments, reprocess accruals/charges/
+        // transactions, post journal entries, emit LoanRescheduledDueAdjustScheduleBusinessEvent).
+        final JsonObject approvePayload = new JsonObject();
+        approvePayload.addProperty("locale", locale);
+        approvePayload.addProperty("dateFormat", dateFormat);
+        approvePayload.addProperty(RescheduleLoansApiConstants.approvedOnDateParam, formatter.format(businessDate));
+
+        final String approveJson = approvePayload.toString();
+        final JsonElement approveParsed = fromApiJsonHelper.parse(approveJson);
+        final JsonCommand approveCommand = JsonCommand.from(approveJson, approveParsed, fromApiJsonHelper,
+                RescheduleLoansApiConstants.ENTITY_NAME, rescheduleRequestId, null, loan.getGroupId(), loan.getClientId(), loanId, null,
+                null, "/rescheduleloans/" + rescheduleRequestId, null, null, null, null, ExternalId.empty());
+
+        this.loanRescheduleRequestWritePlatformService.approve(approveCommand);
+
+        final Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("installmentNumber", installment.getInstallmentNumber());
+        changes.put("oldDueDate", oldDueDate);
+        changes.put("newDueDate", newDueDate);
+        changes.put("adjustmentDate", businessDate);
+        changes.put("adjustWithInterestRecalculation", true);
+        changes.put("rescheduleRequestId", rescheduleRequestId);
+
+        return new CommandProcessingResultBuilder().withCommandId(originalCommand.commandId()).withEntityId(loanId)
+                .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
+                .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    /**
+     * Picks any usable "LoanRescheduleReason" code value id for the internal reschedule request when the caller does
+     * not supply one. Keeps the Adjust Installment Date UX simple (no reason picker) while still satisfying the
+     * reschedule validator.
+     */
+    /**
+     * When the same installment has been adjusted before with interest recalculation, the prior active DUE_DATE
+     * term variation stores the originally requested target date as its {@code date_value}. If the working-day
+     * rule then shifted the actual installment forward (e.g. 2026-05-09 Sat -> 2026-05-11 Mon), the prior
+     * variation's {@code date_value} no longer equals the installment's current due date. The standard
+     * {@code LoanRescheduleRequestWritePlatformServiceImpl.approve()} uses an exact-equality check
+     * ({@code prior.date_value == new.applicable_date}) to chain reschedules; when it fails, the new variation's
+     * {@code applicable_date} is kept at a value the schedule generator never produces and the new reschedule
+     * becomes a no-op. Realign the prior variation so the chain works.
+     */
+    private void alignPriorDueDateVariationForInstallment(final Loan loan, final LoanRepaymentScheduleInstallment installment,
+            final LocalDate currentDueDate) {
+        if (loan == null || installment == null || currentDueDate == null) {
+            return;
+        }
+        final LocalDate periodStart = installment.getFromDate();
+        final LocalDate periodEnd = installment.getDueDate();
+        if (periodStart == null || periodEnd == null) {
+            return;
+        }
+        for (LoanTermVariations variation : loan.getActiveLoanTermVariations()) {
+            if (variation == null || variation.getTermType() == null || !variation.getTermType().isDueDateVariation()) {
+                continue;
+            }
+            final LocalDate applicable = variation.fetchTermApplicaDate();
+            final LocalDate dateValue = variation.fetchDateValue();
+            if (applicable == null || dateValue == null) {
+                continue;
+            }
+            // Variations that affected THIS installment have applicable_date falling within this installment's
+            // original period (previousInstallment.dueDate < applicable <= installment.dueDate). Using fromDate as
+            // the lower bound is a safe approximation because fromDate == previousInstallment.dueDate.
+            final boolean applicableWithinPeriod = !applicable.isAfter(periodEnd) && applicable.isAfter(periodStart.minusDays(1));
+            if (!applicableWithinPeriod) {
+                continue;
+            }
+            if (!dateValue.isEqual(currentDueDate)) {
+                log.info(
+                        "Aligning prior DUE_DATE term variation {} (applicable={}) date_value {} -> {} for loan {} installment {} before chained recalc-reschedule",
+                        variation.getId(), applicable, dateValue, currentDueDate, loan.getId(), installment.getInstallmentNumber());
+                variation.setDateValue(currentDueDate);
+            }
+        }
+    }
+
+    private Long resolveDefaultLoanRescheduleReasonId() {
+        try {
+            final String sql = "SELECT id FROM m_code_value WHERE code_id = (SELECT id FROM m_code WHERE code_name = ? LIMIT 1) "
+                    + "AND (is_active = true OR is_active IS NULL) ORDER BY order_position, id LIMIT 1";
+            return jdbcTemplate.queryForObject(sql, Long.class, RescheduleLoansApiConstants.LOAN_RESCHEDULE_REASON);
+        } catch (Exception e) {
+            log.warn("No active LoanRescheduleReason code value found: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
