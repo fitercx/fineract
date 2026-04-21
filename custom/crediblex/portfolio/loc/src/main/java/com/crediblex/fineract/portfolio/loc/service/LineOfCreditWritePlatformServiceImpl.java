@@ -131,6 +131,47 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
     }
 
+    /**
+     * Creates a transaction record for block/unblock operations.
+     * This is a lightweight method that only creates the transaction record without modifying balances,
+     * since the caller has already updated the balances.
+     *
+     * @param loc the Line of Credit
+     * @param amount the amount being blocked or unblocked
+     * @param transactionType BLOCK or UNBLOCK
+     */
+    private void createBlockUnblockTransaction(LineOfCredit loc, BigDecimal amount, LineOfCreditTransactionType transactionType) {
+        BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
+        BigDecimal balanceBefore;
+        BigDecimal balanceAfter = currentAvailableBalance;
+
+        if (transactionType.isBlock()) {
+            // For BLOCK: balance was higher before the block
+            balanceBefore = currentAvailableBalance.add(amount);
+        } else {
+            // For UNBLOCK: balance was lower before the unblock
+            balanceBefore = currentAvailableBalance.subtract(amount);
+        }
+
+        String referenceNumber = "LOC_" + loc.getId() + "_" + transactionType.name();
+
+        BigDecimal consumedAmount = loc.getSummary().getConsumedAmount() != null
+                ? loc.getSummary().getConsumedAmount()
+                : BigDecimal.ZERO;
+
+        LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(
+                loc, amount, balanceBefore, balanceAfter, DateUtils.getBusinessLocalDate(), referenceNumber, transactionType);
+
+        transaction.setConsumedAmountBefore(consumedAmount);
+        transaction.setConsumedAmountAfter(consumedAmount);
+        transaction.setIsBackdatedEntry(false);
+
+        lineOfCreditTransactionRepository.saveAndFlush(transaction);
+
+        log.info("Created {} transaction for LOC ID: {}, Amount: {}, Balance before: {}, Balance after: {}",
+                transactionType, loc.getId(), amount, balanceBefore, balanceAfter);
+    }
+
     @Override
     @Transactional
     public CommandProcessingResult createLineOfCredit(JsonCommand command, Long clientId) {
@@ -247,7 +288,13 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     // Only update if value has changed
                     if (newBlockedAmount.compareTo(currentBlocked) != 0) {
                         log.info("LOC Update: Value changed, updating blockedAmount");
+
+                        // Calculate the difference to determine if we're blocking or unblocking
+                        BigDecimal difference = newBlockedAmount.subtract(currentBlocked);
+
+                        // Update the blocked amount first
                         lineOfCredit.getSummary().setBlockedAmount(newBlockedAmount);
+
                         // Recalculate available balance: MaxLimit - Blocked - Consumed
                         final BigDecimal consumed = lineOfCredit.getSummary().getConsumedAmount() != null
                                 ? lineOfCredit.getSummary().getConsumedAmount()
@@ -257,6 +304,16 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                             newAvailable = BigDecimal.ZERO;
                         }
                         lineOfCredit.getSummary().setAvailableBalance(newAvailable);
+
+                        // Create transaction record for the block/unblock operation
+                        if (difference.compareTo(BigDecimal.ZERO) > 0) {
+                            // Blocking more amount (decreasing effective limit)
+                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.BLOCK);
+                        } else {
+                            // Unblocking amount (increasing effective limit)
+                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.UNBLOCK);
+                        }
+
                         changes.put("blockedAmount", newBlockedAmount);
                         log.info("LOC Update: Set blockedAmount = {}, availableBalance = {}", newBlockedAmount, newAvailable);
                     } else {
@@ -1280,6 +1337,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         BigDecimal newAvailableBalance = currentAvailableBalance.subtract(amountToBlock);
         loc.getSummary().setAvailableBalance(newAvailableBalance);
 
+        // Create transaction record for the block operation
+        createBlockUnblockTransaction(loc, amountToBlock, LineOfCreditTransactionType.BLOCK);
+
         this.lineOfCreditRepository.saveAndFlush(loc);
 
         saveNoteIfProvided(loc, command, LineOfCreditNoteType.BLOCK_AMOUNT);
@@ -1335,6 +1395,9 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
         BigDecimal newAvailableBalance = currentAvailableBalance.add(amountToUnblock);
         loc.getSummary().setAvailableBalance(newAvailableBalance);
+
+        // Create transaction record for the unblock operation
+        createBlockUnblockTransaction(loc, amountToUnblock, LineOfCreditTransactionType.UNBLOCK);
 
         this.lineOfCreditRepository.saveAndFlush(loc);
 

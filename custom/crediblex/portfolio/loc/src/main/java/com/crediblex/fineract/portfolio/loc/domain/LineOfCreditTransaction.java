@@ -134,6 +134,9 @@ public class LineOfCreditTransaction extends AbstractAuditableWithUTCDateTimeCus
             case INCREMENT -> "Increment Line of Credit limit - LOC balance increased";
             case DECREMENT -> "Decrease of Line of Credit limit - LOC balance decreased";
             case UNDO_DISBURSEMENT -> "Increment after undo disbursement. LOC balance increased";
+            case BLOCK -> "Block amount from Line of Credit - LOC available balance reduced";
+            case UNBLOCK -> "Unblock amount from Line of Credit - LOC available balance increased";
+            case WRITE_OFF -> "Write off - LOC balance adjusted";
             default -> throw new IllegalArgumentException("Unsupported transaction type: " + type);
         };
     }
