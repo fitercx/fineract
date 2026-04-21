@@ -132,13 +132,15 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
     }
 
     /**
-     * Creates a transaction record for block/unblock operations.
-     * This is a lightweight method that only creates the transaction record without modifying balances,
-     * since the caller has already updated the balances.
+     * Creates a transaction record for block/unblock operations. This is a lightweight method that only creates the
+     * transaction record without modifying balances, since the caller has already updated the balances.
      *
-     * @param loc the Line of Credit
-     * @param amount the amount being blocked or unblocked
-     * @param transactionType BLOCK or UNBLOCK
+     * @param loc
+     *            the Line of Credit
+     * @param amount
+     *            the amount being blocked or unblocked
+     * @param transactionType
+     *            BLOCK or UNBLOCK
      */
     private void createBlockUnblockTransaction(LineOfCredit loc, BigDecimal amount, LineOfCreditTransactionType transactionType) {
         BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
@@ -155,12 +157,10 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         String referenceNumber = "LOC_" + loc.getId() + "_" + transactionType.name();
 
-        BigDecimal consumedAmount = loc.getSummary().getConsumedAmount() != null
-                ? loc.getSummary().getConsumedAmount()
-                : BigDecimal.ZERO;
+        BigDecimal consumedAmount = loc.getSummary().getConsumedAmount() != null ? loc.getSummary().getConsumedAmount() : BigDecimal.ZERO;
 
-        LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(
-                loc, amount, balanceBefore, balanceAfter, DateUtils.getBusinessLocalDate(), referenceNumber, transactionType);
+        LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(loc, amount, balanceBefore, balanceAfter,
+                DateUtils.getBusinessLocalDate(), referenceNumber, transactionType);
 
         transaction.setConsumedAmountBefore(consumedAmount);
         transaction.setConsumedAmountAfter(consumedAmount);
@@ -168,8 +168,8 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         lineOfCreditTransactionRepository.saveAndFlush(transaction);
 
-        log.info("Created {} transaction for LOC ID: {}, Amount: {}, Balance before: {}, Balance after: {}",
-                transactionType, loc.getId(), amount, balanceBefore, balanceAfter);
+        log.info("Created {} transaction for LOC ID: {}, Amount: {}, Balance before: {}, Balance after: {}", transactionType, loc.getId(),
+                amount, balanceBefore, balanceAfter);
     }
 
     @Override
