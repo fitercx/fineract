@@ -2,7 +2,7 @@ package com.crediblex.fineract.portfolio.loc.domain;
 
 public enum LineOfCreditTransactionType {
 
-    DISBURSEMENT, UNDO_DISBURSEMENT, REPAYMENT, REFUND, REVERSAL, INCREMENT, DECREMENT, FORECLOSURE, WRITE_OFF;
+    DISBURSEMENT, UNDO_DISBURSEMENT, REPAYMENT, REFUND, REVERSAL, INCREMENT, DECREMENT, FORECLOSURE, WRITE_OFF, BLOCK, UNBLOCK;
 
     public boolean isDisbursement() {
         return this == DISBURSEMENT;
@@ -40,19 +40,27 @@ public enum LineOfCreditTransactionType {
         return this == UNDO_DISBURSEMENT;
     }
 
+    public boolean isBlock() {
+        return this == BLOCK;
+    }
+
+    public boolean isUnblock() {
+        return this == UNBLOCK;
+    }
+
     public boolean isBalanceIncrement() {
-        return isIncrement();
+        return isIncrement() || isUnblock();
     }
 
     public boolean isBalanceDecrement() {
-        return isDecrement();
+        return isDecrement() || isBlock();
     }
 
     public boolean isDecrementTransaction() {
-        return isDisbursement() || isDecrement() || isReversal();
+        return isDisbursement() || isDecrement() || isReversal() || isBlock();
     }
 
     public boolean isIncrementTransaction() {
-        return isRepayment() || isRefund() || isIncrement() || isForeclosure() || isWriteOff() || isUndoDisbursement();
+        return isRepayment() || isRefund() || isIncrement() || isForeclosure() || isWriteOff() || isUndoDisbursement() || isUnblock();
     }
 }
