@@ -561,7 +561,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
                         log.info(
                                 "CustomAccrualBasedAccountingProcessorForLoan: Receivable LOC product detected - Using GL 210003 for repayment");
-                        GLAccount receivableLOCRepaymentGLAccount = glAccountRepository.findOneByGlCode("210003").orElse(null);
+                        GLAccount receivableLOCRepaymentGLAccount = glAccountRepository.findOneByGlCode("200080").orElse(null);
                         if (receivableLOCRepaymentGLAccount != null) {
                             this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
                                     totalDebitAmount, receivableLOCRepaymentGLAccount);

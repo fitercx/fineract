@@ -331,7 +331,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
-        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100033", "100036", "200080").contains(glCode)) {
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100032", "100035", "200080").contains(glCode)) {
             return "BNK8";
         }
 
