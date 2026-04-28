@@ -405,8 +405,14 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
             this.businessEventNotifierService.notifyPostBusinessEvent(new LineOfCreditUpdatedBusinessEvent(lineOfCredit));
         }
 
-        // Save note if provided
-        saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.UPDATE);
+        // Save note if provided — also add to changes so it is visible in the inbuilt audit trail
+        if (command.hasParameter("note")) {
+            final String note = command.stringValueOfParameterNamed("note");
+            if (note != null && !note.trim().isEmpty()) {
+                saveNoteIfProvided(lineOfCredit, command, LineOfCreditNoteType.UPDATE);
+                changes.put("note", note.trim());
+            }
+        }
 
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
 
@@ -747,6 +753,13 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         changes.put("newLimit", newLimit);
         changes.put("adjustmentType", "INCREASE");
         changes.put("delta", delta);
+        // Include note in audit changes so it is visible in m_portfolio_command_source audit trail
+        if (command.hasParameter("note")) {
+            final String note = command.stringValueOfParameterNamed("note");
+            if (note != null && !note.trim().isEmpty()) {
+                changes.put("note", note.trim());
+            }
+        }
         if (loc.getSummary() != null) {
             changes.put("availableBalance", loc.getSummary().getAvailableBalance());
         }
@@ -793,6 +806,13 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         changes.put("newLimit", newLimit);
         changes.put("adjustmentType", "DECREASE");
         changes.put("delta", delta.negate());
+        // Include note in audit changes so it is visible in m_portfolio_command_source audit trail
+        if (command.hasParameter("note")) {
+            final String note = command.stringValueOfParameterNamed("note");
+            if (note != null && !note.trim().isEmpty()) {
+                changes.put("note", note.trim());
+            }
+        }
         if (loc.getSummary() != null) {
             changes.put("availableBalance", loc.getSummary().getAvailableBalance());
             changes.put("consumedAmount", loc.getSummary().getConsumedAmount());

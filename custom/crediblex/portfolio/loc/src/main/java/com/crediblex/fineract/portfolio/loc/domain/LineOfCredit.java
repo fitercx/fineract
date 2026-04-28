@@ -408,6 +408,12 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.reviewPeriod = newValue;
         }
 
+        if (command.isChangeInBigDecimalParameterNamed("approvedCreditFacilityAmount", this.approvedCreditFacilityAmount)) {
+            final BigDecimal newValue = command.bigDecimalValueOfParameterNamed("approvedCreditFacilityAmount");
+            actualChanges.put("approvedCreditFacilityAmount", newValue);
+            this.approvedCreditFacilityAmount = newValue;
+        }
+
         return actualChanges;
     }
 
