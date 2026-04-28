@@ -26,7 +26,10 @@ public final class AccountDataAdditionalProperties {
     public static String TOTAL_LATE_FEES = "totalLateFees";
     public static String EFFECTIVE_INSTALLMENT_AMOUNT = "effectiveInstallmentAmount";
 
-    /** Sum of principal + interest + fees + taxes + penalty on first incomplete schedule row (aligned with repayment schedule). */
+    /**
+     * Sum of principal + interest + fees + taxes + penalty on first incomplete schedule row (aligned with repayment
+     * schedule).
+     */
     public static String NEXT_SCHEDULE_TOTAL_DUE_AMOUNT = "nextScheduleTotalDueAmount";
 
     public static String LINKED_LOAN_ACCOUNT_NUMBER = "linkedLoanAccountNumber";
