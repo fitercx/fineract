@@ -194,6 +194,8 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" ELSE NULL END as nextInstalmentDate,")
 
                     // CredibleX specific summary fields
+                    .append(" l.annual_nominal_interest_rate as loanAnnualNominalInterestRate,")
+                    .append(" lp.annual_nominal_interest_rate as productAnnualNominalInterestRate,")
                     .append(" l.is_factor_rate_enabled as factorRateEnabled,").append(" l.factor_rate as factorRate,")
                     .append(" l.factor_rate_loan_amount as factorRateLoanAmount,")
                     .append(" l.fee_charges_charged_derived as totalFeeChargesCharged,")
@@ -304,6 +306,12 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final LocalDate nextInstalmentDate = JdbcSupport.getLocalDate(rs, "nextInstalmentDate");
 
             // CredibleX-specific summary fields
+            final BigDecimal loanAnnualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAnnualNominalInterestRate");
+            final BigDecimal productAnnualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
+                    "productAnnualNominalInterestRate");
+            final BigDecimal annualInterestRateForSummary = loanAnnualNominalInterestRate != null ? loanAnnualNominalInterestRate
+                    : productAnnualNominalInterestRate;
+
             final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
             final BigDecimal factorRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRate");
             final BigDecimal factorRateLoanAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRateLoanAmount");
@@ -355,6 +363,9 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_RESTRUCTURED, isRestructured);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NEXT_INSTALMENT_DATE, nextInstalmentDate);
+            if (annualInterestRateForSummary != null) {
+                extendedLoanAccountSummaryData.setAnnualInterestRate(annualInterestRateForSummary);
+            }
 
             return extendedLoanAccountSummaryData;
         }
