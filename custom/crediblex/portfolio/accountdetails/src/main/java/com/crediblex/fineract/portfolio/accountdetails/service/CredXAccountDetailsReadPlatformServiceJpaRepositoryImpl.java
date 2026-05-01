@@ -190,10 +190,33 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
                     .append(" dlad.remitter_name as remitterName,").append(" dlad.dp_name as dpName,")
                     .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
                     .append(" (SELECT MIN(rps.duedate) FROM m_loan_repayment_schedule rps ").append(" WHERE rps.loan_id = l.id ")
-                    .append(" AND (rps.completed_derived = false OR rps.completed_derived IS NULL)) ")
-                    .append(" ELSE NULL END as nextInstalmentDate,")
+                    .append(" AND (rps.completed_derived = false OR rps.completed_derived IS NULL) ")
+                    .append(" AND rps.installment > 0 AND rps.is_down_payment = false) ").append(" ELSE NULL END as nextInstalmentDate,")
+
+                    .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
+                    .append(" (SELECT COALESCE(ls.principal_amount, 0) + COALESCE(ls.interest_amount, 0) ")
+                    .append(" FROM m_loan_repayment_schedule ls ").append(" WHERE ls.loan_id = l.id ")
+                    .append(" AND (ls.completed_derived = false OR ls.completed_derived IS NULL) ")
+                    .append(" AND ls.installment > 0 AND ls.is_down_payment = false ")
+                    .append(" AND ls.duedate = (SELECT MIN(ls2.duedate) FROM m_loan_repayment_schedule ls2 ")
+                    .append(" WHERE ls2.loan_id = l.id ").append(" AND (ls2.completed_derived = false OR ls2.completed_derived IS NULL) ")
+                    .append(" AND ls2.installment > 0 AND ls2.is_down_payment = false) ").append(" ORDER BY ls.installment ASC LIMIT 1) ")
+                    .append(" ELSE NULL END as nextIncompleteScheduleBaseEmi,")
+
+                    .append(" CASE WHEN l.loan_status_id IN (200, 300) THEN ")
+                    .append(" (SELECT COALESCE(ls.principal_amount, 0) + COALESCE(ls.interest_amount, 0) ")
+                    .append(" + COALESCE(ls.fee_charges_amount, 0) + COALESCE(ls.tax_charges_amount, 0) ")
+                    .append(" + COALESCE(ls.penalty_charges_amount, 0) ").append(" FROM m_loan_repayment_schedule ls ")
+                    .append(" WHERE ls.loan_id = l.id ").append(" AND (ls.completed_derived = false OR ls.completed_derived IS NULL) ")
+                    .append(" AND ls.installment > 0 AND ls.is_down_payment = false ")
+                    .append(" AND ls.duedate = (SELECT MIN(ls2.duedate) FROM m_loan_repayment_schedule ls2 ")
+                    .append(" WHERE ls2.loan_id = l.id ").append(" AND (ls2.completed_derived = false OR ls2.completed_derived IS NULL) ")
+                    .append(" AND ls2.installment > 0 AND ls2.is_down_payment = false) ").append(" ORDER BY ls.installment ASC LIMIT 1) ")
+                    .append(" ELSE NULL END as nextIncompleteScheduleTotalDue,")
 
                     // CredibleX specific summary fields
+                    .append(" l.annual_nominal_interest_rate as loanAnnualNominalInterestRate,")
+                    .append(" lp.annual_nominal_interest_rate as productAnnualNominalInterestRate,")
                     .append(" l.is_factor_rate_enabled as factorRateEnabled,").append(" l.factor_rate as factorRate,")
                     .append(" l.factor_rate_loan_amount as factorRateLoanAmount,")
                     .append(" l.fee_charges_charged_derived as totalFeeChargesCharged,")
@@ -304,6 +327,13 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final LocalDate nextInstalmentDate = JdbcSupport.getLocalDate(rs, "nextInstalmentDate");
 
             // CredibleX-specific summary fields
+            final BigDecimal loanAnnualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
+                    "loanAnnualNominalInterestRate");
+            final BigDecimal productAnnualNominalInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
+                    "productAnnualNominalInterestRate");
+            final BigDecimal annualInterestRateForSummary = loanAnnualNominalInterestRate != null ? loanAnnualNominalInterestRate
+                    : productAnnualNominalInterestRate;
+
             final boolean factorRateEnabled = rs.getBoolean("factorRateEnabled");
             final BigDecimal factorRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRate");
             final BigDecimal factorRateLoanAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "factorRateLoanAmount");
@@ -314,10 +344,21 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             final Integer termPeriodFrequencyTypeValue = JdbcSupport.getInteger(rs, "termPeriodFrequencyType");
             final EnumOptionData termPeriodFrequencyType = LoanEnumerations.termFrequencyType(termPeriodFrequencyTypeValue);
 
-            // Use calculated installment amount if fixed EMI is not set
-            final BigDecimal effectiveInstallmentAmount = (installmentAmount != null && installmentAmount.compareTo(BigDecimal.ZERO) > 0)
-                    ? installmentAmount
-                    : calculatedInstallmentAmount;
+            final BigDecimal nextIncompleteScheduleBaseEmi = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
+                    "nextIncompleteScheduleBaseEmi");
+            final BigDecimal nextIncompleteScheduleTotalDue = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
+                    "nextIncompleteScheduleTotalDue");
+
+            // Prefer live schedule principal+interest for next incomplete period (declining balance, overdue rows).
+            // Fallback to fixed EMI when non-zero, then blended formula when fixed EMI not set.
+            final BigDecimal effectiveInstallmentAmount;
+            if (nextIncompleteScheduleBaseEmi != null && nextIncompleteScheduleBaseEmi.compareTo(BigDecimal.ZERO) > 0) {
+                effectiveInstallmentAmount = nextIncompleteScheduleBaseEmi;
+            } else if (installmentAmount != null && installmentAmount.compareTo(BigDecimal.ZERO) > 0) {
+                effectiveInstallmentAmount = installmentAmount;
+            } else {
+                effectiveInstallmentAmount = calculatedInstallmentAmount;
+            }
 
             final LoanApplicationTimelineData timeline = new LoanApplicationTimelineData(submittedOnDate, submittedByUsername,
                     submittedByFirstname, submittedByLastname, rejectedOnDate, rejectedByUsername, rejectedByFirstname, rejectedByLastname,
@@ -348,6 +389,10 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             // Custom parameters used by CredibleX UI
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.EFFECTIVE_INSTALLMENT_AMOUNT,
                     effectiveInstallmentAmount);
+            if (nextIncompleteScheduleTotalDue != null) {
+                extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NEXT_SCHEDULE_TOTAL_DUE_AMOUNT,
+                        nextIncompleteScheduleTotalDue);
+            }
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.TOTAL_LATE_FEES, totalLateFees);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NET_DISBURSED_AMOUNT, netDisbursedAmount);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.REMITTER_NAME, remitterName);
@@ -355,6 +400,9 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.IS_RESTRUCTURED, isRestructured);
             extendedLoanAccountSummaryData.addCustomParameter(AccountDataAdditionalProperties.NEXT_INSTALMENT_DATE, nextInstalmentDate);
+            if (annualInterestRateForSummary != null) {
+                extendedLoanAccountSummaryData.setAnnualInterestRate(annualInterestRateForSummary);
+            }
 
             return extendedLoanAccountSummaryData;
         }

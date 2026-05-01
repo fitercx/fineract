@@ -79,6 +79,9 @@ public class LoanAccountSummaryData {
     private EnumOptionData termPeriodFrequencyType;
     @Setter
     BigDecimal netDisbursalAmount;
+    /** Nominal annual interest % (loan terms); falls back from product when absent on loan. */
+    @Setter
+    private BigDecimal annualInterestRate;
 
     protected final Map<String, Object> additionalProperties = new HashMap<>();
 
