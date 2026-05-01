@@ -2271,14 +2271,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Validate sufficient funds
         if (availableBalance.compareTo(totalProcessingFee) < 0) {
+            String currencyCode = loan.getCurrencyCode();
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.insufficient.collection.account.balance",
                     "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
-                            + "This loan has 'Short Disbursal' disabled, which requires the processing fee to be deposited in the collection account before disbursement. "
-                            + "Processing Fee Required: " + totalProcessingFee + ", " + "Available Balance in Collection Account: "
-                            + availableBalance + ". " + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
-                            + " more into the collection account (ID: " + collectionAccount.getId() + ") before disbursing. "
-                            + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
-                    totalProcessingFee, availableBalance, collectionAccount.getId());
+                            + "This loan requires the processing fee to be deposited in the collection account before disbursement. "
+                            + "Please deposit the Processing Fee of " + currencyCode + " " + totalProcessingFee
+                            + " into the collection account (ID: " + collectionAccount.getId() + ") before disbursing.",
+                    totalProcessingFee, collectionAccount.getId(), currencyCode);
         }
     }
 
@@ -2399,13 +2398,13 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Get fresh balance to validate before withdrawal
         BigDecimal availableBalance = getFreshSavingsAccountBalance(collectionAccount.getId());
         if (availableBalance.compareTo(totalProcessingFee) < 0) {
+            String currencyCode = loan.getCurrencyCode();
             throw new GeneralPlatformDomainRuleException("error.msg.loan.disbursement.insufficient.collection.account.balance",
                     "RBF Loan Disbursement Failed: Collection account has insufficient funds to cover processing fee. "
-                            + "Processing Fee Required: " + totalProcessingFee + ", " + "Available Balance in Collection Account: "
-                            + availableBalance + ". " + "Please deposit at least " + totalProcessingFee.subtract(availableBalance)
-                            + " more into the collection account (ID: " + collectionAccount.getId() + ") before disbursing. "
-                            + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
-                    totalProcessingFee, availableBalance, collectionAccount.getId());
+                            + "This loan requires the processing fee to be deposited in the collection account before disbursement. "
+                            + "Please deposit the Processing Fee of " + currencyCode + " " + totalProcessingFee
+                            + " into the collection account (ID: " + collectionAccount.getId() + ") before disbursing.",
+                    totalProcessingFee, collectionAccount.getId(), currencyCode);
         }
 
         // Perform savings withdrawal
