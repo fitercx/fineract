@@ -907,12 +907,14 @@ public final class LoanTransactionValidator {
             disbursementParameters = new HashSet<>(Arrays.asList("actualDisbursementDate", "externalId", "note", "locale", "dateFormat",
                     LoanApiConstants.principalDisbursedParameterName, LoanApiConstants.fixedEmiAmountParameterName,
                     LoanApiConstants.disbursementNetDisbursalAmountParameterName,
-                    LoanApiConstants.DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME));
+                    LoanApiConstants.DESTINATION_SAVINGS_ACCOUNT_ID_PARAM_NAME,
+                    LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME));
         } else {
             disbursementParameters = new HashSet<>(Arrays.asList("actualDisbursementDate", "externalId", "note", "locale", "dateFormat",
                     "paymentTypeId", "accountNumber", "checkNumber", "routingCode", "receiptNumber", "bankNumber", "adjustRepaymentDate",
                     LoanApiConstants.principalDisbursedParameterName, LoanApiConstants.fixedEmiAmountParameterName,
-                    LoanApiConstants.postDatedChecks, LoanApiConstants.disbursementNetDisbursalAmountParameterName));
+                    LoanApiConstants.postDatedChecks, LoanApiConstants.disbursementNetDisbursalAmountParameterName,
+                    LoanApiConstants.IS_SHORT_DISBURSAL_PARAM_NAME));
         }
         return disbursementParameters;
     }

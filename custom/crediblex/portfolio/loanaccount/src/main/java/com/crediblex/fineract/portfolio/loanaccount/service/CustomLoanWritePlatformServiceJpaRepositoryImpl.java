@@ -92,6 +92,7 @@ import org.apache.fineract.portfolio.account.service.AccountTransfersReadPlatfor
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.calendar.domain.CalendarInstanceRepository;
 import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
+import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulkDisbursalCommand;
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
@@ -2246,10 +2247,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final LocalDate actualDisbursementDate = command.localDateValueOfParameterNamed("actualDisbursementDate");
 
-        // Calculate the processing fee for this disbursement
-        CustomLoanDisbursementService.FeeAndTaxForTranche feeAndTax = customLoanDisbursementService
-                .calculateFeeAndTaxForTrancheDisbursement(loan, actualDisbursementDate);
-        BigDecimal totalProcessingFee = feeAndTax.fee().getAmount().add(feeAndTax.tax().getAmount());
+        // Calculate the processing fee directly from active disbursement charges.
+        // We cannot use calculateFeeAndTaxForTrancheDisbursement here because it relies on
+        // loan.getActualDisbursementDate(charge) which is null before disbursement (the actual
+        // disbursement date hasn't been set on the loan/tranche yet), causing all charges to be
+        // skipped and returning zero.
+        BigDecimal totalProcessingFee = calculatePendingDisbursementFees(loan, actualDisbursementDate);
 
         // If no processing fee, no validation needed
         if (totalProcessingFee.compareTo(BigDecimal.ZERO) <= 0) {
@@ -2277,6 +2280,39 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                             + "Alternatively, enable 'Short Disbursal' on this loan to deduct the processing fee from the disbursement amount.",
                     totalProcessingFee, availableBalance, collectionAccount.getId());
         }
+    }
+
+    /**
+     * Calculates the total pending disbursement fees (fee + tax) for a loan that hasn't been disbursed yet.
+     * Unlike {@code calculateFeeAndTaxForTrancheDisbursement}, this method does NOT rely on
+     * {@code loan.getActualDisbursementDate(charge)} (which is null before disbursement) or the
+     * {@code totalFeeChargesDueAtDisbursement} summary field. Instead, it directly examines active
+     * disbursement charges that are not yet fully paid.
+     *
+     * @param loan
+     *            the loan
+     * @param disbursementDate
+     *            the planned disbursement date (unused, kept for future extensibility)
+     * @return total fee + tax amount
+     */
+    private BigDecimal calculatePendingDisbursementFees(final Loan loan, final LocalDate disbursementDate) {
+        BigDecimal totalFee = BigDecimal.ZERO;
+
+        for (final LoanCharge charge : loan.getActiveCharges()) {
+            if (charge.isWaived() || charge.isFullyPaid()) {
+                continue;
+            }
+            boolean isDisbursementCharge = charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
+                    || charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue());
+            if (!isDisbursementCharge || charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+                continue;
+            }
+            Money chargeAmount = charge.getAmount(loan.getCurrency());
+            Money taxAmount = charge.hasTax() ? charge.getTaxAmount(loan.getCurrency()) : Money.zero(loan.getCurrency());
+            totalFee = totalFee.add(chargeAmount.getAmount()).add(taxAmount.getAmount());
+        }
+
+        return totalFee;
     }
 
     /**
