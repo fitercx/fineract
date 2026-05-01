@@ -2283,11 +2283,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     }
 
     /**
-     * Calculates the total pending disbursement fees (fee + tax) for a loan that hasn't been disbursed yet.
-     * Unlike {@code calculateFeeAndTaxForTrancheDisbursement}, this method does NOT rely on
+     * Calculates the total pending disbursement fees (fee + tax) for a loan that hasn't been disbursed yet. Unlike
+     * {@code calculateFeeAndTaxForTrancheDisbursement}, this method does NOT rely on
      * {@code loan.getActualDisbursementDate(charge)} (which is null before disbursement) or the
-     * {@code totalFeeChargesDueAtDisbursement} summary field. Instead, it directly examines active
-     * disbursement charges that are not yet fully paid.
+     * {@code totalFeeChargesDueAtDisbursement} summary field. Instead, it directly examines active disbursement charges
+     * that are not yet fully paid.
      *
      * @param loan
      *            the loan
