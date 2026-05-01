@@ -3,7 +3,9 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
+import com.crediblex.fineract.portfolio.loanaccount.configuration.LpiSameMonthProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.CredXLoanRepaymentScheduleProcessingWrapper;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
@@ -12,12 +14,16 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -42,23 +48,28 @@ import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRu
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
+import org.apache.fineract.infrastructure.event.business.domain.loan.LoanApplyOverdueChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanWaiveChargeBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanAccrualTransactionCreatedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanChargeAdjustmentPostBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
+import org.apache.fineract.organisation.monetary.exception.InvalidCurrencyException;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepositoryWrapper;
 import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
+import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
+import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
@@ -70,9 +81,10 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanInterestRecalcualtionAdditionalDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -81,6 +93,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationT
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJsonValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
@@ -97,6 +111,9 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
+import org.apache.fineract.portfolio.loanproduct.data.LoanOverdueDTO;
+import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequiredException;
 import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
@@ -161,6 +178,13 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final SavingsAccountRepository savingsAccountRepository;
     private final SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper;
     private final LoanArrearsAgingService loanArrearsAgingService;
+    private final LpiSameMonthProperties lpiSameMonthProperties;
+    private final ChargeRepositoryWrapper chargeRepository;
+    private final LoanChargeAssembler loanChargeAssembler;
+    private final LoanChargeReadPlatformService loanChargeReadPlatformService;
+    private final LoanWritePlatformService loanWritePlatformService;
+    private final LoanUtilService loanUtilService;
+    private final LoanScheduleService loanScheduleService;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
             ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
@@ -192,7 +216,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             PaymentTypeReadPlatformService paymentTypeReadPlatformService,
             SavingsAccountTransactionRepository savingsAccountTransactionRepository, SavingsAccountRepository savingsAccountRepository,
             SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper,
-            LoanArrearsAgingService loanArrearsAgingService) {
+            LoanArrearsAgingService loanArrearsAgingService, LpiSameMonthProperties lpiSameMonthProperties) {
 
         super(loanChargeApiJsonValidator, loanAssembler, chargeRepository, businessEventNotifierService, loanTransactionRepository,
                 accountTransfersWritePlatformService, loanRepositoryWrapper, journalEntryWritePlatformService, loanAccountDomainService,
@@ -233,11 +257,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.savingsAccountTransactionRepository = savingsAccountTransactionRepository;
         this.savingsAccountRepository = savingsAccountRepository;
         this.savingsAccountTransactionSummaryWrapper = savingsAccountTransactionSummaryWrapper;
+        this.loanArrearsAgingService = loanArrearsAgingService;
+        this.lpiSameMonthProperties = lpiSameMonthProperties;
         this.fromJsonHelper = fromApiJsonHelper;
         this.glAccountRepository = glAccountRepository;
         this.journalEntryRepository = journalEntryRepository;
         this.officeRepositoryWrapper = officeRepositoryWrapper;
-        this.loanArrearsAgingService = loanArrearsAgingService;
+        this.chargeRepository = chargeRepository;
+        this.loanChargeAssembler = loanChargeAssembler;
+        this.loanChargeReadPlatformService = loanChargeReadPlatformService;
+        this.loanWritePlatformService = loanWritePlatformService;
+        this.loanUtilService = loanUtilService;
+        this.loanScheduleService = loanScheduleService;
     }
 
     @Override
@@ -525,8 +556,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // This mirrors core behavior and prevents overdue charge portions from drifting to another EMI.
         if (!loanCharge.isDueAtDisbursement() && loanCharge.isPaidOrPartiallyPaid(loan.getCurrency())) {
             reprocessLoanTransactionsService.reprocessTransactions(loan);
+            // CredX: Re-apply same-month wrapper after reprocess to keep LPI on each installment's own row.
+            // The CredX processor's ThreadLocal fix is the primary guard, but this explicit call is a safety net
+            // for any code path where the installment JPA back-reference to Loan may not be loaded (lazy).
+            if (lpiSameMonthProperties != null && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate())) {
+                new CredXLoanRepaymentScheduleProcessingWrapper().reprocess(loan.getCurrency(), loan.getDisbursementDate(),
+                        loan.getRepaymentScheduleInstallments(), loan.getActiveCharges());
+            }
         } else {
-            final LoanRepaymentScheduleProcessingWrapper wrapper = new LoanRepaymentScheduleProcessingWrapper();
+            final org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper wrapper = lpiSameMonthProperties != null
+                    && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate())
+                            ? new CredXLoanRepaymentScheduleProcessingWrapper()
+                            : new org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper();
             wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
                     loan.getActiveCharges());
         }
@@ -1924,11 +1965,112 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         return false;
     }
 
+    /**
+     * CredX full override: applies overdue charges with LPI same-month scaling. No provider changes. When charge due
+     * date is in same month as installment, scales (P+I) by daysInMonth/daysInYear.
+     */
     @Override
     @Transactional
     public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
-        // Delegate to parent to apply penalties and perform schedule recalculation and transaction reprocessing
-        super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
+        final Long processingStartTime = System.currentTimeMillis();
+        Collection<OverdueLoanScheduleData> overdueLoanScheduleDataOrderedList = overdueLoanScheduleDataList.stream()
+                .sorted(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).toList();
+        if (overdueLoanScheduleDataOrderedList.isEmpty()) {
+            log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                    (System.currentTimeMillis() - processingStartTime) / 1000);
+            return;
+        }
+        Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final boolean isFactorRateEnabled = loan.isFactorRateEnabled();
+        if (loan.isChargedOff()) {
+            log.warn("Adding charge to Loan: {} is not allowed. Loan Account is Charged-off", loanId);
+            return;
+        }
+        if (!isPenaltyChargeApplicableForLoanCredX(loan)) {
+            log.warn("Adding overdue charge to Loan: {} is not allowed. Factor rate penalty grace period not yet passed.", loanId);
+            return;
+        }
+        if (isFactorRateEnabled) {
+            final OverdueLoanScheduleData lastInstallmentOverdueLoanScheduleData = overdueLoanScheduleDataOrderedList.stream()
+                    .max(Comparator.comparing(OverdueLoanScheduleData::getDueDate)).orElseThrow();
+            final BigDecimal totalOutstandingForLoan = loan.getSummary().getTotalPrincipalOutstanding()
+                    .add(loan.getSummary().getTotalFeeChargesOutstanding()).add(loan.getSummary().getTotalTaxChargesOutstanding());
+            if (totalOutstandingForLoan.compareTo(BigDecimal.ZERO) <= 0) {
+                log.info("No total outstanding for factor rate loan: {}. Hence not adding overdue charge.", loanId);
+                return;
+            }
+            lastInstallmentOverdueLoanScheduleData.setPrincipalOverdue(totalOutstandingForLoan);
+            overdueLoanScheduleDataOrderedList = Collections.singletonList(lastInstallmentOverdueLoanScheduleData);
+        }
+        Optional<Charge> optPenaltyCharge = loan.getLoanProduct().getCharges().stream()
+                .filter((e) -> ChargeTimeType.OVERDUE_INSTALLMENT.getValue().equals(e.getChargeTimeType()) && e.isLoanCharge()).findFirst();
+        if (optPenaltyCharge.isEmpty()) {
+            return;
+        }
+        final List<Long> existingTransactionIds = loan.findExistingTransactionIds();
+        final List<Long> existingReversedTransactionIds = loan.findExistingReversedTransactionIds();
+        boolean runInterestRecalculation = false;
+        LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
+        LocalDate lastChargeDate = null;
+        for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduleDataOrderedList) {
+            final com.google.gson.JsonElement parsedCommand = this.fromJsonHelper.parse(overdueInstallment.toString());
+            final JsonCommand command = JsonCommand.from(overdueInstallment.toString(), parsedCommand, this.fromJsonHelper, null, null,
+                    null, null, null, loanId, null, null, null, null, null, null, null, null);
+            LoanOverdueDTO overdueDTO = applyChargeToOverdueLoanInstallmentCredX(loan, overdueInstallment.getChargeId(),
+                    overdueInstallment.getPeriodNumber(), command);
+            loan = overdueDTO.getLoan();
+            runInterestRecalculation = runInterestRecalculation || overdueDTO.isRunInterestRecalculation();
+            if (DateUtils.isAfter(recalculateFrom, overdueDTO.getRecalculateFrom())) {
+                recalculateFrom = overdueDTO.getRecalculateFrom();
+            }
+            if (lastChargeDate == null || DateUtils.isAfter(overdueDTO.getLastChargeAppliedDate(), lastChargeDate)) {
+                lastChargeDate = overdueDTO.getLastChargeAppliedDate();
+            }
+        }
+        if (loan != null) {
+            LocalDate recalculatedTill = loan.fetchInterestRecalculateFromDate();
+            if (DateUtils.isAfter(recalculateFrom, recalculatedTill)) {
+                recalculateFrom = recalculatedTill;
+            }
+            if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+                if (runInterestRecalculation && loan.isFeeCompoundingEnabledForInterestRecalculation()) {
+                    loan = runScheduleRecalculation(loan, recalculateFrom);
+                }
+                this.loanWritePlatformService.updateOriginalSchedule(loan);
+            }
+            addInstallmentIfPenaltyAppliedAfterLastDueDateCredX(loan, lastChargeDate);
+            if (loan.isProgressiveSchedule() && loan.hasChargeOffTransaction() && loan.hasAccelerateChargeOffStrategy()) {
+                final ScheduleGeneratorDTO scheduleGeneratorDTO = loanUtilService.buildScheduleGeneratorDTO(loan, null);
+                loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
+            }
+
+            // CRITICAL: reprocessTransactions may override the same-month LPI assignment
+            // We need to reapply the same-month wrapper AFTER reprocessing
+            log.info("Before reprocessTransactions for loan {}", loanId);
+            reprocessLoanTransactionsService.reprocessTransactions(loan);
+            log.info("After reprocessTransactions for loan {}", loanId);
+
+            // Reapply LPI same-month wrapper after transaction reprocessing
+            boolean useSameMonthWrapper = lpiSameMonthProperties != null
+                    && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate());
+            if (useSameMonthWrapper) {
+                log.info("Reapplying LPI same-month wrapper after reprocessTransactions for loan {}", loanId);
+                final CredXLoanRepaymentScheduleProcessingWrapper sameMonthWrapper = new CredXLoanRepaymentScheduleProcessingWrapper();
+                sameMonthWrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
+                        loan.getActiveCharges());
+            }
+
+            loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            if (loan.isInterestBearingAndInterestRecalculationEnabled() && runInterestRecalculation
+                    && loan.isFeeCompoundingEnabledForInterestRecalculation()) {
+                loanAccrualsProcessingService.processAccrualsOnInterestRecalculation(loan, true, false);
+            }
+            this.loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
+            postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
+            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+        }
+        log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
+                (System.currentTimeMillis() - processingStartTime) / 1000);
 
         // After penalties and schedule changes, recompute custom statuses and fire webhooks
         try {
@@ -1972,6 +2114,194 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             });
         } catch (Exception e) {
             log.warn("Failed to recompute/publish custom statuses after overdue penalties for loan {}: {}", loanId, e.getMessage());
+        }
+    }
+
+    private boolean isPenaltyChargeApplicableForLoanCredX(final Loan loan) {
+        if (!loan.isFactorRateEnabled()) {
+            return true;
+        }
+        Integer factorRatePenaltyGracePeriod = loan.getLoanProduct().getPenaltyGracePeriod();
+        if (factorRatePenaltyGracePeriod == null) {
+            factorRatePenaltyGracePeriod = LoanProductConstants.DEFAULT_PENALTY_GRACE_PERIOD;
+        }
+        final LocalDate maturityDate = loan.getMaturityDate();
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final LocalDate penaltyStartOnDate = maturityDate.plusDays(factorRatePenaltyGracePeriod);
+        return DateUtils.isAfter(businessDate, penaltyStartOnDate);
+    }
+
+    private LoanOverdueDTO applyChargeToOverdueLoanInstallmentCredX(final Loan loan, final Long loanChargeId, final Integer periodNumber,
+            final JsonCommand command) {
+        boolean runInterestRecalculation = false;
+        final Charge chargeDefinition = this.chargeRepository.findOneWithNotFoundDetection(loanChargeId);
+        Collection<Integer> frequencyNumbers = loanChargeReadPlatformService.retrieveOverdueInstallmentChargeFrequencyNumber(loan,
+                chargeDefinition, periodNumber);
+        Integer feeFrequency = chargeDefinition.feeFrequency();
+        final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
+        Map<Integer, LocalDate> scheduleDates = new HashMap<>();
+        final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
+        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
+        final LocalDate dueDate = command.localDateValueOfParameterNamed("dueDate");
+        long diff = penaltyWaitPeriodValue + 1 - penaltyPostingWaitPeriodValue;
+        if (diff < 1) {
+            diff = 1L;
+        }
+        LocalDate startDate = dueDate.plusDays(penaltyWaitPeriodValue + 1L);
+        int frequencyNumber = 1;
+        if (feeFrequency == null) {
+            scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
+        } else {
+            while (!DateUtils.isDateInTheFuture(startDate)) {
+                scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
+                startDate = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency),
+                        chargeDefinition.feeInterval(), startDate);
+            }
+        }
+        for (Integer frequency : frequencyNumbers) {
+            scheduleDates.remove(frequency);
+        }
+        LoanRepaymentScheduleInstallment installment = null;
+        LocalDate lastChargeAppliedDate = dueDate;
+        LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
+        if (!scheduleDates.isEmpty()) {
+            installment = loan.fetchRepaymentScheduleInstallment(periodNumber);
+            lastChargeAppliedDate = installment.getDueDate();
+            businessEventNotifierService.notifyPreBusinessEvent(new LoanApplyOverdueChargeBusinessEvent(loan));
+            for (Map.Entry<Integer, LocalDate> entry : scheduleDates.entrySet()) {
+                final JsonCommand scaledCommand = scaleOverdueChargeCommandForSameMonth(command, entry.getValue(), installment);
+                final LoanCharge loanCharge = loanChargeAssembler.createNewFromJson(loan, chargeDefinition, scaledCommand,
+                        entry.getValue());
+                if (BigDecimal.ZERO.compareTo(loanCharge.amount()) == 0) {
+                    continue;
+                }
+                LoanOverdueInstallmentCharge overdueInstallmentCharge = new LoanOverdueInstallmentCharge(loanCharge, installment,
+                        entry.getKey());
+                loanCharge.updateOverdueInstallmentCharge(overdueInstallmentCharge);
+                boolean isAppliedOnBackDate = addChargeCredX(loan, chargeDefinition, loanCharge);
+                runInterestRecalculation = runInterestRecalculation || isAppliedOnBackDate;
+                if (DateUtils.isBefore(entry.getValue(), recalculateFrom)) {
+                    recalculateFrom = entry.getValue();
+                }
+                if (DateUtils.isAfter(entry.getValue(), lastChargeAppliedDate)) {
+                    lastChargeAppliedDate = entry.getValue();
+                }
+            }
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanApplyOverdueChargeBusinessEvent(loan));
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
+        }
+        return new LoanOverdueDTO(loan, runInterestRecalculation, recalculateFrom, lastChargeAppliedDate);
+    }
+
+    private JsonCommand scaleOverdueChargeCommandForSameMonth(final JsonCommand command, final LocalDate chargeDueDate,
+            final LoanRepaymentScheduleInstallment installment) {
+        // Check if charge is in the same month as the installment due date
+        boolean chargeInSameMonthAsInstallment = chargeDueDate.getMonth() == installment.getDueDate().getMonth()
+                && chargeDueDate.getYear() == installment.getDueDate().getYear();
+
+        // CRITICAL FIX: Only apply scaling if the installment has NOT crossed into the next month
+        // If installment due date is in a previous month (e.g., Feb) and charge is in current month (e.g., Mar),
+        // then the installment is MORE than 1 month overdue and should use FULL outstanding amount
+        LocalDate installmentDueMonth = installment.getDueDate().withDayOfMonth(1); // First day of installment's month
+        LocalDate chargeDueMonth = chargeDueDate.withDayOfMonth(1); // First day of charge's month
+
+        // If charge month is AFTER installment month, installment has crossed into next month
+        // In this case, do NOT scale - use full outstanding amount
+        if (chargeDueMonth.isAfter(installmentDueMonth)) {
+            log.info(
+                    "Charge due date {} is in a different month than installment due date {}. "
+                            + "Installment is more than 1 month overdue. Using FULL outstanding amount (no scaling).",
+                    chargeDueDate, installment.getDueDate());
+            return command;
+        }
+
+        // Only scale if charge is in the SAME month as the installment due date
+        if (!chargeInSameMonthAsInstallment) {
+            return command;
+        }
+        int daysInEmiMonth = installment.getDueDate().lengthOfMonth();
+        int daysInYear = installment.getDueDate().lengthOfYear();
+        BigDecimal scale = BigDecimal.valueOf(daysInEmiMonth).divide(BigDecimal.valueOf(daysInYear), 10, RoundingMode.HALF_EVEN);
+        if (!command.hasParameter("principal") && !command.hasParameter("interest")) {
+            return command;
+        }
+        BigDecimal principal = command.bigDecimalValueOfParameterNamed("principal");
+        BigDecimal interest = command.bigDecimalValueOfParameterNamed("interest");
+        principal = principal != null ? principal : BigDecimal.ZERO;
+        interest = interest != null ? interest : BigDecimal.ZERO;
+        JsonObject jsonObject = (JsonObject) this.fromJsonHelper.parse(command.json());
+        jsonObject.addProperty("principal", principal.multiply(scale).doubleValue());
+        jsonObject.addProperty("interest", interest.multiply(scale).doubleValue());
+        return JsonCommand.fromExistingCommand(command, jsonObject);
+    }
+
+    private boolean addChargeCredX(final Loan loan, final Charge chargeDefinition, LoanCharge loanCharge) {
+        if (!loan.hasCurrencyCodeOf(chargeDefinition.getCurrencyCode())) {
+            throw new InvalidCurrencyException("loanCharge", "attach.to.loan", "Charge and Loan must have the same currency.");
+        }
+        if (loanCharge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
+            final PortfolioAccountData portfolioAccountData = this.accountAssociationsReadPlatformService
+                    .retriveLoanLinkedAssociation(loan.getId());
+            if (portfolioAccountData == null) {
+                final String errorMessage = loanCharge.name() + "Charge  requires linked savings account for payment";
+                throw new LinkedAccountRequiredException("loanCharge.add", errorMessage, loanCharge.name());
+            }
+        }
+        loanChargeValidator.validateChargeAdditionForDisbursedLoan(loan, loanCharge);
+        loanChargeValidator.validateChargeHasValidSpecifiedDateIfApplicable(loan, loanCharge, loan.getDisbursementDate());
+        loan.addLoanCharge(loanCharge);
+        loanCharge = this.loanChargeRepository.saveAndFlush(loanCharge);
+
+        // Apply LPI same-month wrapper for schedule recalculation
+        boolean useSameMonthWrapper = lpiSameMonthProperties != null
+                && lpiSameMonthProperties.isEnabledForDisbursementDate(loan.getDisbursementDate());
+
+        log.info("LPI same-month check for loan {}: disbursementDate={}, enabled={}, chargeId={}, chargeDueDate={}", loan.getId(),
+                loan.getDisbursementDate(), useSameMonthWrapper, loanCharge.getId(), loanCharge.getDueDate());
+
+        final org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper wrapper = useSameMonthWrapper
+                ? new CredXLoanRepaymentScheduleProcessingWrapper()
+                : new org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper();
+
+        log.info("Using wrapper: {} for loan {}", wrapper.getClass().getSimpleName(), loan.getId());
+
+        wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(), loan.getActiveCharges());
+
+        if ((loan.getStatus().isActive() && loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct())
+                || loan.getStatus().isOverpaid() || loan.getStatus().isClosedObligationsMet()
+                || (configurationDomainService.isImmediateChargeAccrualPostMaturityEnabled()
+                        && DateUtils.getBusinessLocalDate().isAfter(loan.getMaturityDate()))) {
+            final LoanTransaction applyLoanChargeTransaction = loan.handleChargeAppliedTransaction(loanCharge, null);
+            if (applyLoanChargeTransaction != null) {
+                this.loanTransactionRepository.saveAndFlush(applyLoanChargeTransaction);
+                businessEventNotifierService
+                        .notifyPostBusinessEvent(new LoanAccrualTransactionCreatedBusinessEvent(applyLoanChargeTransaction));
+            }
+        }
+        return DateUtils.isBeforeBusinessDate(loanCharge.getDueLocalDate());
+    }
+
+    private void addInstallmentIfPenaltyAppliedAfterLastDueDateCredX(Loan loan, LocalDate lastChargeDate) {
+        if (lastChargeDate != null) {
+            List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+            LoanRepaymentScheduleInstallment lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
+            if (DateUtils.isAfter(lastChargeDate, lastInstallment.getDueDate()) && !loan.isFactorRateEnabled()) {
+                if (lastInstallment.isRecalculatedInterestComponent()) {
+                    installments.remove(lastInstallment);
+                    lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
+                }
+                boolean recalculatedInterestComponent = true;
+                BigDecimal principal = BigDecimal.ZERO;
+                BigDecimal interest = BigDecimal.ZERO;
+                BigDecimal feeCharges = BigDecimal.ZERO;
+                BigDecimal penaltyCharges = BigDecimal.ONE;
+                BigDecimal taxCharges = BigDecimal.ZERO;
+                final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
+                LoanRepaymentScheduleInstallment newEntry = new LoanRepaymentScheduleInstallment(loan, installments.size() + 1,
+                        lastInstallment.getDueDate(), lastChargeDate, principal, interest, feeCharges, penaltyCharges, taxCharges,
+                        recalculatedInterestComponent, compoundingDetails);
+                loan.addLoanRepaymentScheduleInstallment(newEntry);
+            }
         }
     }
 }
