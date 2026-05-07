@@ -80,8 +80,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory,
             FineractProperties fineractProperties, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
             LoanUtilService loanUtilService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
-            BusinessEventNotifierService businessEventNotifierService,
-            CredXSavingsTransactionSubTypeService transactionSubTypeService) {
+            BusinessEventNotifierService businessEventNotifierService, CredXSavingsTransactionSubTypeService transactionSubTypeService) {
         super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
                 savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
                 accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory,
