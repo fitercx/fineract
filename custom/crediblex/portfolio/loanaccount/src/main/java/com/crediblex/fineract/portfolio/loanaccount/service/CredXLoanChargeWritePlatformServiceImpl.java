@@ -792,8 +792,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // Update loan schedule and summary WITHOUT reprocessing transactions (to avoid date validation)
                 loan.updateLoanScheduleDependentDerivedFields();
                 loan.updateLoanSummaryAndStatus();
+                loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
                 loanRepositoryWrapper.saveAndFlush(loan);
-                // Ensure m_loan_arrears_aging is refreshed in the same flow for partial deactivations too.
+                // Ensure delinquency tags and m_loan_arrears_aging are refreshed for date-based, EMI-only and
+                // remove-all modes.
                 loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
                 businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
 

@@ -95,6 +95,7 @@ import org.apache.fineract.portfolio.calendar.domain.CalendarRepository;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.collectionsheet.command.CollectionSheetBulkDisbursalCommand;
 import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalCommand;
+import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
@@ -113,6 +114,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallmentRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariationType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
@@ -138,6 +140,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanTransactionVa
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanUpdateCommandFromApiJsonDeserializer;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanArrearsAgingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanDisbursementService;
@@ -204,6 +207,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private CredXAdjustInstallmentDateDataValidator adjustInstallmentDateDataValidator;
     @Autowired
     private LoanRescheduleRequestWritePlatformService loanRescheduleRequestWritePlatformService;
+    @Autowired
+    private LoanArrearsAgingService loanArrearsAgingService;
     private final CustomLoanDisbursementService customLoanDisbursementService;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
     private final AccountAssociationsRepository accountAssociationRepository;
@@ -2115,6 +2120,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // which breaks approve()'s chain-equality check and silently no-ops subsequent reschedules. Realign
         // any prior active DUE_DATE variation that affected this installment so the chain works.
         alignPriorDueDateVariationForInstallment(loan, installment, oldDueDate);
+        ensurePriorDueDateVariationForManualAdjustment(loan, installment, oldDueDate);
 
         // Build CREATE payload equivalent to what the Reschedule Loan > Change Repayment Date form would send.
         final JsonObject createPayload = new JsonObject();
@@ -2153,6 +2159,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         this.loanRescheduleRequestWritePlatformService.approve(approveCommand);
 
+        refreshLoanArrearsAndDelinquencyAfterInstallmentDateAdjustment(loanId);
+
         final Map<String, Object> changes = new LinkedHashMap<>();
         changes.put("installmentNumber", installment.getInstallmentNumber());
         changes.put("oldDueDate", oldDueDate);
@@ -2164,6 +2172,23 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return new CommandProcessingResultBuilder().withCommandId(originalCommand.commandId()).withEntityId(loanId)
                 .withEntityExternalId(loan.getExternalId()).withOfficeId(loan.getOfficeId()).withClientId(loan.getClientId())
                 .withGroupId(loan.getGroupId()).withLoanId(loanId).with(changes).build();
+    }
+
+    private void refreshLoanArrearsAndDelinquencyAfterInstallmentDateAdjustment(final Long loanId) {
+        final Loan refreshedLoan = this.loanAssembler.assembleFrom(loanId);
+        refreshedLoan.updateLoanScheduleDependentDerivedFields();
+
+        for (final LoanCharge loanCharge : refreshedLoan.getLoanCharges()) {
+            if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
+                refreshedLoan.updateOverdueScheduleInstallment(loanCharge);
+            }
+        }
+
+        refreshedLoan.updateLoanSummaryAndStatus();
+        this.loanAccountDomainService.setLoanDelinquencyTag(refreshedLoan, DateUtils.getBusinessLocalDate());
+        saveAndFlushLoanWithDataIntegrityViolationChecks(refreshedLoan);
+        this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(refreshedLoan);
+        businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(refreshedLoan));
     }
 
     /**
@@ -2214,6 +2239,65 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 variation.setDateValue(currentDueDate);
             }
         }
+    }
+
+    /**
+     * Non-recalculation date edits update the live repayment schedule directly and do not create
+     * {@link LoanTermVariations}. A later recalculation uses the standard reschedule generator, which matches due-date
+     * variations against the original generated dates. If the selected installment already has a manually shifted due
+     * date, create an in-memory prior variation (generatedDate -> currentDueDate) so approval can chain it with the new
+     * request and regenerate from the correct installment instead of drifting back to the base schedule.
+     */
+    private void ensurePriorDueDateVariationForManualAdjustment(final Loan loan, final LoanRepaymentScheduleInstallment installment,
+            final LocalDate currentDueDate) {
+        if (loan == null || installment == null || currentDueDate == null || installment.getFromDate() == null) {
+            return;
+        }
+
+        final LocalDate expectedGeneratedDueDate = deriveExpectedGeneratedDueDate(loan, installment.getFromDate());
+        if (expectedGeneratedDueDate == null || DateUtils.isEqual(expectedGeneratedDueDate, currentDueDate)) {
+            return;
+        }
+
+        for (LoanTermVariations variation : loan.getActiveLoanTermVariations()) {
+            if (variation != null && variation.getTermType() != null && variation.getTermType().isDueDateVariation()
+                    && DateUtils.isEqual(variation.fetchDateValue(), currentDueDate)) {
+                return;
+            }
+        }
+
+        final LoanTermVariations manualShiftBridge = new LoanTermVariations(LoanTermVariationType.DUE_DATE.getValue(),
+                expectedGeneratedDueDate, null, currentDueDate, false, loan, loan.getStatus().getValue(), true, null);
+        loan.getLoanTermVariations().add(manualShiftBridge);
+        log.info("Added transient DUE_DATE bridge variation {} -> {} for loan {} installment {} before recalc installment date adjustment",
+                expectedGeneratedDueDate, currentDueDate, loan.getId(), installment.getInstallmentNumber());
+    }
+
+    private LocalDate deriveExpectedGeneratedDueDate(final Loan loan, final LocalDate fromDate) {
+        if (loan == null || loan.getLoanRepaymentScheduleDetail() == null || fromDate == null) {
+            return null;
+        }
+
+        final Integer repayEvery = loan.getLoanRepaymentScheduleDetail().getRepayEvery();
+        if (repayEvery == null || repayEvery <= 0) {
+            return null;
+        }
+
+        final PeriodFrequencyType frequencyType = loan.getLoanRepaymentScheduleDetail().getRepaymentPeriodFrequencyType();
+        if (frequencyType == null) {
+            return null;
+        }
+
+        if (frequencyType.isDaily()) {
+            return fromDate.plusDays(repayEvery);
+        } else if (frequencyType.isWeekly()) {
+            return fromDate.plusWeeks(repayEvery);
+        } else if (frequencyType.isMonthly()) {
+            return fromDate.plusMonths(repayEvery);
+        } else if (frequencyType.isYearly()) {
+            return fromDate.plusYears(repayEvery);
+        }
+        return null;
     }
 
     private Long resolveDefaultLoanRescheduleReasonId() {
