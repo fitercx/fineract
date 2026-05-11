@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
+import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
@@ -52,6 +53,8 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends SavingsAccountWritePlatformServiceJpaRepositoryImpl {
 
+    private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
+
     public CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             SavingsAccountDataValidator fromApiJsonDeserializer, SavingsAccountRepositoryWrapper savingAccountRepositoryWrapper,
             StaffRepositoryWrapper staffRepository, SavingsAccountTransactionRepository savingsAccountTransactionRepository,
@@ -67,7 +70,7 @@ public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends Sa
             EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, AppUserRepositoryWrapper appuserRepository,
             StandingInstructionRepository standingInstructionRepository, BusinessEventNotifierService businessEventNotifierService,
             GSIMRepositoy gsimRepository, SavingsAccountInterestPostingService savingsAccountInterestPostingService,
-            ErrorHandler errorHandler) {
+            ErrorHandler errorHandler, CredXSavingsTransactionSubTypeService transactionSubTypeService) {
         super(context, fromApiJsonDeserializer, savingAccountRepositoryWrapper, staffRepository, savingsAccountTransactionRepository,
                 savingAccountAssembler, savingsAccountTransactionDataValidator, savingsAccountChargeDataValidator,
                 paymentDetailWritePlatformService, journalEntryWritePlatformService, savingsAccountDomainService, noteRepository,
@@ -76,6 +79,14 @@ public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends Sa
                 depositAccountOnHoldTransactionRepository, entityDatatableChecksWritePlatformService, appuserRepository,
                 standingInstructionRepository, businessEventNotifierService, gsimRepository, savingsAccountInterestPostingService,
                 errorHandler);
+        this.transactionSubTypeService = transactionSubTypeService;
+    }
+
+    @Override
+    public CommandProcessingResult withdrawal(final Long savingsId, final JsonCommand command) {
+        final CommandProcessingResult result = super.withdrawal(savingsId, command);
+        this.transactionSubTypeService.markFromPaymentType(result.getResourceId());
+        return result;
     }
 
     @Override

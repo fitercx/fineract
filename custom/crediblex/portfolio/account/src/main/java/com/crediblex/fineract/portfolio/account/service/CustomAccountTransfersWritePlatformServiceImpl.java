@@ -9,6 +9,7 @@ import static org.apache.fineract.portfolio.account.api.AccountTransfersApiConst
 
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
+import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -68,6 +69,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
     private final LoanUtilService loanUtilService;
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     protected final BusinessEventNotifierService businessEventNotifierService;
+    private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
 
     public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator,
             AccountTransferAssembler accountTransferAssembler, AccountTransferRepository accountTransferRepository,
@@ -78,7 +80,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory,
             FineractProperties fineractProperties, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
             LoanUtilService loanUtilService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
-            BusinessEventNotifierService businessEventNotifierService) {
+            BusinessEventNotifierService businessEventNotifierService, CredXSavingsTransactionSubTypeService transactionSubTypeService) {
         super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
                 savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
                 accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory,
@@ -87,6 +89,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         this.loanUtilService = loanUtilService;
         this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine;
         this.businessEventNotifierService = businessEventNotifierService;
+        this.transactionSubTypeService = transactionSubTypeService;
     }
 
     @Override
@@ -126,6 +129,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     isRegularTransaction, fromSavingsAccount.isWithdrawalFeeApplicableForTransfer(), isInterestTransfer, isWithdrawBalance);
             final SavingsAccountTransaction withdrawal = this.savingsAccountDomainService.handleWithdrawal(fromSavingsAccount, fmt,
                     transactionDate, transactionAmount, paymentDetail, transactionBooleanValues, backdatedTxnsAllowedTill);
+            this.transactionSubTypeService.markEmiTransfer(withdrawal.getId());
 
             final Long toSavingsId = command.longValueOfParameterNamed(toAccountIdParamName);
             final SavingsAccount toSavingsAccount = this.savingsAccountAssembler.assembleFrom(toSavingsId, backdatedTxnsAllowedTill);
@@ -153,6 +157,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     isRegularTransaction, fromSavingsAccount.isWithdrawalFeeApplicableForTransfer(), isInterestTransfer, isWithdrawBalance);
             final SavingsAccountTransaction withdrawal = this.savingsAccountDomainService.handleWithdrawal(fromSavingsAccount, fmt,
                     transactionDate, transactionAmount, paymentDetail, transactionBooleanValues, backdatedTxnsAllowedTill);
+            this.transactionSubTypeService.markEmiTransfer(withdrawal.getId());
 
             final Long toLoanAccountId = command.longValueOfParameterNamed(toAccountIdParamName);
             Loan toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
@@ -252,6 +257,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             final SavingsAccountTransaction withdrawal = this.savingsAccountDomainService.handleWithdrawal(fromSavingsAccount,
                     accountTransferDTO.getFmt(), accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
                     accountTransferDTO.getPaymentDetail(), transactionBooleanValues, backdatedTxnsAllowedTill);
+            this.transactionSubTypeService.markEmiTransfer(withdrawal.getId());
 
             LoanTransaction loanTransaction;
 

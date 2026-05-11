@@ -914,7 +914,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 originalCommand.getProductId(), originalCommand.getCreditBureauId(), originalCommand.getOrganisationCreditBureauId(), null,
                 null);
 
-        this.savingsAccountWritePlatformService.withdrawal(savingsAccountId, withdrawalCommand);
+        final CommandProcessingResult withdrawalResult = this.savingsAccountWritePlatformService.withdrawal(savingsAccountId,
+                withdrawalCommand);
+        markSavingsWithdrawalAsDisbursal(withdrawalResult.getResourceId());
+    }
+
+    private void markSavingsWithdrawalAsDisbursal(final Long savingsTransactionId) {
+        if (savingsTransactionId == null) {
+            return;
+        }
+        this.jdbcTemplate.update("""
+                UPDATE m_savings_account_transaction
+                SET transaction_sub_type = 1
+                WHERE id = ?
+                  AND transaction_type_enum = 2
+                """, savingsTransactionId);
     }
 
     private void updateNetDisbursalAmountForMultiDisbursalLoan(final Loan loan) {
