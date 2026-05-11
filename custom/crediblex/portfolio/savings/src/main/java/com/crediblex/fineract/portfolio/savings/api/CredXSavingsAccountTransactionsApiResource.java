@@ -2,7 +2,6 @@ package com.crediblex.fineract.portfolio.savings.api;
 
 import com.crediblex.fineract.portfolio.savings.data.CredXSavingsTransactionSubTypeData;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -26,10 +25,18 @@ public class CredXSavingsAccountTransactionsApiResource {
 
     @GET
     @Path("subtypes")
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     public String retrieveTransactionSubTypes(@PathParam("savingsId") final Long savingsId) {
         this.context.authenticatedUser().validateHasReadPermission(SavingsApiConstants.SAVINGS_ACCOUNT_RESOURCE_NAME);
         return this.toApiJsonSerializer.serialize(this.transactionSubTypeService.retrieveSubTypes(savingsId));
+    }
+
+    @GET
+    @Path("{transactionId}/subtype")
+    @Produces({ MediaType.APPLICATION_JSON })
+    public String retrieveTransactionSubType(@PathParam("savingsId") final Long savingsId,
+            @PathParam("transactionId") final Long transactionId) {
+        this.context.authenticatedUser().validateHasReadPermission(SavingsApiConstants.SAVINGS_ACCOUNT_RESOURCE_NAME);
+        return this.toApiJsonSerializer.serialize(this.transactionSubTypeService.retrieveSubType(savingsId, transactionId));
     }
 }

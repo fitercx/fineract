@@ -18,6 +18,33 @@
         </addColumn>
     </changeSet>
 
+    <changeSet author="CredibleX" id="0058-add-payment-type-savings-transaction-sub-type-column">
+        <preConditions onFail="MARK_RAN" onError="HALT">
+            <not>
+                <columnExists tableName="m_payment_type" columnName="savings_transaction_sub_type"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_payment_type">
+            <column name="savings_transaction_sub_type" type="SMALLINT">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0058-configure-payment-type-savings-transaction-sub-types">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <columnExists tableName="m_payment_type" columnName="savings_transaction_sub_type"/>
+        </preConditions>
+        <update tableName="m_payment_type">
+            <column name="savings_transaction_sub_type" valueNumeric="1"/>
+            <where>TRIM(value) = 'RBF Loan Disbursement'</where>
+        </update>
+        <update tableName="m_payment_type">
+            <column name="savings_transaction_sub_type" valueNumeric="2"/>
+            <where>TRIM(value) = 'Excess Refund'</where>
+        </update>
+    </changeSet>
+
     <changeSet author="CredibleX" id="0058-update-savings-accounts-transactions-report-sql">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <sqlCheck expectedResult="1">
