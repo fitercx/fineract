@@ -23,6 +23,7 @@ import static org.apache.fineract.portfolio.account.domain.AccountAssociationTyp
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
@@ -253,6 +254,57 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return new LoanTransactionData(null, null, null, transactionType, null, currencyData, date, totalDue, netDisbursalAmount,
                 principalPortion, interestDue, feeDue, penaltyDue, taxDue, null, null, paymentTypeOptions, ExternalId.empty(), null, null,
                 null, manuallyReversed, loanId, ExternalId.empty());
+    }
+
+    public List<CredXLoanSearchResultData> searchLoanRecords(final String type, final String value) {
+        final String trimmedValue = StringUtils.trimToEmpty(value);
+        final boolean invoiceSearch = "invoiceNo".equalsIgnoreCase(type) || "invoiceNumber".equalsIgnoreCase(type);
+
+        final StringBuilder sqlBuilder = new StringBuilder()
+                .append("select l.id as loanId, l.account_no as loanAccountNo, l.client_id as clientId, l.group_id as groupId, ")
+                .append("coalesce(c.display_name, g.display_name) as borrowerName, ")
+                .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
+                .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
+                .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as product, ")
+                .append("l.total_outstanding_derived as outstanding, l.currency_code as currencyCode, ")
+                .append("case l.loan_status_id ")
+                .append("when 100 then 'Submitted and pending approval' ")
+                .append("when 200 then 'Approved' ")
+                .append("when 300 then 'Active' ")
+                .append("when 400 then 'Withdrawn by applicant' ")
+                .append("when 500 then 'Rejected' ")
+                .append("when 600 then 'Closed (obligations met)' ")
+                .append("when 601 then 'Closed (written off)' ")
+                .append("when 602 then 'Closed (rescheduled)' ")
+                .append("when 700 then 'Overpaid' ")
+                .append("else concat('Status ', l.loan_status_id) end as status, ")
+                .append("llocp.invoice_no as invoiceNo ")
+                .append("from m_loan l ")
+                .append("left join m_client c on c.id = l.client_id ")
+                .append("left join m_group g on g.id = l.group_id ")
+                .append("left join m_product_loan pl on pl.id = l.product_id ")
+                .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
+                .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ");
+
+        if (invoiceSearch) {
+            sqlBuilder.append("where llocp.invoice_no = ? order by l.id desc");
+            return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
+        }
+
+        sqlBuilder.append("where l.account_no = ? order by l.id desc ");
+        sqlBuilder.append(this.sqlGenerator.limit(1, 0));
+        return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
+    }
+
+    private static final class CredXLoanSearchResultMapper implements RowMapper<CredXLoanSearchResultData> {
+
+        @Override
+        public CredXLoanSearchResultData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            return new CredXLoanSearchResultData(rs.getLong("loanId"), rs.getString("loanAccountNo"),
+                    JdbcSupport.getLong(rs, "clientId"), JdbcSupport.getLong(rs, "groupId"), rs.getString("borrowerName"),
+                    rs.getString("product"), rs.getBigDecimal("outstanding"), rs.getString("currencyCode"), rs.getString("status"),
+                    rs.getString("invoiceNo"));
+        }
     }
 
     @Override

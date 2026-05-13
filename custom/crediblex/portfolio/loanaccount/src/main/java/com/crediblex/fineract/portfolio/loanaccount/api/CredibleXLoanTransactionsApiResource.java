@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanReadPlatformServiceImpl;
 import io.micrometer.common.util.StringUtils;
@@ -20,6 +21,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
 import java.time.LocalDate;
+import java.util.List;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.api.DateParam;
@@ -92,6 +94,19 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return this.penaltyJsonSerializer.serialize(settings, penaltiesData, this.responseDataParameters);
+    }
+
+    @GET
+    @Path("search")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Search CREDX loan records", description = "Exact-match lookup by loan ID/account number or invoice number.")
+    public List<CredXLoanSearchResultData> searchLoanRecords(
+            @QueryParam("type") @Parameter(description = "loanId or invoiceNo", required = true) final String type,
+            @QueryParam("value") @Parameter(description = "Exact search value", required = true) final String value) {
+
+        this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
+        return this.credibleXLoanReadPlatformService.searchLoanRecords(type, value);
     }
 
     @GET

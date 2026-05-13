@@ -596,17 +596,17 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                             }
                         } else {
                             log.info(
-                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC normal closure detected - Using GL 200080 for loan product {}",
+                                    "CustomAccrualBasedAccountingProcessorForLoan: Payable LOC normal closure detected - Using GL 200042 for loan product {}",
                                     loanProductId);
                             GLAccount normalClosureGLAccount = locAccountingHelper.getLOCPayableNormalClosureGLAccount();
                             if (normalClosureGLAccount != null) {
                                 this.helper.createDebitJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
                                         totalDebitAmount, normalClosureGLAccount);
                                 log.info(
-                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200080 for Payable LOC normal closure");
+                                        "CustomAccrualBasedAccountingProcessorForLoan: Journal entry created with GL 200042 for Payable LOC normal closure (reverses disbursement credit)");
                             } else {
                                 log.warn(
-                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200080 not found for Payable LOC normal closure, falling back to LIABILITY_TRANSFER");
+                                        "CustomAccrualBasedAccountingProcessorForLoan: GL 200042 not found for Payable LOC normal closure, falling back to LIABILITY_TRANSFER");
                                 this.helper.createDebitJournalEntryForLoan(office, currencyCode,
                                         AccountingConstants.FinancialActivity.LIABILITY_TRANSFER.getValue(), loanProductId, paymentTypeId,
                                         loanId, transactionId, transactionDate, totalDebitAmount);
