@@ -31,15 +31,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBasedAccountingProcessorForSavings {
 
-    // Hardcoded RBF Configuration
-    private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF withdrawal payment type
-
-    // Hardcoded LOC Receivable Configuration
-    private static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L; // LOC Receivable withdrawal payment type
-
-    // Hardcoded LOC Activation Configuration
-    private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
-
     // LOC Activation Processing Fee GL Codes
     private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
                                                                          // Asset
@@ -173,8 +164,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                 // and withdrawals (repayments), so it won't appear in normal deposits
                 processedTransactionIndices.add(i);
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && paymentTypeId.equals(RBF_PAYMENT_TYPE_ID)) {
-                // RBF Manual withdrawal with payment_type=5
+                    && paymentTypeId != null && locAccountingHelper.isRBFLoanDisbursementPaymentType(paymentTypeId)) {
+                // RBF Manual withdrawal (payment type identified by code_name RBF_LOAN_DISBURSEMENT)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && locAccountingHelper.isRBFLoanProduct(linkedLoanProductId)) {
                     // RBF Loan Repayment withdrawal: DR 200040 (RBF Loan Payable), CR 100003 (Bank)
@@ -197,8 +188,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Do NOT mark as processed - let parent handle it
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && paymentTypeId.equals(LOC_RECEIVABLE_PAYMENT_TYPE_ID)) {
-                // LOC Receivable Manual withdrawal with payment_type=73
+                    && paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
+                // LOC Receivable Manual withdrawal (payment type identified by code_name DISBURSEMENT_OF_INVOICE)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
                     // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
@@ -239,8 +230,8 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Do NOT mark as processed - let parent handle it
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID)) {
-                // LOC Activation Processing Fee withdrawal with payment_type=1
+                    && paymentTypeId != null && locAccountingHelper.isProcessingFeePaymentType(paymentTypeId)) {
+                // LOC Activation Processing Fee withdrawal (payment type identified by code_name PROCESSING_FEE)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
                 if (linkedLoanProductId == null && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
                     // LOC Activation Processing Fee withdrawal:

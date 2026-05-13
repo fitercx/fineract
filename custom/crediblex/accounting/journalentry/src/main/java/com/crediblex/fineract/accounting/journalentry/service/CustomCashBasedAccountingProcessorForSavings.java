@@ -36,11 +36,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccountingProcessorForSavings {
 
-    // Payment Type IDs
-    private static final Long RBF_PAYMENT_TYPE_ID = 5L; // RBF payment type
-    private static final Long DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID = 73L; // LOC Receivable payment type
-    private static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L; // Processing Fee payment type
-
     // LOC Activation Processing Fee GL Codes
     private static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062"; // Client Receivable Clearing Acc - Current
                                                                          // Asset
@@ -201,15 +196,15 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     continue;
                 }
 
-                // For RBF savings product, if payment_type = 5 (RBF Loan Disbursement), ignore it and use default GL
+                // For RBF savings product, if payment type is RBF Loan Disbursement, ignore it and use default GL
                 // 100062
                 Long effectivePaymentTypeId = paymentTypeId;
-                if (paymentTypeId != null && paymentTypeId == 5L) {
-                    // Payment type 5 is for loan disbursements, not normal deposits
+                if (paymentTypeId != null && locAccountingHelper.isRBFLoanDisbursementPaymentType(paymentTypeId)) {
+                    // RBF Loan Disbursement payment type is for loan disbursements, not normal deposits
                     // Use NULL to get the default ASSET account (100062)
                     effectivePaymentTypeId = null;
                     log.debug(
-                            "CustomCashBasedAccountingProcessorForSavings: Normal deposit with payment_type=5, using default GL (100062) instead");
+                            "CustomCashBasedAccountingProcessorForSavings: Normal deposit with RBF Loan Disbursement payment type, using default GL (100062) instead");
                 }
                 // Check if this is a charge reversal deposit FIRST (before creating any GL entries)
                 // Charge reversals use transaction type CHARGE_REVERSAL
@@ -389,8 +384,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
 
         Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
 
-        // RBF withdrawal handling
-        if (paymentTypeId.equals(RBF_PAYMENT_TYPE_ID) && linkedLoanProductId != null
+        // RBF withdrawal handling (payment type identified by code_name RBF_LOAN_DISBURSEMENT)
+        if (locAccountingHelper.isRBFLoanDisbursementPaymentType(paymentTypeId) && linkedLoanProductId != null
                 && locAccountingHelper.isRBFLoanProduct(linkedLoanProductId)) {
             return handleRBFWithdrawal(office, currencyCode, savingsProductId, savingsId, transactionId, transactionDate, amount,
                     paymentTypeId, isReversal);
@@ -408,8 +403,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                     paymentTypeId);
         }
 
-        // LOC Activation Processing Fee withdrawal handling
-        if (paymentTypeId.equals(PROCESSING_FEE_PAYMENT_TYPE_ID) && linkedLoanProductId == null
+        // LOC Activation Processing Fee withdrawal handling (payment type identified by code_name PROCESSING_FEE)
+        if (locAccountingHelper.isProcessingFeePaymentType(paymentTypeId) && linkedLoanProductId == null
                 && locAccountingHelper.isLOCActivationSavingsProduct(savingsProductId)) {
             return handleLOCActivationProcessingFeeWithdrawal(office, currencyCode, savingsId, transactionId, transactionDate, amount,
                     isReversal, savingsTransactionDTO);
@@ -452,15 +447,15 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     }
 
     /**
-     * Handles LOC Receivable withdrawal journal entries. - Payment type 73 (DISBURSEMENT_OF_INVOICE): DR 200041 (Loan
+     * Handles LOC Receivable withdrawal journal entries. - Payment type DISBURSEMENT_OF_INVOICE: DR 200041 (Loan
      * Payable - Invoice Discounting), CR Bank - Other payment types (refund): DR 200086 (Invoice Discounting Clearing),
      * CR 100062 (Client Receivable Clearing)
      */
     private boolean handleLOCReceivableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
 
-        // Check if this is a disbursement withdrawal (payment type 73) or a refund withdrawal (other payment types)
-        if (paymentTypeId != null && paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID)) {
+        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund withdrawal
+        if (paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
             // Disbursement withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR Bank
             log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable disbursement withdrawal - DR 200041, CR Bank");
 
@@ -506,8 +501,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private boolean handleLOCPayableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
 
-        // Check if this is a disbursement withdrawal (payment type 73) or a refund withdrawal (other payment types)
-        if (paymentTypeId != null && paymentTypeId.equals(DISBURSEMENT_OF_INVOICE_PAYMENT_TYPE_ID)) {
+        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund withdrawal
+        if (paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
             // Disbursement withdrawal: DR 200042 (Loan Payable - Payable LOC), CR Bank
             log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable disbursement withdrawal - DR 200042, CR Bank");
 
