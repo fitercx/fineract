@@ -266,23 +266,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
                 .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
                 .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as product, ")
-                .append("l.total_outstanding_derived as outstanding, l.currency_code as currencyCode, ")
-                .append("case l.loan_status_id ")
-                .append("when 100 then 'Submitted and pending approval' ")
-                .append("when 200 then 'Approved' ")
-                .append("when 300 then 'Active' ")
-                .append("when 400 then 'Withdrawn by applicant' ")
-                .append("when 500 then 'Rejected' ")
-                .append("when 600 then 'Closed (obligations met)' ")
-                .append("when 601 then 'Closed (written off)' ")
-                .append("when 602 then 'Closed (rescheduled)' ")
-                .append("when 700 then 'Overpaid' ")
-                .append("else concat('Status ', l.loan_status_id) end as status, ")
-                .append("llocp.invoice_no as invoiceNo ")
-                .append("from m_loan l ")
-                .append("left join m_client c on c.id = l.client_id ")
-                .append("left join m_group g on g.id = l.group_id ")
-                .append("left join m_product_loan pl on pl.id = l.product_id ")
+                .append("l.total_outstanding_derived as outstanding, l.currency_code as currencyCode, ").append("case l.loan_status_id ")
+                .append("when 100 then 'Submitted and pending approval' ").append("when 200 then 'Approved' ")
+                .append("when 300 then 'Active' ").append("when 400 then 'Withdrawn by applicant' ").append("when 500 then 'Rejected' ")
+                .append("when 600 then 'Closed (obligations met)' ").append("when 601 then 'Closed (written off)' ")
+                .append("when 602 then 'Closed (rescheduled)' ").append("when 700 then 'Overpaid' ")
+                .append("else concat('Status ', l.loan_status_id) end as status, ").append("llocp.invoice_no as invoiceNo ")
+                .append("from m_loan l ").append("left join m_client c on c.id = l.client_id ")
+                .append("left join m_group g on g.id = l.group_id ").append("left join m_product_loan pl on pl.id = l.product_id ")
                 .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
                 .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ");
 
@@ -300,10 +291,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         @Override
         public CredXLoanSearchResultData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
-            return new CredXLoanSearchResultData(rs.getLong("loanId"), rs.getString("loanAccountNo"),
-                    JdbcSupport.getLong(rs, "clientId"), JdbcSupport.getLong(rs, "groupId"), rs.getString("borrowerName"),
-                    rs.getString("product"), rs.getBigDecimal("outstanding"), rs.getString("currencyCode"), rs.getString("status"),
-                    rs.getString("invoiceNo"));
+            return new CredXLoanSearchResultData(rs.getLong("loanId"), rs.getString("loanAccountNo"), JdbcSupport.getLong(rs, "clientId"),
+                    JdbcSupport.getLong(rs, "groupId"), rs.getString("borrowerName"), rs.getString("product"),
+                    rs.getBigDecimal("outstanding"), rs.getString("currencyCode"), rs.getString("status"), rs.getString("invoiceNo"));
         }
     }
 
