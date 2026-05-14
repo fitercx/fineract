@@ -43,10 +43,10 @@ public class LOCAccountingHelper {
     public static final String LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID = "LOC_INVOICE_DISCOUNTING";
     public static final String PAYABLE_LOC_PRODUCT_EXTERNAL_ID = "LOC_PAYABLE_FINANCING";
 
-    // Payment Type IDs
-    public static final Long PROCESSING_FEE_PAYMENT_TYPE_ID = 1L;
-    public static final Long RBF_PAYMENT_TYPE_ID = 5L;
-    public static final Long LOC_RECEIVABLE_PAYMENT_TYPE_ID = 73L;
+    // Payment Type Code Names (from m_payment_type.code_name)
+    public static final String DISBURSEMENT_OF_INVOICE_CODE_NAME = "DISBURSEMENT_OF_INVOICE";
+    public static final String RBF_LOAN_DISBURSEMENT_CODE_NAME = "RBF_LOAN_DISBURSEMENT";
+    public static final String PROCESSING_FEE_CODE_NAME = "PROCESSING_FEE";
 
     // GL Codes
     public static final String LOC_ACTIVATION_DEBIT_GL_CODE = "100062";
@@ -68,6 +68,65 @@ public class LOCAccountingHelper {
 
     private final JdbcTemplate jdbcTemplate;
     private final GLAccountRepository glAccountRepository;
+
+    /**
+     * Get the code_name for a payment type by its ID from the m_payment_type table.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return The code_name value, or null if not found
+     */
+    public String getPaymentTypeCodeName(Long paymentTypeId) {
+        if (paymentTypeId == null) {
+            return null;
+        }
+        try {
+            String sql = "SELECT code_name FROM m_payment_type WHERE id = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, paymentTypeId);
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            log.debug("LOCAccountingHelper: No payment type found for ID {}", paymentTypeId);
+            return null;
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Error fetching payment type code_name for ID {}: {}", paymentTypeId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Check if the given payment type is a Disbursement of Invoice payment type by looking up code_name.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return true if code_name matches DISBURSEMENT_OF_INVOICE
+     */
+    public boolean isDisbursementOfInvoicePaymentType(Long paymentTypeId) {
+        String codeName = getPaymentTypeCodeName(paymentTypeId);
+        return DISBURSEMENT_OF_INVOICE_CODE_NAME.equals(codeName);
+    }
+
+    /**
+     * Check if the given payment type is an RBF Loan Disbursement payment type by looking up code_name.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return true if code_name matches RBF_LOAN_DISBURSEMENT
+     */
+    public boolean isRBFLoanDisbursementPaymentType(Long paymentTypeId) {
+        String codeName = getPaymentTypeCodeName(paymentTypeId);
+        return RBF_LOAN_DISBURSEMENT_CODE_NAME.equals(codeName);
+    }
+
+    /**
+     * Check if the given payment type is a Processing Fee payment type by looking up code_name.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return true if code_name matches PROCESSING_FEE
+     */
+    public boolean isProcessingFeePaymentType(Long paymentTypeId) {
+        String codeName = getPaymentTypeCodeName(paymentTypeId);
+        return PROCESSING_FEE_CODE_NAME.equals(codeName);
+    }
 
     /**
      * Get GL 200040 account (RBF Loan Payable - Working Capital - Revenue Finance). Looks up by GL code to avoid
