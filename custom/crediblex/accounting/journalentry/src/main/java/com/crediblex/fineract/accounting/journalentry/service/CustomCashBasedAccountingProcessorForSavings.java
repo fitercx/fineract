@@ -454,7 +454,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private boolean handleLOCReceivableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
 
-        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund withdrawal
+        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund
+        // withdrawal
         if (paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
             // Disbursement withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR Bank
             log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable disbursement withdrawal - DR 200041, CR Bank");
@@ -501,7 +502,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
     private boolean handleLOCPayableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
 
-        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund withdrawal
+        // Check if this is a disbursement withdrawal (identified by code_name DISBURSEMENT_OF_INVOICE) or a refund
+        // withdrawal
         if (paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
             // Disbursement withdrawal: DR 200042 (Loan Payable - Payable LOC), CR Bank
             log.info("CustomCashBasedAccountingProcessorForSavings: LOC Payable disbursement withdrawal - DR 200042, CR Bank");
