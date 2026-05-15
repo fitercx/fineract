@@ -1775,18 +1775,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails,"
                 + " llocp.exchange_rate as exchangeRate, llocp.markup as markup,"
                 + " llocp.amount_in_facility_currency as amountInFacilityCurrency,"
-                + " llocp.approved_payable_amount as approvedPayableAmount,"
-                + " llocp.supplier_details as supplierDetails,"
-                + " llocp.invoice_amount_in_aed as invoiceAmountInAED,"
-                + " llocp.disapproved_amount_in_aed as disapprovedAmountInAED,"
+                + " llocp.approved_payable_amount as approvedPayableAmount," + " llocp.supplier_details as supplierDetails,"
+                + " llocp.invoice_amount_in_aed as invoiceAmountInAED," + " llocp.disapproved_amount_in_aed as disapprovedAmountInAED,"
                 + " llocp.approved_invoice_amount_in_aed as approvedInvoiceAmountInAED,"
                 + " llocp.amount_after_advance_in_aed as amountAfterAdvanceInAED,"
                 + " llocp.requested_amount_in_aed as requestedAmountInAED,"
                 + " llocp.funded_amount_in_invoice_currency as fundedAmountInInvoiceCurrency,"
                 + " llocp.requested_amount as requestedAmount,"
                 + " loc.external_id as locExternalId, loc.activation_status as locActivationStatus, loc.product_type as locProductType"
-                + " FROM m_loan_line_of_credit_params llocp"
-                + " LEFT JOIN m_line_of_credit loc ON loc.id = llocp.line_of_credit_id"
+                + " FROM m_loan_line_of_credit_params llocp" + " LEFT JOIN m_line_of_credit loc ON loc.id = llocp.line_of_credit_id"
                 + " WHERE llocp.loan_id IN (" + inClause + ")";
 
         final Map<Long, Map<String, Object>> locParamsMap = new HashMap<>();
@@ -1814,8 +1811,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             putIfNotNull(props, LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED, rs.getBigDecimal("disapprovedAmountInAED"));
             putIfNotNull(props, LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED,
                     rs.getBigDecimal("approvedInvoiceAmountInAED"));
-            putIfNotNull(props, LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED,
-                    rs.getBigDecimal("amountAfterAdvanceInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED, rs.getBigDecimal("amountAfterAdvanceInAED"));
             putIfNotNull(props, LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED, rs.getBigDecimal("requestedAmountInAED"));
             putIfNotNull(props, LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY,
                     rs.getBigDecimal("fundedAmountInInvoiceCurrency"));
