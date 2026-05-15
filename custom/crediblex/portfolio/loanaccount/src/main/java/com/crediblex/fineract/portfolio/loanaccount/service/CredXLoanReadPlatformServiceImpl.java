@@ -1793,7 +1793,90 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
         final Object[] objectArray = extraCriterias.toArray();
         final Object[] finalObjectArray = Arrays.copyOf(objectArray, arrayPos);
-        return this.paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray, loanMapper);
+        final Page<LoanAccountData> page = this.paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray,
+                loanMapper);
+
+        // Enrich each loan with LOC additional properties (invoiceNo, etc.)
+        enrichLoansWithLocParams(page.getPageItems());
+
+        return page;
+    }
+
+    private void enrichLoansWithLocParams(final List<LoanAccountData> loans) {
+        if (loans == null || loans.isEmpty()) {
+            return;
+        }
+        final List<Long> loanIds = loans.stream().map(LoanAccountData::getId).collect(java.util.stream.Collectors.toList());
+        final String inClause = loanIds.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+
+        final String sql = "SELECT llocp.loan_id as loanId, llocp.line_of_credit_id as lineOfCreditId,"
+                + " llocp.invoice_no as invoiceNo, llocp.invoice_date as invoiceDate,"
+                + " llocp.invoice_due_date as invoiceDueDate, llocp.invoice_currency as invoiceCurrency,"
+                + " llocp.invoice_amount as invoiceAmount, llocp.disapproved_amount as disapprovedAmount,"
+                + " llocp.approved_receivable_amount as approvedReceivableAmount, llocp.advance_percentage as advancePercentage,"
+                + " llocp.amount_after_advance as amountAfterAdvance, llocp.buyer_details as buyerDetails,"
+                + " llocp.exchange_rate as exchangeRate, llocp.markup as markup,"
+                + " llocp.amount_in_facility_currency as amountInFacilityCurrency,"
+                + " llocp.approved_payable_amount as approvedPayableAmount," + " llocp.supplier_details as supplierDetails,"
+                + " llocp.invoice_amount_in_aed as invoiceAmountInAED," + " llocp.disapproved_amount_in_aed as disapprovedAmountInAED,"
+                + " llocp.approved_invoice_amount_in_aed as approvedInvoiceAmountInAED,"
+                + " llocp.amount_after_advance_in_aed as amountAfterAdvanceInAED,"
+                + " llocp.requested_amount_in_aed as requestedAmountInAED,"
+                + " llocp.funded_amount_in_invoice_currency as fundedAmountInInvoiceCurrency,"
+                + " llocp.requested_amount as requestedAmount,"
+                + " loc.external_id as locExternalId, loc.activation_status as locActivationStatus, loc.product_type as locProductType"
+                + " FROM m_loan_line_of_credit_params llocp" + " LEFT JOIN m_line_of_credit loc ON loc.id = llocp.line_of_credit_id"
+                + " WHERE llocp.loan_id IN (" + inClause + ")";
+
+        final Map<Long, Map<String, Object>> locParamsMap = new HashMap<>();
+        this.jdbcTemplate.query(sql, rs -> {
+            final Long loanId = rs.getLong("loanId");
+            final Map<String, Object> props = new HashMap<>();
+
+            putIfNotNull(props, LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID, JdbcSupport.getLong(rs, "lineOfCreditId"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_NO, rs.getString("invoiceNo"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_DATE, JdbcSupport.getLocalDate(rs, "invoiceDate"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_DUE_DATE, JdbcSupport.getLocalDate(rs, "invoiceDueDate"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_CURRENCY, rs.getString("invoiceCurrency"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_AMOUNT, rs.getBigDecimal("invoiceAmount"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT, rs.getBigDecimal("disapprovedAmount"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.APPROVED_RECEIVABLE_AMOUNT, rs.getBigDecimal("approvedReceivableAmount"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.ADVANCE_PERCENTAGE, rs.getBigDecimal("advancePercentage"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE, rs.getBigDecimal("amountAfterAdvance"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.BUYER_DETAILS, rs.getString("buyerDetails"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.EXCHANGE_RATE, rs.getBigDecimal("exchangeRate"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.MARKUP, rs.getBigDecimal("markup"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.AMOUNT_IN_FACILITY_CURRENCY, rs.getBigDecimal("amountInFacilityCurrency"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.APPROVED_PAYABLE_AMOUNT, rs.getBigDecimal("approvedPayableAmount"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.SUPPLIER_DETAILS, rs.getString("supplierDetails"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.INVOICE_AMOUNT_IN_AED, rs.getBigDecimal("invoiceAmountInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.DISAPPROVED_AMOUNT_IN_AED, rs.getBigDecimal("disapprovedAmountInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.APPROVED_INVOICE_AMOUNT_IN_AED,
+                    rs.getBigDecimal("approvedInvoiceAmountInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.AMOUNT_AFTER_ADVANCE_IN_AED, rs.getBigDecimal("amountAfterAdvanceInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.REQUESTED_AMOUNT_IN_AED, rs.getBigDecimal("requestedAmountInAED"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.FUNDED_AMOUNT_IN_INVOICE_CURRENCY,
+                    rs.getBigDecimal("fundedAmountInInvoiceCurrency"));
+            putIfNotNull(props, LoanAccountAdditionalProperties.REQUESTED_AMOUNT, rs.getBigDecimal("requestedAmount"));
+            putIfNotNull(props, "locExternalId", rs.getString("locExternalId"));
+            putIfNotNull(props, "locActivationStatus", rs.getString("locActivationStatus"));
+            putIfNotNull(props, "locProductType", rs.getString("locProductType"));
+
+            locParamsMap.put(loanId, props);
+        });
+
+        for (final LoanAccountData loan : loans) {
+            final Map<String, Object> props = locParamsMap.get(loan.getId());
+            if (props != null) {
+                loan.getAdditionalProperties().putAll(props);
+            }
+        }
+    }
+
+    private void putIfNotNull(Map<String, Object> map, String key, Object value) {
+        if (value != null) {
+            map.put(key, value);
+        }
     }
 
     @Override
