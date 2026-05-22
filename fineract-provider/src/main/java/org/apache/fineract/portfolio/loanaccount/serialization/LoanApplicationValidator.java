@@ -2025,9 +2025,6 @@ public class LoanApplicationValidator {
             baseDataValidator.reset().parameter(LoanApiConstants.expectedDisbursementDateParameterName).value(expectedDisbursementDate)
                     .ignoreIfNull();
 
-            final String note = this.fromApiJsonHelper.extractStringNamed(LoanApiConstants.noteParameterName, element);
-            baseDataValidator.reset().parameter(LoanApiConstants.noteParameterName).value(note).notExceedingLengthOf(1000);
-
             final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
             loan.setHelpers(defaultLoanLifecycleStateMachine);
 

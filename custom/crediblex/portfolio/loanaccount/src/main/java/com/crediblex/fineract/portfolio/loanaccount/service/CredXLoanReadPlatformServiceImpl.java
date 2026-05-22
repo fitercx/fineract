@@ -24,6 +24,8 @@ import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
@@ -48,8 +50,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -170,6 +174,9 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImpl {
 
+    private static final int DEFAULT_OVERDUE_LOANS_LIMIT = 50;
+    private static final int MAX_OVERDUE_LOANS_LIMIT = 200;
+
     private final CredXLoanTransactionRepository credXLoanTransactionRepository;
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
     private final JdbcTemplate jdbcTemplate;
@@ -285,6 +292,152 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         sqlBuilder.append("where l.account_no = ? order by l.id desc ");
         sqlBuilder.append(this.sqlGenerator.limit(1, 0));
         return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
+    }
+
+    public Page<CredXOverdueLoanData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit) {
+        final int normalizedOffset = Math.max(offset == null ? 0 : offset, 0);
+        final int normalizedLimit = Math.min(Math.max(limit == null ? DEFAULT_OVERDUE_LOANS_LIMIT : limit, 1), MAX_OVERDUE_LOANS_LIMIT);
+
+        final String fromClause = overdueLoansFromAndWhereClause();
+        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(1) " + fromClause, Integer.class);
+        if (totalFilteredRecords == null || totalFilteredRecords == 0) {
+            return new Page<>(Collections.emptyList(), 0);
+        }
+
+        final StringBuilder loanSql = new StringBuilder()
+                .append("select l.id as loanId, l.account_no as accountNo, coalesce(c.display_name, g.display_name) as borrowerName, ")
+                .append("l.loan_officer_id as loanOfficerId, s.display_name as loanOfficerName, l.product_id as productId, ")
+                .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
+                .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
+                .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as productName, ")
+                .append("llocp.invoice_no as invoiceNumber, l.currency_code as currencyCode, l.disbursedon_date as disbursementDate, ")
+                .append("l.principal_amount as loanAmount, coalesce(l.total_overpaid_derived, 0) as excessAmount ").append(fromClause)
+                .append(" order by l.id desc ").append(this.sqlGenerator.limit(normalizedLimit, normalizedOffset));
+
+        final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(loanSql.toString(), new CredXOverdueLoanMapper());
+        if (loans.isEmpty()) {
+            return new Page<>(Collections.emptyList(), totalFilteredRecords);
+        }
+
+        final Map<Long, CredXOverdueLoanData> loansById = new LinkedHashMap<>();
+        loans.forEach(loan -> loansById.put(loan.getLoanId(), loan));
+
+        final List<CredXOverdueInstallmentRowData> installments = retrieveOverdueInstallmentsForLoans(new ArrayList<>(loansById.keySet()));
+        final Map<Long, List<CredXOverdueInstallmentData>> installmentsByLoan = new HashMap<>();
+        for (final CredXOverdueInstallmentRowData installment : installments) {
+            installmentsByLoan.computeIfAbsent(installment.loanId, ignored -> new ArrayList<>()).add(installment.toData());
+        }
+
+        for (final CredXOverdueLoanData loan : loans) {
+            final List<CredXOverdueInstallmentData> loanInstallments = installmentsByLoan.getOrDefault(loan.getLoanId(),
+                    Collections.emptyList());
+            loan.setOverdueInstallments(loanInstallments);
+            loan.setPrincipalOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getPrincipalOutstanding));
+            loan.setInterestOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getInterestOutstanding));
+            loan.setLpiOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getLpiOutstanding));
+            loan.setMaxDpd(loanInstallments.stream().map(CredXOverdueInstallmentData::getDpd).filter(Objects::nonNull)
+                    .max(Integer::compareTo).orElse(0));
+        }
+
+        return new Page<>(loans, totalFilteredRecords);
+    }
+
+    private String overdueLoansFromAndWhereClause() {
+        return new StringBuilder().append(" from m_loan l ").append("left join m_client c on c.id = l.client_id ")
+                .append("left join m_group g on g.id = l.group_id ").append("left join m_staff s on s.id = l.loan_officer_id ")
+                .append("left join m_product_loan pl on pl.id = l.product_id ")
+                .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
+                .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ")
+                .append("where l.loan_status_id = 300 and exists (select 1 from m_loan_repayment_schedule ls ")
+                .append("where ls.loan_id = l.id and ls.duedate < ").append(this.sqlGenerator.currentBusinessDate()).append(" and ")
+                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0)").toString();
+    }
+
+    private List<CredXOverdueInstallmentRowData> retrieveOverdueInstallmentsForLoans(final List<Long> loanIds) {
+        if (loanIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final String placeholders = String.join(",", Collections.nCopies(loanIds.size(), "?"));
+        final String businessDate = this.sqlGenerator.currentBusinessDate();
+        final String dueDate = "ls.duedate";
+        final StringBuilder sql = new StringBuilder().append("select ls.loan_id as loanId, ls.installment as installmentNumber, ")
+                .append("ls.duedate as dueDate, ").append(this.sqlGenerator.dateDiff(businessDate, dueDate)).append(" as dpd, ")
+                .append("(coalesce(ls.principal_amount, 0) + coalesce(ls.interest_amount, 0) + coalesce(ls.fee_charges_amount, 0)) ")
+                .append("as emiAmount, ").append(principalOutstandingSql("ls")).append(" as principalOutstanding, ")
+                .append(interestOutstandingSql("ls")).append(" as interestOutstanding, ").append(lpiOutstandingSql("ls"))
+                .append(" as lpiOutstanding, 0 as excessAmount from m_loan_repayment_schedule ls where ls.loan_id in (")
+                .append(placeholders).append(") and ls.duedate < ").append(businessDate).append(" and ")
+                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0 order by ls.loan_id, ls.duedate, ls.installment");
+
+        return this.jdbcTemplate.query(sql.toString(), new CredXOverdueInstallmentMapper(), loanIds.toArray());
+    }
+
+    private String overdueInstallmentOutstandingSql(final String alias) {
+        return "(" + principalOutstandingSql(alias) + " + " + interestOutstandingSql(alias) + " + " + lpiOutstandingSql(alias) + ")";
+    }
+
+    private String principalOutstandingSql(final String alias) {
+        return "(coalesce(" + alias + ".principal_amount, 0) - coalesce(" + alias + ".principal_completed_derived, 0) - coalesce(" + alias
+                + ".principal_writtenoff_derived, 0))";
+    }
+
+    private String interestOutstandingSql(final String alias) {
+        return "(coalesce(" + alias + ".interest_amount, 0) - coalesce(" + alias + ".interest_completed_derived, 0) - coalesce(" + alias
+                + ".interest_waived_derived, 0) - coalesce(" + alias + ".interest_writtenoff_derived, 0))";
+    }
+
+    private String lpiOutstandingSql(final String alias) {
+        return "(coalesce(" + alias + ".penalty_charges_amount, 0) - coalesce(" + alias
+                + ".penalty_charges_completed_derived, 0) - coalesce(" + alias + ".penalty_charges_waived_derived, 0) - coalesce(" + alias
+                + ".penalty_charges_writtenoff_derived, 0))";
+    }
+
+    private BigDecimal sum(final List<CredXOverdueInstallmentData> installments,
+            final java.util.function.Function<CredXOverdueInstallmentData, BigDecimal> valueExtractor) {
+        return installments.stream().map(valueExtractor).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static final class CredXOverdueLoanMapper implements RowMapper<CredXOverdueLoanData> {
+
+        @Override
+        public CredXOverdueLoanData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final LocalDate disbursementDate = JdbcSupport.getLocalDate(rs, "disbursementDate");
+            return CredXOverdueLoanData.builder().loanId(rs.getLong("loanId")).accountNo(rs.getString("accountNo"))
+                    .borrowerName(rs.getString("borrowerName")).loanOfficerId(JdbcSupport.getLong(rs, "loanOfficerId"))
+                    .loanOfficerName(rs.getString("loanOfficerName")).productId(JdbcSupport.getLong(rs, "productId"))
+                    .productName(rs.getString("productName")).invoiceNumber(rs.getString("invoiceNumber"))
+                    .currencyCode(rs.getString("currencyCode"))
+                    .disbursementDate(disbursementDate != null ? disbursementDate.toString() : null)
+                    .loanAmount(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "loanAmount")).principalOutstanding(BigDecimal.ZERO)
+                    .interestOutstanding(BigDecimal.ZERO).lpiOutstanding(BigDecimal.ZERO)
+                    .excessAmount(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "excessAmount")).maxDpd(0)
+                    .overdueInstallments(Collections.emptyList()).build();
+        }
+    }
+
+    private static final class CredXOverdueInstallmentMapper implements RowMapper<CredXOverdueInstallmentRowData> {
+
+        @Override
+        public CredXOverdueInstallmentRowData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final LocalDate dueDate = JdbcSupport.getLocalDate(rs, "dueDate");
+            return new CredXOverdueInstallmentRowData(rs.getLong("loanId"),
+                    JdbcSupport.getIntegerDefaultToNullIfZero(rs, "installmentNumber"), dueDate != null ? dueDate.toString() : null,
+                    rs.getInt("dpd"), JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "emiAmount"),
+                    JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalOutstanding"),
+                    JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestOutstanding"),
+                    JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "lpiOutstanding"),
+                    JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "excessAmount"));
+        }
+    }
+
+    private record CredXOverdueInstallmentRowData(Long loanId, Integer installmentNumber, String dueDate, Integer dpd, BigDecimal emiAmount,
+            BigDecimal principalOutstanding, BigDecimal interestOutstanding, BigDecimal lpiOutstanding, BigDecimal excessAmount) {
+
+        private CredXOverdueInstallmentData toData() {
+            return new CredXOverdueInstallmentData(installmentNumber, dueDate, dpd, emiAmount, principalOutstanding, interestOutstanding,
+                    lpiOutstanding, excessAmount);
+        }
     }
 
     private static final class CredXLoanSearchResultMapper implements RowMapper<CredXLoanSearchResultData> {

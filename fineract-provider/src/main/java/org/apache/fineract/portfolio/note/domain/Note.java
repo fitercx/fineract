@@ -21,6 +21,7 @@ package org.apache.fineract.portfolio.note.domain;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.util.LinkedHashMap;
@@ -56,7 +57,8 @@ public class Note extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @JoinColumn(name = "loan_transaction_id", nullable = true)
     private LoanTransaction loanTransaction;
 
-    @Column(name = "note", length = 1000)
+    @Lob
+    @Column(name = "note")
     private String note;
 
     @Column(name = "note_type_enum")

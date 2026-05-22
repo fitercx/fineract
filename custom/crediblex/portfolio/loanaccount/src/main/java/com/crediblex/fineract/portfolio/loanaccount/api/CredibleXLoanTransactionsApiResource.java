@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanReadPlatformServiceImpl;
 import io.micrometer.common.util.StringUtils;
@@ -29,6 +30,7 @@ import org.apache.fineract.infrastructure.core.data.DateFormat;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.loanaccount.api.LoanTransactionsApiResource;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
@@ -46,6 +48,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
     private final CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService;
     private final DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer;
     private final DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer;
+    private final DefaultToApiJsonSerializer<CredXOverdueLoanData> overdueLoansJsonSerializer;
 
     public CredibleXLoanTransactionsApiResource(PlatformSecurityContext context, LoanReadPlatformService loanReadPlatformService,
             ApiRequestParameterHelper apiRequestParameterHelper, DefaultToApiJsonSerializer<LoanTransactionData> toApiJsonSerializer,
@@ -53,12 +56,14 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
             PaymentTypeReadPlatformService paymentTypeReadPlatformService, LoanChargePaidByReadService loanChargePaidByReadService,
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService,
             DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer,
-            DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer) {
+            DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer,
+            DefaultToApiJsonSerializer<CredXOverdueLoanData> overdueLoansJsonSerializer) {
         super(context, loanReadPlatformService, apiRequestParameterHelper, toApiJsonSerializer, commandsSourceWritePlatformService,
                 paymentTypeReadPlatformService, loanChargePaidByReadService);
         this.credibleXLoanReadPlatformService = credibleXLoanReadPlatformService;
         this.penaltyJsonSerializer = penaltyJsonSerializer;
         this.futureLPIJsonSerializer = futureLPIJsonSerializer;
+        this.overdueLoansJsonSerializer = overdueLoansJsonSerializer;
     }
 
     @GET
@@ -107,6 +112,22 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
         return this.credibleXLoanReadPlatformService.searchLoanRecords(type, value);
+    }
+
+    @GET
+    @Path("overdue")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Retrieve CREDX overdue loans", description = "Returns active loans with at least one overdue installment and nests the matching overdue schedule periods.")
+    public String retrieveOverdueLoans(@QueryParam("offset") @Parameter(description = "offset") final Integer offset,
+            @QueryParam("limit") @Parameter(description = "limit, max 200") final Integer limit, @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
+
+        final Page<CredXOverdueLoanData> overdueLoans = this.credibleXLoanReadPlatformService.retrieveCrediblexOverdueLoans(offset, limit);
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
+        return this.overdueLoansJsonSerializer.serialize(settings, overdueLoans, this.responseDataParameters);
     }
 
     @GET
