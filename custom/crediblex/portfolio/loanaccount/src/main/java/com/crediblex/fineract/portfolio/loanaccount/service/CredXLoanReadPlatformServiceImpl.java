@@ -294,12 +294,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
     }
 
-    public Page<CredXOverdueLoanData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit) {
+    public Page<CredXOverdueLoanData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit, final String search) {
         final int normalizedOffset = Math.max(offset == null ? 0 : offset, 0);
         final int normalizedLimit = Math.min(Math.max(limit == null ? DEFAULT_OVERDUE_LOANS_LIMIT : limit, 1), MAX_OVERDUE_LOANS_LIMIT);
 
-        final String fromClause = overdueLoansFromAndWhereClause();
-        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(1) " + fromClause, Integer.class);
+        final OverdueLoansFilter filter = overdueLoansFromAndWhereClause(search);
+        final Object[] filterParams = filter.params();
+        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(1) " + filter.sql(), Integer.class,
+                filterParams);
         if (totalFilteredRecords == null || totalFilteredRecords == 0) {
             return new Page<>(Collections.emptyList(), 0);
         }
@@ -311,10 +313,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
                 .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as productName, ")
                 .append("llocp.invoice_no as invoiceNumber, l.currency_code as currencyCode, l.disbursedon_date as disbursementDate, ")
-                .append("l.principal_amount as loanAmount, coalesce(l.total_overpaid_derived, 0) as excessAmount ").append(fromClause)
+                .append("l.principal_amount as loanAmount, coalesce(l.total_overpaid_derived, 0) as excessAmount ").append(filter.sql())
                 .append(" order by l.id desc ").append(this.sqlGenerator.limit(normalizedLimit, normalizedOffset));
 
-        final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(loanSql.toString(), new CredXOverdueLoanMapper());
+        final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(loanSql.toString(), new CredXOverdueLoanMapper(), filterParams);
         if (loans.isEmpty()) {
             return new Page<>(Collections.emptyList(), totalFilteredRecords);
         }
@@ -342,16 +344,46 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return new Page<>(loans, totalFilteredRecords);
     }
 
-    private String overdueLoansFromAndWhereClause() {
-        return new StringBuilder().append(" from m_loan l ").append("left join m_client c on c.id = l.client_id ")
+    private OverdueLoansFilter overdueLoansFromAndWhereClause(final String search) {
+        final StringBuilder sql = new StringBuilder().append(" from m_loan l ").append("left join m_client c on c.id = l.client_id ")
                 .append("left join m_group g on g.id = l.group_id ").append("left join m_staff s on s.id = l.loan_officer_id ")
                 .append("left join m_product_loan pl on pl.id = l.product_id ")
                 .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
                 .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ")
                 .append("where l.loan_status_id = 300 and exists (select 1 from m_loan_repayment_schedule ls ")
                 .append("where ls.loan_id = l.id and ls.duedate < ").append(this.sqlGenerator.currentBusinessDate()).append(" and ")
-                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0)").toString();
+                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0)");
+
+        final List<Object> params = new ArrayList<>();
+        final String trimmedSearch = StringUtils.trimToNull(search);
+        if (trimmedSearch != null) {
+            final String likeParam = "%" + trimmedSearch.toLowerCase() + "%";
+            sql.append(" and (");
+            final Long numericLoanId = parseLongOrNull(trimmedSearch);
+            if (numericLoanId != null) {
+                sql.append("l.id = ? or ");
+                params.add(numericLoanId);
+            }
+            sql.append("lower(l.account_no) like ?");
+            sql.append(" or lower(coalesce(c.display_name, g.display_name)) like ?");
+            sql.append(" or lower(llocp.invoice_no) like ?");
+            sql.append(")");
+            params.add(likeParam);
+            params.add(likeParam);
+            params.add(likeParam);
+        }
+        return new OverdueLoansFilter(sql.toString(), params.toArray());
     }
+
+    private static Long parseLongOrNull(final String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (final NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private record OverdueLoansFilter(String sql, Object[] params) {}
 
     private List<CredXOverdueInstallmentRowData> retrieveOverdueInstallmentsForLoans(final List<Long> loanIds) {
         if (loanIds.isEmpty()) {

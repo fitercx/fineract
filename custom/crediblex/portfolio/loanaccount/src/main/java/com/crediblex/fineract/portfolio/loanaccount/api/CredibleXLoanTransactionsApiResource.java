@@ -118,13 +118,17 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
     @Path("overdue")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Retrieve CREDX overdue loans", description = "Returns active loans with at least one overdue installment and nests the matching overdue schedule periods.")
+    @Operation(summary = "Retrieve CREDX overdue loans", description = "Returns active loans with at least one overdue installment and nests the matching overdue schedule periods. "
+            + "Optional case-insensitive partial-match search against loanId, accountNo, borrowerName, invoiceNumber.")
     public String retrieveOverdueLoans(@QueryParam("offset") @Parameter(description = "offset") final Integer offset,
-            @QueryParam("limit") @Parameter(description = "limit, max 200") final Integer limit, @Context final UriInfo uriInfo) {
+            @QueryParam("limit") @Parameter(description = "limit, max 200") final Integer limit,
+            @QueryParam("search") @Parameter(description = "Optional search string matched against loanId, accountNo, borrowerName, invoiceNumber") final String search,
+            @Context final UriInfo uriInfo) {
 
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
 
-        final Page<CredXOverdueLoanData> overdueLoans = this.credibleXLoanReadPlatformService.retrieveCrediblexOverdueLoans(offset, limit);
+        final Page<CredXOverdueLoanData> overdueLoans = this.credibleXLoanReadPlatformService.retrieveCrediblexOverdueLoans(offset, limit,
+                search);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return this.overdueLoansJsonSerializer.serialize(settings, overdueLoans, this.responseDataParameters);
