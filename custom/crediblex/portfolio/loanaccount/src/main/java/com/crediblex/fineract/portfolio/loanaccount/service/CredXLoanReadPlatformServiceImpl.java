@@ -383,7 +383,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
     }
 
-    private record OverdueLoansFilter(String sql, Object[] params) {}
+    private record OverdueLoansFilter(String sql, Object[] params) {
+    }
 
     private List<CredXOverdueInstallmentRowData> retrieveOverdueInstallmentsForLoans(final List<Long> loanIds) {
         if (loanIds.isEmpty()) {
