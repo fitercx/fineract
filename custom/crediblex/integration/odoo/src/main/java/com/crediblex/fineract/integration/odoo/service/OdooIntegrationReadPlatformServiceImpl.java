@@ -263,9 +263,9 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK7";
         }
 
-        // BNK8 journal for REPAYMENT business events with specific GL codes
+        // BNK2 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("210003", "100031", "100034", "100030", "100001", "300015").contains(glCode)) {
-            return "BNK8";
+            return "BNK2";
         }
 
         // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
@@ -302,9 +302,9 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK8";
         }
 
-        // BNK8 journal for REPAYMENT business events with specific GL codes
+        // BNK2 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
-            return "BNK8";
+            return "BNK2";
         }
 
         return null; // No mapping found
@@ -335,9 +335,9 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK8";
         }
 
-        // BNK8 journal for REPAYMENT business events with specific GL codes
+        // BNK2 journal for REPAYMENT business events with specific GL codes
         if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100033", "100036", "300017").contains(glCode)) {
-            return "BNK8";
+            return "BNK2";
         }
 
         return null; // No mapping found

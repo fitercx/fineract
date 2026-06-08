@@ -127,13 +127,15 @@ public class OdooJournalEntryService {
         moveValues.put("journal_id", journalId);
         moveValues.put("date", firstEntry.getTransactionDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
 
-        // Build reference based on whether it's a single entry or multiple entries
+        // Determine the effective loan ID for labelling (provided directly, or derived from the entry's transaction)
+        Long effectiveLoanId = loanId != null ? loanId : getLoanIdFromTransactionId(firstEntry.getLoanTransactionId());
+
+        // Build reference using the client name and loan ID
         if (journalEntries.size() == 1) {
-            moveValues.put("ref", "Haider JE " + firstEntry.getId());
+            moveValues.put("ref", buildClientLoanLabel(effectiveLoanId));
             moveValues.put("narration", buildNarration(firstEntry));
         } else {
-            moveValues.put("ref", "Haider Loan " + loanId + " - JEs: "
-                    + journalEntries.stream().map(je -> je.getId().toString()).collect(Collectors.joining(", ")));
+            moveValues.put("ref", buildClientLoanLabel(effectiveLoanId));
             moveValues.put("narration", buildLoanNarration(loanId, journalEntries));
         }
 
@@ -205,21 +207,23 @@ public class OdooJournalEntryService {
         // Determine if this is a debit or credit entry
         boolean isDebit = fineractEntry.isDebitEntry();
 
+        // Line label based on the client name and loan ID (falls back to the entry description when available)
+        String entryLabel = buildEntryLabel(fineractEntry);
+
         if (isDebit) {
             // Debit line
             Map<String, Object> debitLine = new HashMap<>();
             debitLine.put("account_id", accountId);
             debitLine.put("debit", amount);
             debitLine.put("credit", BigDecimal.ZERO);
-            debitLine.put("name", fineractEntry.getDescription() != null ? fineractEntry.getDescription() : "Haider Journal Entry");
+            debitLine.put("name", entryLabel);
 
             // Credit line (balancing entry) - you might need to determine this based on business logic
             Map<String, Object> creditLine = new HashMap<>();
             creditLine.put("account_id", getBalancingAccountId(fineractEntry));
             creditLine.put("debit", BigDecimal.ZERO);
             creditLine.put("credit", amount);
-            creditLine.put("name",
-                    "Balancing entry for " + (fineractEntry.getDescription() != null ? fineractEntry.getDescription() : "Haider JE"));
+            creditLine.put("name", "Balancing entry for " + entryLabel);
 
             // Add lines using Odoo's line creation format: (0, 0, values)
             lines.add(Arrays.asList(0, 0, debitLine));
@@ -231,15 +235,14 @@ public class OdooJournalEntryService {
             creditLine.put("account_id", accountId);
             creditLine.put("debit", BigDecimal.ZERO);
             creditLine.put("credit", amount);
-            creditLine.put("name", fineractEntry.getDescription() != null ? fineractEntry.getDescription() : "Haider Journal Entry");
+            creditLine.put("name", entryLabel);
 
             // Debit line (balancing entry)
             Map<String, Object> debitLine = new HashMap<>();
             debitLine.put("account_id", getBalancingAccountId(fineractEntry));
             debitLine.put("debit", amount);
             debitLine.put("credit", BigDecimal.ZERO);
-            debitLine.put("name",
-                    "Balancing entry for " + (fineractEntry.getDescription() != null ? fineractEntry.getDescription() : "Haider JE"));
+            debitLine.put("name", "Balancing entry for " + entryLabel);
 
             // Add lines using Odoo's line creation format: (0, 0, values)
             lines.add(Arrays.asList(0, 0, creditLine));
@@ -440,6 +443,11 @@ public class OdooJournalEntryService {
     private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries) {
         List<Object> lines = new ArrayList<>();
 
+        // Derive a client/loan label for the consolidated line names
+        Long consolidatedLoanId = journalEntries.isEmpty() ? null
+                : getLoanIdFromTransactionId(journalEntries.get(0).getLoanTransactionId());
+        String consolidatedLabel = buildClientLoanLabel(consolidatedLoanId);
+
         // Group by account and type to consolidate amounts
         Map<String, Map<String, BigDecimal>> accountAmounts = new HashMap<>();
 
@@ -511,7 +519,7 @@ public class OdooJournalEntryService {
                     line.put("credit", netAmount.abs());
                 }
 
-                line.put("name", "Haider consolidated entry for account " + accountId);
+                line.put("name", consolidatedLabel + " - account " + accountId);
 
                 // Add line using Odoo's line creation format: (0, 0, values)
                 lines.add(Arrays.asList(0, 0, line));
@@ -557,7 +565,7 @@ public class OdooJournalEntryService {
      */
     private String buildLoanNarration(Long loanId, List<JournalEntry> journalEntries) {
         StringBuilder narration = new StringBuilder();
-        narration.append("Haider Loan ID: ").append(loanId);
+        narration.append("Loan ID: ").append(loanId);
         narration.append("\nJournal Entries: ");
 
         journalEntries.forEach(entry -> {
@@ -588,6 +596,32 @@ public class OdooJournalEntryService {
             log.warn("Failed to get loan ID for transaction ID: {}", loanTransactionId, e);
             return null;
         }
+    }
+
+    /**
+     * Build a label combining the client name and loan ID, used for move references and line labels.
+     */
+    private String buildClientLoanLabel(Long loanId) {
+        String clientName = getClientNameFromLoanId(loanId);
+        if (clientName != null && loanId != null) {
+            return clientName + " - Loan " + loanId;
+        }
+        if (loanId != null) {
+            return "Loan " + loanId;
+        }
+        return "Journal Entry";
+    }
+
+    /**
+     * Build a line label for a journal entry, preferring the entry description and falling back to the client name and
+     * loan ID derived from the entry's loan transaction.
+     */
+    private String buildEntryLabel(JournalEntry fineractEntry) {
+        if (fineractEntry.getDescription() != null && !fineractEntry.getDescription().trim().isEmpty()) {
+            return fineractEntry.getDescription();
+        }
+        Long loanId = getLoanIdFromTransactionId(fineractEntry.getLoanTransactionId());
+        return buildClientLoanLabel(loanId);
     }
 
     /**
