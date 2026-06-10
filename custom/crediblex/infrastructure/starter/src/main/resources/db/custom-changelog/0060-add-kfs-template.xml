@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <!--
+        Key Fact Statement (KFS) regulatory disclosure template, per FSRA / ADGM
+        Category 2 Credit Provider conduct rules. The template body is stored as
+        JSON so the renderer can adapt to per-product structure (RBF / Invoice
+        Discounting / Payables Finance / Factor Rate) without code changes. Any
+        change to the template requires Compliance sign-off + a new version row.
+    -->
+    <changeSet author="CredibleX" id="0060-1">
+        <createTable tableName="m_kfs_template">
+            <column autoIncrement="true" name="id" type="BIGINT">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="product_type" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version" type="INT" defaultValueNumeric="1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)" defaultValue="ACTIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="template_json" type="LONGTEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="regulatory_footer" type="VARCHAR(1024)">
+                <constraints nullable="true"/>
+            </column>
+            <column name="issued_by" type="VARCHAR(255)" defaultValue="CredibleX Limited">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="DATETIME">
+                <constraints nullable="false"/>
+            </column>
+            <column name="modified_date" type="DATETIME">
+                <constraints nullable="false"/>
+            </column>
+            <column name="createdby_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="lastmodifiedby_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0060-2">
+        <addUniqueConstraint
+            tableName="m_kfs_template"
+            columnNames="product_type, version"
+            constraintName="uk_kfs_template_product_version"/>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0060-3">
+        <createIndex tableName="m_kfs_template" indexName="idx_kfs_template_product_status">
+            <column name="product_type"/>
+            <column name="status"/>
+        </createIndex>
+    </changeSet>
+
+    <!--
+        Per-loan KFS issuance record. One Active row + zero or more Superseded
+        rows per loan. Re-issued only on pre-disbursement term change or loan
+        restructure; immutable post-generation. resolved_payload_json holds the
+        snapshot of substituted values disclosed to the borrower (audit trail).
+    -->
+    <changeSet author="CredibleX" id="0060-4">
+        <createTable tableName="m_loan_kfs">
+            <column autoIncrement="true" name="id" type="BIGINT">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="loan_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="template_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version" type="INT" defaultValueNumeric="1">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)" defaultValue="ACTIVE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="supersedes_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="origin_kfs_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="issued_on_date" type="DATE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="resolved_payload_json" type="LONGTEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="document_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="created_date" type="DATETIME">
+                <constraints nullable="false"/>
+            </column>
+            <column name="modified_date" type="DATETIME">
+                <constraints nullable="false"/>
+            </column>
+            <column name="createdby_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="lastmodifiedby_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0060-5">
+        <addForeignKeyConstraint
+            baseTableName="m_loan_kfs" baseColumnNames="loan_id"
+            constraintName="fk_loan_kfs_loan"
+            referencedTableName="m_loan" referencedColumnNames="id"/>
+        <addForeignKeyConstraint
+            baseTableName="m_loan_kfs" baseColumnNames="template_id"
+            constraintName="fk_loan_kfs_template"
+            referencedTableName="m_kfs_template" referencedColumnNames="id"/>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0060-6">
+        <createIndex tableName="m_loan_kfs" indexName="idx_loan_kfs_loan_status">
+            <column name="loan_id"/>
+            <column name="status"/>
+        </createIndex>
+    </changeSet>
+
+    <!--
+        Download audit log (per LMS-78 AC10): who downloaded which KFS version
+        and when. Retained for loan lifetime + FSRA retention period.
+    -->
+    <changeSet author="CredibleX" id="0060-7">
+        <createTable tableName="m_loan_kfs_download_audit">
+            <column autoIncrement="true" name="id" type="BIGINT">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="loan_kfs_id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="downloaded_by_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="downloaded_on" type="DATETIME">
+                <constraints nullable="false"/>
+            </column>
+            <column name="version_downloaded" type="INT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="m_loan_kfs_download_audit" baseColumnNames="loan_kfs_id"
+            constraintName="fk_loan_kfs_download_audit_kfs"
+            referencedTableName="m_loan_kfs" referencedColumnNames="id"/>
+    </changeSet>
+
+    <!--
+        Seed the four product templates frozen on 19-May-2026. The JSON body
+        is intentionally generic - the renderer (client- or server-side) walks
+        sections[*].rows[*] and substitutes ${placeholders} from loan data.
+        Section 3 (amortisation schedule) is generated row-per-installment by
+        the renderer rather than declared statically.
+    -->
+    <changeSet author="CredibleX" id="0060-8">
+        <insert tableName="m_kfs_template">
+            <column name="product_type" value="RBF"/>
+            <column name="name" value="Key Fact Statement - Revenue-Based Financing"/>
+            <column name="version" valueNumeric="1"/>
+            <column name="status" value="ACTIVE"/>
+            <column name="issued_by" value="CredibleX Limited"/>
+            <column name="regulatory_footer" value="Regulatory Status - Category 2 Credit Provider regulated by the Financial Services Regulatory Authority (FSRA) of the Abu Dhabi Global Market (ADGM) under License No. 14218."/>
+            <column name="template_json" value='{"title":"Key Fact Statement","headerLines":["Date of Issue: ${dateOfIssue}","Issued by: ${issuedBy}","Issued to: ${borrowerName}","Loan ID: ${externalId}"],"sections":[{"key":"facility","title":"1. Facility Overview &amp; Core Terms","columns":["Sr. No.","Parameter / Feature","Currency","Details"],"rows":[{"sn":"(i)","label":"Approved Limit / Loan Amount","currency":"${currencyCode}","value":"${approvedAmount}"},{"sn":"(ii)","label":"Product Type","currency":"-","value":"Revenue-Based Financing"},{"sn":"(iii)","label":"Tenure","currency":"-","value":"${tenure}"},{"sn":"(iv)","label":"Repayment Frequency","currency":"-","value":"${repaymentFrequency}"},{"sn":"(v)","label":"Total Interest","currency":"${currencyCode}","value":"${totalInterest}"},{"sn":"(vi)","label":"${interestRateBasisLabel}","currency":"-","value":"${interestRateBasisValue}"},{"sn":"(vii)","label":"Total Repayable Amount","currency":"${currencyCode}","value":"${totalRepayable} (Principal + Interest)"},{"sn":"(viii)","label":"Processing Fee exclusive VAT","currency":"${currencyCode}","value":"${processingFee}"},{"sn":"(ix)","label":"VAT on Processing Fee","currency":"${currencyCode}","value":"${vatOnProcessingFee}"},{"sn":"(x)","label":"Prepayment / Early Closure Fee","currency":"%","value":"${prepaymentFeeDesc}"},{"sn":"(xi)","label":"Other Fees and Charges","currency":"${currencyCode}","value":"${otherFees}"},{"sn":"(xii)","label":"Late Payment / Overdue Interest","currency":"%","value":"${latePaymentRateDesc}"}]},{"key":"disbursement","title":"2. Disbursement Details","columns":["Parameter","Details"],"rows":[{"label":"Loan ID","value":"${externalId}"},{"label":"Approved Amount","value":"${currencyCode} ${approvedAmount}"},{"label":"Disbursement Date","value":"${disbursementDate}"},{"label":"Disbursed Amount","value":"${currencyCode} ${disbursedAmount}"}]},{"key":"schedule","title":"3. Detailed Repayment &amp; Amortization Schedule","columns":["#","Outstanding Principal (${currencyCode})","EMI Due Date","EMI Amount (${currencyCode})","Principal Due (${currencyCode})","Interest (${currencyCode})","Status"],"source":"repaymentSchedule"}]}'/>
+            <column name="created_date" valueDate="${current_datetime}"/>
+            <column name="modified_date" valueDate="${current_datetime}"/>
+        </insert>
+        <insert tableName="m_kfs_template">
+            <column name="product_type" value="INVOICE_DISCOUNTING"/>
+            <column name="name" value="Key Fact Statement - Invoice Discounting"/>
+            <column name="version" valueNumeric="1"/>
+            <column name="status" value="ACTIVE"/>
+            <column name="issued_by" value="CredibleX Limited"/>
+            <column name="regulatory_footer" value="Regulatory Status - Category 2 Credit Provider regulated by the Financial Services Regulatory Authority (FSRA) of the Abu Dhabi Global Market (ADGM) under License No. 14218."/>
+            <column name="template_json" value='{"title":"Key Fact Statement","headerLines":["Date of Issue: ${dateOfIssue}","Issued by: ${issuedBy}","Issued to: ${borrowerName}","Loan ID: ${externalId}"],"sections":[{"key":"facility","title":"1. Facility Overview &amp; Core Terms","columns":["Sr. No.","Parameter / Feature","Currency","Details"],"rows":[{"sn":"(i)","label":"Approved Limit / Loan Amount","currency":"${currencyCode}","value":"${approvedAmount}"},{"sn":"(ii)","label":"Product Type","currency":"-","value":"Invoice Discounting"},{"sn":"(iii)","label":"Tenure","currency":"-","value":"${tenure}"},{"sn":"(iv)","label":"Repayment Frequency","currency":"-","value":"${repaymentFrequency}"},{"sn":"(v)","label":"Total Interest","currency":"${currencyCode}","value":"${totalInterest}"},{"sn":"(vi)","label":"Interest Rate","currency":"%","value":"${interestRate} per annum"},{"sn":"(vii)","label":"Total Repayable Amount","currency":"${currencyCode}","value":"${totalRepayable} (Principal + Interest)"},{"sn":"(viii)","label":"Processing Fee exclusive VAT","currency":"${currencyCode}","value":"${processingFee}"},{"sn":"(ix)","label":"VAT on Processing Fee","currency":"${currencyCode}","value":"${vatOnProcessingFee}"},{"sn":"(x)","label":"Prepayment / Early Closure Fee","currency":"%","value":"${prepaymentFeeDesc}"},{"sn":"(xi)","label":"Other Fees and Charges","currency":"${currencyCode}","value":"${otherFees}"},{"sn":"(xii)","label":"Late Payment / Overdue Interest","currency":"%","value":"${latePaymentRateDesc}"}]},{"key":"disbursement","title":"2. Disbursement Details","columns":["Parameter","Details"],"rows":[{"label":"Loan ID","value":"${externalId}"},{"label":"Approved Amount","value":"${currencyCode} ${approvedAmount}"},{"label":"Disbursement Date","value":"${disbursementDate}"},{"label":"Disbursed Amount","value":"${currencyCode} ${disbursedAmount}"}]},{"key":"schedule","title":"3. Detailed Repayment &amp; Amortization Schedule","columns":["#","Outstanding Principal (${currencyCode})","EMI Due Date","EMI Amount (${currencyCode})","Principal Due (${currencyCode})","Interest (${currencyCode})","Status"],"source":"repaymentSchedule"}]}'/>
+            <column name="created_date" valueDate="${current_datetime}"/>
+            <column name="modified_date" valueDate="${current_datetime}"/>
+        </insert>
+        <insert tableName="m_kfs_template">
+            <column name="product_type" value="PAYABLES_FINANCE"/>
+            <column name="name" value="Key Fact Statement - Payables Finance"/>
+            <column name="version" valueNumeric="1"/>
+            <column name="status" value="ACTIVE"/>
+            <column name="issued_by" value="CredibleX Limited"/>
+            <column name="regulatory_footer" value="Regulatory Status - Category 2 Credit Provider regulated by the Financial Services Regulatory Authority (FSRA) of the Abu Dhabi Global Market (ADGM) under License No. 14218."/>
+            <column name="template_json" value='{"title":"Key Fact Statement","headerLines":["Date of Issue: ${dateOfIssue}","Issued by: ${issuedBy}","Issued to: ${borrowerName}","Loan ID: ${externalId}"],"sections":[{"key":"facility","title":"1. Facility Overview &amp; Core Terms","columns":["Sr. No.","Parameter / Feature","Currency","Details"],"rows":[{"sn":"(i)","label":"Approved Limit / Loan Amount","currency":"${currencyCode}","value":"${approvedAmount}"},{"sn":"(ii)","label":"Product Type","currency":"-","value":"Payables Finance"},{"sn":"(iii)","label":"Tenure","currency":"-","value":"${tenure}"},{"sn":"(iv)","label":"Repayment Frequency","currency":"-","value":"${repaymentFrequency}"},{"sn":"(v)","label":"Total Interest","currency":"${currencyCode}","value":"${totalInterest}"},{"sn":"(vi)","label":"Interest Rate","currency":"%","value":"${interestRate} per annum"},{"sn":"(vii)","label":"Total Repayable Amount","currency":"${currencyCode}","value":"${totalRepayable} (Principal + Interest)"},{"sn":"(viii)","label":"Processing Fee exclusive VAT","currency":"${currencyCode}","value":"${processingFee}"},{"sn":"(ix)","label":"VAT on Processing Fee","currency":"${currencyCode}","value":"${vatOnProcessingFee}"},{"sn":"(x)","label":"Prepayment / Early Closure Fee","currency":"%","value":"${prepaymentFeeDesc}"},{"sn":"(xi)","label":"Other Fees and Charges","currency":"${currencyCode}","value":"${otherFees}"},{"sn":"(xii)","label":"Late Payment / Overdue Interest","currency":"%","value":"${latePaymentRateDesc}"}]},{"key":"disbursement","title":"2. Disbursement Details","columns":["Parameter","Details"],"rows":[{"label":"Loan ID","value":"${externalId}"},{"label":"Approved Amount","value":"${currencyCode} ${approvedAmount}"},{"label":"Disbursement Date","value":"${disbursementDate}"},{"label":"Disbursed Amount","value":"${currencyCode} ${disbursedAmount}"}]},{"key":"schedule","title":"3. Detailed Repayment &amp; Amortization Schedule","columns":["#","Outstanding Principal (${currencyCode})","EMI Due Date","EMI Amount (${currencyCode})","Principal Due (${currencyCode})","Interest (${currencyCode})","Status"],"source":"repaymentSchedule"}]}'/>
+            <column name="created_date" valueDate="${current_datetime}"/>
+            <column name="modified_date" valueDate="${current_datetime}"/>
+        </insert>
+        <insert tableName="m_kfs_template">
+            <column name="product_type" value="FACTOR_RATE"/>
+            <column name="name" value="Key Fact Statement - Factor Rate"/>
+            <column name="version" valueNumeric="1"/>
+            <column name="status" value="ACTIVE"/>
+            <column name="issued_by" value="CredibleX Limited"/>
+            <column name="regulatory_footer" value="Regulatory Status - Category 2 Credit Provider regulated by the Financial Services Regulatory Authority (FSRA) of the Abu Dhabi Global Market (ADGM) under License No. 14218."/>
+            <column name="template_json" value='{"title":"Key Fact Statement","headerLines":["Date of Issue: ${dateOfIssue}","Issued by: ${issuedBy}","Issued to: ${borrowerName}","Loan ID: ${externalId}"],"sections":[{"key":"facility","title":"1. Facility Overview &amp; Core Terms","columns":["Sr. No.","Parameter / Feature","Currency","Details"],"rows":[{"sn":"(i)","label":"Approved Limit / Loan Amount","currency":"${currencyCode}","value":"${approvedAmount}"},{"sn":"(ii)","label":"Product Type","currency":"-","value":"Factor Rate"},{"sn":"(iii)","label":"Tenure","currency":"-","value":"${tenure}"},{"sn":"(iv)","label":"Repayment Frequency","currency":"-","value":"${repaymentFrequency}"},{"sn":"(v)","label":"Total Repayable","currency":"${currencyCode}","value":"${totalRepayable}"},{"sn":"(vi)","label":"Factor Rate","currency":"x","value":"${factorRate}"},{"sn":"(vii)","label":"Total Repayable Amount","currency":"${currencyCode}","value":"${totalRepayable}"},{"sn":"(viii)","label":"Processing Fee exclusive VAT","currency":"${currencyCode}","value":"${processingFee}"},{"sn":"(ix)","label":"VAT on Processing Fee","currency":"${currencyCode}","value":"${vatOnProcessingFee}"},{"sn":"(x)","label":"Prepayment / Early Closure Fee","currency":"%","value":"${prepaymentFeeDesc}"},{"sn":"(xi)","label":"Other Fees and Charges","currency":"${currencyCode}","value":"${otherFees}"},{"sn":"(xii)","label":"Late Payment / Overdue Interest","currency":"%","value":"${latePaymentRateDesc}"}]},{"key":"disbursement","title":"2. Disbursement Details","columns":["Parameter","Details"],"rows":[{"label":"Loan ID","value":"${externalId}"},{"label":"Approved Amount","value":"${currencyCode} ${approvedAmount}"},{"label":"Disbursement Date","value":"${disbursementDate}"},{"label":"Disbursed Amount","value":"${currencyCode} ${disbursedAmount}"}]},{"key":"schedule","title":"3. Detailed Repayment &amp; Amortization Schedule","columns":["#","Outstanding Principal (${currencyCode})","Instalment Due Date","Instalment Amount (${currencyCode})","Principal Due (${currencyCode})","Interest / Fee (${currencyCode})","Status"],"source":"repaymentSchedule"}]}'/>
+            <column name="created_date" valueDate="${current_datetime}"/>
+            <column name="modified_date" valueDate="${current_datetime}"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>
