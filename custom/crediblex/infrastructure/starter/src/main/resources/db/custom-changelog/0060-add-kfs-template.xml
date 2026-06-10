@@ -192,6 +192,7 @@
         the renderer rather than declared statically.
     -->
     <changeSet author="CredibleX" id="0060-8">
+        <validCheckSum>9:71c3b2fd7df97f409feaa5a1f48ba1bc</validCheckSum>
         <insert tableName="m_kfs_template">
             <column name="product_type" value="RBF"/>
             <column name="name" value="Key Fact Statement - Revenue-Based Financing"/>
