@@ -1,5 +1,10 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import static org.apache.fineract.portfolio.loanaccount.domain.Loan.CLOSED_ON_DATE;
+import static org.apache.fineract.portfolio.loanaccount.domain.Loan.EXTERNAL_ID;
+import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS;
+import static org.apache.fineract.portfolio.loanaccount.domain.Loan.TRANSACTION_DATE;
+
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanStatusAggregationUtils;
@@ -40,12 +45,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
 import org.apache.fineract.infrastructure.codes.domain.CodeValueRepositoryWrapper;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
+import org.apache.fineract.infrastructure.configuration.service.TemporaryConfigurationServiceContainer;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
@@ -65,6 +72,7 @@ import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.infrastructure.dataqueries.service.EntityDatatableChecksWritePlatformService;
 import org.apache.fineract.infrastructure.event.business.BusinessEventListener;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
+import org.apache.fineract.infrastructure.event.business.domain.loan.LoanCloseBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanUndoDisbursalBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.transaction.LoanDisbursalTransactionBusinessEvent;
@@ -120,6 +128,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.MoneyHolder;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.TransactionCtx;
 import org.apache.fineract.portfolio.loanaccount.exception.DateMismatchException;
 import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTransitionException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanRepaymentScheduleNotFoundException;
@@ -157,6 +167,8 @@ import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactio
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
 import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequiredException;
+import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
+import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
@@ -185,6 +197,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePlatformServiceJpaRepositoryImpl {
 
     private static final Logger log = LoggerFactory.getLogger(CustomLoanWritePlatformServiceJpaRepositoryImpl.class);
+    private static final BigDecimal MINIMUM_LOAN_CLOSE_TOLERANCE = BigDecimal.ONE;
 
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
     private final LineOfCreditBalanceUpdateService lineOfCreditBalanceUpdateService;
@@ -213,6 +226,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
     private final AccountAssociationsRepository accountAssociationRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final NoteRepository customNoteRepository;
+    private final LoanLifecycleStateMachine customLoanLifecycleStateMachine;
+    private final LoanTransactionProcessingService customLoanTransactionProcessingService;
+    private final ReprocessLoanTransactionsService customReprocessLoanTransactionsService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -293,6 +310,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
         this.accountAssociationRepository = accountAssociationRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.customNoteRepository = noteRepository;
+        this.customLoanLifecycleStateMachine = loanLifecycleStateMachine;
+        this.customLoanTransactionProcessingService = loanTransactionProcessingService;
+        this.customReprocessLoanTransactionsService = reprocessLoanTransactionsService;
     }
 
     @PostConstruct
@@ -1213,6 +1234,217 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         "Destination savings account does not belong to the same borrower (client/group) as the loan", savingsAccountId);
             }
         }
+    }
+
+    @Override
+    @Transactional
+    public CommandProcessingResult closeLoan(final Long loanId, final JsonCommand command) {
+        this.loanTransactionValidator.validateTransactionWithNoAmount(command.json());
+
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed(TRANSACTION_DATE);
+        if (loan.isChargedOff() && DateUtils.isBefore(transactionDate, loan.getChargedOffOnDate())) {
+            throw new GeneralPlatformDomainRuleException("error.msg.transaction.date.cannot.be.earlier.than.charge.off.date", "Loan: "
+                    + loanId
+                    + " backdated transaction is not allowed. Transaction date cannot be earlier than the charge-off date of the loan",
+                    loanId);
+        }
+
+        businessEventNotifierService.notifyPreBusinessEvent(new LoanCloseBusinessEvent(loan));
+
+        final Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put(TRANSACTION_DATE, command.stringValueOfParameterNamed(TRANSACTION_DATE));
+        changes.put("locale", command.locale());
+        changes.put("dateFormat", command.dateFormat());
+
+        final List<Long> existingTransactionIds = new ArrayList<>();
+        final List<Long> existingReversedTransactionIds = new ArrayList<>();
+
+        updateLoanCounters(loan, loan.getDisbursementDate());
+
+        LocalDate recalculateFrom = null;
+        if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+            recalculateFrom = command.localDateValueOfParameterNamed(TRANSACTION_DATE);
+        }
+
+        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, recalculateFrom);
+        final LocalDate closureDate = command.localDateValueOfParameterNamed(TRANSACTION_DATE);
+        loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_CLOSED);
+        loanTransactionValidator.validateActivityNotBeforeClientOrGroupTransferDate(loan, LoanEvent.REPAID_IN_FULL, closureDate);
+        final Optional<LoanTransaction> loanTransactionOptional = closeWithCredibleXTolerance(loan, command, changes,
+                existingTransactionIds, existingReversedTransactionIds, scheduleGeneratorDTO);
+
+        loanAccrualsProcessingService.reprocessExistingAccruals(loan);
+        if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+            loanAccrualsProcessingService.processIncomePostingAndAccruals(loan);
+        }
+
+        loanTransactionOptional.ifPresent(this.loanTransactionRepository::saveAndFlush);
+        saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+
+        final String noteText = command.stringValueOfParameterNamed("note");
+        if (StringUtils.isNotBlank(noteText)) {
+            changes.put("note", noteText);
+            final Note note = Note.loanNote(loan, noteText);
+            this.customNoteRepository.save(note);
+        }
+
+        loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+        loanAccrualsProcessingService.processAccrualsOnInterestRecalculation(loan, loan.isInterestBearingAndInterestRecalculationEnabled(),
+                false);
+
+        loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
+
+        businessEventNotifierService.notifyPostBusinessEvent(new LoanCloseBusinessEvent(loan));
+
+        this.loanAccountDomainService.updateAndSaveLoanCollateralTransactionsForIndividualAccounts(loan, null);
+        this.loanAccountDomainService.disableStandingInstructionsLinkedToClosedLoan(loan);
+
+        journalEntryPoster.postJournalEntries(loan,
+                getExistingTransactionIdsForCloseAccounting(existingTransactionIds, loanTransactionOptional),
+                existingReversedTransactionIds);
+        loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+
+        if (loanTransactionOptional.isPresent()) {
+            final LoanTransaction loanTransaction = loanTransactionOptional.get();
+            return new CommandProcessingResultBuilder() //
+                    .withCommandId(command.commandId()) //
+                    .withEntityId(loanTransaction.getId()) //
+                    .withEntityExternalId(loanTransaction.getExternalId()) //
+                    .withOfficeId(loan.getOfficeId()) //
+                    .withClientId(loan.getClientId()) //
+                    .withGroupId(loan.getGroupId()) //
+                    .withLoanId(loanId) //
+                    .with(changes).build();
+        }
+
+        return new CommandProcessingResultBuilder() //
+                .withCommandId(command.commandId()) //
+                .withEntityId(loanId) //
+                .withEntityExternalId(loan.getExternalId()) //
+                .withOfficeId(loan.getOfficeId()) //
+                .withClientId(loan.getClientId()) //
+                .withGroupId(loan.getGroupId()) //
+                .withLoanId(loanId) //
+                .with(changes).build();
+    }
+
+    private Optional<LoanTransaction> closeWithCredibleXTolerance(final Loan loan, final JsonCommand command,
+            final Map<String, Object> changes, final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds,
+            final ScheduleGeneratorDTO scheduleGeneratorDTO) {
+        existingTransactionIds.addAll(loan.findExistingTransactionIds());
+        existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
+
+        final LocalDate closureDate = command.localDateValueOfParameterNamed(TRANSACTION_DATE);
+        final String txnExternalId = command.stringValueOfParameterNamedAllowingNull(EXTERNAL_ID);
+
+        ExternalId externalId = ExternalIdFactory.produce(txnExternalId);
+        if (externalId.isEmpty() && TemporaryConfigurationServiceContainer.isExternalIdAutoGenerationEnabled()) {
+            externalId = ExternalId.generate();
+        }
+
+        loan.setClosedOnDate(closureDate);
+        changes.put(CLOSED_ON_DATE, command.stringValueOfParameterNamed(TRANSACTION_DATE));
+
+        if (DateUtils.isBefore(closureDate, loan.getDisbursementDate())) {
+            final String errorMessage = "The date on which a loan is closed cannot be before the loan disbursement date: "
+                    + loan.getDisbursementDate();
+            throw new InvalidLoanStateTransitionException("close", "cannot.be.before.submittal.date", errorMessage, closureDate,
+                    loan.getDisbursementDate());
+        }
+
+        if (DateUtils.isDateInTheFuture(closureDate)) {
+            final String errorMessage = "The date on which a loan is closed cannot be in the future.";
+            throw new InvalidLoanStateTransitionException("close", "cannot.be.a.future.date", errorMessage, closureDate);
+        }
+        closeDisbursementsForCredibleXClose(loan, scheduleGeneratorDTO);
+
+        LoanTransaction loanTransaction = null;
+        if (loan.isOpen()) {
+            final Money totalOutstanding = loan.getSummary().getTotalOutstanding(loan.getCurrency());
+            if (totalOutstanding.isGreaterThanZero()
+                    && getLoanCloseTolerance(loan.getCurrency(), loan.getInArrearsTolerance()).isGreaterThanOrEqualTo(totalOutstanding)) {
+
+                loan.setClosedOnDate(closureDate);
+                final var statusEnum = customLoanLifecycleStateMachine.dryTransition(LoanEvent.REPAID_IN_FULL, loan);
+                if (!statusEnum.hasStateOf(loan.getStatus())) {
+                    customLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+                    changes.put(PARAM_STATUS, LoanEnumerations.status(loan.getLoanStatus()));
+                }
+                changes.put("externalId", externalId);
+                loanTransaction = LoanTransaction.writeoff(loan, loan.getOffice(), closureDate, externalId);
+                if (!isLoanCloseOnOrAfterLatestTransaction(closureDate, loan.getLastUserTransactionDate())) {
+                    final String errorMessage = "The closing date of the loan must be on or after latest transaction date.";
+                    throw new InvalidLoanStateTransitionException("close.loan", "must.occur.on.or.after.latest.transaction.date",
+                            errorMessage, closureDate);
+                }
+
+                loan.addLoanTransaction(loanTransaction);
+                customLoanTransactionProcessingService.processLatestTransaction(loan.getTransactionProcessingStrategyCode(),
+                        loanTransaction, new TransactionCtx(loan.getCurrency(), loan.getRepaymentScheduleInstallments(),
+                                loan.getActiveCharges(), new MoneyHolder(loan.getTotalOverpaidAsMoney()), null));
+
+                loan.updateLoanSummaryDerivedFields();
+            } else if (totalOutstanding.isGreaterThanZero()) {
+                final String errorMessage = "A loan with money outstanding cannot be closed";
+                throw new InvalidLoanStateTransitionException("close", "loan.has.money.outstanding", errorMessage,
+                        totalOutstanding.toString());
+            }
+        }
+
+        if (loan.isOverPaid()) {
+            final Money totalLoanOverpayment = loan.calculateTotalOverpayment();
+            if (totalLoanOverpayment.isGreaterThanZero() && loan.getInArrearsTolerance().isGreaterThanOrEqualTo(totalLoanOverpayment)) {
+                loan.setClosedOnDate(closureDate);
+                final var statusEnum = customLoanLifecycleStateMachine.dryTransition(LoanEvent.REPAID_IN_FULL, loan);
+                if (!statusEnum.hasStateOf(loan.getStatus())) {
+                    customLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+                    changes.put(PARAM_STATUS, LoanEnumerations.status(loan.getLoanStatus()));
+                }
+            } else if (totalLoanOverpayment.isGreaterThanZero()) {
+                final String errorMessage = "The loan is marked as 'Overpaid' and cannot be moved to 'Closed (obligations met).";
+                throw new InvalidLoanStateTransitionException("close", "loan.is.overpaid", errorMessage, totalLoanOverpayment.toString());
+            }
+        }
+
+        return Optional.ofNullable(loanTransaction);
+    }
+
+    private void closeDisbursementsForCredibleXClose(final Loan loan, final ScheduleGeneratorDTO scheduleGeneratorDTO) {
+        if (loan.isDisbursementAllowed() && loan.atLeastOnceDisbursed()) {
+            loan.getLoanRepaymentScheduleDetail().setPrincipal(loan.getDisbursedAmount());
+            loan.removeDisbursementDetail();
+            loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
+            if (loan.isCumulativeSchedule() && loan.isInterestBearingAndInterestRecalculationEnabled()) {
+                loanScheduleService.regenerateRepaymentScheduleWithInterestRecalculation(loan, scheduleGeneratorDTO);
+            } else if (loan.isProgressiveSchedule() && loan.hasChargeOffTransaction() && loan.hasAccelerateChargeOffStrategy()) {
+                loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
+            }
+            customReprocessLoanTransactionsService.reprocessTransactions(loan);
+            final LocalDate lastLoanTransactionDate = loan.getLatestTransactionDate();
+            loan.doPostLoanTransactionChecks(lastLoanTransactionDate, customLoanLifecycleStateMachine);
+        }
+    }
+
+    private Money getLoanCloseTolerance(final MonetaryCurrency currency, final Money configuredTolerance) {
+        final Money minimumCloseTolerance = Money.of(currency, MINIMUM_LOAN_CLOSE_TOLERANCE);
+        return configuredTolerance.isGreaterThanOrEqualTo(minimumCloseTolerance) ? configuredTolerance : minimumCloseTolerance;
+    }
+
+    private boolean isLoanCloseOnOrAfterLatestTransaction(final LocalDate closureDate, final LocalDate lastTransactionDate) {
+        return !DateUtils.isBefore(closureDate, lastTransactionDate);
+    }
+
+    private List<Long> getExistingTransactionIdsForCloseAccounting(final List<Long> existingTransactionIds,
+            final Optional<LoanTransaction> toleranceCloseTransaction) {
+        if (toleranceCloseTransaction.isEmpty() || toleranceCloseTransaction.get().getId() == null
+                || toleranceCloseTransaction.get().getAmount().compareTo(MINIMUM_LOAN_CLOSE_TOLERANCE) > 0) {
+            return existingTransactionIds;
+        }
+        final List<Long> result = new ArrayList<>(existingTransactionIds);
+        result.add(toleranceCloseTransaction.get().getId());
+        return result;
     }
 
     @Override
