@@ -80,11 +80,4 @@ public class SuperUserAdministrationAuthorizationService {
         return "USER".equalsIgnoreCase(entityName) || "ROLE".equalsIgnoreCase(entityName) || "PERMISSION".equalsIgnoreCase(entityName);
     }
 
-    public boolean isUserAdministrationApiPath(final String requestUri) {
-        if (requestUri == null) {
-            return false;
-        }
-        return requestUri.matches(".*/api/v\\d+/users/downloadtemplate.*") || requestUri.matches(".*/api/v\\d+/users/uploadtemplate.*");
-    }
-
 }
