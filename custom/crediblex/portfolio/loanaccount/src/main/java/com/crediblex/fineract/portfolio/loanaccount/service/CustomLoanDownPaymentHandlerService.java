@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.ACTUAL_DISBURSEMENT_DATE;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -163,6 +164,7 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
          **/
         if (loanTransaction.isNotRecoveryRepayment()) {
             loan.doPostLoanTransactionChecks(loanTransaction.getTransactionDate(), loanLifecycleStateMachine);
+            closeLoanWhenNoPayableBalanceRemains(loan, loanTransaction.getTransactionDate(), loanLifecycleStateMachine);
         }
 
         // FIXED: Use hasActualMultipleTranches() instead of product setting
@@ -190,6 +192,16 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
 
         // For actual multi-tranche loans, use the core validator
         loanRefundValidator.validateTransactionAmountThreshold(loan, adjustedTransaction);
+    }
+
+    private void closeLoanWhenNoPayableBalanceRemains(final Loan loan, final LocalDate transactionDate,
+            final LoanLifecycleStateMachine loanLifecycleStateMachine) {
+        if (loan.getStatus().isActive() && loan.getSummary().isRepaidInFull(loan.getCurrency())
+                && LoanChargeSettlementUtils.hasNoPayableChargesRemaining(loan)) {
+            loan.setClosedOnDate(transactionDate);
+            loan.setActualMaturityDate(transactionDate);
+            loanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+        }
     }
 
     private LoanTransaction handleDownPayment(final Loan loan, final LoanTransaction disbursementTransaction, final JsonCommand command,
