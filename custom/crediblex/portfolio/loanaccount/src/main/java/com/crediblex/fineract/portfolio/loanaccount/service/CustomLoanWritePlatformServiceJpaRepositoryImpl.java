@@ -1395,7 +1395,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         if (loan.isOverPaid()) {
             final Money totalLoanOverpayment = loan.calculateTotalOverpayment();
-            if (totalLoanOverpayment.isGreaterThanZero() && loan.getInArrearsTolerance().isGreaterThanOrEqualTo(totalLoanOverpayment)) {
+            if (totalLoanOverpayment.isGreaterThanZero() && getLoanCloseTolerance(loan.getCurrency(), loan.getInArrearsTolerance())
+                    .isGreaterThanOrEqualTo(totalLoanOverpayment)) {
                 loan.setClosedOnDate(closureDate);
                 final var statusEnum = customLoanLifecycleStateMachine.dryTransition(LoanEvent.REPAID_IN_FULL, loan);
                 if (!statusEnum.hasStateOf(loan.getStatus())) {

@@ -69,6 +69,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanAccountService;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -80,6 +81,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationTypeEnum;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.exception.LoanChargeAdjustmentException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJsonValidator;
@@ -161,6 +163,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final SavingsAccountRepository savingsAccountRepository;
     private final SavingsAccountTransactionSummaryWrapper savingsAccountTransactionSummaryWrapper;
     private final LoanArrearsAgingService loanArrearsAgingService;
+    private final LoanDownPaymentTransactionValidator loanDownPaymentTransactionValidator;
 
     public CredXLoanChargeWritePlatformServiceImpl(LoanChargeApiJsonValidator loanChargeApiJsonValidator, LoanAssembler loanAssembler,
             ChargeRepositoryWrapper chargeRepository, BusinessEventNotifierService businessEventNotifierService,
@@ -238,6 +241,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.journalEntryRepository = journalEntryRepository;
         this.officeRepositoryWrapper = officeRepositoryWrapper;
         this.loanArrearsAgingService = loanArrearsAgingService;
+        this.loanDownPaymentTransactionValidator = loanDownPaymentTransactionValidator;
     }
 
     @Override
@@ -257,7 +261,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         changes.put("transactionDate", transactionDate);
         changes.put("locale", locale);
 
-        loanChargeAdjustmentEntranceValidation(loanCharge, transactionAmount);
+        loanChargeAdjustmentEntranceValidationSafe(loanCharge, transactionAmount);
         final Loan loan = loanAssembler.assembleFrom(loanId);
 
         final CommandProcessingResultBuilder commandProcessingResultBuilder = new CommandProcessingResultBuilder();
@@ -307,6 +311,44 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 .withSubEntityExternalId(loanTransaction.getExternalId()).with(changes).build();
     }
 
+    private void loanChargeAdjustmentEntranceValidationSafe(final LoanCharge loanCharge, final BigDecimal transactionAmount) {
+        final Loan loan = loanCharge.getLoan();
+        if (!(loan.isOpen() || loan.getStatus().isClosedObligationsMet() || loan.getStatus().isOverpaid())) {
+            final String errorCode = "loan.charge.adjustment.invalid.status";
+            throw new LoanChargeAdjustmentException(errorCode,
+                    "Adjustment is not supported for the status of " + loan.getStatus().toString());
+        }
+
+        if (transactionAmount.compareTo(loanCharge.amount()) > 0) {
+            final String errorCode = "loan.charge.adjustment.invalid.amount";
+            throw new LoanChargeAdjustmentException(errorCode,
+                    "Transaction amount cannot be higher than the charge amount: " + loanCharge.amount());
+        }
+
+        BigDecimal availableAmountForAdjustment = calculateAvailableAmountForChargeAdjustmentSafe(loanCharge);
+        if (transactionAmount.compareTo(availableAmountForAdjustment) > 0) {
+            final String errorCode = "loan.charge.adjustment.invalid.amount";
+            throw new LoanChargeAdjustmentException(errorCode,
+                    "Transaction amount cannot be higher than the available charge amount for adjustment: " + availableAmountForAdjustment);
+        }
+        checkClientOrGroupActive(loan);
+        loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_CHARGE_ADJUSTMENT);
+    }
+
+    private BigDecimal calculateAvailableAmountForChargeAdjustmentSafe(final LoanCharge loanCharge) {
+        BigDecimal availableAmountForAdjustment = loanCharge.amount();
+        for (LoanTransaction loanTransaction : loanCharge.getLoan().getLoanTransactions()) {
+            if (loanTransaction.isNotReversed() && loanTransaction.getTypeOf().isChargeAdjustment()) {
+                for (LoanTransactionRelation loanTransactionRelation : loanTransaction.getLoanTransactionRelations()) {
+                    if (loanTransactionRelation.getToCharge() != null && loanCharge.equals(loanTransactionRelation.getToCharge())) {
+                        availableAmountForAdjustment = availableAmountForAdjustment.subtract(loanTransaction.getAmount());
+                    }
+                }
+            }
+        }
+        return availableAmountForAdjustment;
+    }
+
     @Transactional
     @Override
     public CommandProcessingResult waiveLoanCharge(final Long loanId, final Long loanChargeId, final JsonCommand command) {
@@ -347,6 +389,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             }
             if (chargePerInstallment == null) {
                 chargePerInstallment = loanCharge.getUnpaidInstallmentLoanCharge();
+            }
+            if (chargePerInstallment == null) {
+                throw new LoanChargeCannotBeWaivedException(LoanChargeCannotBeWaivedException.LoanChargeCannotBeWaivedReason.ALREADY_PAID,
+                        loanCharge.getId());
             }
             if (chargePerInstallment.isWaived()) {
                 throw new LoanChargeCannotBePayedException(LoanChargeCannotBePayedException.LoanChargeCannotBePayedReason.ALREADY_WAIVED,
@@ -434,6 +480,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         if (loanCharge.isInstalmentFee()) {
             // For installment fees, handle the waiver manually
             final LoanInstallmentCharge chargePerInstallment = loanCharge.getInstallmentLoanCharge(loanInstallmentNumber);
+            if (chargePerInstallment == null) {
+                throw new LoanChargeCannotBeWaivedException(LoanChargeCannotBeWaivedException.LoanChargeCannotBeWaivedReason.ALREADY_PAID,
+                        loanCharge.getId());
+            }
             final Money installmentAmountWaived = chargePerInstallment.waive(loan.getCurrency());
 
             // Update the parent charge's waived amount by adding the installment waived amount
@@ -847,8 +897,13 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         Loan loan = loanAssembler.assembleFrom(loanId);
         LoanCharge loanCharge = retrieveLoanChargeBy(loanId, loanChargeId);
 
-        // Validation: Ensure the charge is paid
-        if (!loanCharge.isPaid()) {
+        final MonetaryCurrency currency = loan.getCurrency();
+
+        // Validation: Ensure the charge has a paid component to reverse.
+        // A charge may be settled by both paid and waived amounts; reverse only the paid component.
+        BigDecimal totalAmountPaid = loanCharge.getAmountPaid(currency).getAmount();
+        if (totalAmountPaid.compareTo(BigDecimal.ZERO) == 0) {
+            log.warn("Charge {} has no amount paid", loanChargeId);
             throw new LoanChargeCannotBeWaivedException(LoanChargeCannotBeWaivedException.LoanChargeCannotBeWaivedReason.ALREADY_WAIVED,
                     loanCharge.getId());
         }
@@ -866,19 +921,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     loanCharge.getId());
         }
 
-        // Calculate the total amount paid for this charge
-        BigDecimal totalAmountPaid = loanCharge.getAmountPaid(loan.getCurrency()).getAmount();
-
-        if (totalAmountPaid.compareTo(BigDecimal.ZERO) == 0) {
-            log.warn("Charge {} has no amount paid", loanChargeId);
-            throw new LoanChargeCannotBeWaivedException(LoanChargeCannotBeWaivedException.LoanChargeCannotBeWaivedReason.ALREADY_WAIVED,
-                    loanCharge.getId());
-        }
-
         log.info("Total amount paid for charge {}: {}", loanChargeId, totalAmountPaid);
 
         final LocalDate reversalDate = DateUtils.getBusinessLocalDate();
-        final MonetaryCurrency currency = loan.getCurrency();
 
         // Log loan status and overpaid balance BEFORE reversal
         loan.updateLoanSummaryAndStatus();

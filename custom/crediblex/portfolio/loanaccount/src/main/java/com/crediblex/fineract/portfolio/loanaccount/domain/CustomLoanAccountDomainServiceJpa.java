@@ -100,6 +100,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Primary
 public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJpa {
 
+    private static final BigDecimal MINIMUM_LOAN_CLOSE_TOLERANCE = BigDecimal.ONE;
+
     private final AccountAssociationsRepository accountAssociationsRepository;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
 
@@ -444,6 +446,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 newRepaymentTransaction.getTransactionDate());
         makeRepayment(loan, newRepaymentTransaction, defaultLoanLifecycleStateMachine, existingTransactionIds,
                 existingReversedTransactionIds, scheduleGeneratorDTO);
+        closeLoanIfFinalRepaymentResidualIsWithinTolerance(loan, newRepaymentTransaction);
 
         if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -557,6 +560,42 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         }
 
         return newRepaymentTransaction;
+    }
+
+    private void closeLoanIfFinalRepaymentResidualIsWithinTolerance(final Loan loan, final LoanTransaction repaymentTransaction) {
+        if (!repaymentTransaction.isRepayment() && !repaymentTransaction.isRecoveryRepayment()) {
+            return;
+        }
+
+        final Money tolerance = loanCloseTolerance(loan);
+        if (loan.isOpen()) {
+            final Money totalOutstanding = loan.getSummary().getTotalOutstanding(loan.getCurrency());
+            if (totalOutstanding.isGreaterThanZero() && tolerance.isGreaterThanOrEqualTo(totalOutstanding)) {
+                loan.setClosedOnDate(repaymentTransaction.getTransactionDate());
+                loan.setActualMaturityDate(repaymentTransaction.getTransactionDate());
+                final var statusEnum = defaultLoanLifecycleStateMachine.dryTransition(LoanEvent.REPAID_IN_FULL, loan);
+                if (!statusEnum.hasStateOf(loan.getStatus())) {
+                    defaultLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+                }
+            }
+        }
+
+        if (loan.isOpen()) {
+            loan.doPostLoanTransactionChecks(repaymentTransaction.getTransactionDate(), defaultLoanLifecycleStateMachine);
+        } else if (loan.isOverPaid()) {
+            final Money totalLoanOverpayment = loan.calculateTotalOverpayment();
+            if (totalLoanOverpayment.isGreaterThanZero() && tolerance.isGreaterThanOrEqualTo(totalLoanOverpayment)) {
+                loan.setClosedOnDate(repaymentTransaction.getTransactionDate());
+                loan.setActualMaturityDate(repaymentTransaction.getTransactionDate());
+                defaultLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+            }
+        }
+    }
+
+    private Money loanCloseTolerance(final Loan loan) {
+        final Money minimumCloseTolerance = Money.of(loan.getCurrency(), MINIMUM_LOAN_CLOSE_TOLERANCE);
+        final Money configuredTolerance = loan.getInArrearsTolerance();
+        return configuredTolerance.isGreaterThanOrEqualTo(minimumCloseTolerance) ? configuredTolerance : minimumCloseTolerance;
     }
 
     /**
