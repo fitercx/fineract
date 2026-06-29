@@ -66,6 +66,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.MoneyHolder;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.TransactionCtx;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
@@ -100,6 +102,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Primary
 public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJpa {
 
+    private static final BigDecimal MINIMUM_LOAN_CLOSE_TOLERANCE = BigDecimal.ONE;
+
     private final AccountAssociationsRepository accountAssociationsRepository;
     private final AccountTransfersWritePlatformService accountTransfersWritePlatformService;
 
@@ -110,6 +114,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
     private final LineOfCreditRepository lineOfCreditRepository; // optional
     private final LocStatusAggregationUtils locStatusAggregationUtils; // optional
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository; // prefer JPA over raw SQL
+    private final LoanRepaymentScheduleTransactionProcessorFactory transactionProcessorFactory;
 
     public CustomLoanAccountDomainServiceJpa(LoanAssembler loanAccountAssembler, LoanRepositoryWrapper loanRepositoryWrapper,
             LoanTransactionRepository loanTransactionRepository, ConfigurationDomainService configurationDomainService,
@@ -151,6 +156,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         this.lineOfCreditRepository = lineOfCreditRepository;
         this.locStatusAggregationUtils = locStatusAggregationUtils;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
+        this.transactionProcessorFactory = transactionProcessorFactory;
     }
 
     @Override
@@ -444,6 +450,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 newRepaymentTransaction.getTransactionDate());
         makeRepayment(loan, newRepaymentTransaction, defaultLoanLifecycleStateMachine, existingTransactionIds,
                 existingReversedTransactionIds, scheduleGeneratorDTO);
+        final Optional<LoanTransaction> toleranceCloseTransaction = closeLoanIfFinalRepaymentResidualIsWithinTolerance(loan,
+                newRepaymentTransaction);
 
         if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
             loanAccrualsProcessingService.reprocessExistingAccruals(loan);
@@ -451,6 +459,11 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         }
 
         loanAccountService.saveLoanTransactionWithDataIntegrityViolationChecks(newRepaymentTransaction);
+        if (toleranceCloseTransaction.isPresent()) {
+            LoanTransaction loanTransaction = toleranceCloseTransaction.get();
+            loanAccountService.saveLoanTransactionWithDataIntegrityViolationChecks(loanTransaction);
+            addToleranceCloseTransactionToExistingIds(existingTransactionIds, loanTransaction);
+        }
         loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
         if (StringUtils.isNotBlank(noteText)) {
@@ -557,6 +570,54 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         }
 
         return newRepaymentTransaction;
+    }
+
+    private Optional<LoanTransaction> closeLoanIfFinalRepaymentResidualIsWithinTolerance(final Loan loan,
+            final LoanTransaction repaymentTransaction) {
+        if (!repaymentTransaction.isRepayment() && !repaymentTransaction.isRecoveryRepayment()) {
+            return Optional.empty();
+        }
+
+        final Money tolerance = loanCloseTolerance(loan);
+        LoanTransaction toleranceCloseTransaction = null;
+        if (loan.isOpen()) {
+            final Money totalOutstanding = loan.getSummary().getTotalOutstanding(loan.getCurrency());
+            if (totalOutstanding.isGreaterThanZero() && tolerance.isGreaterThanOrEqualTo(totalOutstanding)) {
+                toleranceCloseTransaction = LoanTransaction.writeoff(loan, loan.getOffice(), repaymentTransaction.getTransactionDate(),
+                        ExternalId.empty());
+                loan.addLoanTransaction(toleranceCloseTransaction);
+                transactionProcessorFactory.determineProcessor(loan.getTransactionProcessingStrategyCode()).processLatestTransaction(
+                        toleranceCloseTransaction, new TransactionCtx(loan.getCurrency(), loan.getRepaymentScheduleInstallments(),
+                                loan.getActiveCharges(), new MoneyHolder(loan.getTotalOverpaidAsMoney()), null));
+                loan.updateLoanSummaryDerivedFields();
+            }
+        }
+
+        if (loan.isOpen()) {
+            loan.doPostLoanTransactionChecks(repaymentTransaction.getTransactionDate(), defaultLoanLifecycleStateMachine);
+        } else if (loan.isOverPaid()) {
+            final Money totalLoanOverpayment = loan.calculateTotalOverpayment();
+            if (totalLoanOverpayment.isGreaterThanZero() && tolerance.isGreaterThanOrEqualTo(totalLoanOverpayment)) {
+                loan.setClosedOnDate(repaymentTransaction.getTransactionDate());
+                loan.setActualMaturityDate(repaymentTransaction.getTransactionDate());
+                defaultLoanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+            }
+        }
+        return Optional.ofNullable(toleranceCloseTransaction);
+    }
+
+    private Money loanCloseTolerance(final Loan loan) {
+        final Money minimumCloseTolerance = Money.of(loan.getCurrency(), MINIMUM_LOAN_CLOSE_TOLERANCE);
+        final Money configuredTolerance = loan.getInArrearsTolerance();
+        return configuredTolerance.isGreaterThanOrEqualTo(minimumCloseTolerance) ? configuredTolerance : minimumCloseTolerance;
+    }
+
+    private void addToleranceCloseTransactionToExistingIds(final List<Long> existingTransactionIds,
+            final LoanTransaction toleranceCloseTransaction) {
+        if (toleranceCloseTransaction.getId() != null
+                && toleranceCloseTransaction.getAmount().compareTo(MINIMUM_LOAN_CLOSE_TOLERANCE) <= 0) {
+            existingTransactionIds.add(toleranceCloseTransaction.getId());
+        }
     }
 
     /**

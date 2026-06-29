@@ -4,7 +4,9 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountingBridgeD
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomLoanChargePaidByDTO;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.organisation.monetary.domain.Money;
@@ -14,9 +16,11 @@ import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelationTypeEnum;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.tax.domain.TaxComponent;
@@ -27,6 +31,8 @@ import org.springframework.stereotype.Component;
 @Component
 @Primary
 public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper {
+
+    private static final BigDecimal MINIMUM_FINAL_REPAYMENT_RESIDUAL_TOLERANCE = BigDecimal.ONE;
 
     @Override
     public List<AccountingBridgeDataDTO> deriveAccountingBridgeDataForChargeOff(final String currencyCode,
@@ -243,6 +249,7 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
         transactionDTO.setTaxChargesPortion(transaction.getTaxChargesPortion());
         transactionDTO.setPenaltyChargesPortion(transaction.getPenaltyChargesPortion());
         transactionDTO.setOverPaymentPortion(transaction.getOverPaymentPortion());
+        suppressFinalRepaymentResidualOverpayment(transaction, transactionDTO);
 
         if (transactionDTO.getType().isChargeRefund()) {
             transactionDTO.setChargeRefundChargeType(transaction.getChargeRefundChargeType());
@@ -354,6 +361,45 @@ public class CustomLoanAccountingBridgeMapper extends LoanAccountingBridgeMapper
         transactionDTO.setLoanToLoanTransfer(false);
 
         return transactionDTO;
+    }
+
+    private void suppressFinalRepaymentResidualOverpayment(final LoanTransaction transaction,
+            final AccountingBridgeLoanTransactionDTO transactionDTO) {
+        final BigDecimal overpayment = transaction.getOverPaymentPortion();
+        if (!transactionDTO.getType().isRepaymentType() || overpayment == null || overpayment.compareTo(BigDecimal.ZERO) <= 0
+                || transaction.getLoanTransactionToRepaymentScheduleMappings().isEmpty()) {
+            return;
+        }
+
+        final Optional<LoanRepaymentScheduleInstallment> lastInstallment = transaction.getLoan().getRepaymentScheduleInstallments().stream()
+                .filter(installment -> !installment.isDownPayment())
+                .max(Comparator.comparing(LoanRepaymentScheduleInstallment::getInstallmentNumber));
+        if (lastInstallment.isEmpty() || !lastInstallment.get().isObligationsMet()) {
+            return;
+        }
+
+        final boolean transactionTouchesLastInstallment = transaction.getLoanTransactionToRepaymentScheduleMappings().stream()
+                .map(LoanTransactionToRepaymentScheduleMapping::getLoanRepaymentScheduleInstallment)
+                .anyMatch(installment -> installment != null && Objects.equals(lastInstallment.get().getId(), installment.getId()));
+        if (!transactionTouchesLastInstallment) {
+            return;
+        }
+
+        final BigDecimal mappedAmount = transaction.getLoanTransactionToRepaymentScheduleMappings().stream()
+                .map(mapping -> Optional.ofNullable(mapping.getAmount()).orElse(BigDecimal.ZERO)).reduce(BigDecimal.ZERO, BigDecimal::add);
+        final BigDecimal residual = Optional.ofNullable(transaction.getAmount()).orElse(BigDecimal.ZERO).subtract(mappedAmount);
+        final BigDecimal tolerance = finalRepaymentResidualTolerance(transaction);
+
+        if (residual.compareTo(BigDecimal.ZERO) > 0 && residual.compareTo(overpayment) == 0 && residual.compareTo(tolerance) <= 0) {
+            transactionDTO.setAmount(mappedAmount);
+            transactionDTO.setOverPaymentPortion(BigDecimal.ZERO);
+        }
+    }
+
+    private BigDecimal finalRepaymentResidualTolerance(final LoanTransaction transaction) {
+        final BigDecimal configuredTolerance = transaction.getLoan().getInArrearsTolerance().getAmount();
+        return configuredTolerance.compareTo(MINIMUM_FINAL_REPAYMENT_RESIDUAL_TOLERANCE) > 0 ? configuredTolerance
+                : MINIMUM_FINAL_REPAYMENT_RESIDUAL_TOLERANCE;
     }
 
 }
