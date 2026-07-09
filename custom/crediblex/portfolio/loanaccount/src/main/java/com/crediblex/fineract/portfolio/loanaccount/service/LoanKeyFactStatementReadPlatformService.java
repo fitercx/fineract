@@ -71,6 +71,7 @@ public class LoanKeyFactStatementReadPlatformService {
                     l.number_of_repayments,
                     l.repay_every,
                     l.repayment_period_frequency_enum,
+                    l.loan_status_id,
                     l.annual_nominal_interest_rate,
                     l.nominal_interest_rate_per_period,
                     l.factor_rate
@@ -171,6 +172,8 @@ public class LoanKeyFactStatementReadPlatformService {
             row.put("interestDue", interest);
             row.put("feeChargesDue", fees);
             row.put("penaltyChargesDue", penalties);
+            // Late fee = penalty charges captured on the installment (0 when none applied)
+            row.put("lateFee", penalties);
             row.put("totalDue", total);
             row.put("paid",
                     nvl(rs.getBigDecimal("principal_completed_derived")).add(nvl(rs.getBigDecimal("interest_completed_derived")))
@@ -216,6 +219,7 @@ public class LoanKeyFactStatementReadPlatformService {
         private Integer numberOfRepayments;
         private Integer repayEvery;
         private Integer repaymentFrequencyType;
+        private Integer loanStatusId;
         private BigDecimal annualInterestRate;
         private BigDecimal interestRatePerPeriod;
         private BigDecimal factorRate;
@@ -237,13 +241,20 @@ public class LoanKeyFactStatementReadPlatformService {
             loan.put("expectedMaturityDate", expectedMaturityDate != null ? expectedMaturityDate.toString() : null);
             loan.put("numberOfRepayments", numberOfRepayments);
             loan.put("repayEvery", repayEvery);
-            loan.put("repaymentFrequency", repaymentFrequency(repaymentFrequencyType));
+            loan.put("loanStatusId", loanStatusId);
+            loan.put("active", isActive());
+            loan.put("repaymentFrequency", repaymentFrequency(productType));
             loan.put("annualInterestRate", annualInterestRate);
             loan.put("interestRatePerPeriod", interestRatePerPeriod);
             loan.put("factorRate", factorRate);
             loan.put("interestRateBasisLabel", interestRateBasisLabel(productType));
             loan.put("interestRateBasisValue", interestRateBasisValue());
             return loan;
+        }
+
+        private boolean isActive() {
+            // Fineract LoanStatus.ACTIVE = 300
+            return loanStatusId != null && loanStatusId == 300;
         }
 
         private String interestRateBasisLabel(final String productType) {
@@ -257,16 +268,26 @@ public class LoanKeyFactStatementReadPlatformService {
             return annualInterestRate.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "% per annum";
         }
 
-        private String repaymentFrequency(final Integer frequencyType) {
-            if (frequencyType == null) {
+        /**
+         * Invoice Discounting / Payables Finance commonly use day-based tenors (30/60/90/120 days).
+         * RBF / Factor Rate typically use monthly instalments.
+         */
+        private String repaymentFrequency(final String productType) {
+            if (repaymentFrequencyType == null) {
                 return "";
             }
-            return switch (frequencyType) {
-                case 0 -> "Days";
-                case 1 -> "Weeks";
-                case 2 -> "Months";
-                case 3 -> "Years";
-                default -> frequencyType.toString();
+            final int every = repayEvery != null && repayEvery > 0 ? repayEvery : 1;
+            return switch (repaymentFrequencyType) {
+                case 0 -> every + (every == 1 ? " Day" : " Days");
+                case 1 -> every == 1 ? "Weekly" : "Every " + every + " Weeks";
+                case 2 -> every == 1 ? "Monthly" : "Every " + every + " Months";
+                case 3 -> every == 1 ? "Yearly" : "Every " + every + " Years";
+                default -> {
+                    if ("INVOICE_DISCOUNTING".equals(productType) || "PAYABLES_FINANCE".equals(productType)) {
+                        yield every + " Days";
+                    }
+                    yield "Monthly";
+                }
             };
         }
     }
@@ -292,6 +313,7 @@ public class LoanKeyFactStatementReadPlatformService {
             loan.numberOfRepayments = rs.getObject("number_of_repayments", Integer.class);
             loan.repayEvery = rs.getObject("repay_every", Integer.class);
             loan.repaymentFrequencyType = rs.getObject("repayment_period_frequency_enum", Integer.class);
+            loan.loanStatusId = rs.getObject("loan_status_id", Integer.class);
             loan.annualInterestRate = rs.getBigDecimal("annual_nominal_interest_rate");
             loan.interestRatePerPeriod = rs.getBigDecimal("nominal_interest_rate_per_period");
             loan.factorRate = rs.getBigDecimal("factor_rate");
@@ -299,3 +321,4 @@ public class LoanKeyFactStatementReadPlatformService {
         }
     }
 }
+
