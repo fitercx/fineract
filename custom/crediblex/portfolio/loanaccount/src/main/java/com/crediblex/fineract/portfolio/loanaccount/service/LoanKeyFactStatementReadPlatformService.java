@@ -269,8 +269,8 @@ public class LoanKeyFactStatementReadPlatformService {
         }
 
         /**
-         * Invoice Discounting / Payables Finance commonly use day-based tenors (30/60/90/120 days).
-         * RBF / Factor Rate typically use monthly instalments.
+         * Invoice Discounting / Payables Finance commonly use day-based tenors (30/60/90/120 days). RBF / Factor Rate
+         * typically use monthly instalments.
          */
         private String repaymentFrequency(final String productType) {
             if (repaymentFrequencyType == null) {
@@ -321,4 +321,3 @@ public class LoanKeyFactStatementReadPlatformService {
         }
     }
 }
-
