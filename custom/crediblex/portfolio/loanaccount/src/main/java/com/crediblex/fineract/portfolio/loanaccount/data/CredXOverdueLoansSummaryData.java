@@ -42,7 +42,10 @@ public class CredXOverdueLoansSummaryData {
 
     /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
     private String currencyCode;
-    /** Count of overdue loans in the full portfolio (same population as the list endpoint's totalFilteredRecords with no search). */
+    /**
+     * Count of overdue loans in the full portfolio (same population as the list endpoint's totalFilteredRecords with no
+     * search).
+     */
     private Long totalLoans;
     /** Sum of (principal + interest + LPI) outstanding across overdue installments of all qualifying loans. */
     private BigDecimal totalOutstanding;

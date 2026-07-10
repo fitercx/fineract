@@ -349,8 +349,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * Portfolio-level aggregates over the ENTIRE overdue-loan population - the same population the list endpoint
-     * ({@link #retrieveCrediblexOverdueLoans}) returns with no search. Computed in a single aggregation query so callers
-     * no longer need to page through every overdue loan to build dashboard totals.
+     * ({@link #retrieveCrediblexOverdueLoans}) returns with no search. Computed in a single aggregation query so
+     * callers no longer need to page through every overdue loan to build dashboard totals.
      *
      * <p>
      * The overdue-loan definition and per-loan field semantics are identical to the list endpoint: a loan is included
@@ -367,18 +367,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final String lpiOutstanding = lpiOutstandingSql("ls");
         final String totalOutstanding = overdueInstallmentOutstandingSql("ls");
 
-        // No GROUP BY -> exactly one row even for an empty portfolio (count 0, sums NULL -> coalesced to 0). Only overdue
-        // installments (duedate < businessDate and per-installment outstanding > 0) contribute, so count(distinct loanId)
+        // No GROUP BY -> exactly one row even for an empty portfolio (count 0, sums NULL -> coalesced to 0). Only
+        // overdue
+        // installments (duedate < businessDate and per-installment outstanding > 0) contribute, so count(distinct
+        // loanId)
         // equals the number of qualifying loans and each SUM equals the aggregate of the list endpoint's per-loan sums.
-        final StringBuilder sql = new StringBuilder().append("select count(distinct ls.loan_id) as totalLoans, ")
-                .append("coalesce(sum(").append(principalOutstanding).append("), 0) as totalPrincipalOutstanding, ")
-                .append("coalesce(sum(").append(interestOutstanding).append("), 0) as totalOverdue, ")
-                .append("coalesce(sum(").append(lpiOutstanding).append("), 0) as totalLpiOverdue, ")
-                .append("coalesce(sum(").append(totalOutstanding).append("), 0) as totalOutstanding, ")
+        final StringBuilder sql = new StringBuilder().append("select count(distinct ls.loan_id) as totalLoans, ").append("coalesce(sum(")
+                .append(principalOutstanding).append("), 0) as totalPrincipalOutstanding, ").append("coalesce(sum(")
+                .append(interestOutstanding).append("), 0) as totalOverdue, ").append("coalesce(sum(").append(lpiOutstanding)
+                .append("), 0) as totalLpiOverdue, ").append("coalesce(sum(").append(totalOutstanding).append("), 0) as totalOutstanding, ")
                 .append("max(l.currency_code) as currencyCode from m_loan l ")
-                .append("join m_loan_repayment_schedule ls on ls.loan_id = l.id ")
-                .append("where l.loan_status_id = 300 and ls.duedate < ").append(this.sqlGenerator.currentBusinessDate()).append(" and ")
-                .append(totalOutstanding).append(" > 0");
+                .append("join m_loan_repayment_schedule ls on ls.loan_id = l.id ").append("where l.loan_status_id = 300 and ls.duedate < ")
+                .append(this.sqlGenerator.currentBusinessDate()).append(" and ").append(totalOutstanding).append(" > 0");
 
         return this.jdbcTemplate.queryForObject(sql.toString(), new CredXOverdueLoansSummaryMapper());
     }
