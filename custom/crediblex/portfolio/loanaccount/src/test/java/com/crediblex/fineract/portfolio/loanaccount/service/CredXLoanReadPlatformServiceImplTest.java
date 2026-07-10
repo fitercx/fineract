@@ -1,13 +1,18 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import java.math.BigDecimal;
 import java.sql.Date;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,6 +51,12 @@ public class CredXLoanReadPlatformServiceImplTest {
 
     @Mock
     private PaymentTypeReadPlatformService paymentTypeReadPlatformService;
+
+    @Mock
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Mock
+    private org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator sqlGenerator;
 
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
@@ -338,5 +349,62 @@ public class CredXLoanReadPlatformServiceImplTest {
             assertEquals(ExtendedLoanSchedulePeriodData.Status.SCHEDULED,
                     credXLoanReadPlatformService.resolvePeriodStatus(currency, scheduledPeriodWithPenalties));
         }
+    }
+
+    @Test
+    public void testRetrieveCrediblexOverdueLoansSummaryAggregatesAndIdentity() throws SQLException {
+        // Simulates the single-row aggregate for two overdue loans:
+        // A (principal 100000, interest 5000, LPI 2000) and B (principal 50000, interest 3000, LPI 1000).
+        final ResultSet rs = Mockito.mock(ResultSet.class);
+        when(rs.getLong("totalLoans")).thenReturn(2L);
+        when(rs.getString("currencyCode")).thenReturn("AED");
+        when(rs.getBigDecimal("totalPrincipalOutstanding")).thenReturn(new BigDecimal("150000"));
+        when(rs.getBigDecimal("totalOverdue")).thenReturn(new BigDecimal("8000"));
+        when(rs.getBigDecimal("totalLpiOverdue")).thenReturn(new BigDecimal("3000"));
+        when(rs.getBigDecimal("totalOutstanding")).thenReturn(new BigDecimal("161000"));
+
+        stubSummaryQueryWithRow(rs);
+
+        final CredXOverdueLoansSummaryData summary = credXLoanReadPlatformService.retrieveCrediblexOverdueLoansSummary();
+
+        assertEquals("AED", summary.getCurrencyCode());
+        assertEquals(Long.valueOf(2L), summary.getTotalLoans());
+        assertEquals(new BigDecimal("161000"), summary.getTotalOutstanding());
+        assertEquals(new BigDecimal("8000"), summary.getTotalOverdue());
+        assertEquals(new BigDecimal("3000"), summary.getTotalLpiOverdue());
+        assertEquals(new BigDecimal("150000"), summary.getTotalPrincipalOutstanding());
+
+        // Identity: totalOutstanding - totalOverdue - totalLpiOverdue = totalPrincipalOutstanding
+        assertEquals(summary.getTotalPrincipalOutstanding(),
+                summary.getTotalOutstanding().subtract(summary.getTotalOverdue()).subtract(summary.getTotalLpiOverdue()));
+    }
+
+    @Test
+    public void testRetrieveCrediblexOverdueLoansSummaryEmptyPortfolioFallsBackToDefaultCurrency() throws SQLException {
+        // Empty portfolio: count is 0, the coalesced SUMs are 0, and max(currency_code) over no rows is NULL.
+        final ResultSet rs = Mockito.mock(ResultSet.class);
+        when(rs.getLong("totalLoans")).thenReturn(0L);
+        when(rs.getString("currencyCode")).thenReturn(null);
+        when(rs.getBigDecimal(anyString())).thenReturn(BigDecimal.ZERO);
+
+        stubSummaryQueryWithRow(rs);
+
+        final CredXOverdueLoansSummaryData summary = credXLoanReadPlatformService.retrieveCrediblexOverdueLoansSummary();
+
+        assertEquals("AED", summary.getCurrencyCode());
+        assertEquals(Long.valueOf(0L), summary.getTotalLoans());
+        assertEquals(BigDecimal.ZERO, summary.getTotalOutstanding());
+        assertEquals(BigDecimal.ZERO, summary.getTotalOverdue());
+        assertEquals(BigDecimal.ZERO, summary.getTotalLpiOverdue());
+        assertEquals(BigDecimal.ZERO, summary.getTotalPrincipalOutstanding());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubSummaryQueryWithRow(final ResultSet rs) {
+        when(jdbcTemplate.queryForObject(anyString(),
+                any(org.springframework.jdbc.core.RowMapper.class))).thenAnswer(invocation -> {
+                    final org.springframework.jdbc.core.RowMapper<CredXOverdueLoansSummaryData> mapper = invocation.getArgument(1);
+                    return mapper.mapRow(rs, 0);
+                });
     }
 }

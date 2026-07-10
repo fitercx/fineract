@@ -26,6 +26,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenal
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
@@ -176,6 +177,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     private static final int DEFAULT_OVERDUE_LOANS_LIMIT = 50;
     private static final int MAX_OVERDUE_LOANS_LIMIT = 200;
+    // Display fallback for the overdue summary when the portfolio is empty. V1 assumes a single-currency (AED) tenant.
+    private static final String DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE = "AED";
 
     private final CredXLoanTransactionRepository credXLoanTransactionRepository;
     private final PaymentTypeReadPlatformService paymentTypeReadPlatformService;
@@ -344,6 +347,42 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return new Page<>(loans, totalFilteredRecords);
     }
 
+    /**
+     * Portfolio-level aggregates over the ENTIRE overdue-loan population - the same population the list endpoint
+     * ({@link #retrieveCrediblexOverdueLoans}) returns with no search. Computed in a single aggregation query so callers
+     * no longer need to page through every overdue loan to build dashboard totals.
+     *
+     * <p>
+     * The overdue-loan definition and per-loan field semantics are identical to the list endpoint: a loan is included
+     * only if it is Active (status 300) and has at least one repayment schedule period that is past due
+     * ({@code duedate < currentBusinessDate}) with a positive per-installment outstanding balance
+     * ({@code principal + interest + LPI > 0}). Summing the same per-installment outstanding expressions the list
+     * endpoint uses guarantees the totals match manually summing all list pages, and that
+     * {@code totalOutstanding - totalOverdue - totalLpiOverdue = totalPrincipalOutstanding} holds exactly.
+     * </p>
+     */
+    public CredXOverdueLoansSummaryData retrieveCrediblexOverdueLoansSummary() {
+        final String principalOutstanding = principalOutstandingSql("ls");
+        final String interestOutstanding = interestOutstandingSql("ls");
+        final String lpiOutstanding = lpiOutstandingSql("ls");
+        final String totalOutstanding = overdueInstallmentOutstandingSql("ls");
+
+        // No GROUP BY -> exactly one row even for an empty portfolio (count 0, sums NULL -> coalesced to 0). Only overdue
+        // installments (duedate < businessDate and per-installment outstanding > 0) contribute, so count(distinct loanId)
+        // equals the number of qualifying loans and each SUM equals the aggregate of the list endpoint's per-loan sums.
+        final StringBuilder sql = new StringBuilder().append("select count(distinct ls.loan_id) as totalLoans, ")
+                .append("coalesce(sum(").append(principalOutstanding).append("), 0) as totalPrincipalOutstanding, ")
+                .append("coalesce(sum(").append(interestOutstanding).append("), 0) as totalOverdue, ")
+                .append("coalesce(sum(").append(lpiOutstanding).append("), 0) as totalLpiOverdue, ")
+                .append("coalesce(sum(").append(totalOutstanding).append("), 0) as totalOutstanding, ")
+                .append("max(l.currency_code) as currencyCode from m_loan l ")
+                .append("join m_loan_repayment_schedule ls on ls.loan_id = l.id ")
+                .append("where l.loan_status_id = 300 and ls.duedate < ").append(this.sqlGenerator.currentBusinessDate()).append(" and ")
+                .append(totalOutstanding).append(" > 0");
+
+        return this.jdbcTemplate.queryForObject(sql.toString(), new CredXOverdueLoansSummaryMapper());
+    }
+
     private OverdueLoansFilter overdueLoansFromAndWhereClause(final String search) {
         final StringBuilder sql = new StringBuilder().append(" from m_loan l ").append("left join m_client c on c.id = l.client_id ")
                 .append("left join m_group g on g.id = l.group_id ").append("left join m_staff s on s.id = l.loan_officer_id ")
@@ -470,6 +509,21 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         private CredXOverdueInstallmentData toData() {
             return new CredXOverdueInstallmentData(installmentNumber, dueDate, dpd, emiAmount, principalOutstanding, interestOutstanding,
                     lpiOutstanding, excessAmount);
+        }
+    }
+
+    private static final class CredXOverdueLoansSummaryMapper implements RowMapper<CredXOverdueLoansSummaryData> {
+
+        @Override
+        public CredXOverdueLoansSummaryData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final String currencyCode = rs.getString("currencyCode");
+            return CredXOverdueLoansSummaryData.builder()
+                    .currencyCode(currencyCode != null ? currencyCode : DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE)
+                    .totalLoans(rs.getLong("totalLoans"))
+                    .totalOutstanding(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalOutstanding"))
+                    .totalOverdue(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalOverdue"))
+                    .totalLpiOverdue(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalLpiOverdue"))
+                    .totalPrincipalOutstanding(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalPrincipalOutstanding")).build();
         }
     }
 
