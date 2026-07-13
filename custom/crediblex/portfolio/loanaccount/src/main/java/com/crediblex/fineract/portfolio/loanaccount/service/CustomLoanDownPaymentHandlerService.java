@@ -164,7 +164,7 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
          **/
         if (loanTransaction.isNotRecoveryRepayment()) {
             loan.doPostLoanTransactionChecks(loanTransaction.getTransactionDate(), loanLifecycleStateMachine);
-            closeLoanWhenNoPayableBalanceRemains(loan, loanTransaction.getTransactionDate(), loanLifecycleStateMachine);
+            LoanChargeSettlementUtils.closeIfFullySettled(loan, loanTransaction.getTransactionDate(), loanLifecycleStateMachine);
         }
 
         // FIXED: Use hasActualMultipleTranches() instead of product setting
@@ -192,16 +192,6 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
 
         // For actual multi-tranche loans, use the core validator
         loanRefundValidator.validateTransactionAmountThreshold(loan, adjustedTransaction);
-    }
-
-    private void closeLoanWhenNoPayableBalanceRemains(final Loan loan, final LocalDate transactionDate,
-            final LoanLifecycleStateMachine loanLifecycleStateMachine) {
-        if (loan.getStatus().isActive() && loan.getSummary().isRepaidInFull(loan.getCurrency())
-                && LoanChargeSettlementUtils.hasNoPayableChargesRemaining(loan)) {
-            loan.setClosedOnDate(transactionDate);
-            loan.setActualMaturityDate(transactionDate);
-            loanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
-        }
     }
 
     private LoanTransaction handleDownPayment(final Loan loan, final LoanTransaction disbursementTransaction, final JsonCommand command,

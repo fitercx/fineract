@@ -28,6 +28,17 @@ public interface LoanRescheduleRequestDataValidator {
 
     void validateForCreateAction(JsonCommand jsonCommand, Loan loan);
 
+    /**
+     * Same as {@link #validateForCreateAction(JsonCommand, Loan)} but, when {@code allowEarlierDueDate} is true, the
+     * "adjusted due date cannot be before the reschedule-from date" rule is skipped. This lets callers move an
+     * installment to an EARLIER date (e.g. custom "adjust EMI date with interest recalculation"), which the standard
+     * postpone-only reschedule flow forbids. All other validations still apply. Defaults to the strict behavior so
+     * existing callers are unaffected.
+     */
+    default void validateForCreateAction(JsonCommand jsonCommand, Loan loan, boolean allowEarlierDueDate) {
+        validateForCreateAction(jsonCommand, loan);
+    }
+
     void validateForApproveAction(JsonCommand jsonCommand, LoanRescheduleRequest loanRescheduleRequest);
 
     void validateForRejectAction(JsonCommand jsonCommand, LoanRescheduleRequest loanRescheduleRequest);

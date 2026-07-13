@@ -808,6 +808,15 @@ public class CommandWrapperBuilder {
         return this;
     }
 
+    public CommandWrapperBuilder bulkWaiveOverdueLoanCharges(final Long loanId) {
+        this.actionName = "BULKWAIVEOVERDUE";
+        this.entityName = "LOANCHARGE";
+        this.entityId = null;
+        this.loanId = loanId;
+        this.href = "/loans/" + loanId + "/charges";
+        return this;
+    }
+
     public CommandWrapperBuilder deleteLoanCharge(final Long loanId, final Long loanChargeId) {
         this.actionName = "DELETE";
         this.entityName = "LOANCHARGE";

@@ -1,5 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import java.time.LocalDate;
+import java.util.Map;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformService;
@@ -25,4 +27,22 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      * @return CommandProcessingResult with the reversal details
      */
     CommandProcessingResult reversePaidLoanCharge(Long loanId, Long loanChargeId, JsonCommand command);
+
+    /**
+     * Waives the outstanding overdue (LPI) charges that accrued strictly AFTER a backdated settlement date, i.e. the
+     * charges for the days between the actual payment day and the day the settlement is being recorded (e.g. money
+     * received Friday, settled Monday backdated to Friday -> Sat/Sun/Mon LPI is waived). Each charge is waived through
+     * the standard per-charge waiver core so a proper waive transaction with journal entries is posted and the charge
+     * keeps a full audit trail (visible as "waived" in the charges tab). Paid portions are preserved. Repayment
+     * schedule dates are never touched.
+     *
+     * @param loanId
+     *            the loan being settled
+     * @param settlementDate
+     *            the (backdated) transaction date of the settlement; only LPI with due date strictly after this and up
+     *            to the current business date is waived
+     * @return summary map: {@code chargesWaived}, {@code totalAmountWaived}, {@code daysCovered}, {@code fromDate},
+     *         {@code toDate}. Empty counts when the settlement is not backdated or there is nothing to waive.
+     */
+    Map<String, Object> waiveOverdueChargesAccruedAfterSettlementDate(Long loanId, LocalDate settlementDate);
 }

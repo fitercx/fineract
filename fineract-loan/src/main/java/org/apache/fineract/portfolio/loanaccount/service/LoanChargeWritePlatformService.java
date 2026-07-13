@@ -43,5 +43,15 @@ public interface LoanChargeWritePlatformService {
 
     CommandProcessingResult deactivateOverdueLoanCharge(Long loanId, JsonCommand command);
 
+    /**
+     * Waives all (or a filtered subset of) outstanding overdue installment charges on the loan in one operation.
+     * Selection semantics mirror {@link #deactivateOverdueLoanCharge(Long, JsonCommand)}: all overdue charges, the
+     * overdue charges of selected EMIs, or a due-date range. Unlike deactivation, waiving posts standard waive
+     * transactions (with journal entries) and keeps the charges visible with a waived status.
+     */
+    default CommandProcessingResult bulkWaiveOverdueLoanCharges(Long loanId, JsonCommand command) {
+        throw new UnsupportedOperationException("Bulk waive of overdue loan charges is not supported by this platform service");
+    }
+
     void applyOverdueChargesForLoan(Long loanId, Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList);
 }

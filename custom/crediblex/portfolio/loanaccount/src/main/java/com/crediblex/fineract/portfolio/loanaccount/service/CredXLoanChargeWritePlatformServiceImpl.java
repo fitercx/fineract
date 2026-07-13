@@ -7,6 +7,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationDat
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
@@ -18,6 +19,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -476,6 +478,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // Get the current outstanding amount to be waived
         Money amountOutstanding = loanCharge.getAmountOutstanding(loan.getCurrency());
 
+        // HARD GUARD: a charge with nothing outstanding has nothing to waive. Without this, a repeat waive (e.g. a
+        // double-click in the UI, possible because isWaived() requires the taxesWaived flag that older waives never
+        // set) would overwrite the previously waived amount with the now-zero outstanding amount, silently losing it.
+        if (!loanCharge.isInstalmentFee() && !amountOutstanding.isGreaterThanZero()) {
+            throw new LoanChargeCannotBeWaivedException(LoanChargeCannotBeWaivedException.LoanChargeCannotBeWaivedReason.ALREADY_WAIVED,
+                    loanCharge.getId());
+        }
+
         // Custom waiver logic that preserves the amountPaid
         if (loanCharge.isInstalmentFee()) {
             // For installment fees, handle the waiver manually
@@ -502,14 +512,21 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
 
         } else {
-            // For non-installment fees, manually set the values to preserve amountPaid
-            // Set the waived amount to the outstanding amount only (not the total amount)
-            loanCharge.setAmountWaived(amountOutstanding.getAmount());
+            // For non-installment fees, manually set the values to preserve amountPaid.
+            // ADD the outstanding amount to any previously waived amount (never overwrite - overwriting loses prior
+            // waivers if this method is ever reached twice for the same charge).
+            final BigDecimal previouslyWaived = loanCharge.getAmountWaived(loan.getCurrency()).getAmount() != null
+                    ? loanCharge.getAmountWaived(loan.getCurrency()).getAmount()
+                    : BigDecimal.ZERO;
+            loanCharge.setAmountWaived(previouslyWaived.add(amountOutstanding.getAmount()));
             loanCharge.setOutstandingAmount(BigDecimal.ZERO);
 
             // Use updatePaidAmountBy with zero to trigger the waived flag setting logic
             // This will call the logic that sets this.waived = true when waivedAmount.isGreaterThanZero()
             loanCharge.updatePaidAmountBy(Money.zero(loan.getCurrency()), null, null);
+            // updatePaidAmountBy only sets the 'waived' flag; isWaived() additionally requires 'taxesWaived'. Set both
+            // so the already-waived validation actually blocks repeat waives and the API reports waived=true to the UI.
+            loanCharge.markAsFullyWaived();
         }
 
         Money amountWaived = loanCharge.getAmountWaived(loan.getCurrency());
@@ -583,6 +600,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         loan.updateLoanSummaryDerivedFields();
         loan.doPostLoanTransactionChecks(waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
+        LoanChargeSettlementUtils.closeIfFullySettled(loan, waiveLoanChargeTransaction.getTransactionDate(), loanLifecycleStateMachine);
 
         return waiveLoanChargeTransaction;
     }
@@ -884,6 +902,257 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     }
 
     /**
+     * Bulk-waives outstanding overdue installment charges (LPI). Selection semantics mirror
+     * {@link #deactivateOverdueLoanCharge(Long, JsonCommand)} and the payload sent by the bulk dialog:
+     * <ul>
+     * <li>no filters - waive every active overdue charge with an outstanding amount</li>
+     * <li>{@code removeCompleteEmiOverdue=true} (+ optional {@code selectedEmiNumbers}) - waive the overdue charges of
+     * the selected EMIs</li>
+     * <li>{@code dueDate} (+ optional {@code toDueDate}) - waive overdue charges within the due-date window</li>
+     * </ul>
+     * Each charge goes through the SAME per-charge waiver core as the single "Waive Charge" action
+     * ({@code customWaiveLoanCharge}): the outstanding portion is waived (paid portions preserved - a half-paid LPI
+     * stays half-paid and can still be reversed via REVERSEPAID), a waive transaction with journal entries is posted
+     * per charge, and installment due dates are never touched. This replaces the destructive bulk removal
+     * (deactivation) flow in the UI.
+     */
+    @Override
+    @Transactional
+    public CommandProcessingResult bulkWaiveOverdueLoanCharges(Long loanId, JsonCommand command) {
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        checkClientOrGroupActive(loan);
+        if (!loan.getStatus().isActive()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.bulk.waive.loan.not.active",
+                    "Overdue charges can only be waived while the loan is active.", loanId);
+        }
+
+        final LocalDate fromDueDate = command.dateValueOfParameterNamed("dueDate");
+        final LocalDate toDueDate = command.dateValueOfParameterNamed("toDueDate");
+        final boolean emiMode = command.hasParameter("removeCompleteEmiOverdue")
+                && command.booleanPrimitiveValueOfParameterNamed("removeCompleteEmiOverdue");
+        if (fromDueDate == null && toDueDate != null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.bulk.waive.invalid.date.filter",
+                    "Start date (dueDate) is required when end date (toDueDate) is provided.");
+        }
+        if (fromDueDate != null && toDueDate != null && toDueDate.isBefore(fromDueDate)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.bulk.waive.invalid.date.range",
+                    "End date (toDueDate) cannot be before start date (dueDate).");
+        }
+
+        final Integer overdueChargeTimeValue = ChargeTimeType.OVERDUE_INSTALLMENT.getValue();
+        List<LoanCharge> candidates;
+        if (fromDueDate == null) {
+            candidates = customLoanChargeRepository.findAllActiveOverdueChargesByLoanId(loanId, overdueChargeTimeValue);
+        } else {
+            final LocalDate effectiveTo = toDueDate != null ? toDueDate : fromDueDate;
+            candidates = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDueDate, effectiveTo, overdueChargeTimeValue);
+        }
+
+        // EMI mode: restrict to charges that resolve to the selected EMIs (or, when none provided, all EMIs that
+        // currently have overdue charges - same semantics as the deactivation flow).
+        if (emiMode && !candidates.isEmpty()) {
+            final List<LoanRepaymentScheduleInstallment> sortedInstallments = new ArrayList<>(loan.getRepaymentScheduleInstallments());
+            sortedInstallments.sort(Comparator.comparing(LoanRepaymentScheduleInstallment::getInstallmentNumber,
+                    Comparator.nullsLast(Comparator.naturalOrder())));
+
+            final Set<Integer> selectedEmiNumbers = new HashSet<>();
+            if (command.hasParameter("selectedEmiNumbers")) {
+                final JsonArray emiNumbersArray = command.arrayOfParameterNamed("selectedEmiNumbers");
+                if (emiNumbersArray != null) {
+                    for (JsonElement element : emiNumbersArray) {
+                        if (element != null && !element.isJsonNull()) {
+                            selectedEmiNumbers.add(element.getAsInt());
+                        }
+                    }
+                }
+            }
+
+            final List<LoanCharge> filtered = new ArrayList<>();
+            for (LoanCharge charge : candidates) {
+                final Integer resolvedInstallmentNumber = resolveInstallmentNumberForOverdueCharge(charge, sortedInstallments);
+                if (resolvedInstallmentNumber == null) {
+                    continue;
+                }
+                if (selectedEmiNumbers.isEmpty() || selectedEmiNumbers.contains(resolvedInstallmentNumber)) {
+                    filtered.add(charge);
+                }
+            }
+            candidates = filtered;
+        }
+
+        final MonetaryCurrency currency = loan.getCurrency();
+        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
+
+        int totalChargesFound = candidates.size();
+        int chargesWaived = 0;
+        BigDecimal totalAmountWaived = BigDecimal.ZERO;
+        final List<Long> waiveTransactionIds = new ArrayList<>();
+
+        for (LoanCharge candidate : candidates) {
+            // Re-resolve as managed entity and re-check eligibility: active, not already fully waived/paid, and with
+            // an outstanding amount to waive. Fully paid charges are skipped (they are handled by REVERSEPAID).
+            final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null)
+                    : null;
+            if (loanCharge == null || !loanCharge.isActive() || loanCharge.isWaived() || loanCharge.isPaid()
+                    || !loanCharge.getAmountOutstanding(currency).isGreaterThanZero()) {
+                continue;
+            }
+
+            businessEventNotifierService.notifyPreBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
+
+            Money accruedCharge = Money.zero(currency);
+            if (loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()) {
+                Collection<LoanChargePaidByData> chargePaidByCollection = this.loanChargeReadPlatformService
+                        .retrieveLoanChargesPaidBy(loanCharge.getId(), LoanTransactionType.ACCRUAL, null);
+                for (LoanChargePaidByData chargePaidByData : chargePaidByCollection) {
+                    accruedCharge = accruedCharge.plus(chargePaidByData.getAmount());
+                }
+            }
+
+            final Map<String, Object> chargeChanges = new LinkedHashMap<>();
+            final List<Long> existingTransactionIds = new ArrayList<>();
+            final List<Long> existingReversedTransactionIds = new ArrayList<>();
+            final Money outstandingBeforeWaive = loanCharge.getAmountOutstanding(currency);
+
+            final LoanTransaction waiveTransaction = customWaiveLoanCharge(loan, loanCharge, defaultLoanLifecycleStateMachine,
+                    chargeChanges, existingTransactionIds, existingReversedTransactionIds, null, scheduleGeneratorDTO, accruedCharge,
+                    externalIdFactory.create());
+
+            // Persist per charge (mirrors the single-waive flow) so journal entries are posted for exactly this
+            // waive transaction and later iterations correctly treat it as an existing transaction.
+            this.loanTransactionRepository.saveAndFlush(waiveTransaction);
+            postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
+            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
+
+            waiveTransactionIds.add(waiveTransaction.getId());
+            totalAmountWaived = totalAmountWaived.add(outstandingBeforeWaive.getAmount());
+            chargesWaived++;
+        }
+
+        if (chargesWaived > 0) {
+            // Safety net: keep repayment schedule charge portions aligned with active charges after bulk waiver.
+            if (hasRepaymentScheduleChargeMismatch(loan)) {
+                log.warn("Detected charge mismatch after bulk waiving {} charges on loan {}. Running full installment charge "
+                        + "recalculation.", chargesWaived, loanId);
+                recalculateInstallmentChargesFromActiveLoanCharges(loan);
+            }
+            loan.updateLoanScheduleDependentDerivedFields();
+            loan.updateLoanSummaryAndStatus();
+            this.loanRepositoryWrapper.saveAndFlush(loan);
+            this.loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
+            loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
+        }
+
+        log.info("Bulk waive completed for loan {}: {} of {} candidate overdue charges waived, total amount {} (transactions: {})", loanId,
+                chargesWaived, totalChargesFound, totalAmountWaived, waiveTransactionIds.size());
+
+        final Map<String, Object> changes = new HashMap<>();
+        changes.put("totalChargesFound", totalChargesFound);
+        changes.put("chargesWaived", chargesWaived);
+        changes.put("chargesSkipped", totalChargesFound - chargesWaived);
+        changes.put("totalAmountWaived", totalAmountWaived);
+
+        return new CommandProcessingResultBuilder().withLoanId(loanId) //
+                .withEntityId(loanId) //
+                .withEntityExternalId(loan.getExternalId()) //
+                .with(changes) //
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> waiveOverdueChargesAccruedAfterSettlementDate(final Long loanId, final LocalDate settlementDate) {
+        final Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("chargesWaived", 0);
+        summary.put("totalAmountWaived", BigDecimal.ZERO);
+        summary.put("daysCovered", 0L);
+
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        // Only relevant for a backdated settlement: nothing to waive when the settlement date is today or in the future.
+        if (settlementDate == null || !settlementDate.isBefore(businessDate)) {
+            return summary;
+        }
+
+        final LocalDate fromDate = settlementDate.plusDays(1); // strictly AFTER the actual payment day
+        final LocalDate toDate = businessDate;
+        summary.put("fromDate", fromDate);
+        summary.put("toDate", toDate);
+
+        final Integer overdueChargeTimeValue = ChargeTimeType.OVERDUE_INSTALLMENT.getValue();
+        final List<LoanCharge> candidates = customLoanChargeRepository.findByLoanIdAndDueDateRange(loanId, fromDate, toDate,
+                overdueChargeTimeValue);
+        if (candidates.isEmpty()) {
+            return summary;
+        }
+
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final MonetaryCurrency currency = loan.getCurrency();
+        final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
+
+        int chargesWaived = 0;
+        BigDecimal totalAmountWaived = BigDecimal.ZERO;
+        final Set<LocalDate> daysWaived = new HashSet<>();
+
+        for (LoanCharge candidate : candidates) {
+            final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null) : null;
+            if (loanCharge == null || !loanCharge.isActive() || loanCharge.isWaived() || loanCharge.isPaid()
+                    || !loanCharge.getAmountOutstanding(currency).isGreaterThanZero()) {
+                continue;
+            }
+
+            businessEventNotifierService.notifyPreBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
+
+            Money accruedCharge = Money.zero(currency);
+            if (loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()) {
+                Collection<LoanChargePaidByData> chargePaidByCollection = this.loanChargeReadPlatformService
+                        .retrieveLoanChargesPaidBy(loanCharge.getId(), LoanTransactionType.ACCRUAL, null);
+                for (LoanChargePaidByData chargePaidByData : chargePaidByCollection) {
+                    accruedCharge = accruedCharge.plus(chargePaidByData.getAmount());
+                }
+            }
+
+            final Money outstandingBeforeWaive = loanCharge.getAmountOutstanding(currency);
+            final LoanTransaction waiveTransaction = customWaiveLoanCharge(loan, loanCharge, defaultLoanLifecycleStateMachine,
+                    new LinkedHashMap<>(), new ArrayList<>(), new ArrayList<>(), null, scheduleGeneratorDTO, accruedCharge,
+                    externalIdFactory.create());
+
+            this.loanTransactionRepository.saveAndFlush(waiveTransaction);
+            final List<Long> existingTransactionIds = new ArrayList<>();
+            postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
+            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
+
+            totalAmountWaived = totalAmountWaived.add(outstandingBeforeWaive.getAmount());
+            if (loanCharge.getDueLocalDate() != null) {
+                daysWaived.add(loanCharge.getDueLocalDate());
+            }
+            chargesWaived++;
+        }
+
+        if (chargesWaived > 0) {
+            if (hasRepaymentScheduleChargeMismatch(loan)) {
+                recalculateInstallmentChargesFromActiveLoanCharges(loan);
+            }
+            loan.updateLoanScheduleDependentDerivedFields();
+            loan.updateLoanSummaryAndStatus();
+            this.loanRepositoryWrapper.saveAndFlush(loan);
+            this.loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
+            loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
+            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
+        }
+
+        log.info("Backdated-settlement LPI waive for loan {}: settlementDate={}, window=({}, {}], chargesWaived={}, totalAmount={}", loanId,
+                settlementDate, settlementDate, toDate, chargesWaived, totalAmountWaived);
+
+        summary.put("chargesWaived", chargesWaived);
+        summary.put("totalAmountWaived", totalAmountWaived);
+        summary.put("daysCovered", (long) daysWaived.size());
+        return summary;
+    }
+
+    /**
      * Reverses a paid loan charge by: 1. Creating a new CHARGE_ADJUSTMENT transaction to reverse the charge payment 2.
      * Crediting the refund amount back to the linked savings account (if any) 3. Posting GL entries to reverse the fee
      * income 4. Marking the charge as inactive 5. Creating audit trail
@@ -932,6 +1201,11 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore, overpaidBefore,
                 loanChargeId, totalAmountPaid);
 
+        LoanRepaymentScheduleInstallment affectedInstallment = null;
+        if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getOverdueInstallmentCharge() != null) {
+            affectedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
+        }
+
         // Mark the charge as INACTIVE and reset paid amounts.
         // This will naturally reduce the loan's overpaid balance when we update the loan summary,
         // since the charge is no longer considered "paid".
@@ -941,34 +1215,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         loanChargeRepository.saveAndFlush(loanCharge);
         log.info("Marked charge {} as inactive and reset paid amounts (amountPaid: {}, amountOutstanding: {})", loanChargeId,
                 loanCharge.getAmountPaid(currency), loanCharge.getAmountOutstanding(currency));
-
-        // Update schedule/summary from charges only (like our bulk overdue deactivation flow).
-        // IMPORTANT: Only recalculate the specific installment that was affected by the reversed charge,
-        // not all installments, to prevent removing charges from other periods.
-        if (loanCharge.isOverdueInstallmentCharge()) {
-            // ✅ Use the LoanOverdueInstallmentCharge relationship (consistent with recalculation logic)
-            if (loanCharge.getOverdueInstallmentCharge() != null) {
-                LoanRepaymentScheduleInstallment affectedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
-                if (affectedInstallment != null) {
-                    // Only recalculate the affected installment
-                    recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-                    log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
-                            affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
-                } else {
-                    log.warn("Reversed charge {} has no linked installment", loanChargeId);
-                }
-            } else {
-                log.warn("Reversed charge {} has no LoanOverdueInstallmentCharge relationship", loanChargeId);
-            }
-        }
-        // For non-overdue charges, recalculate all installments (shouldn't happen for our use case)
-        else {
-            recalculateInstallmentChargesFromActiveLoanCharges(loan);
-        }
-
-        loan.updateLoanScheduleDependentDerivedFields();
-        loan.updateLoanSummaryAndStatus();
-        loanRepositoryWrapper.saveAndFlush(loan);
 
         // Create a CHARGE_ADJUSTMENT transaction on the loan side for audit trail.
         // This transaction will be visible in the loan transactions list to prove the charge was reversed.
@@ -1002,6 +1248,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // Link the charge to the transaction so it can be identified as reversed
         final LoanChargePaidBy chargePaidBy = new LoanChargePaidBy(chargeAdjustmentTransaction, loanCharge, totalAmountPaid, null);
         chargeAdjustmentTransaction.getLoanChargesPaid().add(chargePaidBy);
+        loanCharge.getLoanChargePaidBySet().add(chargePaidBy);
+        final LoanTransactionRelation chargeAdjustmentRelation = LoanTransactionRelation.linkToCharge(chargeAdjustmentTransaction,
+                loanCharge, LoanTransactionRelationTypeEnum.CHARGE_ADJUSTMENT);
+        chargeAdjustmentTransaction.getLoanTransactionRelations().add(chargeAdjustmentRelation);
 
         // Add the transaction to the loan (for audit trail, visible in transactions list)
         loan.addLoanTransaction(chargeAdjustmentTransaction);
@@ -1011,8 +1261,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Created CHARGE_ADJUSTMENT transaction {} on loan {} for charge reversal (audit trail only, no journal entries)",
                 chargeAdjustmentTransaction.getId(), loanId);
 
-        // Note: Schedule recalculation was already done earlier (only for the affected installment)
-        // Just update derived fields and summary
+        // Update schedule/summary from charges only (like our bulk overdue deactivation flow).
+        // IMPORTANT: Only recalculate the specific installment that was affected by the reversed charge,
+        // not all installments, to prevent removing charges from other periods.
+        if (affectedInstallment != null) {
+            recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
+            log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
+                    affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
+        } else {
+            log.warn("Reversed charge {} has no linked installment; recalculating all installments", loanChargeId);
+            recalculateInstallmentChargesFromActiveLoanCharges(loan);
+        }
+
         loan.updateLoanScheduleDependentDerivedFields();
         loan.updateLoanSummaryAndStatus();
         loanRepositoryWrapper.saveAndFlush(loan);
@@ -1687,8 +1947,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         // Sum up all ACTIVE charges for this specific installment
         for (LoanCharge loanCharge : loan.getLoanCharges()) {
-            if (!loanCharge.isActive()) {
-                continue; // Skip inactive charges
+            final boolean activeCharge = loanCharge.isActive();
+            final boolean reversedPaidCharge = isReversedPaidCharge(loanCharge);
+            if (!activeCharge && !reversedPaidCharge) {
+                continue; // Skip inactive charges unless they represent a paid-charge reversal
             }
 
             // Check if this charge applies to this installment
@@ -1717,11 +1979,24 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
             if (appliesToInstallment) {
                 if (loanCharge.isPenaltyCharge()) {
-                    totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
+                    if (activeCharge) {
+                        totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
+                    } else if (reversedPaidCharge) {
+                        // A reversed charge may have been partially settled by a waiver (half paid / half waived).
+                        // Only the PAID component is reversed; the waived component remains settled-by-waiver, so the
+                        // corresponding charged amount must stay on the installment - otherwise waived > charged and
+                        // the repayment schedule shows a distorted period.
+                        totalPenalty = totalPenalty.plus(loanCharge.getAmountWaived(currency));
+                    }
                     penaltyWaived = penaltyWaived.plus(loanCharge.getAmountWaived(currency));
                     penaltyWrittenOff = penaltyWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
                 } else {
-                    totalFee = totalFee.plus(loanCharge.getAmount(currency));
+                    if (activeCharge) {
+                        totalFee = totalFee.plus(loanCharge.getAmount(currency));
+                    } else if (reversedPaidCharge) {
+                        // See penalty branch: keep the waived component's charged amount for reversed charges.
+                        totalFee = totalFee.plus(loanCharge.getAmountWaived(currency));
+                    }
                     feeWaived = feeWaived.plus(loanCharge.getAmountWaived(currency));
                     feeWrittenOff = feeWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
                 }
@@ -1775,8 +2050,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
             // Sum up all ACTIVE charges for this installment
             for (LoanCharge loanCharge : loan.getLoanCharges()) {
-                if (!loanCharge.isActive()) {
-                    continue; // Skip inactive charges
+                final boolean activeCharge = loanCharge.isActive();
+                final boolean reversedPaidCharge = isReversedPaidCharge(loanCharge);
+                if (!activeCharge && !reversedPaidCharge) {
+                    continue; // Skip inactive charges unless they represent a paid-charge reversal
                 }
 
                 // Check if this charge applies to this installment
@@ -1802,11 +2079,21 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
                 if (appliesToInstallment) {
                     if (loanCharge.isPenaltyCharge()) {
-                        totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
+                        if (activeCharge) {
+                            totalPenalty = totalPenalty.plus(loanCharge.getAmount(currency));
+                        } else if (reversedPaidCharge) {
+                            // Half-paid/half-waived reversal: only the paid component is reversed; keep the waived
+                            // component's charged amount so waived never exceeds charged on the installment.
+                            totalPenalty = totalPenalty.plus(loanCharge.getAmountWaived(currency));
+                        }
                         penaltyWaived = penaltyWaived.plus(loanCharge.getAmountWaived(currency));
                         penaltyWrittenOff = penaltyWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
                     } else {
-                        totalFee = totalFee.plus(loanCharge.getAmount(currency));
+                        if (activeCharge) {
+                            totalFee = totalFee.plus(loanCharge.getAmount(currency));
+                        } else if (reversedPaidCharge) {
+                            totalFee = totalFee.plus(loanCharge.getAmountWaived(currency));
+                        }
                         feeWaived = feeWaived.plus(loanCharge.getAmountWaived(currency));
                         feeWrittenOff = feeWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
                     }
@@ -1893,6 +2180,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
 
         return null;
+    }
+
+    private static boolean isReversedPaidCharge(final LoanCharge loanCharge) {
+        if (loanCharge == null || loanCharge.isActive() || loanCharge.getLoanChargePaidBySet() == null) {
+            return false;
+        }
+        return loanCharge.getLoanChargePaidBySet().stream().anyMatch(chargePaidBy -> chargePaidBy.getLoanTransaction() != null
+                && chargePaidBy.getLoanTransaction().isNotReversed() && chargePaidBy.getLoanTransaction().getTypeOf().isChargeAdjustment());
     }
 
     private boolean isSameInstallment(LoanRepaymentScheduleInstallment left, LoanRepaymentScheduleInstallment right) {

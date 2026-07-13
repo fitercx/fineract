@@ -773,6 +773,18 @@ public class LoanCharge extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.waived && this.taxesWaived;
     }
 
+    /**
+     * Marks the charge as fully waived including the taxes component. {@link #isWaived()} requires BOTH flags; waiver
+     * flows that only set {@code waived} (e.g. via {@code updatePaidAmountBy}) leave {@code taxesWaived} false, so the
+     * charge keeps reporting isWaived()=false - which lets a second waive slip past the already-waived validation and
+     * overwrite the waived amount with the (now zero) outstanding amount.
+     */
+    public void markAsFullyWaived() {
+        this.waived = true;
+        this.taxesWaived = true;
+        this.paid = false;
+    }
+
     public boolean isPaidOrPartiallyPaid(final MonetaryCurrency currency) {
 
         final Money amountWaivedOrWrittenOff = getAmountWaived(currency).plus(getAmountWrittenOff(currency));

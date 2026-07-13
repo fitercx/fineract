@@ -16,26 +16,27 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.fineract.portfolio.loanaccount.rescheduleloan.service;
+package org.apache.fineract.portfolio.loanaccount.handler;
 
+import lombok.RequiredArgsConstructor;
+import org.apache.fineract.commands.annotation.CommandType;
+import org.apache.fineract.commands.handler.NewCommandSourceHandler;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatformService;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-public interface LoanRescheduleRequestWritePlatformService {
+@Service
+@RequiredArgsConstructor
+@CommandType(entity = "LOANCHARGE", action = "BULKWAIVEOVERDUE")
+public class LoanChargeBulkWaiveOverdueCommandHandler implements NewCommandSourceHandler {
 
-    CommandProcessingResult create(JsonCommand jsonCommand);
+    private final LoanChargeWritePlatformService writePlatformService;
 
-    /**
-     * Same as {@link #create(JsonCommand)} but skips the postpone-only validation, allowing the adjusted due date to be
-     * EARLIER than the reschedule-from date. Used by the custom "adjust EMI date with interest recalculation" flow to
-     * support moving an installment to an earlier date. All other create validations still apply. Defaults to strict
-     * {@link #create(JsonCommand)} so this is a no-op for platforms that do not override it.
-     */
-    default CommandProcessingResult createAllowingEarlierDueDate(JsonCommand jsonCommand) {
-        return create(jsonCommand);
+    @Transactional
+    @Override
+    public CommandProcessingResult processCommand(final JsonCommand command) {
+        return writePlatformService.bulkWaiveOverdueLoanCharges(command.getLoanId(), command);
     }
-
-    CommandProcessingResult approve(JsonCommand jsonCommand);
-
-    CommandProcessingResult reject(JsonCommand jsonCommand);
 }

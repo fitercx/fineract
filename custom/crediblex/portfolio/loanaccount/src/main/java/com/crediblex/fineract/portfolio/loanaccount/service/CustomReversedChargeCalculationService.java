@@ -52,10 +52,11 @@ public class CustomReversedChargeCalculationService {
      * @return The sum of reversed charges for the period, or BigDecimal.ZERO if none found
      */
     public BigDecimal calculateReversedCharges(Long loanId, LocalDate fromDate, LocalDate dueDate, boolean isPenalty) {
-        // This method calculates reversed charges for a specific period
-        // We need to query the database for inactive charges that fall within this period
-        final String sql = "SELECT COALESCE(SUM(lc.amount), 0) FROM m_loan_charge lc "
+        final String sql = "SELECT COALESCE(SUM(lcpb.amount), 0) FROM m_loan_charge lc "
+                + "JOIN m_loan_charge_paid_by lcpb ON lcpb.loan_charge_id = lc.id "
+                + "JOIN m_loan_transaction lt ON lt.id = lcpb.loan_transaction_id "
                 + "WHERE lc.loan_id = ? AND lc.is_active = false AND lc.is_penalty = ? "
+                + "AND lt.is_reversed = false AND lt.transaction_type_enum = 26 "
                 + "AND ((lc.charge_time_enum = 4 AND lc.due_for_collection_as_of_date >= ? AND lc.due_for_collection_as_of_date <= ?) "
                 + "OR (lc.charge_time_enum = 2 AND ? <= ? AND ? >= ?))";
 

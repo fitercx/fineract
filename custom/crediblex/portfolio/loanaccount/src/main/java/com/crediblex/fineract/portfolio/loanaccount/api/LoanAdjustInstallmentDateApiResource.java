@@ -1,6 +1,8 @@
 package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.commands.LoanCommandWrapperBuilder;
+import com.crediblex.fineract.portfolio.loanaccount.service.CustomLoanWritePlatformServiceJpaRepositoryImpl;
+import com.google.gson.Gson;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -9,11 +11,13 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
@@ -31,6 +35,18 @@ public class LoanAdjustInstallmentDateApiResource {
     private final PlatformSecurityContext context;
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
     private final DefaultToApiJsonSerializer<CommandProcessingResult> toApiJsonSerializer;
+    private final CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanWritePlatformService;
+
+    @GET
+    @Path("/{loanId}/template")
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Adjust Installment Date template", description = "Tells the UI whether interest recalculation is available for this loan and, if not, the reason - so the option can be disabled with an on-screen message.")
+    @ApiResponses({ @ApiResponse(responseCode = "200", description = "OK") })
+    public String template(@PathParam("loanId") @Parameter(description = "loanId") final Long loanId) {
+        this.context.authenticatedUser().validateHasReadPermission("LOAN");
+        final Map<String, Object> template = this.customLoanWritePlatformService.retrieveAdjustInstallmentDateTemplate(loanId);
+        return new Gson().toJson(template);
+    }
 
     @POST
     @Path("/{loanId}")

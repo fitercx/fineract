@@ -18,13 +18,27 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.util;
 
+import java.time.LocalDate;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 
 public final class LoanChargeSettlementUtils {
 
     private LoanChargeSettlementUtils() {}
+
+    public static boolean closeIfFullySettled(final Loan loan, final LocalDate transactionDate,
+            final LoanLifecycleStateMachine loanLifecycleStateMachine) {
+        if (loan.getStatus().isActive() && loan.getSummary().isRepaidInFull(loan.getCurrency()) && hasNoPayableChargesRemaining(loan)) {
+            loan.setClosedOnDate(transactionDate);
+            loan.setActualMaturityDate(transactionDate);
+            loanLifecycleStateMachine.transition(LoanEvent.REPAID_IN_FULL, loan);
+            return true;
+        }
+        return false;
+    }
 
     public static boolean hasNoPayableChargesRemaining(final Loan loan) {
         return loan.getCharges().stream().allMatch(LoanChargeSettlementUtils::isSettled);

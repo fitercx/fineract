@@ -96,18 +96,20 @@ public class LoanRepaymentScheduleProcessingWrapper {
                 }
 
                 final Money feeChargesWaivedForRepaymentPeriod = cumulativeChargesWaivedWithin(startDate, period.getDueDate(), loanCharges,
-                        currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge());
+                        currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge(),
+                        isLastNonDownPaymentPeriod, isFactorRateEnabled);
                 final Money feeChargesWrittenOffForRepaymentPeriod = cumulativeChargesWrittenOffWithin(startDate, period.getDueDate(),
-                        loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge());
+                        loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod, feeCharge(),
+                        isLastNonDownPaymentPeriod, isFactorRateEnabled);
                 final Money penaltyChargesDueForRepaymentPeriod = cumulativePenaltyChargesDueWithin(startDate, period.getDueDate(),
                         loanCharges, currency, period, totalPrincipal, totalInterest, !period.isRecalculatedInterestComponent(),
                         isFirstNonDownPaymentPeriod, isLastNonDownPaymentPeriod, isFactorRateEnabled);
                 final Money penaltyChargesWaivedForRepaymentPeriod = cumulativeChargesWaivedWithin(startDate, period.getDueDate(),
                         loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod,
-                        LoanCharge::isPenaltyCharge);
+                        LoanCharge::isPenaltyCharge, isLastNonDownPaymentPeriod, isFactorRateEnabled);
                 final Money penaltyChargesWrittenOffForRepaymentPeriod = cumulativeChargesWrittenOffWithin(startDate, period.getDueDate(),
                         loanCharges, currency, !period.isRecalculatedInterestComponent(), isFirstNonDownPaymentPeriod,
-                        LoanCharge::isPenaltyCharge);
+                        LoanCharge::isPenaltyCharge, isLastNonDownPaymentPeriod, isFactorRateEnabled);
 
                 period.updateChargePortion(feeChargesDueForRepaymentPeriod, feeChargesWaivedForRepaymentPeriod,
                         feeChargesWrittenOffForRepaymentPeriod, penaltyChargesDueForRepaymentPeriod, penaltyChargesWaivedForRepaymentPeriod,
@@ -191,13 +193,17 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
     private Money cumulativeChargesWaivedWithin(final LocalDate periodStart, final LocalDate periodEnd, final Set<LoanCharge> loanCharges,
             final MonetaryCurrency currency, boolean isInstallmentChargeApplicable, boolean isFirstPeriod,
-            Predicate<LoanCharge> predicate) {
+            Predicate<LoanCharge> predicate, boolean isLastPeriod, boolean isFactorRateEnabled) {
 
         Money cumulative = Money.zero(currency);
 
         for (final LoanCharge loanCharge : loanCharges) {
             if (predicate.test(loanCharge)) {
-                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod);
+                // For factor-rate loans, penalties due after the last period start are shown as due in the last
+                // period (see cumulativePenaltyChargesDueWithin), so their waived portion must land there too.
+                final boolean isPenaltyDueForFactorRateLoan = isLastPeriod && isFactorRateEnabled && loanCharge.isPenaltyCharge()
+                        && DateUtils.isAfter(loanCharge.getDueDate(), periodStart);
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) || isPenaltyDueForFactorRateLoan;
                 if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
                     LoanInstallmentCharge loanChargePerInstallment = loanCharge.getInstallmentLoanCharge(periodEnd);
                     if (loanChargePerInstallment != null) {
@@ -214,13 +220,16 @@ public class LoanRepaymentScheduleProcessingWrapper {
 
     private Money cumulativeChargesWrittenOffWithin(final LocalDate periodStart, final LocalDate periodEnd,
             final Set<LoanCharge> loanCharges, final MonetaryCurrency currency, boolean isInstallmentChargeApplicable,
-            boolean isFirstPeriod, Predicate<LoanCharge> chargePredicate) {
+            boolean isFirstPeriod, Predicate<LoanCharge> chargePredicate, boolean isLastPeriod, boolean isFactorRateEnabled) {
 
         Money cumulative = Money.zero(currency);
 
         for (final LoanCharge loanCharge : loanCharges) {
             if (chargePredicate.test(loanCharge)) {
-                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod);
+                // Same last-period attribution as cumulativeChargesWaivedWithin for factor-rate loan penalties.
+                final boolean isPenaltyDueForFactorRateLoan = isLastPeriod && isFactorRateEnabled && loanCharge.isPenaltyCharge()
+                        && DateUtils.isAfter(loanCharge.getDueDate(), periodStart);
+                boolean isDue = loanCharge.isDueInPeriod(periodStart, periodEnd, isFirstPeriod) || isPenaltyDueForFactorRateLoan;
                 if (loanCharge.isInstalmentFee() && isInstallmentChargeApplicable) {
                     LoanInstallmentCharge loanChargePerInstallment = loanCharge.getInstallmentLoanCharge(periodEnd);
                     if (loanChargePerInstallment != null) {

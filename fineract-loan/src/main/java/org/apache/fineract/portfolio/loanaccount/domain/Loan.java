@@ -2134,8 +2134,17 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
                 .filter(date -> DateUtils.isBefore(getDisbursementDate(), date)).max(LocalDate::compareTo).orElse(getDisbursementDate());
     }
 
+    public LocalDate getLastUserTransactionDateForForeclosure() {
+        return this.loanTransactions.stream().filter(this::isForeclosureBlockingTransaction).map(LoanTransaction::getTransactionDate)
+                .filter(date -> DateUtils.isBefore(getDisbursementDate(), date)).max(LocalDate::compareTo).orElse(getDisbursementDate());
+    }
+
     private boolean isUserTransaction(LoanTransaction transaction) {
         return !(transaction.isReversed() || transaction.isAccrualRelated() || transaction.isIncomePosting());
+    }
+
+    private boolean isForeclosureBlockingTransaction(LoanTransaction transaction) {
+        return isUserTransaction(transaction) && transaction.isNotWaiver();
     }
 
     public LocalDate getLastRepaymentDate() {

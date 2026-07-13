@@ -165,7 +165,9 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformServiceJpaRepositoryImpl;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.portfolio.loanproduct.domain.InterestCalculationPeriodMethod;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
+import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRelatedDetail;
 import org.apache.fineract.portfolio.loanproduct.exception.LinkedAccountRequiredException;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.apache.fineract.portfolio.note.domain.Note;
@@ -184,6 +186,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -2241,6 +2244,49 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return super.updateDisbursementDateAndAmountForTranche(loanId, disbursementId, command);
     }
 
+    /**
+     * Returns the reason interest recalculation is NOT supported for adjusting this loan's installment dates, or null
+     * when it IS supported. Single source of truth shared by the write guard and the read-only template the UI uses to
+     * disable the "Adjust with recalculation of interest" checkbox and show an explanation.
+     *
+     * Currently the only blocking case is an advance-substituted receivable LOC: its interest is priced on
+     * amountAfterAdvance while the schedule carries the funded principal, and the reschedule regeneration would
+     * recompute interest on the wrong base. The date can still be moved WITHOUT recalculation.
+     */
+    public String interestRecalculationOnAdjustmentBlockedReason(final Loan loan) {
+        if (loan == null || loan.getId() == null) {
+            return null;
+        }
+        final Optional<LoanLineOfCreditParams> locParams = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
+        if (locParams.isPresent() && locParams.get().getLineOfCredit() != null && locParams.get().getLineOfCredit().getProductType() != null
+                && locParams.get().getLineOfCredit().getProductType().isReceivable()) {
+            final BigDecimal amountAfterAdvance = locParams.get().getAmountAfterAdvance();
+            final BigDecimal schedulePrincipal = loan.getLoanRepaymentScheduleDetail() != null
+                    ? loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount()
+                    : null;
+            if (amountAfterAdvance != null && schedulePrincipal != null && amountAfterAdvance.compareTo(schedulePrincipal) != 0) {
+                return "Interest recalculation is not available for this receivable line-of-credit loan because its interest is "
+                        + "priced on the advance amount rather than the funded principal. You can still adjust the installment "
+                        + "date without interest recalculation.";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Read-only template for the Adjust Installment Date dialog: tells the UI whether the interest-recalculation option
+     * is available for this loan and, if not, why - so the checkbox can be disabled with an on-screen message.
+     */
+    public Map<String, Object> retrieveAdjustInstallmentDateTemplate(final Long loanId) {
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final String blockedReason = interestRecalculationOnAdjustmentBlockedReason(loan);
+        final Map<String, Object> template = new LinkedHashMap<>();
+        template.put("loanId", loanId);
+        template.put("interestRecalculationSupported", blockedReason == null);
+        template.put("interestRecalculationNotSupportedReason", blockedReason);
+        return template;
+    }
+
     public CommandProcessingResult adjustInstallmentDate(final Long loanId, final JsonCommand command) {
         // Validate request payload (installment number, new due date, adjustment date, optional flags)
         this.adjustInstallmentDateDataValidator.validateForAdjustInstallmentDate(command.json());
@@ -2265,12 +2311,63 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         // Branch: if recalculation of interest is requested, delegate to the same pipeline used by
         // Loan Reschedule > "Change Repayment Date" (creates + approves a LoanRescheduleRequest internally
-        // so that the schedule is regenerated and interest recalculated from the affected installment onward).
-        if (adjustWithInterestRecalculation && !oldDueDate.equals(newDueDate)) {
+        // so that the schedule is regenerated and each period's interest is recomputed by the schedule generator
+        // from the affected installment onward).
+        //
+        // Whether that regeneration actually changes the interest amounts depends on how the loan computes
+        // interest, NOT on the interest_recalculation_enabled flag:
+        //   * DAILY interest calculation (interest_calculated_in_period = DAILY): each period's interest is
+        //     principal * dailyRate * actualDaysInPeriod, so resizing a period (fewer/more days) reduces/increases
+        //     its interest. The reschedule regeneration recomputes this for us even when
+        //     interest_recalculation_enabled is false.
+        //   * SAME_AS_REPAYMENT_PERIOD: interest is a fixed per-period fraction independent of the day count, so
+        //     regenerating changes nothing except the dates - and routing through the reschedule engine then only
+        //     adds risk (it rebuilds dates from the base schedule + persisted LoanTermVariations, which silently
+        //     reverts prior in-place non-recalc shifts on later installments and can mis-anchor the target).
+        //
+        // So we only take the reschedule/regeneration path when it can produce a MEANINGFUL interest change, i.e.
+        // when the loan's interest is day-sensitive (DAILY) or the product genuinely runs interest recalculation.
+        // Otherwise we fall through to the deterministic in-place cascade, which preserves every prior shift and
+        // never drifts back to the base schedule.
+        //
+        // Regenerating via the reschedule engine only produces a MEANINGFUL interest change when the loan's interest
+        // is sensitive to the number of days in a period. That is true when:
+        //   * interest_recalculation_enabled (REST recalculation), OR
+        //   * DAILY interest calculation (interest = principal * dailyRate * actualDays), OR
+        //   * SAME_AS_REPAYMENT_PERIOD with allowPartialPeriodInterestCalcualtion=true (period priced on its
+        //     FRACTIONAL length), OR
+        //   * the "Adjusted Repayment Period" global config is enabled - in which case the recalc path itself
+        //     temporarily forces DAILY pricing so the regeneration re-spreads interest day-wise for ANY product/config
+        //     (declining or flat, weekly/monthly/yearly all normalized to days). This is what makes recalc work for
+        //     plain SAME_AS_REPAYMENT_PERIOD loans that would otherwise keep a flat per-period interest.
+        // When none hold, regenerating would only shift dates (and risk reverting prior in-place shifts), so we fall
+        // through to the deterministic in-place cascade and flag interestRecalculationSkipped.
+        final LoanProductRelatedDetail scheduleDetail = loan.getLoanRepaymentScheduleDetail();
+        final boolean loanSupportsInterestRecalculation = loan.isInterestRecalculationEnabled();
+        final boolean loanUsesDailyInterest = scheduleDetail != null && scheduleDetail.getInterestCalculationPeriodMethod() != null
+                && scheduleDetail.getInterestCalculationPeriodMethod().isDaily();
+        final boolean loanUsesPartialPeriodInterest = scheduleDetail != null
+                && scheduleDetail.isAllowPartialPeriodInterestCalcualtion();
+        final boolean adjustedRepaymentPeriodEnabled = isAdjustedRepaymentPeriodDaywiseEnabled();
+        final boolean regenerationChangesInterest = loanSupportsInterestRecalculation || loanUsesDailyInterest
+                || loanUsesPartialPeriodInterest || adjustedRepaymentPeriodEnabled;
+        if (adjustWithInterestRecalculation && regenerationChangesInterest && !oldDueDate.equals(newDueDate)) {
             return adjustInstallmentDateWithInterestRecalculation(loan, installment, oldDueDate, newDueDate, adjustmentDate, command);
         }
 
+        // Guard the in-place re-dating path. The reschedule validator enforces these for its path; the in-place
+        // path historically had no such guard, which allowed a due date to be set before the previous
+        // installment's due date (producing negative/overlapping periods and instantly flipping the loan into
+        // arrears) or to move an already fully-paid installment. Reject both up front.
+        validateInPlaceInstallmentDateAdjustment(loan, installment, installmentNumber, newDueDate);
+
         final Map<String, Object> changes = new HashMap<>();
+        if (adjustWithInterestRecalculation && !regenerationChangesInterest && !oldDueDate.equals(newDueDate)) {
+            // Recalculation was requested but this loan's interest is not day-sensitive and product recalculation is
+            // off, so regenerating would only shift dates (and risk reverting prior shifts). Record that the request
+            // was safely downgraded to a pure date shift so it is visible in the command audit result.
+            changes.put("interestRecalculationSkipped", true);
+        }
 
         if (!oldDueDate.equals(newDueDate)) {
             final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
@@ -2340,6 +2437,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final LocalDate adjustmentDate, final JsonCommand originalCommand) {
 
         final Long loanId = loan.getId();
+
+        // Reject upfront when interest recalculation is not supported for this loan (e.g. advance-substituted
+        // receivable LOC whose interest is priced on amountAfterAdvance, not the funded principal). The same predicate
+        // powers the read-only template the UI uses to disable the checkbox and show a reason, so the message the
+        // operator sees matches exactly what the server enforces.
+        final String recalcBlockedReason = interestRecalculationOnAdjustmentBlockedReason(loan);
+        if (recalcBlockedReason != null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.receivable.loc.unsupported",
+                    recalcBlockedReason, loanId);
+        }
         final String dateFormat = originalCommand.hasParameter("dateFormat") ? originalCommand.dateFormat() : "yyyy-MM-dd";
         final String locale = originalCommand.hasParameter("locale") ? originalCommand.locale() : "en";
         final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateFormat).withLocale(Locale.forLanguageTag(locale));
@@ -2361,12 +2468,38 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 ? originalCommand.stringValueOfParameterNamed("rescheduleReasonComment")
                 : "Adjust Installment Date (with interest recalculation)";
 
+        // ADJUSTED REPAYMENT PERIOD (day-wise interest re-spread):
+        // The schedule generator only re-prices a period by its actual day count when the loan's interest is computed
+        // DAILY (or partial-period). On SAME_AS_REPAYMENT_PERIOD loans, each period gets a flat fraction and resizing a
+        // period changes nothing. To make "adjust EMI with interest recalculation" work for ALL products/configs, we
+        // temporarily switch the loan's interest-calculation method to DAILY for the duration of this regeneration,
+        // then restore the original method - ALL inside this single command transaction, so no external state changes
+        // and a rollback reverts it. The engine then prices every regenerated period as
+        // outstanding * (annualRate / daysInYear) * actualDaysInPeriod, honoring the loan's own days_in_year. Gated by
+        // a global config so it can be toggled fleet-wide without any per-loan migration.
+        final LoanProductRelatedDetail scheduleDetail = loan.getLoanRepaymentScheduleDetail();
+        final boolean alreadyDaySensitive = scheduleDetail != null && ((scheduleDetail.getInterestCalculationPeriodMethod() != null
+                && scheduleDetail.getInterestCalculationPeriodMethod().isDaily()) || scheduleDetail.isAllowPartialPeriodInterestCalcualtion());
+        final boolean forceDaywise = scheduleDetail != null && !alreadyDaySensitive && isAdjustedRepaymentPeriodDaywiseEnabled();
+        final InterestCalculationPeriodMethod originalMethod = scheduleDetail != null ? scheduleDetail.getInterestCalculationPeriodMethod()
+                : null;
+        if (forceDaywise) {
+            scheduleDetail.setInterestCalculationPeriodMethod(InterestCalculationPeriodMethod.DAILY);
+            saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            log.info("Adjusted repayment period: temporarily switched loan {} interest calc to DAILY (from {}) for day-wise recalc",
+                    loanId, originalMethod);
+        }
+
         // Chained-reschedule alignment: the schedule generator matches DUE_DATE variations by exact
         // applicable_date against the original generator-produced date. After a prior reschedule + working-day
         // rule push, the prior variation's date_value no longer equals the installment's current due date,
         // which breaks approve()'s chain-equality check and silently no-ops subsequent reschedules. Realign
         // any prior active DUE_DATE variation that affected this installment so the chain works.
         alignPriorDueDateVariationForInstallment(loan, installment, oldDueDate);
+        // Stale variations from earlier partially-applied or reverted adjustments (date_value matching no live
+        // installment due date) poison the generator's date chain and silently no-op the reschedule. Deactivate
+        // them before creating the new request. Runs AFTER align so legitimately realignable variations are kept.
+        deactivateStaleDueDateVariations(loan);
         ensurePriorDueDateVariationForManualAdjustment(loan, installment, oldDueDate);
 
         // Build CREATE payload equivalent to what the Reschedule Loan > Change Repayment Date form would send.
@@ -2387,7 +2520,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 RescheduleLoansApiConstants.ENTITY_NAME, null, null, loan.getGroupId(), loan.getClientId(), loanId, null, null,
                 "/rescheduleloans", null, null, null, null, ExternalId.empty());
 
-        final CommandProcessingResult createResult = this.loanRescheduleRequestWritePlatformService.create(createCommand);
+        // Fineract's standard reschedule (Change Repayment Date) is postpone-only: it rejects an adjusted due date
+        // earlier than the current one. For an EARLIER move we call the create variant that skips ONLY that rule
+        // (all other validations still apply). The generated schedule is still validated by
+        // verifyInstallmentDateAdjustmentApplied() below, which rolls the whole transaction back on any mismatch -
+        // so an earlier move that the generator cannot honor fails safe (clean rollback, no corruption).
+        final boolean earlierMove = newDueDate.isBefore(oldDueDate);
+        final CommandProcessingResult createResult = earlierMove
+                ? this.loanRescheduleRequestWritePlatformService.createAllowingEarlierDueDate(createCommand)
+                : this.loanRescheduleRequestWritePlatformService.create(createCommand);
         final Long rescheduleRequestId = createResult.getResourceId();
 
         // Immediately approve the just-created reschedule request. This triggers the standard recalculation pipeline
@@ -2406,6 +2547,24 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         this.loanRescheduleRequestWritePlatformService.approve(approveCommand);
 
+        // FAIL-PROOF: the reschedule generator matches variations by exact date equality and can silently no-op or
+        // mis-anchor when the chain does not line up (observed in production: target date ignored / applied to the
+        // wrong installment). Verify the regenerated schedule actually reflects the request; any mismatch throws,
+        // which rolls back the whole command transaction (create + approve included) leaving the loan untouched.
+        verifyInstallmentDateAdjustmentApplied(loanId, installment.getInstallmentNumber(), newDueDate);
+
+        // Restore the loan's original interest-calculation method. The regenerated day-wise interest amounts are
+        // already persisted on the schedule; restoring only the method flag leaves those amounts intact while ensuring
+        // COB and other flows continue to behave per the loan's configured method.
+        if (forceDaywise) {
+            final Loan refreshed = this.loanAssembler.assembleFrom(loanId);
+            if (refreshed.getLoanRepaymentScheduleDetail() != null) {
+                refreshed.getLoanRepaymentScheduleDetail().setInterestCalculationPeriodMethod(originalMethod);
+                saveAndFlushLoanWithDataIntegrityViolationChecks(refreshed);
+                log.info("Adjusted repayment period: restored loan {} interest calc method to {}", loanId, originalMethod);
+            }
+        }
+
         refreshLoanArrearsAndDelinquencyAfterInstallmentDateAdjustment(loanId);
 
         final Map<String, Object> changes = new LinkedHashMap<>();
@@ -2414,6 +2573,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         changes.put("newDueDate", newDueDate);
         changes.put("adjustmentDate", businessDate);
         changes.put("adjustWithInterestRecalculation", true);
+        changes.put("adjustedRepaymentPeriodDaywise", forceDaywise);
         changes.put("rescheduleRequestId", rescheduleRequestId);
 
         return new CommandProcessingResultBuilder().withCommandId(originalCommand.commandId()).withEntityId(loanId)
@@ -2479,6 +2639,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             if (!applicableWithinPeriod) {
                 continue;
             }
+            // The schedule generator applies the working-day push BEFORE matching due-date variations
+            // (AbstractCumulativeLoanScheduleGenerator: adjustRepaymentDate at line ~216 precedes
+            // applyLoanTermVariations at ~228). A variation that merely encodes that push (dateValue ==
+            // workingDayPush(applicable), applicable itself non-working) adds no information the generator does not
+            // reproduce on its own - but if left active, approve()'s chain-equality logic consumes it and rewires the
+            // NEW variation's applicable_date to the PRE-push date, which the generator never matches, silently
+            // no-opping the reschedule. Deactivate such push-only variations instead of realigning them.
+            final LocalDate pushedApplicable = workingDayAdjusted(applicable);
+            if (!pushedApplicable.isEqual(applicable) && pushedApplicable.isEqual(currentDueDate)) {
+                log.info(
+                        "Deactivating push-only DUE_DATE term variation {} (applicable={} pushes to {}) for loan {} installment {} before chained recalc-reschedule",
+                        variation.getId(), applicable, pushedApplicable, loan.getId(), installment.getInstallmentNumber());
+                variation.markAsInactive();
+                continue;
+            }
             if (!dateValue.isEqual(currentDueDate)) {
                 log.info(
                         "Aligning prior DUE_DATE term variation {} (applicable={}) date_value {} -> {} for loan {} installment {} before chained recalc-reschedule",
@@ -2486,6 +2661,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 variation.setDateValue(currentDueDate);
             }
         }
+    }
+
+    /** Applies the working-day repayment reschedule rule to a date, mirroring what the schedule generator does. */
+    private LocalDate workingDayAdjusted(final LocalDate date) {
+        final org.apache.fineract.organisation.workingdays.domain.WorkingDays workingDays = this.workingDaysRepository.findOne();
+        if (workingDays == null || date == null) {
+            return date;
+        }
+        return org.apache.fineract.organisation.workingdays.service.WorkingDaysUtil.getOffSetDateIfNonWorkingDay(date, date, workingDays);
     }
 
     /**
@@ -2501,8 +2685,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             return;
         }
 
-        final LocalDate expectedGeneratedDueDate = deriveExpectedGeneratedDueDate(loan, installment.getFromDate());
+        final LocalDate expectedGeneratedDueDate = replayExpectedGeneratedDueDate(loan, installment.getInstallmentNumber());
         if (expectedGeneratedDueDate == null || DateUtils.isEqual(expectedGeneratedDueDate, currentDueDate)) {
+            return;
+        }
+
+        // The generator applies the working-day push BEFORE matching due-date variations, so the date it will try to
+        // match is the PUSHED generated date, not the raw one.
+        final LocalDate matchableGeneratedDueDate = workingDayAdjusted(expectedGeneratedDueDate);
+        if (DateUtils.isEqual(matchableGeneratedDueDate, currentDueDate)) {
+            // The current due date is exactly what the generator will produce (raw date + working-day push). The new
+            // reschedule variation's applicable_date (= current due date) will match naturally - no bridge needed.
+            // Creating one would trigger approve()'s chain rewiring to the pre-push date, which never matches.
             return;
         }
 
@@ -2513,38 +2707,158 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             }
         }
 
+        // Anchor the bridge at the matchable (post-push) date: approve() chains it (prior.dateValue == new.applicable)
+        // and rewires the new variation's applicable_date to this bridge's applicable_date, so it must be a date the
+        // generator actually produces at matching time.
         final LoanTermVariations manualShiftBridge = new LoanTermVariations(LoanTermVariationType.DUE_DATE.getValue(),
-                expectedGeneratedDueDate, null, currentDueDate, false, loan, loan.getStatus().getValue(), true, null);
+                matchableGeneratedDueDate, null, currentDueDate, false, loan, loan.getStatus().getValue(), true, null);
         loan.getLoanTermVariations().add(manualShiftBridge);
         log.info("Added transient DUE_DATE bridge variation {} -> {} for loan {} installment {} before recalc installment date adjustment",
-                expectedGeneratedDueDate, currentDueDate, loan.getId(), installment.getInstallmentNumber());
+                matchableGeneratedDueDate, currentDueDate, loan.getId(), installment.getInstallmentNumber());
     }
 
-    private LocalDate deriveExpectedGeneratedDueDate(final Loan loan, final LocalDate fromDate) {
-        if (loan == null || loan.getLoanRepaymentScheduleDetail() == null || fromDate == null) {
+    /**
+     * Computes the due date the schedule generator would produce for the given installment by replaying the date
+     * chain from disbursement: advance by the repayment frequency, re-anchoring whenever an active DUE_DATE variation
+     * produced an installment's current due date (variations re-anchor the chain; working-day pushes do not). This
+     * replaces the earlier naive {@code fromDate + frequency} derivation, which broke whenever the previous
+     * installment's own date had been shifted (its fromDate was then no longer a generator-produced date).
+     */
+    private LocalDate replayExpectedGeneratedDueDate(final Loan loan, final Integer targetInstallmentNumber) {
+        if (loan == null || loan.getLoanRepaymentScheduleDetail() == null || targetInstallmentNumber == null) {
             return null;
         }
-
         final Integer repayEvery = loan.getLoanRepaymentScheduleDetail().getRepayEvery();
-        if (repayEvery == null || repayEvery <= 0) {
-            return null;
-        }
-
         final PeriodFrequencyType frequencyType = loan.getLoanRepaymentScheduleDetail().getRepaymentPeriodFrequencyType();
-        if (frequencyType == null) {
+        if (repayEvery == null || repayEvery <= 0 || frequencyType == null || loan.getDisbursementDate() == null) {
             return null;
         }
 
-        if (frequencyType.isDaily()) {
-            return fromDate.plusDays(repayEvery);
-        } else if (frequencyType.isWeekly()) {
-            return fromDate.plusWeeks(repayEvery);
-        } else if (frequencyType.isMonthly()) {
-            return fromDate.plusMonths(repayEvery);
-        } else if (frequencyType.isYearly()) {
-            return fromDate.plusYears(repayEvery);
+        final List<LoanTermVariations> activeDueDateVariations = new ArrayList<>();
+        for (LoanTermVariations variation : loan.getActiveLoanTermVariations()) {
+            if (variation != null && variation.getTermType() != null && variation.getTermType().isDueDateVariation()
+                    && variation.fetchDateValue() != null) {
+                activeDueDateVariations.add(variation);
+            }
+        }
+
+        LocalDate anchor = loan.getDisbursementDate();
+        int periodsSinceAnchor = 0;
+        for (LoanRepaymentScheduleInstallment inst : loan.getRepaymentScheduleInstallments()) {
+            if (inst.getInstallmentNumber() == null) {
+                continue;
+            }
+            periodsSinceAnchor++;
+            final LocalDate expected = advanceByFrequency(anchor, frequencyType, (long) repayEvery * periodsSinceAnchor);
+            if (inst.getInstallmentNumber().equals(targetInstallmentNumber)) {
+                return expected;
+            }
+            if (inst.getInstallmentNumber() > targetInstallmentNumber) {
+                return null;
+            }
+            // A prior variation moved this installment: the generator chain re-anchors from its new date.
+            for (LoanTermVariations variation : activeDueDateVariations) {
+                if (DateUtils.isEqual(variation.fetchDateValue(), inst.getDueDate())) {
+                    anchor = inst.getDueDate();
+                    periodsSinceAnchor = 0;
+                    break;
+                }
+            }
         }
         return null;
+    }
+
+    private LocalDate advanceByFrequency(final LocalDate date, final PeriodFrequencyType frequencyType, final long units) {
+        if (frequencyType.isDaily()) {
+            return date.plusDays(units);
+        } else if (frequencyType.isWeekly()) {
+            return date.plusWeeks(units);
+        } else if (frequencyType.isMonthly()) {
+            return date.plusMonths(units);
+        } else if (frequencyType.isYearly()) {
+            return date.plusYears(units);
+        }
+        return null;
+    }
+
+    /**
+     * Deactivates active DUE_DATE variations whose {@code date_value} matches no live installment due date. Such
+     * variations are residue of earlier partially-applied or reverted adjustments; they describe a date the schedule
+     * no longer contains, so during regeneration they move the generator chain to dates that do not exist and every
+     * later exact-equality match (including the variation for the new request) silently fails.
+     */
+    private void deactivateStaleDueDateVariations(final Loan loan) {
+        if (loan == null) {
+            return;
+        }
+        for (LoanTermVariations variation : loan.getActiveLoanTermVariations()) {
+            if (variation == null || variation.getTermType() == null || !variation.getTermType().isDueDateVariation()) {
+                continue;
+            }
+            final LocalDate dateValue = variation.fetchDateValue();
+            if (dateValue == null) {
+                continue;
+            }
+            boolean matchesLiveDueDate = false;
+            for (LoanRepaymentScheduleInstallment inst : loan.getRepaymentScheduleInstallments()) {
+                if (DateUtils.isEqual(dateValue, inst.getDueDate())) {
+                    matchesLiveDueDate = true;
+                    break;
+                }
+            }
+            if (!matchesLiveDueDate) {
+                log.info("Deactivating stale DUE_DATE term variation {} (applicable={}, dateValue={}) for loan {}: "
+                        + "dateValue matches no live installment due date", variation.getId(), variation.fetchTermApplicaDate(),
+                        dateValue, loan.getId());
+                variation.markAsInactive();
+            }
+        }
+    }
+
+    /**
+     * Post-approve fail-safe: verifies the regenerated schedule actually reflects the requested adjustment. The
+     * reschedule generator matches DUE_DATE variations by exact date equality; when the chain does not line up it
+     * silently no-ops or (worse) applies the date to the wrong installment - both observed in production. Throwing
+     * here rolls back the entire command transaction (reschedule request creation and approval included), so a
+     * mismatch can never leave a half-applied schedule behind.
+     */
+    private void verifyInstallmentDateAdjustmentApplied(final Long loanId, final Integer installmentNumber,
+            final LocalDate requestedDueDate) {
+        final Loan freshLoan = this.loanAssembler.assembleFrom(loanId);
+        final LoanRepaymentScheduleInstallment adjusted = freshLoan.fetchRepaymentScheduleInstallment(installmentNumber);
+        if (adjusted == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.regeneration.lost.installment",
+                    "Installment " + installmentNumber + " no longer exists after schedule regeneration. Operation rolled back.",
+                    installmentNumber);
+        }
+
+        final LocalDate actualDueDate = adjusted.getDueDate();
+        // The generator may legitimately push the requested date forward off a non-working day.
+        final org.apache.fineract.organisation.workingdays.domain.WorkingDays workingDays = this.workingDaysRepository.findOne();
+        final LocalDate workingDayAdjustedRequest = workingDays == null ? requestedDueDate
+                : org.apache.fineract.organisation.workingdays.service.WorkingDaysUtil.getOffSetDateIfNonWorkingDay(requestedDueDate,
+                        requestedDueDate, workingDays);
+        if (!DateUtils.isEqual(actualDueDate, requestedDueDate) && !DateUtils.isEqual(actualDueDate, workingDayAdjustedRequest)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.not.applied",
+                    "Schedule regeneration did not apply the requested due date for installment " + installmentNumber + " (requested "
+                            + requestedDueDate + ", schedule shows " + actualDueDate
+                            + "). The adjustment was rolled back; no changes were made. This usually indicates inconsistent prior "
+                            + "term variations on the loan - please review the loan's reschedule history.",
+                    installmentNumber, requestedDueDate, actualDueDate);
+        }
+
+        // Structural sanity: due dates must remain strictly increasing (catches collapsed/overlapping periods).
+        LocalDate previousDueDate = null;
+        for (LoanRepaymentScheduleInstallment inst : freshLoan.getRepaymentScheduleInstallments()) {
+            if (previousDueDate != null && !inst.getDueDate().isAfter(previousDueDate)) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.schedule.corrupted",
+                        "Schedule regeneration produced a non-increasing due date sequence at installment " + inst.getInstallmentNumber()
+                                + " (" + inst.getDueDate() + " after " + previousDueDate
+                                + "). The adjustment was rolled back; no changes were made.",
+                        inst.getInstallmentNumber(), inst.getDueDate(), previousDueDate);
+            }
+            previousDueDate = inst.getDueDate();
+        }
     }
 
     private Long resolveDefaultLoanRescheduleReasonId() {
@@ -2555,6 +2869,27 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         } catch (Exception e) {
             log.warn("No active LoanRescheduleReason code value found: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Global switch for the "Adjusted Repayment Period" day-wise interest recalculation on installment-date
+     * adjustment. Read from {@code c_configuration.enabled} for name
+     * {@code adjust-installment-daywise-interest-recalculation}. Defaults to TRUE when the row is absent so the
+     * capability works out of the box, while still being toggleable fleet-wide with no per-loan migration.
+     */
+    private boolean isAdjustedRepaymentPeriodDaywiseEnabled() {
+        try {
+            final Boolean enabled = jdbcTemplate.queryForObject(
+                    "SELECT enabled FROM c_configuration WHERE name = 'adjust-installment-daywise-interest-recalculation' LIMIT 1",
+                    Boolean.class);
+            return enabled == null || enabled;
+        } catch (EmptyResultDataAccessException e) {
+            return true; // config row not present -> enabled by default
+        } catch (Exception e) {
+            log.warn("Could not read 'adjust-installment-daywise-interest-recalculation' config, defaulting to enabled: {}",
+                    e.getMessage());
+            return true;
         }
     }
 
@@ -2796,6 +3131,43 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     "Cannot adjust installment date because overdue charges exist for installment " + installment.getInstallmentNumber()
                             + ". Please remove overdue charges before adjusting the date.",
                     installment.getInstallmentNumber());
+        }
+    }
+
+    /**
+     * Sanity checks for the in-place (non-recalculation) date adjustment path. Mirrors the guarantees the standard
+     * Loan Reschedule validator enforces for the recalculation path so both paths behave consistently:
+     * <ul>
+     * <li>The installment being moved must not already be fully paid.</li>
+     * <li>The new due date must be strictly after the previous installment's due date (or the disbursement date for
+     * installment 1). Allowing an earlier date created negative/overlapping periods and flipped the loan into
+     * arrears - one of the observed schedule corruptions.</li>
+     * </ul>
+     * We intentionally do NOT cap how far forward the date may move: a shift larger than one repayment period is a
+     * legitimate request and the deterministic cascade below handles it (every later installment shifts by the same
+     * number of days).
+     */
+    private void validateInPlaceInstallmentDateAdjustment(final Loan loan, final LoanRepaymentScheduleInstallment installment,
+            final Integer installmentNumber, final LocalDate newDueDate) {
+        if (!installment.isNotFullyPaidOff()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.already.paid",
+                    "Cannot adjust the date of installment " + installmentNumber + " because it is already fully paid.",
+                    installmentNumber);
+        }
+
+        LocalDate previousBoundaryDate = loan.getDisbursementDate();
+        for (final LoanRepaymentScheduleInstallment inst : loan.getRepaymentScheduleInstallments()) {
+            if (inst.getInstallmentNumber() != null && inst.getInstallmentNumber() == installmentNumber - 1) {
+                previousBoundaryDate = inst.getDueDate();
+                break;
+            }
+        }
+
+        if (previousBoundaryDate != null && !newDueDate.isAfter(previousBoundaryDate)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.adjust.installment.date.before.previous",
+                    "New due date " + newDueDate + " for installment " + installmentNumber
+                            + " must be after the previous installment's due date (" + previousBoundaryDate + ").",
+                    newDueDate, previousBoundaryDate);
         }
     }
 }

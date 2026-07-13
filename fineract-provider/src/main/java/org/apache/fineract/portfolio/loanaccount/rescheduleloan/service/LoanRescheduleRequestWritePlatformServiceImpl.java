@@ -131,6 +131,15 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
     @Override
     @Transactional
     public CommandProcessingResult create(JsonCommand jsonCommand) {
+        return doCreate(jsonCommand, false);
+    }
+
+    @Override
+    public CommandProcessingResult createAllowingEarlierDueDate(JsonCommand jsonCommand) {
+        return doCreate(jsonCommand, true);
+    }
+
+    private CommandProcessingResult doCreate(JsonCommand jsonCommand, final boolean allowEarlierDueDate) {
 
         try {
             // get the loan id from the JsonCommand object
@@ -145,8 +154,8 @@ public class LoanRescheduleRequestWritePlatformServiceImpl implements LoanResche
             }
 
             // validate the request in the JsonCommand object passed as
-            // parameter
-            this.loanRescheduleRequestDataValidator.validateForCreateAction(jsonCommand, loan);
+            // parameter (allowEarlierDueDate skips only the postpone-only rule)
+            this.loanRescheduleRequestDataValidator.validateForCreateAction(jsonCommand, loan, allowEarlierDueDate);
 
             // get the reschedule reason code value id from the JsonCommand
             // object

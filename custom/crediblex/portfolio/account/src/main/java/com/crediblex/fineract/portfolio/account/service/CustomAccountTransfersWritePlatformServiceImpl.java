@@ -9,12 +9,15 @@ import static org.apache.fineract.portfolio.account.api.AccountTransfersApiConst
 
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
+import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
@@ -57,12 +60,14 @@ import org.apache.fineract.portfolio.savings.domain.SavingsAccountAssembler;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountTransaction;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountDomainService;
 import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Primary
 @Service
+@Slf4j
 public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTransfersWritePlatformServiceImpl {
 
     private final LoanDownPaymentHandlerService loanDownPaymentHandlerService;
@@ -70,6 +75,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     protected final BusinessEventNotifierService businessEventNotifierService;
     private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
+    private final CredXLoanChargeWritePlatformService credXLoanChargeWritePlatformService;
 
     public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator,
             AccountTransferAssembler accountTransferAssembler, AccountTransferRepository accountTransferRepository,
@@ -80,7 +86,8 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             GSIMRepositoy gsimRepository, ConfigurationDomainService configurationDomainService, ExternalIdFactory externalIdFactory,
             FineractProperties fineractProperties, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
             LoanUtilService loanUtilService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
-            BusinessEventNotifierService businessEventNotifierService, CredXSavingsTransactionSubTypeService transactionSubTypeService) {
+            BusinessEventNotifierService businessEventNotifierService, CredXSavingsTransactionSubTypeService transactionSubTypeService,
+            @Lazy CredXLoanChargeWritePlatformService credXLoanChargeWritePlatformService) {
         super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
                 savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
                 accountTransferDetailRepository, loanReadPlatformService, gsimRepository, configurationDomainService, externalIdFactory,
@@ -90,6 +97,25 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine;
         this.businessEventNotifierService = businessEventNotifierService;
         this.transactionSubTypeService = transactionSubTypeService;
+        this.credXLoanChargeWritePlatformService = credXLoanChargeWritePlatformService;
+    }
+
+    /**
+     * When a savings -> loan settlement is BACKDATED (transaction date earlier than the current business date), the
+     * daily LPI charges accrued for the in-between days (e.g. money received Friday, settlement recorded Monday) should
+     * not stick to the loan. Waive those post-settlement-date LPI charges through the standard waiver (journal entries
+     * + audit trail); repayment schedule dates are never touched. Returns a summary for surfacing to the operator, or
+     * null when nothing was waived.
+     */
+    private Map<String, Object> waiveBackdatedSettlementLpi(final Long loanId, final LocalDate settlementDate) {
+        final Map<String, Object> summary = this.credXLoanChargeWritePlatformService
+                .waiveOverdueChargesAccruedAfterSettlementDate(loanId, settlementDate);
+        final Object waived = summary != null ? summary.get("chargesWaived") : null;
+        if (waived instanceof Number number && number.intValue() > 0) {
+            log.info("Backdated settlement on loan {} (date {}) auto-waived {} LPI charge(s): {}", loanId, settlementDate, number, summary);
+            return summary;
+        }
+        return null;
     }
 
     @Override
@@ -117,6 +143,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         boolean isAccountTransfer = true;
         Long fromLoanAccountId = null;
         boolean isWithdrawBalance = false;
+        Map<String, Object> backdatedLpiWaiveSummary = null;
         final boolean backdatedTxnsAllowedTill = false;
 
         if (isSavingsToSavingsAccountTransfer(fromAccountType, toAccountType)) {
@@ -180,6 +207,9 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             this.businessEventNotifierService
                     .notifyPostBusinessEvent(new SavingsToLoanAccountTransferBusinessEvent(accountTransferDetails));
 
+            // Backdated settlement: waive the LPI accrued for the days between the actual payment date and today.
+            backdatedLpiWaiveSummary = waiveBackdatedSettlementLpi(toLoanAccountId, transactionDate);
+
         } else if (isLoanToSavingsAccountTransfer(fromAccountType, toAccountType)) {
             // FIXME - kw - ADD overpaid loan to savings account transfer
             // support.
@@ -210,6 +240,11 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         }
         if (fromAccountType.isLoanAccount()) {
             builder.withLoanId(fromLoanAccountId);
+        }
+        if (backdatedLpiWaiveSummary != null) {
+            // Surfaced to the UI so the operator sees how much late-payment interest was auto-waived for the
+            // backdated days.
+            builder.with(backdatedLpiWaiveSummary);
         }
 
         return builder.build();
@@ -318,6 +353,12 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             if (!AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
                 this.businessEventNotifierService
                         .notifyPostBusinessEvent(new SavingsToLoanAccountTransferBusinessEvent(accountTransferDetails));
+            }
+
+            // Backdated settlement (plain repayment transfers only): waive LPI accrued for the in-between days.
+            final AccountTransferType transferType = AccountTransferType.fromInt(accountTransferDTO.getTransferType());
+            if (!transferType.isLoanForeclosure() && !transferType.isChargePayment() && !transferType.isLoanDownPayment()) {
+                waiveBackdatedSettlementLpi(toLoanAccount.getId(), accountTransferDTO.getTransactionDate());
             }
 
         } else if (isSavingsToSavingsAccountTransfer(accountTransferDTO.getFromAccountType(), accountTransferDTO.getToAccountType())) {

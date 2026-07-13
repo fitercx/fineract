@@ -85,9 +85,8 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
             if (isReversedCharge) {
                 // Calculate the original paid amount from the CHARGE_ADJUSTMENT transaction
                 BigDecimal originalAmountPaid = calculateOriginalPaidAmount(lc);
-                // Preserve the original amount for display purposes (will be shown in red in UI)
+                // Preserve the reversed paid amount and any remaining waived component for display.
                 amountPaid = originalAmountPaid;
-                amountWaived = BigDecimal.ZERO;
                 amountWrittenOff = BigDecimal.ZERO;
                 amountOutstanding = BigDecimal.ZERO;
                 paid = false;
@@ -123,6 +122,14 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
         if (loanCharge.isActive()) {
             return false;
         }
+        if (loanCharge.getLoanChargePaidBySet() != null) {
+            for (LoanChargePaidBy chargePaidBy : loanCharge.getLoanChargePaidBySet()) {
+                if (chargePaidBy.getLoanTransaction() != null && chargePaidBy.getLoanTransaction().isNotReversed()
+                        && chargePaidBy.getLoanTransaction().getTypeOf().isChargeAdjustment()) {
+                    return true;
+                }
+            }
+        }
         for (LoanTransaction loanTransaction : loanCharge.getLoan().getLoanTransactions()) {
             if (loanTransaction.isNotReversed() && loanTransaction.getTypeOf().isChargeAdjustment()) {
                 if (loanTransaction.getLoanTransactionRelations() != null) {
@@ -149,6 +156,14 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
      * getting the amount from LoanChargePaidBy.
      */
     private static BigDecimal calculateOriginalPaidAmount(final LoanCharge loanCharge) {
+        if (loanCharge.getLoanChargePaidBySet() != null) {
+            for (LoanChargePaidBy chargePaidBy : loanCharge.getLoanChargePaidBySet()) {
+                if (chargePaidBy.getLoanTransaction() != null && chargePaidBy.getLoanTransaction().isNotReversed()
+                        && chargePaidBy.getLoanTransaction().getTypeOf().isChargeAdjustment()) {
+                    return chargePaidBy.getAmount().abs();
+                }
+            }
+        }
         for (LoanTransaction loanTransaction : loanCharge.getLoan().getLoanTransactions()) {
             if (loanTransaction.isNotReversed() && loanTransaction.getTypeOf().isChargeAdjustment()) {
                 if (loanTransaction.getLoanChargesPaid() != null) {

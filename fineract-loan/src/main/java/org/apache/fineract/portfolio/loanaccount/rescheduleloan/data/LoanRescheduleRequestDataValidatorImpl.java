@@ -234,8 +234,13 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
      **/
     @Override
     public void validateForCreateAction(final JsonCommand jsonCommand, final Loan loan) {
+        validateForCreateAction(jsonCommand, loan, false);
+    }
+
+    @Override
+    public void validateForCreateAction(final JsonCommand jsonCommand, final Loan loan, final boolean allowEarlierDueDate) {
         if (loan.getLoanProductRelatedDetail().getLoanScheduleType() == LoanScheduleType.PROGRESSIVE) {
-            progressiveLoanRescheduleRequestDataValidatorDelegate.validateForCreateAction(jsonCommand, loan);
+            progressiveLoanRescheduleRequestDataValidatorDelegate.validateForCreateAction(jsonCommand, loan, allowEarlierDueDate);
         } else {
             validateSupportedParameters(jsonCommand, CREATE_REQUEST_DATA_PARAMETERS);
             final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
@@ -252,7 +257,11 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
             validateExtraTerms(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateRescheduleReasonId(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateRescheduleReasonComment(fromJsonHelper, jsonElement, dataValidatorBuilder);
-            validateAndRetrieveAdjustedDate(fromJsonHelper, jsonElement, rescheduleFromDate, dataValidatorBuilder);
+            // The postpone-only rule (adjustedDueDate must not be before rescheduleFromDate) is skipped when the caller
+            // explicitly allows an earlier due date (custom day-wise EMI-date adjustment). All other checks still run.
+            if (!allowEarlierDueDate) {
+                validateAndRetrieveAdjustedDate(fromJsonHelper, jsonElement, rescheduleFromDate, dataValidatorBuilder);
+            }
             validateEMIAndEndDate(fromJsonHelper, loan, jsonElement, dataValidatorBuilder);
             validateIsThereAnyIncomingChange(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateMultiDisburseLoan(loan, dataValidatorBuilder);

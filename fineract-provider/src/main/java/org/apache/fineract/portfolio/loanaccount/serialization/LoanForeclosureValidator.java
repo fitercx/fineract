@@ -39,8 +39,8 @@ public final class LoanForeclosureValidator {
             throw new LoanForeclosureException("loan.foreclosure.transaction.date.is.in.future", defaultUserMessage, transactionDate);
         }
 
-        if (DateUtils.isBefore(transactionDate, loan.getLastUserTransactionDate())) {
-            final String defaultUserMessage = "The transactionDate cannot be earlier than the last transaction date.";
+        if (DateUtils.isBefore(transactionDate, loan.getLastUserTransactionDateForForeclosure())) {
+            final String defaultUserMessage = "The transactionDate cannot be earlier than the last non-waiver transaction date.";
             throw new LoanForeclosureException("loan.foreclosure.transaction.date.cannot.before.the.last.transaction.date",
                     defaultUserMessage, transactionDate);
         }

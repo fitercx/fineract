@@ -4,6 +4,7 @@ import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
@@ -337,6 +338,7 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
 
             payment = accountTransferTransaction.get().getToLoanTransaction();
             newTransactions.add(payment);
+            handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
 
         } else {
 
@@ -355,6 +357,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         if (loan.isReceivableLocLoan()) {
             loan.getLoanRepaymentScheduleDetail().setPrincipal(totalPrincipalBeforeForClosure.getAmount());
         }
+
+        LoanChargeSettlementUtils.closeIfFullySettled(loan, foreClosureDate, defaultLoanLifecycleStateMachine);
 
         loanAccrualsProcessingService.reprocessExistingAccruals(loan);
         if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
@@ -582,6 +586,8 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
 
         if (loan.isOpen()) {
             loan.doPostLoanTransactionChecks(repaymentTransaction.getTransactionDate(), defaultLoanLifecycleStateMachine);
+            LoanChargeSettlementUtils.closeIfFullySettled(loan, repaymentTransaction.getTransactionDate(),
+                    defaultLoanLifecycleStateMachine);
         } else if (loan.isOverPaid()) {
             final Money totalLoanOverpayment = loan.calculateTotalOverpayment();
             if (totalLoanOverpayment.isGreaterThanZero() && tolerance.isGreaterThanOrEqualTo(totalLoanOverpayment)) {
