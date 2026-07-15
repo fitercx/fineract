@@ -25,9 +25,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its loans
- * is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's active
- * loans are nested under it, along with a per-client overdue {@link #summary}.
+ * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its
+ * loans is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's
+ * active loans are nested under it, along with a per-client overdue {@link #summary}.
  */
 @Data
 @Builder

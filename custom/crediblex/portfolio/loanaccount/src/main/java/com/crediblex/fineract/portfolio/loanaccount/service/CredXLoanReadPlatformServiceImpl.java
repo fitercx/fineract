@@ -302,9 +302,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * Client-grouped overdue list. Returns a page of CLIENTS - a client qualifies if it has at least one overdue loan
-     * (active, status 300, with a past-due installment carrying a positive principal+interest+LPI balance). Each returned
-     * client nests ALL of its active loans (overdue and non-overdue) and a per-client overdue summary. Pagination,
-     * counting and search all operate at the client level.
+     * (active, status 300, with a past-due installment carrying a positive principal+interest+LPI balance). Each
+     * returned client nests ALL of its active loans (overdue and non-overdue) and a per-client overdue summary.
+     * Pagination, counting and search all operate at the client level.
      */
     public Page<CredXOverdueClientData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit, final String search) {
         final int normalizedOffset = Math.max(offset == null ? 0 : offset, 0);
@@ -331,7 +331,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Map<Long, CredXOverdueClientData> clientsById = new LinkedHashMap<>();
         clients.forEach(client -> clientsById.put(client.getClientId(), client));
 
-        // Fetch every active loan of the paged clients, with the whole-loan outstanding breakdown from the derived columns.
+        // Fetch every active loan of the paged clients, with the whole-loan outstanding breakdown from the derived
+        // columns.
         final List<Long> clientIds = new ArrayList<>(clientsById.keySet());
         final String clientPlaceholders = String.join(",", Collections.nCopies(clientIds.size(), "?"));
         final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(activeLoansForClientsSql(clientPlaceholders),
@@ -382,8 +383,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     private String activeLoansForClientsSql(final String clientPlaceholders) {
-        return new StringBuilder()
-                .append("select l.client_id as clientId, l.id as loanId, l.account_no as accountNo, ")
+        return new StringBuilder().append("select l.client_id as clientId, l.id as loanId, l.account_no as accountNo, ")
                 .append("coalesce(c.display_name, g.display_name) as borrowerName, l.loan_officer_id as loanOfficerId, ")
                 .append("s.display_name as loanOfficerName, l.product_id as productId, ")
                 .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
@@ -418,9 +418,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * Portfolio-level aggregates over the ENTIRE overdue population - the same population the client-grouped list
-     * endpoint ({@link #retrieveCrediblexOverdueLoans}) covers with no search: every active loan of a client that has at
-     * least one overdue loan. Computed in a single aggregation query so callers no longer need to page through the list
-     * to build dashboard totals.
+     * endpoint ({@link #retrieveCrediblexOverdueLoans}) covers with no search: every active loan of a client that has
+     * at least one overdue loan. Computed in a single aggregation query so callers no longer need to page through the
+     * list to build dashboard totals.
      *
      * <p>
      * {@code totalOutstanding} is the whole-loan remaining balance (from the {@code *_outstanding_derived} columns,
@@ -439,7 +439,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final String businessDate = this.sqlGenerator.currentBusinessDate();
 
         // No GROUP BY -> exactly one row even for an empty portfolio (counts 0, sums NULL -> coalesced to 0, currency
-        // NULL -> AED fallback in the mapper). Whole-loan sums come from the derived columns; the overdue sums come from
+        // NULL -> AED fallback in the mapper). Whole-loan sums come from the derived columns; the overdue sums come
+        // from
         // the pre-aggregated past-due installments (ovd), joined per loan.
         final StringBuilder sql = new StringBuilder()
                 .append("select count(distinct l.client_id) as totalClients, count(distinct l.id) as totalLoans, ")

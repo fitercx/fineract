@@ -25,8 +25,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Per-client overdue summary carried on {@link CredXOverdueClientData}. Each figure is the component-wise sum across the
- * client's active loans.
+ * Per-client overdue summary carried on {@link CredXOverdueClientData}. Each figure is the component-wise sum across
+ * the client's active loans.
  */
 @Data
 @Builder

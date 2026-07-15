@@ -473,7 +473,8 @@ public class CredXLoanReadPlatformServiceImplTest {
         Assertions.assertTrue(currentLoan.getOverdueInstallments().isEmpty());
 
         // Client summary reconciles with the component-wise sum of its loans.
-        assertEquals(new BigDecimal("138000"), acme.getSummary().getTotalOutstanding().getPrincipal()); // 100000 + 38000
+        assertEquals(new BigDecimal("138000"), acme.getSummary().getTotalOutstanding().getPrincipal()); // 100000 +
+                                                                                                        // 38000
         assertEquals(new BigDecimal("147000"), acme.getSummary().getTotalOutstanding().getTotal()); // 107000 + 40000
         assertEquals(new BigDecimal("18000"), acme.getSummary().getTotalOverdue().getPrincipal());
         assertEquals(new BigDecimal("20200"), acme.getSummary().getTotalOverdue().getTotal());
@@ -495,7 +496,8 @@ public class CredXLoanReadPlatformServiceImplTest {
     private static ResultSet loanRow(final long clientId, final long loanId, final boolean overdue, final String principal,
             final String interest, final String fees, final String lpi, final String total) throws SQLException {
         // Lenient: the mapper reads loanOfficerId/productId via JdbcSupport.getLong, which resolves columns by INDEX
-        // (findColumn -> getLong(index)); those index reads would otherwise trip strict stubbing. clientId (also read via
+        // (findColumn -> getLong(index)); those index reads would otherwise trip strict stubbing. clientId (also read
+        // via
         // JdbcSupport.getLong) is wired through the index path so grouping still sees the right client.
         final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
         when(rs.findColumn("clientId")).thenReturn(1);
