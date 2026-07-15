@@ -32,6 +32,7 @@ import lombok.NoArgsConstructor;
 public class CredXOverdueLoanData {
 
     private Long loanId;
+    private Long clientId;
     private String accountNo;
     private String borrowerName;
     private Long loanOfficerId;
@@ -42,9 +43,11 @@ public class CredXOverdueLoanData {
     private String currencyCode;
     private String disbursementDate;
     private BigDecimal loanAmount;
-    private BigDecimal principalOutstanding;
-    private BigDecimal interestOutstanding;
-    private BigDecimal lpiOutstanding;
+    private Boolean isOverdue;
+    /** Whole-loan remaining balance (from the loan's {@code *_outstanding_derived} columns); includes fees. */
+    private CredXOverdueAmountBreakdown outstanding;
+    /** Past-due installments' amount (includes fees); all components are zero when the loan is not overdue. */
+    private CredXOverdueAmountBreakdown overdue;
     private BigDecimal excessAmount;
     private Integer maxDpd;
     private List<CredXOverdueInstallmentData> overdueInstallments;

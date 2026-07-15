@@ -3,8 +3,11 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
@@ -21,6 +24,7 @@ import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
+import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
@@ -38,6 +42,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -352,37 +357,53 @@ public class CredXLoanReadPlatformServiceImplTest {
     }
 
     @Test
-    public void testRetrieveCrediblexOverdueLoansSummaryAggregatesAndIdentity() throws SQLException {
-        // Simulates the single-row aggregate for two overdue loans:
-        // A (principal 100000, interest 5000, LPI 2000) and B (principal 50000, interest 3000, LPI 1000).
+    public void testRetrieveCrediblexOverdueLoansSummaryAggregatesAndBreakdowns() throws SQLException {
+        // Single aggregate row: whole-loan outstanding (out*) and past-due overdue (od*) across the qualifying clients.
         final ResultSet rs = Mockito.mock(ResultSet.class);
-        when(rs.getLong("totalLoans")).thenReturn(2L);
+        when(rs.getLong("totalClients")).thenReturn(2L);
+        when(rs.getLong("totalLoans")).thenReturn(3L);
         when(rs.getString("currencyCode")).thenReturn("AED");
-        when(rs.getBigDecimal("totalPrincipalOutstanding")).thenReturn(new BigDecimal("150000"));
-        when(rs.getBigDecimal("totalOverdue")).thenReturn(new BigDecimal("8000"));
-        when(rs.getBigDecimal("totalLpiOverdue")).thenReturn(new BigDecimal("3000"));
-        when(rs.getBigDecimal("totalOutstanding")).thenReturn(new BigDecimal("161000"));
+        when(rs.getBigDecimal("outPrincipal")).thenReturn(new BigDecimal("150000"));
+        when(rs.getBigDecimal("outInterest")).thenReturn(new BigDecimal("8000"));
+        when(rs.getBigDecimal("outFees")).thenReturn(new BigDecimal("500"));
+        when(rs.getBigDecimal("outLpi")).thenReturn(new BigDecimal("3000"));
+        when(rs.getBigDecimal("outTotal")).thenReturn(new BigDecimal("161500"));
+        when(rs.getBigDecimal("odPrincipal")).thenReturn(new BigDecimal("18000"));
+        when(rs.getBigDecimal("odInterest")).thenReturn(new BigDecimal("1800"));
+        when(rs.getBigDecimal("odFees")).thenReturn(new BigDecimal("200"));
+        when(rs.getBigDecimal("odLpi")).thenReturn(new BigDecimal("200"));
 
         stubSummaryQueryWithRow(rs);
 
         final CredXOverdueLoansSummaryData summary = credXLoanReadPlatformService.retrieveCrediblexOverdueLoansSummary();
 
         assertEquals("AED", summary.getCurrencyCode());
-        assertEquals(Long.valueOf(2L), summary.getTotalLoans());
-        assertEquals(new BigDecimal("161000"), summary.getTotalOutstanding());
-        assertEquals(new BigDecimal("8000"), summary.getTotalOverdue());
-        assertEquals(new BigDecimal("3000"), summary.getTotalLpiOverdue());
-        assertEquals(new BigDecimal("150000"), summary.getTotalPrincipalOutstanding());
+        assertEquals(Long.valueOf(2L), summary.getTotalClients());
+        assertEquals(Long.valueOf(3L), summary.getTotalLoans());
 
-        // Identity: totalOutstanding - totalOverdue - totalLpiOverdue = totalPrincipalOutstanding
-        assertEquals(summary.getTotalPrincipalOutstanding(),
-                summary.getTotalOutstanding().subtract(summary.getTotalOverdue()).subtract(summary.getTotalLpiOverdue()));
+        assertEquals(new BigDecimal("161500"), summary.getTotalOutstanding().getTotal());
+        assertEquals(new BigDecimal("150000"), summary.getTotalOutstanding().getPrincipal());
+        assertEquals(new BigDecimal("8000"), summary.getTotalOutstanding().getInterest());
+        assertEquals(new BigDecimal("500"), summary.getTotalOutstanding().getFees());
+        assertEquals(new BigDecimal("3000"), summary.getTotalOutstanding().getLpi());
+
+        // totalOverdue.total is computed as principal + interest + fees + lpi (18000 + 1800 + 200 + 200 = 20200).
+        assertEquals(new BigDecimal("20200"), summary.getTotalOverdue().getTotal());
+        assertEquals(new BigDecimal("18000"), summary.getTotalOverdue().getPrincipal());
+        assertEquals(new BigDecimal("1800"), summary.getTotalOverdue().getInterest());
+        assertEquals(new BigDecimal("200"), summary.getTotalOverdue().getFees());
+        assertEquals(new BigDecimal("200"), summary.getTotalOverdue().getLpi());
+
+        // Invariants.
+        assertEquals(sumOf(summary.getTotalOverdue()), summary.getTotalOverdue().getTotal());
+        assertEquals(summary.getTotalOverdue().getLpi(), summary.getTotalLpiOutstanding());
     }
 
     @Test
     public void testRetrieveCrediblexOverdueLoansSummaryEmptyPortfolioFallsBackToDefaultCurrency() throws SQLException {
-        // Empty portfolio: count is 0, the coalesced SUMs are 0, and max(currency_code) over no rows is NULL.
+        // Empty portfolio: counts 0, coalesced SUMs 0, and max(currency_code) over no rows is NULL.
         final ResultSet rs = Mockito.mock(ResultSet.class);
+        when(rs.getLong("totalClients")).thenReturn(0L);
         when(rs.getLong("totalLoans")).thenReturn(0L);
         when(rs.getString("currencyCode")).thenReturn(null);
         when(rs.getBigDecimal(anyString())).thenReturn(BigDecimal.ZERO);
@@ -392,11 +413,115 @@ public class CredXLoanReadPlatformServiceImplTest {
         final CredXOverdueLoansSummaryData summary = credXLoanReadPlatformService.retrieveCrediblexOverdueLoansSummary();
 
         assertEquals("AED", summary.getCurrencyCode());
+        assertEquals(Long.valueOf(0L), summary.getTotalClients());
         assertEquals(Long.valueOf(0L), summary.getTotalLoans());
-        assertEquals(BigDecimal.ZERO, summary.getTotalOutstanding());
-        assertEquals(BigDecimal.ZERO, summary.getTotalOverdue());
-        assertEquals(BigDecimal.ZERO, summary.getTotalLpiOverdue());
-        assertEquals(BigDecimal.ZERO, summary.getTotalPrincipalOutstanding());
+        assertEquals(BigDecimal.ZERO, summary.getTotalOutstanding().getTotal());
+        assertEquals(BigDecimal.ZERO, summary.getTotalOverdue().getTotal());
+        assertEquals(BigDecimal.ZERO, summary.getTotalLpiOutstanding());
+    }
+
+    @Test
+    public void testRetrieveCrediblexOverdueLoansGroupsByClientWithBreakdownsAndReconciliation() throws SQLException {
+        // Two qualifying clients. Client 12 owns loan A (overdue, 2 installments) and loan C (active, not overdue).
+        // Client 7 owns loan B (overdue, 1 installment). Verifies grouping, per-loan overdue breakdown, zeroed overdue
+        // for the non-overdue loan, and client-summary reconciliation.
+        final ResultSet clientAcme = clientRow(12L, "Acme Trading LLC", "000000012");
+        final ResultSet clientBeta = clientRow(7L, "Beta Foods", "000000007");
+        final ResultSet loanA = loanRow(12L, 1L, true, "100000", "5000", "0", "2000", "107000");
+        final ResultSet loanC = loanRow(12L, 2L, false, "38000", "2000", "0", "0", "40000");
+        final ResultSet loanB = loanRow(7L, 3L, true, "50000", "3000", "0", "1000", "54000");
+        final ResultSet instA1 = installmentRow(1L, "9000", "900", "100", "100");
+        final ResultSet instA2 = installmentRow(1L, "9000", "900", "100", "100");
+        final ResultSet instB1 = installmentRow(3L, "9000", "900", "100", "100");
+
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(2);
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    final String sql = invocation.getArgument(0);
+                    final org.springframework.jdbc.core.RowMapper<Object> mapper = invocation.getArgument(1);
+                    if (sql.contains("as clientName")) {
+                        return List.of(mapper.mapRow(clientAcme, 0), mapper.mapRow(clientBeta, 1));
+                    } else if (sql.contains("as feesOutstanding")) {
+                        return List.of(mapper.mapRow(instA1, 0), mapper.mapRow(instA2, 1), mapper.mapRow(instB1, 2));
+                    } else if (sql.contains("as outTotal")) {
+                        return List.of(mapper.mapRow(loanA, 0), mapper.mapRow(loanC, 1), mapper.mapRow(loanB, 2));
+                    }
+                    return List.of();
+                });
+
+        final Page<CredXOverdueClientData> page = credXLoanReadPlatformService.retrieveCrediblexOverdueLoans(0, 50, null);
+
+        assertEquals(2, page.getTotalFilteredRecords());
+        assertEquals(2, page.getPageItems().size());
+
+        final CredXOverdueClientData acme = page.getPageItems().stream().filter(c -> c.getClientId() == 12L).findFirst().orElseThrow();
+        assertEquals("Acme Trading LLC", acme.getClientName());
+        assertEquals("AED", acme.getCurrencyCode());
+        assertEquals(2, acme.getLoans().size());
+
+        final CredXOverdueLoanData overdueLoan = acme.getLoans().stream().filter(l -> l.getLoanId() == 1L).findFirst().orElseThrow();
+        assertEquals(Boolean.TRUE, overdueLoan.getIsOverdue());
+        assertEquals(2, overdueLoan.getOverdueInstallments().size());
+        // Loan A overdue = 2 x (principal 9000, interest 900, fees 100, lpi 100).
+        assertEquals(new BigDecimal("18000"), overdueLoan.getOverdue().getPrincipal());
+        assertEquals(new BigDecimal("200"), overdueLoan.getOverdue().getLpi());
+        assertEquals(sumOf(overdueLoan.getOverdue()), overdueLoan.getOverdue().getTotal());
+
+        final CredXOverdueLoanData currentLoan = acme.getLoans().stream().filter(l -> l.getLoanId() == 2L).findFirst().orElseThrow();
+        assertEquals(Boolean.FALSE, currentLoan.getIsOverdue());
+        assertEquals(BigDecimal.ZERO, currentLoan.getOverdue().getTotal());
+        Assertions.assertTrue(currentLoan.getOverdueInstallments().isEmpty());
+
+        // Client summary reconciles with the component-wise sum of its loans.
+        assertEquals(new BigDecimal("138000"), acme.getSummary().getTotalOutstanding().getPrincipal()); // 100000 + 38000
+        assertEquals(new BigDecimal("147000"), acme.getSummary().getTotalOutstanding().getTotal()); // 107000 + 40000
+        assertEquals(new BigDecimal("18000"), acme.getSummary().getTotalOverdue().getPrincipal());
+        assertEquals(new BigDecimal("20200"), acme.getSummary().getTotalOverdue().getTotal());
+        assertEquals(acme.getSummary().getTotalOverdue().getLpi(), acme.getSummary().getTotalLpiOutstanding());
+    }
+
+    private static BigDecimal sumOf(final com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueAmountBreakdown b) {
+        return b.getPrincipal().add(b.getInterest()).add(b.getFees()).add(b.getLpi());
+    }
+
+    private static ResultSet clientRow(final long clientId, final String name, final String accountNo) throws SQLException {
+        final ResultSet rs = Mockito.mock(ResultSet.class);
+        when(rs.getLong("clientId")).thenReturn(clientId);
+        when(rs.getString("clientName")).thenReturn(name);
+        when(rs.getString("accountNo")).thenReturn(accountNo);
+        return rs;
+    }
+
+    private static ResultSet loanRow(final long clientId, final long loanId, final boolean overdue, final String principal,
+            final String interest, final String fees, final String lpi, final String total) throws SQLException {
+        // Lenient: the mapper reads loanOfficerId/productId via JdbcSupport.getLong, which resolves columns by INDEX
+        // (findColumn -> getLong(index)); those index reads would otherwise trip strict stubbing. clientId (also read via
+        // JdbcSupport.getLong) is wired through the index path so grouping still sees the right client.
+        final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
+        when(rs.findColumn("clientId")).thenReturn(1);
+        when(rs.getLong(1)).thenReturn(clientId);
+        when(rs.getLong("loanId")).thenReturn(loanId);
+        when(rs.getString("currencyCode")).thenReturn("AED");
+        when(rs.getInt("isOverdue")).thenReturn(overdue ? 1 : 0);
+        when(rs.getBigDecimal("outPrincipal")).thenReturn(new BigDecimal(principal));
+        when(rs.getBigDecimal("outInterest")).thenReturn(new BigDecimal(interest));
+        when(rs.getBigDecimal("outFees")).thenReturn(new BigDecimal(fees));
+        when(rs.getBigDecimal("outLpi")).thenReturn(new BigDecimal(lpi));
+        when(rs.getBigDecimal("outTotal")).thenReturn(new BigDecimal(total));
+        return rs;
+    }
+
+    private static ResultSet installmentRow(final long loanId, final String principal, final String interest, final String fees,
+            final String lpi) throws SQLException {
+        // Lenient: the mapper also reads emiAmount/excessAmount/dueDate/installmentNumber which this fixture leaves at
+        // their defaults; those unstubbed reads would otherwise trip strict stubbing.
+        final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
+        when(rs.getLong("loanId")).thenReturn(loanId);
+        when(rs.getBigDecimal("principalOutstanding")).thenReturn(new BigDecimal(principal));
+        when(rs.getBigDecimal("interestOutstanding")).thenReturn(new BigDecimal(interest));
+        when(rs.getBigDecimal("feesOutstanding")).thenReturn(new BigDecimal(fees));
+        when(rs.getBigDecimal("lpiOutstanding")).thenReturn(new BigDecimal(lpi));
+        return rs;
     }
 
     @SuppressWarnings("unchecked")

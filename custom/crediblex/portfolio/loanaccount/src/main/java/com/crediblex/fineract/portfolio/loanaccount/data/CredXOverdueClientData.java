@@ -18,25 +18,29 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
-import java.math.BigDecimal;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its loans
+ * is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's active
+ * loans are nested under it, along with a per-client overdue {@link #summary}.
+ */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CredXOverdueInstallmentData {
+public class CredXOverdueClientData {
 
-    private Integer installmentNumber;
-    private String dueDate;
-    private Integer dpd;
-    private BigDecimal emiAmount;
-    private BigDecimal principalOutstanding;
-    private BigDecimal interestOutstanding;
-    private BigDecimal feesOutstanding;
-    private BigDecimal lpiOutstanding;
-    private BigDecimal excessAmount;
+    private Long clientId;
+    private String clientName;
+    private String accountNo;
+    /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
+    private String currencyCode;
+    private CredXOverdueClientSummaryData summary;
+    /** All of the client's active loans (overdue and non-overdue). */
+    private List<CredXOverdueLoanData> loans;
 }
