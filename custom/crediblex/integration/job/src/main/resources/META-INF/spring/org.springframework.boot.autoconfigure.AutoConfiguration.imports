@@ -1,1 +1,2 @@
 com.crediblex.fineract.integration.job.CrediblexJobAutoConfiguration
+com.crediblex.fineract.integration.job.SettlementsReportJobAutoConfiguration

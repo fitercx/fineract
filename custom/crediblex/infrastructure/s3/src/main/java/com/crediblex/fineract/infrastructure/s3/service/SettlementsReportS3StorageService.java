@@ -16,20 +16,24 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.crediblex.fineract.integration.job;
+package com.crediblex.fineract.infrastructure.s3.service;
 
-public enum CrediblexJobName {
+import java.time.ZonedDateTime;
+import java.util.Optional;
 
-    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job"), SETTLEMENTS_REPORT_JOB("Settlements Report Job");
+/**
+ * Stores scheduled Settlements Report Excel files in S3 and returns a download URL.
+ */
+public interface SettlementsReportS3StorageService {
 
-    private final String name;
-
-    CrediblexJobName(final String name) {
-        this.name = name;
-    }
-
-    @Override
-    public String toString() {
-        return this.name;
-    }
+    /**
+     * Upload Excel bytes and return a time-limited download URL.
+     *
+     * @param excelBytes
+     *            xlsx content
+     * @param reportTime
+     *            report timestamp used in the object key (typically UAE local time)
+     * @return presigned GET URL, or empty if S3 is unavailable / upload failed
+     */
+    Optional<String> uploadAndGetDownloadUrl(byte[] excelBytes, ZonedDateTime reportTime);
 }

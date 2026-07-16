@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!-- UI stretchy report: settlements for a single calendar date -->
+    <changeSet author="CredibleX" id="0063-insert-settlements-report">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Settlements Report'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="stretchy_report">
+            <column name="report_name" value="Settlements Report"/>
+            <column name="report_type" value="Table"/>
+            <column name="report_subtype" value="NULL"/>
+            <column name="report_category" value="Transaction"/>
+            <column name="report_sql"><![CDATA[
+SELECT
+    c.display_name AS "Client Name",
+    loan_info.product_name AS "Product Name",
+    CASE t.transaction_sub_type
+        WHEN 1 THEN 'Disbursement'
+        WHEN 2 THEN 'Refund'
+    END AS "Event",
+    loan_info.loan_id AS "Loan ID",
+    sa.id AS "Savings Account ID",
+    t.amount AS "Amount"
+FROM m_savings_account_transaction t
+JOIN m_savings_account sa ON sa.id = t.savings_account_id
+JOIN m_client c ON c.id = sa.client_id
+LEFT JOIN LATERAL (
+    SELECT
+        l.id AS loan_id,
+        pl.name AS product_name
+    FROM m_portfolio_account_associations paa
+    JOIN m_loan l ON l.id = paa.loan_account_id
+    JOIN m_product_loan pl ON pl.id = l.product_id
+    WHERE paa.linked_savings_account_id = sa.id
+      AND paa.association_type_enum = 1
+      AND paa.is_active = TRUE
+    ORDER BY
+        CASE WHEN l.disbursedon_date = t.transaction_date THEN 0 ELSE 1 END,
+        ABS(COALESCE(l.principal_disbursed_derived, 0) - t.amount),
+        l.id DESC
+    LIMIT 1
+) loan_info ON TRUE
+WHERE t.is_reversed = FALSE
+  AND t.transaction_sub_type IN (1, 2)
+  AND t.transaction_date = DATE('${startDate}')
+ORDER BY c.display_name, sa.id, t.id
+            ]]></column>
+            <column name="description"
+                    value="Disbursement and refund settlement events for a selected date (one row per event)."/>
+            <column name="core_report" valueBoolean="false"/>
+            <column name="use_report" valueBoolean="true"/>
+            <column name="self_service_user_report" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0063-map-settlements-report-start-date-param">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Settlements Report'
+            </sqlCheck>
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_parameter WHERE parameter_name = 'startDateSelect'
+            </sqlCheck>
+        </preConditions>
+        <sql><![CDATA[
+INSERT INTO stretchy_report_parameter (report_id, parameter_id, report_parameter_name)
+SELECT r.id, p.id, 'startDate'
+FROM stretchy_report r
+JOIN stretchy_parameter p ON p.parameter_name = 'startDateSelect'
+WHERE r.report_name = 'Settlements Report'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM stretchy_report_parameter srp
+      WHERE srp.report_id = r.id
+        AND srp.parameter_id = p.id
+  );
+        ]]></sql>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0063-add-settlements-report-permission">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM m_permission WHERE code = 'READ_Settlements Report'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="m_permission">
+            <column name="grouping" value="report"/>
+            <column name="code" value="READ_Settlements Report"/>
+            <column name="entity_name" value="Settlements Report"/>
+            <column name="action_name" value="READ"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <!-- Watermark for twice-daily Slack job: activity since last successful send -->
+    <changeSet author="CredibleX" id="0063-create-settlements-report-watermark-table">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <not>
+                <tableExists tableName="cx_settlements_report_watermark"/>
+            </not>
+        </preConditions>
+        <createTable tableName="cx_settlements_report_watermark">
+            <column name="id" type="BIGINT">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="last_successful_run_at" type="TIMESTAMP WITH TIME ZONE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP WITH TIME ZONE">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <!-- Twice-daily job: 13:00 and 16:00 (requires JVM/scheduler timezone Asia/Dubai) -->
+    <changeSet author="CredibleX" id="0063-add-settlements-report-job">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(*) FROM job WHERE name = 'Settlements Report Job'
+            </sqlCheck>
+        </preConditions>
+        <insert tableName="job">
+            <column name="name" value="Settlements Report Job"/>
+            <column name="display_name" value="Settlements Report Job"/>
+            <column name="cron_expression" value="0 0 13,16 * * ?"/>
+            <column name="create_time" valueDate="now()"/>
+            <column name="task_priority" valueNumeric="5"/>
+            <column name="group_name"/>
+            <column name="previous_run_start_time"/>
+            <column name="job_key" value="Settlements Report Job _ DEFAULT"/>
+            <column name="initializing_errorlog"/>
+            <column name="is_active" valueBoolean="true"/>
+            <column name="currently_running" valueBoolean="false"/>
+            <column name="updates_allowed" valueBoolean="true"/>
+            <column name="scheduler_group" valueNumeric="0"/>
+            <column name="is_misfired" valueBoolean="false"/>
+            <column name="node_id" valueNumeric="1"/>
+            <column name="is_mismatched_job" valueBoolean="true"/>
+            <column name="short_name" value="SETLRPT"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>

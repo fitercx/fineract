@@ -16,20 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.crediblex.fineract.integration.job;
+package com.crediblex.fineract.integration.odoo.settlements;
 
-public enum CrediblexJobName {
+import java.math.BigDecimal;
+import lombok.Builder;
+import lombok.Getter;
 
-    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job"), SETTLEMENTS_REPORT_JOB("Settlements Report Job");
+@Getter
+@Builder
+public class SettlementsReportRow {
 
-    private final String name;
-
-    CrediblexJobName(final String name) {
-        this.name = name;
-    }
-
-    @Override
-    public String toString() {
-        return this.name;
-    }
+    private final String clientName;
+    private final String productName;
+    private final String event;
+    private final Long loanId;
+    private final Long savingsAccountId;
+    private final BigDecimal amount;
 }
