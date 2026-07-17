@@ -108,8 +108,8 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
      * null when nothing was waived.
      */
     private Map<String, Object> waiveBackdatedSettlementLpi(final Long loanId, final LocalDate settlementDate) {
-        final Map<String, Object> summary = this.credXLoanChargeWritePlatformService
-                .waiveOverdueChargesAccruedAfterSettlementDate(loanId, settlementDate);
+        final Map<String, Object> summary = this.credXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
+                settlementDate);
         final Object waived = summary != null ? summary.get("chargesWaived") : null;
         if (waived instanceof Number number && number.intValue() > 0) {
             log.info("Backdated settlement on loan {} (date {}) auto-waived {} LPI charge(s): {}", loanId, settlementDate, number, summary);

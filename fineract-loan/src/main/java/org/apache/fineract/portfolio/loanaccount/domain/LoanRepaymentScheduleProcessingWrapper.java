@@ -192,8 +192,8 @@ public class LoanRepaymentScheduleProcessingWrapper {
     }
 
     private Money cumulativeChargesWaivedWithin(final LocalDate periodStart, final LocalDate periodEnd, final Set<LoanCharge> loanCharges,
-            final MonetaryCurrency currency, boolean isInstallmentChargeApplicable, boolean isFirstPeriod,
-            Predicate<LoanCharge> predicate, boolean isLastPeriod, boolean isFactorRateEnabled) {
+            final MonetaryCurrency currency, boolean isInstallmentChargeApplicable, boolean isFirstPeriod, Predicate<LoanCharge> predicate,
+            boolean isLastPeriod, boolean isFactorRateEnabled) {
 
         Money cumulative = Money.zero(currency);
 

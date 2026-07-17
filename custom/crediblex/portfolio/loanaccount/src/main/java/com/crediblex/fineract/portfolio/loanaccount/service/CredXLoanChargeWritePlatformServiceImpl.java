@@ -991,8 +991,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         for (LoanCharge candidate : candidates) {
             // Re-resolve as managed entity and re-check eligibility: active, not already fully waived/paid, and with
             // an outstanding amount to waive. Fully paid charges are skipped (they are handled by REVERSEPAID).
-            final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null)
-                    : null;
+            final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null) : null;
             if (loanCharge == null || !loanCharge.isActive() || loanCharge.isWaived() || loanCharge.isPaid()
                     || !loanCharge.getAmountOutstanding(currency).isGreaterThanZero()) {
                 continue;
@@ -1070,7 +1069,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         summary.put("daysCovered", 0L);
 
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        // Only relevant for a backdated settlement: nothing to waive when the settlement date is today or in the future.
+        // Only relevant for a backdated settlement: nothing to waive when the settlement date is today or in the
+        // future.
         if (settlementDate == null || !settlementDate.isBefore(businessDate)) {
             return summary;
         }
