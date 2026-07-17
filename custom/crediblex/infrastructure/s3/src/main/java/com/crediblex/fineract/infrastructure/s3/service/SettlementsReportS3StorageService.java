@@ -16,27 +16,24 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.crediblex.fineract.portfolio.loanaccount.data;
+package com.crediblex.fineract.infrastructure.s3.service;
 
-import java.math.BigDecimal;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.time.ZonedDateTime;
+import java.util.Optional;
 
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class CredXOverdueInstallmentData {
+/**
+ * Stores scheduled Settlements Report Excel files in S3 and returns a download URL.
+ */
+public interface SettlementsReportS3StorageService {
 
-    private Integer installmentNumber;
-    private String dueDate;
-    private Integer dpd;
-    private BigDecimal emiAmount;
-    private BigDecimal principalOutstanding;
-    private BigDecimal interestOutstanding;
-    private BigDecimal feesOutstanding;
-    private BigDecimal lpiOutstanding;
-    private BigDecimal excessAmount;
+    /**
+     * Upload Excel bytes and return a time-limited download URL.
+     *
+     * @param excelBytes
+     *            xlsx content
+     * @param reportTime
+     *            report timestamp used in the object key (typically UAE local time)
+     * @return presigned GET URL, or empty if S3 is unavailable / upload failed
+     */
+    Optional<String> uploadAndGetDownloadUrl(byte[] excelBytes, ZonedDateTime reportTime);
 }

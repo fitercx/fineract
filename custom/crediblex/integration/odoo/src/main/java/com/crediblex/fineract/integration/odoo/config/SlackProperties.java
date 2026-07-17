@@ -39,9 +39,20 @@ public class SlackProperties {
     private String webhookUrl;
 
     /**
+     * Incoming webhook for Settlements Report ({@code #daily-banktransfers-update}). Set via
+     * {@code SLACK_SETTLEMENTS_WEBHOOK_URL}; do not commit the secret.
+     */
+    private String settlementsWebhookUrl;
+
+    /**
      * Optional: Override the default channel configured in webhook
      */
     private String channel;
+
+    /**
+     * Slack channel override for Settlements Report notifications.
+     */
+    private String settlementsChannel = "#daily-banktransfers-update";
 
     /**
      * Bot username displayed in Slack
@@ -85,8 +96,24 @@ public class SlackProperties {
         this.webhookUrl = webhookUrl;
     }
 
+    public String getSettlementsWebhookUrl() {
+        return settlementsWebhookUrl;
+    }
+
+    public void setSettlementsWebhookUrl(String settlementsWebhookUrl) {
+        this.settlementsWebhookUrl = settlementsWebhookUrl;
+    }
+
     public String getChannel() {
         return channel;
+    }
+
+    public String getSettlementsChannel() {
+        return settlementsChannel;
+    }
+
+    public void setSettlementsChannel(String settlementsChannel) {
+        this.settlementsChannel = settlementsChannel;
     }
 
     public void setChannel(String channel) {

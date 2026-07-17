@@ -16,27 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package com.crediblex.fineract.portfolio.loanaccount.data;
+package com.crediblex.fineract.integration.odoo.settlements;
 
 import java.math.BigDecimal;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.Getter;
 
-@Data
+@Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class CredXOverdueInstallmentData {
+public class SettlementsReportRow {
 
-    private Integer installmentNumber;
-    private String dueDate;
-    private Integer dpd;
-    private BigDecimal emiAmount;
-    private BigDecimal principalOutstanding;
-    private BigDecimal interestOutstanding;
-    private BigDecimal feesOutstanding;
-    private BigDecimal lpiOutstanding;
-    private BigDecimal excessAmount;
+    private final String clientName;
+    private final String productName;
+    private final String event;
+    private final Long loanId;
+    private final Long savingsAccountId;
+    private final BigDecimal amount;
 }

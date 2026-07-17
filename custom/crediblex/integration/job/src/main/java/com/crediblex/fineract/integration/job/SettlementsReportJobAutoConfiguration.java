@@ -18,19 +18,26 @@
  */
 package com.crediblex.fineract.integration.job;
 
+import java.util.List;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameData;
+import org.apache.fineract.infrastructure.jobs.service.jobname.JobNameProvider;
+import org.apache.fineract.infrastructure.jobs.service.jobname.SimpleJobNameProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
+/**
+ * Settlements report job loads independently of {@code odoo.enabled}.
+ */
 @AutoConfiguration
 @ConditionalOnClass(name = "org.springframework.batch.core.Job")
-@ConditionalOnProperty(name = "odoo.enabled", havingValue = "true", matchIfMissing = false)
-@ComponentScan(basePackages = { "com.crediblex.fineract.integration.job", "com.crediblex.fineract.integration.odoo" }, excludeFilters = {
-        @ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.crediblex\\.fineract\\.integration\\.job\\.Settlements.*") })
-@EnableJpaRepositories(basePackages = "com.crediblex.fineract.integration.odoo.domain")
-@EntityScan(basePackages = "com.crediblex.fineract.integration.odoo.domain")
-public class CrediblexJobAutoConfiguration {}
+@ComponentScan(basePackageClasses = { SettlementsReportJobTasklet.class, SettlementsReportJobConfiguration.class })
+public class SettlementsReportJobAutoConfiguration {
+
+    @Bean
+    public JobNameProvider settlementsReportJobNameProvider() {
+        return new SimpleJobNameProvider(List
+                .of(new JobNameData(CrediblexJobName.SETTLEMENTS_REPORT_JOB.name(), CrediblexJobName.SETTLEMENTS_REPORT_JOB.toString())));
+    }
+}

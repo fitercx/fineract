@@ -25,31 +25,18 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Portfolio-level aggregates returned by {@code GET /loans/crediblex/overdue/summary}. The population is every active
- * loan belonging to a client that has at least one overdue loan - the same population the client-grouped list endpoint
- * ({@code GET /loans/crediblex/overdue}) covers with no search. The summary is always for the whole portfolio and is
- * never affected by search or list filters.
- *
- * <p>
- * Invariants that always hold: {@code totalOutstanding.total = principal + interest + fees + lpi} (same for
- * {@code totalOverdue}), and {@code totalLpiOutstanding = totalOverdue.lpi}.
- * </p>
+ * Per-client overdue summary carried on {@link CredXOverdueClientData}. Each figure is the component-wise sum across
+ * the client's active loans.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CredXOverdueLoansSummaryData {
+public class CredXOverdueClientSummaryData {
 
-    /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
-    private String currencyCode;
-    /** Count of qualifying clients (clients with at least one overdue loan). */
-    private Long totalClients;
-    /** Count of active loans across those qualifying clients. */
-    private Long totalLoans;
-    /** Whole-loan remaining balance across all those loans (includes fees), with component breakdown. */
+    /** Whole-loan remaining balance across all the client's active loans (includes fees). */
     private CredXOverdueAmountBreakdown totalOutstanding;
-    /** Past-due installments' amount across those loans (includes fees), with component breakdown. */
+    /** Past-due installments' amount across the client's loans (includes fees). */
     private CredXOverdueAmountBreakdown totalOverdue;
     /** Overdue penalties only; equals {@code totalOverdue.lpi}. */
     private BigDecimal totalLpiOutstanding;

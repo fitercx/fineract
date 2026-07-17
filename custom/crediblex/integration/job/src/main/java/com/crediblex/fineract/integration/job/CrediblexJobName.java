@@ -20,7 +20,7 @@ package com.crediblex.fineract.integration.job;
 
 public enum CrediblexJobName {
 
-    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job");
+    ODOO_JOURNAL_ENTRIES_SYNC_JOB("Odoo Journal Entries Sync Job"), SETTLEMENTS_REPORT_JOB("Settlements Report Job");
 
     private final String name;
 

@@ -24,6 +24,9 @@ import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueAmountBreakdown;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
@@ -297,11 +300,17 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
     }
 
-    public Page<CredXOverdueLoanData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit, final String search) {
+    /**
+     * Client-grouped overdue list. Returns a page of CLIENTS - a client qualifies if it has at least one overdue loan
+     * (active, status 300, with a past-due installment carrying a positive principal+interest+LPI balance). Each
+     * returned client nests ALL of its active loans (overdue and non-overdue) and a per-client overdue summary.
+     * Pagination, counting and search all operate at the client level.
+     */
+    public Page<CredXOverdueClientData> retrieveCrediblexOverdueLoans(final Integer offset, final Integer limit, final String search) {
         final int normalizedOffset = Math.max(offset == null ? 0 : offset, 0);
         final int normalizedLimit = Math.min(Math.max(limit == null ? DEFAULT_OVERDUE_LOANS_LIMIT : limit, 1), MAX_OVERDUE_LOANS_LIMIT);
 
-        final OverdueLoansFilter filter = overdueLoansFromAndWhereClause(search);
+        final OverdueLoansFilter filter = qualifyingClientsFromAndWhereClause(search);
         final Object[] filterParams = filter.params();
         final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(1) " + filter.sql(), Integer.class,
                 filterParams);
@@ -309,105 +318,178 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return new Page<>(Collections.emptyList(), 0);
         }
 
-        final StringBuilder loanSql = new StringBuilder()
-                .append("select l.id as loanId, l.account_no as accountNo, coalesce(c.display_name, g.display_name) as borrowerName, ")
-                .append("l.loan_officer_id as loanOfficerId, s.display_name as loanOfficerName, l.product_id as productId, ")
-                .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
-                .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
-                .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as productName, ")
-                .append("llocp.invoice_no as invoiceNumber, l.currency_code as currencyCode, l.disbursedon_date as disbursementDate, ")
-                .append("l.principal_amount as loanAmount, coalesce(l.total_overpaid_derived, 0) as excessAmount ").append(filter.sql())
-                .append(" order by l.id desc ").append(this.sqlGenerator.limit(normalizedLimit, normalizedOffset));
+        final StringBuilder clientSql = new StringBuilder()
+                .append("select c.id as clientId, c.display_name as clientName, c.account_no as accountNo ").append(filter.sql())
+                .append(" order by c.id desc ").append(this.sqlGenerator.limit(normalizedLimit, normalizedOffset));
 
-        final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(loanSql.toString(), new CredXOverdueLoanMapper(), filterParams);
-        if (loans.isEmpty()) {
+        final List<CredXOverdueClientData> clients = this.jdbcTemplate.query(clientSql.toString(), new CredXOverdueClientMapper(),
+                filterParams);
+        if (clients.isEmpty()) {
             return new Page<>(Collections.emptyList(), totalFilteredRecords);
         }
 
-        final Map<Long, CredXOverdueLoanData> loansById = new LinkedHashMap<>();
-        loans.forEach(loan -> loansById.put(loan.getLoanId(), loan));
+        final Map<Long, CredXOverdueClientData> clientsById = new LinkedHashMap<>();
+        clients.forEach(client -> clientsById.put(client.getClientId(), client));
 
+        // Fetch every active loan of the paged clients, with the whole-loan outstanding breakdown from the derived
+        // columns.
+        final List<Long> clientIds = new ArrayList<>(clientsById.keySet());
+        final String clientPlaceholders = String.join(",", Collections.nCopies(clientIds.size(), "?"));
+        final List<CredXOverdueLoanData> loans = this.jdbcTemplate.query(activeLoansForClientsSql(clientPlaceholders),
+                new CredXActiveLoanMapper(), clientIds.toArray());
+
+        final Map<Long, CredXOverdueLoanData> loansById = new LinkedHashMap<>();
+        for (final CredXOverdueLoanData loan : loans) {
+            loansById.put(loan.getLoanId(), loan);
+            final CredXOverdueClientData client = clientsById.get(loan.getClientId());
+            if (client != null) {
+                client.getLoans().add(loan);
+            }
+        }
+
+        // Attach past-due installments and compute each loan's overdue breakdown (zero for non-overdue loans).
         final List<CredXOverdueInstallmentRowData> installments = retrieveOverdueInstallmentsForLoans(new ArrayList<>(loansById.keySet()));
         final Map<Long, List<CredXOverdueInstallmentData>> installmentsByLoan = new HashMap<>();
         for (final CredXOverdueInstallmentRowData installment : installments) {
             installmentsByLoan.computeIfAbsent(installment.loanId, ignored -> new ArrayList<>()).add(installment.toData());
         }
-
         for (final CredXOverdueLoanData loan : loans) {
             final List<CredXOverdueInstallmentData> loanInstallments = installmentsByLoan.getOrDefault(loan.getLoanId(),
                     Collections.emptyList());
             loan.setOverdueInstallments(loanInstallments);
-            loan.setPrincipalOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getPrincipalOutstanding));
-            loan.setInterestOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getInterestOutstanding));
-            loan.setLpiOutstanding(sum(loanInstallments, CredXOverdueInstallmentData::getLpiOutstanding));
+            loan.setOverdue(overdueBreakdown(loanInstallments));
             loan.setMaxDpd(loanInstallments.stream().map(CredXOverdueInstallmentData::getDpd).filter(Objects::nonNull)
                     .max(Integer::compareTo).orElse(0));
         }
 
-        return new Page<>(loans, totalFilteredRecords);
+        // Roll each client's loans up into its summary.
+        for (final CredXOverdueClientData client : clientsById.values()) {
+            CredXOverdueAmountBreakdown totalOutstanding = CredXOverdueAmountBreakdown.zero();
+            CredXOverdueAmountBreakdown totalOverdue = CredXOverdueAmountBreakdown.zero();
+            String currencyCode = null;
+            for (final CredXOverdueLoanData loan : client.getLoans()) {
+                totalOutstanding = totalOutstanding.add(loan.getOutstanding());
+                totalOverdue = totalOverdue.add(loan.getOverdue());
+                if (currencyCode == null) {
+                    currencyCode = loan.getCurrencyCode();
+                }
+            }
+            client.setCurrencyCode(currencyCode != null ? currencyCode : DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE);
+            client.setSummary(CredXOverdueClientSummaryData.builder().totalOutstanding(totalOutstanding).totalOverdue(totalOverdue)
+                    .totalLpiOutstanding(totalOverdue.getLpi()).build());
+        }
+
+        return new Page<>(new ArrayList<>(clientsById.values()), totalFilteredRecords);
+    }
+
+    private String activeLoansForClientsSql(final String clientPlaceholders) {
+        return new StringBuilder().append("select l.client_id as clientId, l.id as loanId, l.account_no as accountNo, ")
+                .append("coalesce(c.display_name, g.display_name) as borrowerName, l.loan_officer_id as loanOfficerId, ")
+                .append("s.display_name as loanOfficerName, l.product_id as productId, ")
+                .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
+                .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
+                .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as productName, ")
+                .append("llocp.invoice_no as invoiceNumber, l.currency_code as currencyCode, l.disbursedon_date as disbursementDate, ")
+                .append("l.principal_amount as loanAmount, coalesce(l.total_overpaid_derived, 0) as excessAmount, ")
+                .append("coalesce(l.principal_outstanding_derived, 0) as outPrincipal, ")
+                .append("coalesce(l.interest_outstanding_derived, 0) as outInterest, ")
+                .append("coalesce(l.fee_charges_outstanding_derived, 0) as outFees, ")
+                .append("coalesce(l.penalty_charges_outstanding_derived, 0) as outLpi, ")
+                .append("coalesce(l.total_outstanding_derived, 0) as outTotal, ")
+                .append("case when exists (select 1 from m_loan_repayment_schedule ls where ls.loan_id = l.id and ls.duedate < ")
+                .append(this.sqlGenerator.currentBusinessDate()).append(" and ").append(overdueInstallmentOutstandingSql("ls"))
+                .append(" > 0) then 1 else 0 end as isOverdue from m_loan l ")
+                .append("left join m_client c on c.id = l.client_id left join m_group g on g.id = l.group_id ")
+                .append("left join m_staff s on s.id = l.loan_officer_id left join m_product_loan pl on pl.id = l.product_id ")
+                .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
+                .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ")
+                .append("where l.loan_status_id = 300 and l.client_id in (").append(clientPlaceholders)
+                .append(") order by l.client_id, l.id desc").toString();
+    }
+
+    private CredXOverdueAmountBreakdown overdueBreakdown(final List<CredXOverdueInstallmentData> installments) {
+        final BigDecimal principal = sum(installments, CredXOverdueInstallmentData::getPrincipalOutstanding);
+        final BigDecimal interest = sum(installments, CredXOverdueInstallmentData::getInterestOutstanding);
+        final BigDecimal fees = sum(installments, CredXOverdueInstallmentData::getFeesOutstanding);
+        final BigDecimal lpi = sum(installments, CredXOverdueInstallmentData::getLpiOutstanding);
+        return CredXOverdueAmountBreakdown.builder().total(principal.add(interest).add(fees).add(lpi)).principal(principal)
+                .interest(interest).fees(fees).lpi(lpi).build();
     }
 
     /**
-     * Portfolio-level aggregates over the ENTIRE overdue-loan population - the same population the list endpoint
-     * ({@link #retrieveCrediblexOverdueLoans}) returns with no search. Computed in a single aggregation query so
-     * callers no longer need to page through every overdue loan to build dashboard totals.
+     * Portfolio-level aggregates over the ENTIRE overdue population - the same population the client-grouped list
+     * endpoint ({@link #retrieveCrediblexOverdueLoans}) covers with no search: every active loan of a client that has
+     * at least one overdue loan. Computed in a single aggregation query so callers no longer need to page through the
+     * list to build dashboard totals.
      *
      * <p>
-     * The overdue-loan definition and per-loan field semantics are identical to the list endpoint: a loan is included
-     * only if it is Active (status 300) and has at least one repayment schedule period that is past due
-     * ({@code duedate < currentBusinessDate}) with a positive per-installment outstanding balance
-     * ({@code principal + interest + LPI > 0}). Summing the same per-installment outstanding expressions the list
-     * endpoint uses guarantees the totals match manually summing all list pages, and that
-     * {@code totalOutstanding - totalOverdue - totalLpiOverdue = totalPrincipalOutstanding} holds exactly.
+     * {@code totalOutstanding} is the whole-loan remaining balance (from the {@code *_outstanding_derived} columns,
+     * includes fees); {@code totalOverdue} is summed over the past-due installments (same predicate as the list
+     * endpoint - active loan, {@code duedate < currentBusinessDate}, principal+interest+LPI > 0). Invariants:
+     * {@code totalOutstanding.total = principal + interest + fees + lpi} (same for {@code totalOverdue}), and
+     * {@code totalLpiOutstanding = totalOverdue.lpi}.
      * </p>
      */
     public CredXOverdueLoansSummaryData retrieveCrediblexOverdueLoansSummary() {
-        final String principalOutstanding = principalOutstandingSql("ls");
-        final String interestOutstanding = interestOutstandingSql("ls");
-        final String lpiOutstanding = lpiOutstandingSql("ls");
-        final String totalOutstanding = overdueInstallmentOutstandingSql("ls");
+        final String principalOut = principalOutstandingSql("ls");
+        final String interestOut = interestOutstandingSql("ls");
+        final String feeOut = feeOutstandingSql("ls");
+        final String lpiOut = lpiOutstandingSql("ls");
+        final String totalOut = overdueInstallmentOutstandingSql("ls");
+        final String businessDate = this.sqlGenerator.currentBusinessDate();
 
-        // No GROUP BY -> exactly one row even for an empty portfolio (count 0, sums NULL -> coalesced to 0). Only
-        // overdue
-        // installments (duedate < businessDate and per-installment outstanding > 0) contribute, so count(distinct
-        // loanId)
-        // equals the number of qualifying loans and each SUM equals the aggregate of the list endpoint's per-loan sums.
-        final StringBuilder sql = new StringBuilder().append("select count(distinct ls.loan_id) as totalLoans, ").append("coalesce(sum(")
-                .append(principalOutstanding).append("), 0) as totalPrincipalOutstanding, ").append("coalesce(sum(")
-                .append(interestOutstanding).append("), 0) as totalOverdue, ").append("coalesce(sum(").append(lpiOutstanding)
-                .append("), 0) as totalLpiOverdue, ").append("coalesce(sum(").append(totalOutstanding).append("), 0) as totalOutstanding, ")
-                .append("max(l.currency_code) as currencyCode from m_loan l ")
-                .append("join m_loan_repayment_schedule ls on ls.loan_id = l.id ").append("where l.loan_status_id = 300 and ls.duedate < ")
-                .append(this.sqlGenerator.currentBusinessDate()).append(" and ").append(totalOutstanding).append(" > 0");
+        // No GROUP BY -> exactly one row even for an empty portfolio (counts 0, sums NULL -> coalesced to 0, currency
+        // NULL -> AED fallback in the mapper). Whole-loan sums come from the derived columns; the overdue sums come
+        // from
+        // the pre-aggregated past-due installments (ovd), joined per loan.
+        final StringBuilder sql = new StringBuilder()
+                .append("select count(distinct l.client_id) as totalClients, count(distinct l.id) as totalLoans, ")
+                .append("coalesce(sum(l.principal_outstanding_derived), 0) as outPrincipal, ")
+                .append("coalesce(sum(l.interest_outstanding_derived), 0) as outInterest, ")
+                .append("coalesce(sum(l.fee_charges_outstanding_derived), 0) as outFees, ")
+                .append("coalesce(sum(l.penalty_charges_outstanding_derived), 0) as outLpi, ")
+                .append("coalesce(sum(l.total_outstanding_derived), 0) as outTotal, ")
+                .append("coalesce(sum(ovd.odPrincipal), 0) as odPrincipal, coalesce(sum(ovd.odInterest), 0) as odInterest, ")
+                .append("coalesce(sum(ovd.odFees), 0) as odFees, coalesce(sum(ovd.odLpi), 0) as odLpi, ")
+                .append("max(l.currency_code) as currencyCode from m_loan l left join (select ls.loan_id, sum(").append(principalOut)
+                .append(") as odPrincipal, sum(").append(interestOut).append(") as odInterest, sum(").append(feeOut)
+                .append(") as odFees, sum(").append(lpiOut).append(") as odLpi from m_loan_repayment_schedule ls where ls.duedate < ")
+                .append(businessDate).append(" and ").append(totalOut).append(" > 0 group by ls.loan_id) ovd on ovd.loan_id = l.id ")
+                .append("where l.loan_status_id = 300 and l.client_id is not null and exists (select 1 from m_loan lo ")
+                .append("where lo.client_id = l.client_id and lo.loan_status_id = 300 and exists (")
+                .append("select 1 from m_loan_repayment_schedule ls2 where ls2.loan_id = lo.id and ls2.duedate < ").append(businessDate)
+                .append(" and ").append(overdueInstallmentOutstandingSql("ls2")).append(" > 0))");
 
         return this.jdbcTemplate.queryForObject(sql.toString(), new CredXOverdueLoansSummaryMapper());
     }
 
-    private OverdueLoansFilter overdueLoansFromAndWhereClause(final String search) {
-        final StringBuilder sql = new StringBuilder().append(" from m_loan l ").append("left join m_client c on c.id = l.client_id ")
-                .append("left join m_group g on g.id = l.group_id ").append("left join m_staff s on s.id = l.loan_officer_id ")
-                .append("left join m_product_loan pl on pl.id = l.product_id ")
-                .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
-                .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ")
-                .append("where l.loan_status_id = 300 and exists (select 1 from m_loan_repayment_schedule ls ")
+    /**
+     * FROM/WHERE fragment selecting qualifying clients (m_client with >=1 overdue loan). Shared verbatim by the count
+     * and the paged-client query so both see the same population. When a search is supplied, a client is kept if IT
+     * (display_name / account_no) OR ANY of its active loans (id / account_no / invoice_no) match.
+     */
+    private OverdueLoansFilter qualifyingClientsFromAndWhereClause(final String search) {
+        final StringBuilder sql = new StringBuilder().append(" from m_client c where exists (select 1 from m_loan l ")
+                .append("where l.client_id = c.id and l.loan_status_id = 300 and exists (select 1 from m_loan_repayment_schedule ls ")
                 .append("where ls.loan_id = l.id and ls.duedate < ").append(this.sqlGenerator.currentBusinessDate()).append(" and ")
-                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0)");
+                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0))");
 
         final List<Object> params = new ArrayList<>();
         final String trimmedSearch = StringUtils.trimToNull(search);
         if (trimmedSearch != null) {
             final String likeParam = "%" + trimmedSearch.toLowerCase() + "%";
-            sql.append(" and (");
+            sql.append(" and (lower(c.display_name) like ? or lower(c.account_no) like ? ");
+            params.add(likeParam);
+            params.add(likeParam);
+            sql.append("or exists (select 1 from m_loan l2 ")
+                    .append("left join m_loan_line_of_credit_params llocp2 on llocp2.loan_id = l2.id ")
+                    .append("where l2.client_id = c.id and l2.loan_status_id = 300 and (");
             final Long numericLoanId = parseLongOrNull(trimmedSearch);
             if (numericLoanId != null) {
-                sql.append("l.id = ? or ");
+                sql.append("l2.id = ? or ");
                 params.add(numericLoanId);
             }
-            sql.append("lower(l.account_no) like ?");
-            sql.append(" or lower(coalesce(c.display_name, g.display_name)) like ?");
-            sql.append(" or lower(llocp.invoice_no) like ?");
-            sql.append(")");
-            params.add(likeParam);
+            sql.append("lower(l2.account_no) like ? or lower(llocp2.invoice_no) like ?)))");
             params.add(likeParam);
             params.add(likeParam);
         }
@@ -437,7 +519,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("ls.duedate as dueDate, ").append(this.sqlGenerator.dateDiff(businessDate, dueDate)).append(" as dpd, ")
                 .append("(coalesce(ls.principal_amount, 0) + coalesce(ls.interest_amount, 0) + coalesce(ls.fee_charges_amount, 0)) ")
                 .append("as emiAmount, ").append(principalOutstandingSql("ls")).append(" as principalOutstanding, ")
-                .append(interestOutstandingSql("ls")).append(" as interestOutstanding, ").append(lpiOutstandingSql("ls"))
+                .append(interestOutstandingSql("ls")).append(" as interestOutstanding, ").append(feeOutstandingSql("ls"))
+                .append(" as feesOutstanding, ").append(lpiOutstandingSql("ls"))
                 .append(" as lpiOutstanding, 0 as excessAmount from m_loan_repayment_schedule ls where ls.loan_id in (")
                 .append(placeholders).append(") and ls.duedate < ").append(businessDate).append(" and ")
                 .append(overdueInstallmentOutstandingSql("ls")).append(" > 0 order by ls.loan_id, ls.duedate, ls.installment");
@@ -459,6 +542,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 + ".interest_waived_derived, 0) - coalesce(" + alias + ".interest_writtenoff_derived, 0))";
     }
 
+    private String feeOutstandingSql(final String alias) {
+        return "(coalesce(" + alias + ".fee_charges_amount, 0) - coalesce(" + alias + ".fee_charges_completed_derived, 0) - coalesce("
+                + alias + ".fee_charges_waived_derived, 0) - coalesce(" + alias + ".fee_charges_writtenoff_derived, 0))";
+    }
+
     private String lpiOutstandingSql(final String alias) {
         return "(coalesce(" + alias + ".penalty_charges_amount, 0) - coalesce(" + alias
                 + ".penalty_charges_completed_derived, 0) - coalesce(" + alias + ".penalty_charges_waived_derived, 0) - coalesce(" + alias
@@ -470,19 +558,34 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return installments.stream().map(valueExtractor).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private static final class CredXOverdueLoanMapper implements RowMapper<CredXOverdueLoanData> {
+    private static final class CredXOverdueClientMapper implements RowMapper<CredXOverdueClientData> {
+
+        @Override
+        public CredXOverdueClientData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            return CredXOverdueClientData.builder().clientId(rs.getLong("clientId")).clientName(rs.getString("clientName"))
+                    .accountNo(rs.getString("accountNo")).loans(new ArrayList<>()).build();
+        }
+    }
+
+    private static final class CredXActiveLoanMapper implements RowMapper<CredXOverdueLoanData> {
 
         @Override
         public CredXOverdueLoanData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
             final LocalDate disbursementDate = JdbcSupport.getLocalDate(rs, "disbursementDate");
-            return CredXOverdueLoanData.builder().loanId(rs.getLong("loanId")).accountNo(rs.getString("accountNo"))
-                    .borrowerName(rs.getString("borrowerName")).loanOfficerId(JdbcSupport.getLong(rs, "loanOfficerId"))
-                    .loanOfficerName(rs.getString("loanOfficerName")).productId(JdbcSupport.getLong(rs, "productId"))
-                    .productName(rs.getString("productName")).invoiceNumber(rs.getString("invoiceNumber"))
-                    .currencyCode(rs.getString("currencyCode"))
+            final CredXOverdueAmountBreakdown outstanding = CredXOverdueAmountBreakdown.builder()
+                    .total(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outTotal"))
+                    .principal(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outPrincipal"))
+                    .interest(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outInterest"))
+                    .fees(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outFees"))
+                    .lpi(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outLpi")).build();
+            return CredXOverdueLoanData.builder().loanId(rs.getLong("loanId")).clientId(JdbcSupport.getLong(rs, "clientId"))
+                    .accountNo(rs.getString("accountNo")).borrowerName(rs.getString("borrowerName"))
+                    .loanOfficerId(JdbcSupport.getLong(rs, "loanOfficerId")).loanOfficerName(rs.getString("loanOfficerName"))
+                    .productId(JdbcSupport.getLong(rs, "productId")).productName(rs.getString("productName"))
+                    .invoiceNumber(rs.getString("invoiceNumber")).currencyCode(rs.getString("currencyCode"))
                     .disbursementDate(disbursementDate != null ? disbursementDate.toString() : null)
-                    .loanAmount(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "loanAmount")).principalOutstanding(BigDecimal.ZERO)
-                    .interestOutstanding(BigDecimal.ZERO).lpiOutstanding(BigDecimal.ZERO)
+                    .loanAmount(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "loanAmount")).isOverdue(rs.getInt("isOverdue") == 1)
+                    .outstanding(outstanding).overdue(CredXOverdueAmountBreakdown.zero())
                     .excessAmount(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "excessAmount")).maxDpd(0)
                     .overdueInstallments(Collections.emptyList()).build();
         }
@@ -498,17 +601,19 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     rs.getInt("dpd"), JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "emiAmount"),
                     JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalOutstanding"),
                     JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestOutstanding"),
+                    JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feesOutstanding"),
                     JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "lpiOutstanding"),
                     JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "excessAmount"));
         }
     }
 
     private record CredXOverdueInstallmentRowData(Long loanId, Integer installmentNumber, String dueDate, Integer dpd, BigDecimal emiAmount,
-            BigDecimal principalOutstanding, BigDecimal interestOutstanding, BigDecimal lpiOutstanding, BigDecimal excessAmount) {
+            BigDecimal principalOutstanding, BigDecimal interestOutstanding, BigDecimal feesOutstanding, BigDecimal lpiOutstanding,
+            BigDecimal excessAmount) {
 
         private CredXOverdueInstallmentData toData() {
             return new CredXOverdueInstallmentData(installmentNumber, dueDate, dpd, emiAmount, principalOutstanding, interestOutstanding,
-                    lpiOutstanding, excessAmount);
+                    feesOutstanding, lpiOutstanding, excessAmount);
         }
     }
 
@@ -517,13 +622,23 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         @Override
         public CredXOverdueLoansSummaryData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
             final String currencyCode = rs.getString("currencyCode");
+            final CredXOverdueAmountBreakdown totalOutstanding = CredXOverdueAmountBreakdown.builder()
+                    .total(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outTotal"))
+                    .principal(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outPrincipal"))
+                    .interest(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outInterest"))
+                    .fees(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outFees"))
+                    .lpi(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "outLpi")).build();
+            final BigDecimal odPrincipal = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "odPrincipal");
+            final BigDecimal odInterest = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "odInterest");
+            final BigDecimal odFees = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "odFees");
+            final BigDecimal odLpi = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "odLpi");
+            final CredXOverdueAmountBreakdown totalOverdue = CredXOverdueAmountBreakdown.builder()
+                    .total(odPrincipal.add(odInterest).add(odFees).add(odLpi)).principal(odPrincipal).interest(odInterest).fees(odFees)
+                    .lpi(odLpi).build();
             return CredXOverdueLoansSummaryData.builder()
                     .currencyCode(currencyCode != null ? currencyCode : DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE)
-                    .totalLoans(rs.getLong("totalLoans"))
-                    .totalOutstanding(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalOutstanding"))
-                    .totalOverdue(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalOverdue"))
-                    .totalLpiOverdue(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalLpiOverdue"))
-                    .totalPrincipalOutstanding(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalPrincipalOutstanding")).build();
+                    .totalClients(rs.getLong("totalClients")).totalLoans(rs.getLong("totalLoans")).totalOutstanding(totalOutstanding)
+                    .totalOverdue(totalOverdue).totalLpiOutstanding(odLpi).build();
         }
     }
 

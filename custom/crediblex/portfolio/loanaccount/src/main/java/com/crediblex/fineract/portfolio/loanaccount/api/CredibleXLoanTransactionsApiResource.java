@@ -2,7 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.api;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
-import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanReadPlatformServiceImpl;
@@ -49,7 +49,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
     private final CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService;
     private final DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer;
     private final DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer;
-    private final DefaultToApiJsonSerializer<CredXOverdueLoanData> overdueLoansJsonSerializer;
+    private final DefaultToApiJsonSerializer<CredXOverdueClientData> overdueLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<CredXOverdueLoansSummaryData> overdueLoansSummaryJsonSerializer;
 
     public CredibleXLoanTransactionsApiResource(PlatformSecurityContext context, LoanReadPlatformService loanReadPlatformService,
@@ -59,7 +59,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
             CredXLoanReadPlatformServiceImpl credibleXLoanReadPlatformService,
             DefaultToApiJsonSerializer<BackdatedRepaymentPenaltyDTO> penaltyJsonSerializer,
             DefaultToApiJsonSerializer<FutureLPIChargesData> futureLPIJsonSerializer,
-            DefaultToApiJsonSerializer<CredXOverdueLoanData> overdueLoansJsonSerializer,
+            DefaultToApiJsonSerializer<CredXOverdueClientData> overdueLoansJsonSerializer,
             DefaultToApiJsonSerializer<CredXOverdueLoansSummaryData> overdueLoansSummaryJsonSerializer) {
         super(context, loanReadPlatformService, apiRequestParameterHelper, toApiJsonSerializer, commandsSourceWritePlatformService,
                 paymentTypeReadPlatformService, loanChargePaidByReadService);
@@ -122,30 +122,32 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
     @Path("overdue")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Retrieve CREDX overdue loans", description = "Returns active loans with at least one overdue installment and nests the matching overdue schedule periods. "
-            + "Optional case-insensitive partial-match search against loanId, accountNo, borrowerName, invoiceNumber.")
-    public String retrieveOverdueLoans(@QueryParam("offset") @Parameter(description = "offset") final Integer offset,
-            @QueryParam("limit") @Parameter(description = "limit, max 200") final Integer limit,
-            @QueryParam("search") @Parameter(description = "Optional search string matched against loanId, accountNo, borrowerName, invoiceNumber") final String search,
+    @Operation(summary = "Retrieve CREDX overdue clients", description = "Returns a page of CLIENTS that each have at least one overdue loan (active loan with a past-due installment carrying a positive principal+interest+LPI balance). "
+            + "Every one of the client's active loans is nested under it (overdue and non-overdue), each with a whole-loan 'outstanding' breakdown, a past-due 'overdue' breakdown, and its overdue installments. "
+            + "Each client also carries a summary (totalOutstanding, totalOverdue - both split into principal/interest/fees/lpi - and totalLpiOutstanding). "
+            + "Pagination and counting are by client. Optional case-insensitive search matches client display name/account no or any of the client's loans by loanId, loan accountNo or invoiceNumber.")
+    public String retrieveOverdueLoans(@QueryParam("offset") @Parameter(description = "offset, in clients") final Integer offset,
+            @QueryParam("limit") @Parameter(description = "limit (clients), max 200") final Integer limit,
+            @QueryParam("search") @Parameter(description = "Optional search matched against client displayName/accountNo and the client's loans (loanId, loan accountNo, invoiceNumber)") final String search,
             @Context final UriInfo uriInfo) {
 
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
 
-        final Page<CredXOverdueLoanData> overdueLoans = this.credibleXLoanReadPlatformService.retrieveCrediblexOverdueLoans(offset, limit,
-                search);
+        final Page<CredXOverdueClientData> overdueClients = this.credibleXLoanReadPlatformService.retrieveCrediblexOverdueLoans(offset,
+                limit, search);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
-        return this.overdueLoansJsonSerializer.serialize(settings, overdueLoans, this.responseDataParameters);
+        return this.overdueLoansJsonSerializer.serialize(settings, overdueClients, this.responseDataParameters);
     }
 
     @GET
     @Path("overdue/summary")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Retrieve CREDX overdue portfolio summary", description = "Returns portfolio-level aggregates for the ENTIRE overdue-loan population in a single call, "
-            + "using the exact same overdue-loan definition and per-loan field semantics as GET /loans/crediblex/overdue. "
-            + "The summary always covers the whole overdue portfolio and is never affected by search or list filters, so it takes no query parameters. "
-            + "The identity totalOutstanding - totalOverdue - totalLpiOverdue = totalPrincipalOutstanding always holds.")
+    @Operation(summary = "Retrieve CREDX overdue portfolio summary", description = "Returns portfolio-level aggregates for the ENTIRE overdue population in a single call - every active loan of a client that has at least one overdue loan, "
+            + "the same population GET /loans/crediblex/overdue covers with no search. Returns totalClients, totalLoans, a whole-loan totalOutstanding breakdown, a past-due totalOverdue breakdown (both split into principal/interest/fees/lpi) and totalLpiOutstanding. "
+            + "It always covers the whole portfolio and is never affected by search or list filters, so it takes no query parameters. "
+            + "Invariants: totalOutstanding.total = principal + interest + fees + lpi (same for totalOverdue), and totalLpiOutstanding = totalOverdue.lpi.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = CredXOverdueLoansSummaryData.class))) })
     public String retrieveOverdueLoansSummary(@Context final UriInfo uriInfo) {
