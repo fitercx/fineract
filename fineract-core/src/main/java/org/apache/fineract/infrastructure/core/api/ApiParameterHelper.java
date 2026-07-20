@@ -136,4 +136,15 @@ public final class ApiParameterHelper {
     public static boolean genericResultSetPassed(final MultivaluedMap<String, String> queryParams) {
         return queryParams.getFirst("genericResultSet") != null;
     }
+
+    /**
+     * When loading loan transactions via associations, controls whether {@code is_reversed = true} rows are included.
+     * Defaults to {@code true} when the parameter is omitted (backward compatible).
+     */
+    public static boolean includeReversed(final MultivaluedMap<String, String> queryParams) {
+        if (queryParams.getFirst("includeReversed") != null) {
+            return "true".equalsIgnoreCase(queryParams.getFirst("includeReversed"));
+        }
+        return true;
+    }
 }
