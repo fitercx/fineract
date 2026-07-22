@@ -13,14 +13,14 @@ import com.crediblex.fineract.infrastructure.events.business.domain.accounttrans
 import com.crediblex.fineract.portfolio.loanaccount.api.CustomLoanApiConstants;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXAdjustInstallmentDateDataValidator;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
-import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
-import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -36,9 +36,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -46,7 +44,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.cob.service.LoanAccountLockService;
@@ -55,14 +52,12 @@ import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDoma
 import org.apache.fineract.infrastructure.configuration.service.TemporaryConfigurationServiceContainer;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.config.FineractProperties;
-import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.ErrorHandler;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
-import org.apache.fineract.infrastructure.core.exception.MultiException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.exception.UnsupportedParameterException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
@@ -106,7 +101,6 @@ import org.apache.fineract.portfolio.collectionsheet.command.SingleDisbursalComm
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
-import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.GLIMAccountInfoRepository;
@@ -135,8 +129,6 @@ import org.apache.fineract.portfolio.loanaccount.exception.InvalidLoanStateTrans
 import org.apache.fineract.portfolio.loanaccount.exception.LoanRepaymentScheduleNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanTransactionNotFoundException;
 import org.apache.fineract.portfolio.loanaccount.guarantor.service.GuarantorDomainService;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.service.LoanScheduleHistoryWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanMapper;
@@ -1682,156 +1674,42 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     public CommandProcessingResult makeLoanRepaymentWithChargeRefundChargeType(final LoanTransactionType repaymentTransactionType,
             final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
-        final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-        final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
-        final Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformService.retrieveLoanCharges(loanId);
-        final List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream()
-                .map(p -> new ExtendedLoanSchedulePeriodData(p,
-                        this.credibleXLoanReadPlatformService.resolvePeriodStatus(loan.getCurrency().toData(), p)))
-                .toList();
-        // All loans now allow early repayments before the first installment due date
-        final boolean isDrawdownLoan = true;
-        final CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus,
-                loanCharges, penaltyWaitPeriodValue, isDrawdownLoan);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
-        final List<LoanChargeData> penaltiesToDisable = penaltyCalculator.getPenaltiesToDisable(transactionDate, loanId);
-        if (!penaltiesToDisable.isEmpty()) {
-            final List<Long> chargeIds = penaltiesToDisable.stream().map(LoanChargeData::getId).toList();
-            final List<LoanTransaction> accrualTransactions = loanChargeRepository.findAccrualTransactionsByChargeIds(chargeIds,
-                    LoanTransactionType.ACCRUAL);
-            for (final LoanTransaction accrualTransaction : accrualTransactions) {
-                if (!accrualTransaction.isReversed()) {
-                    final MonetaryCurrency currency = loan.getCurrency();
-                    final Map<Integer, Money> interestByInstallment = new HashMap<>();
-                    final Map<Integer, Money> feesByInstallment = new HashMap<>();
-                    final Map<Integer, Money> penaltiesByInstallment = new HashMap<>();
-                    final Set<LoanChargePaidBy> chargesPaid = new HashSet<>(accrualTransaction.getLoanChargesPaid());
-                    for (LoanChargePaidBy chargePaidBy : chargesPaid) {
-                        final Integer installmentNumber = chargePaidBy.getInstallmentNumber();
-                        final LoanCharge charge = chargePaidBy.getLoanCharge();
-                        final Money amount = Money.of(currency, chargePaidBy.getAmount());
-                        if (charge.isPenaltyCharge()) {
-                            penaltiesByInstallment.merge(installmentNumber, amount, Money::plus);
-                        } else if (charge.isFeeCharge()) {
-                            feesByInstallment.merge(installmentNumber, amount, Money::plus);
-                        }
-                    }
-                    final Money totalInterest = Money.of(currency, accrualTransaction.getInterestPortion());
-                    if (totalInterest.isGreaterThanZero()) {
-                        final LocalDate accrualDate = accrualTransaction.getTransactionDate();
-                        final LoanRepaymentScheduleInstallment targetInstallment = loan.getRepaymentScheduleInstallments().stream()
-                                .filter(inst -> !inst.isDownPayment() && !inst.isAdditional())
-                                .filter(inst -> DateUtils.isEqual(accrualDate, inst.getDueDate())
-                                        || DateUtils.isBefore(accrualDate, inst.getDueDate()))
-                                .findFirst().orElse(null);
-                        if (targetInstallment != null) {
-                            interestByInstallment.put(targetInstallment.getInstallmentNumber(), totalInterest);
-                        }
-                    }
-                    final Set<Integer> allInstallmentNumbers = new HashSet<>();
-                    allInstallmentNumbers.addAll(interestByInstallment.keySet());
-                    allInstallmentNumbers.addAll(feesByInstallment.keySet());
-                    allInstallmentNumbers.addAll(penaltiesByInstallment.keySet());
-                    for (final Integer installmentNumber : allInstallmentNumbers) {
-                        final LoanRepaymentScheduleInstallment installment = loan.fetchRepaymentScheduleInstallment(installmentNumber);
-                        final Money interestToReverse = interestByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
-                        final Money feesToReverse = feesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
-                        final Money penaltiesToReverse = penaltiesByInstallment.getOrDefault(installmentNumber, Money.zero(currency));
-                        final Money currentInterestAccrued = installment.getInterestAccrued(currency);
-                        final Money currentFeeAccrued = installment.getFeeAccrued(currency);
-                        final Money currentPenaltyAccrued = installment.getPenaltyAccrued(currency);
-                        final Money newInterestAccrued = currentInterestAccrued.minus(interestToReverse);
-                        final Money newFeeAccrued = currentFeeAccrued.minus(feesToReverse);
-                        final Money newPenaltyAccrued = currentPenaltyAccrued.minus(penaltiesToReverse);
-                        installment.updateAccrualPortion(newInterestAccrued, newFeeAccrued, newPenaltyAccrued);
-                    }
-                }
-                accrualTransaction.reverse();
-            }
-            if (!accrualTransactions.isEmpty()) {
-                this.loanTransactionRepository.saveAllAndFlush(accrualTransactions);
-            }
-            if (!chargeIds.isEmpty()) {
-                loan.getLoanCharges().stream().filter(loanCharge -> chargeIds.contains(loanCharge.getId()) && !loanCharge.isPaid())
-                        .forEach(loanCharge -> loanCharge.setActive(false));
-                saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-            }
-            log.info("Deactivated {} penalty charges for loan id {}", chargeIds.size(), loanId);
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final boolean isBackdatedSettlement = transactionDate != null && transactionDate.isBefore(businessDate);
+
+        if (isBackdatedSettlement) {
+            // The product configuration may make a safe backdated adjustment impossible -> surface a clear error to
+            // the UI instead of silently producing an inconsistent financial state.
+            validateBackdatedRepaymentAllowed(loan, transactionDate);
+
+            // Adjust the paid EMI to its value date: waive the overdue (LPI) charges dated on/after the value date up
+            // to today (money received on the value date must not incur LPI for the days until it was recorded). The
+            // customer still pays the LPI that accrued strictly before the value date (as shown by the penalties
+            // preview), so the incoming payment settles the outstanding exactly with no overpayment or orphaned
+            // charges. Interest is schedule-fixed for these products (no daily interest past due) and future EMIs are
+            // untouched because only already-accrued LPI charges are waived and the schedule is never regenerated.
+            this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesOnOrAfterDate(loanId, transactionDate);
         }
-        final CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
-                isRecoveryRepayment, chargeRefundChargeType);
-        if (result != null && result.getResourceId() != null && !penaltiesToDisable.isEmpty()) {
-            this.applyOverdueChargesLoan(loanId);
-            Loan backdatedLoan = this.loanAssembler.assembleFrom(loanId);
-            this.addLoanPeriodicAccruals(backdatedLoan);
-            loanScheduleService.recalculateSchedule(backdatedLoan, loanUtilService.buildScheduleGeneratorDTO(backdatedLoan, null));
-            backdatedLoan = this.loanAssembler.assembleFrom(loanId);
-            saveAndFlushLoanWithDataIntegrityViolationChecks(backdatedLoan);
-        }
-        return result;
+
+        return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                chargeRefundChargeType);
     }
 
-    private void addLoanPeriodicAccruals(final Loan loan) {
-        final LocalDate accrualDate = DateUtils.getBusinessLocalDate();
-        try {
-            loanAccrualsProcessingService.addPeriodicAccruals(accrualDate, loan);
-        } catch (MultiException me) {
-            final String message = ExceptionUtils.getMessage(me);
-            log.error("Error adding periodic accruals for loan id {}: {}", loan.getId(), message);
-            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
-                    "Adding periodic accruals failed with error message : " + message);
-        } catch (Exception e) {
-            final String message = ExceptionUtils.getMessage(e);
-            log.error("Unexpected error adding periodic accruals for loan id {}: {}", loan.getId(), message);
-            throw new GeneralPlatformDomainRuleException("error.msg.loan.accruals.addition.failed",
-                    "Adding periodic accruals failed with error message : " + message);
-        }
-    }
-
-    private void applyOverdueChargesLoan(final Long loanId) {
-        final Long penaltyWaitPeriodValue = configurationDomainService.retrievePenaltyWaitPeriod();
-        final Boolean backdatePenalties = configurationDomainService.isBackdatePenaltiesEnabled();
-        final Collection<OverdueLoanScheduleData> overdueLoanScheduledInstallments = loanReadPlatformService
-                .retrieveLoanOverdueInstallments(loanId, penaltyWaitPeriodValue, backdatePenalties);
-        if (!overdueLoanScheduledInstallments.isEmpty()) {
-            final Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData = new HashMap<>();
-            for (final OverdueLoanScheduleData overdueInstallment : overdueLoanScheduledInstallments) {
-                if (overdueScheduleData.containsKey(overdueInstallment.getLoanId())) {
-                    overdueScheduleData.get(overdueInstallment.getLoanId()).add(overdueInstallment);
-                } else {
-                    Collection<OverdueLoanScheduleData> loanData = new ArrayList<>();
-                    loanData.add(overdueInstallment);
-                    overdueScheduleData.put(overdueInstallment.getLoanId(), loanData);
-                }
-            }
-
-            final List<Throwable> exceptions = new ArrayList<>();
-            for (final Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
-                try {
-                    if (!entry.getValue().isEmpty()) {
-                        this.credibleXLoanChargeWritePlatformService.applyOverdueChargesForLoan(entry.getKey(), entry.getValue());
-                    }
-                } catch (final PlatformApiDataValidationException e) {
-                    final List<ApiParameterError> errors = e.getErrors();
-                    for (final ApiParameterError error : errors) {
-                        log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
-                                error.getDeveloperMessage(), e);
-                    }
-                    exceptions.add(e);
-                } catch (final AbstractPlatformDomainRuleException e) {
-                    log.error("Apply Charges due for overdue loans failed for account {} with message: {}", entry.getKey(),
-                            e.getDefaultUserMessage(), e);
-                    exceptions.add(e);
-                } catch (Exception e) {
-                    log.error("Apply Charges due for overdue loans failed for account {}", entry.getKey(), e);
-                    exceptions.add(e);
-                }
-            }
-            if (!exceptions.isEmpty()) {
-                throw new GeneralPlatformDomainRuleException("error.msg.applying.overdue.charges.failed",
-                        "Applying overdue charges failed for loan id: " + loanId);
-            }
-        }
+    /**
+     * Guards a backdated (value date in the past) repayment against loan-product configurations where the interest for
+     * the paid EMI cannot be adjusted to the value date without also altering future installments. For
+     * interest-recalculation products the interest is recomputed from the payment date, so backdating would ripple into
+     * the rest of the schedule; such repayments are rejected with a message the UI surfaces to the user. Non
+     * interest-recalculation products keep a fixed per-period interest on the schedule, so only the LPI needs adjusting
+     * and backdating is allowed.
+     * <p>
+     * Delegates to {@link BackdatedRepaymentValidator} so the savings-to-loan "Transfer funds" settlement path
+     * ({@code CustomAccountTransfersWritePlatformServiceImpl}) enforces the identical rule instead of silently
+     * bypassing it (see BUG_REPORT.md Finding #1).
+     */
+    private void validateBackdatedRepaymentAllowed(final Loan loan, final LocalDate transactionDate) {
+        BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, transactionDate);
     }
 
     /**
@@ -2526,26 +2404,38 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // verifyInstallmentDateAdjustmentApplied() below, which rolls the whole transaction back on any mismatch -
         // so an earlier move that the generator cannot honor fails safe (clean rollback, no corruption).
         final boolean earlierMove = newDueDate.isBefore(oldDueDate);
-        final CommandProcessingResult createResult = earlierMove
-                ? this.loanRescheduleRequestWritePlatformService.createAllowingEarlierDueDate(createCommand)
-                : this.loanRescheduleRequestWritePlatformService.create(createCommand);
-        final Long rescheduleRequestId = createResult.getResourceId();
+        // Bypass the generic reschedule engine's broader overdue-charges guard (not.allowed.due.to.overdue.charges)
+        // for this internal create+approve pair only. This feature already enforces its own, narrower rule up front
+        // (validateNoOverdueChargesForInstallment: the installment being MOVED must not itself be overdue with
+        // outstanding charges) which matches exactly what the Angular dialog disables in the installment picker.
+        // Without the bypass, moving a later, not-yet-due installment would be wrongly blocked by unrelated,
+        // unresolved LPI on an EARLIER installment - see AdjustInstallmentDateOverdueChargeBypassContext javadoc.
+        AdjustInstallmentDateOverdueChargeBypassContext.enable();
+        final Long rescheduleRequestId;
+        try {
+            final CommandProcessingResult createResult = earlierMove
+                    ? this.loanRescheduleRequestWritePlatformService.createAllowingEarlierDueDate(createCommand)
+                    : this.loanRescheduleRequestWritePlatformService.create(createCommand);
+            rescheduleRequestId = createResult.getResourceId();
 
-        // Immediately approve the just-created reschedule request. This triggers the standard recalculation pipeline
-        // (archive schedule, rebuild LoanApplicationTerms, rescheduleNextInstallments, reprocess accruals/charges/
-        // transactions, post journal entries, emit LoanRescheduledDueAdjustScheduleBusinessEvent).
-        final JsonObject approvePayload = new JsonObject();
-        approvePayload.addProperty("locale", locale);
-        approvePayload.addProperty("dateFormat", dateFormat);
-        approvePayload.addProperty(RescheduleLoansApiConstants.approvedOnDateParam, formatter.format(businessDate));
+            // Immediately approve the just-created reschedule request. This triggers the standard recalculation
+            // pipeline (archive schedule, rebuild LoanApplicationTerms, rescheduleNextInstallments, reprocess
+            // accruals/charges/transactions, post journal entries, emit LoanRescheduledDueAdjustScheduleBusinessEvent).
+            final JsonObject approvePayload = new JsonObject();
+            approvePayload.addProperty("locale", locale);
+            approvePayload.addProperty("dateFormat", dateFormat);
+            approvePayload.addProperty(RescheduleLoansApiConstants.approvedOnDateParam, formatter.format(businessDate));
 
-        final String approveJson = approvePayload.toString();
-        final JsonElement approveParsed = fromApiJsonHelper.parse(approveJson);
-        final JsonCommand approveCommand = JsonCommand.from(approveJson, approveParsed, fromApiJsonHelper,
-                RescheduleLoansApiConstants.ENTITY_NAME, rescheduleRequestId, null, loan.getGroupId(), loan.getClientId(), loanId, null,
-                null, "/rescheduleloans/" + rescheduleRequestId, null, null, null, null, ExternalId.empty());
+            final String approveJson = approvePayload.toString();
+            final JsonElement approveParsed = fromApiJsonHelper.parse(approveJson);
+            final JsonCommand approveCommand = JsonCommand.from(approveJson, approveParsed, fromApiJsonHelper,
+                    RescheduleLoansApiConstants.ENTITY_NAME, rescheduleRequestId, null, loan.getGroupId(), loan.getClientId(), loanId, null,
+                    null, "/rescheduleloans/" + rescheduleRequestId, null, null, null, null, ExternalId.empty());
 
-        this.loanRescheduleRequestWritePlatformService.approve(approveCommand);
+            this.loanRescheduleRequestWritePlatformService.approve(approveCommand);
+        } finally {
+            AdjustInstallmentDateOverdueChargeBypassContext.clear();
+        }
 
         // FAIL-PROOF: the reschedule generator matches variations by exact date equality and can silently no-op or
         // mis-anchor when the chain does not line up (observed in production: target date ignored / applied to the

@@ -3,13 +3,19 @@ package com.crediblex.fineract.portfolio.loanaccount.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
@@ -18,16 +24,21 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanChargeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -83,6 +94,12 @@ class CustomLoanAccountDomainServiceForeclosureTest {
 
     @Mock
     private ConfigurationDomainService configurationDomainService;
+
+    @Mock
+    private LoanRepositoryWrapper loanRepositoryWrapper;
+
+    @Mock
+    private LoanChargeService loanChargeService;
 
     @InjectMocks
     private CustomLoanAccountDomainServiceJpa customLoanAccountDomainServiceJpa;
@@ -214,5 +231,152 @@ class CustomLoanAccountDomainServiceForeclosureTest {
         // Then
         assertThat(feePayable.isZero()).isTrue();
         assertThat(taxPayable.isZero()).isTrue();
+    }
+
+    /**
+     * Regression test for the production foreclosure failure:
+     * {@code FK_m_loan_overdue_installment_charge_m_loan_repayment_schedule} violation. When a loan carries an active
+     * overdue installment penalty charge linked to an installment that foreclosure removes, that charge must be
+     * deactivated AND flushed BEFORE the schedule rows are deleted, otherwise the delete hits the ON DELETE RESTRICT
+     * foreign key and the whole foreclosure rolls back.
+     */
+    @Test
+    @DisplayName("Foreclosure deactivates & flushes overdue installment charges before deleting schedule rows")
+    void testForeclosureDeactivatesOverdueInstallmentChargesBeforeScheduleDelete() {
+        // Pre-compute Money values so no mock interaction happens inside when(...).thenReturn(...).
+        final Money zero = Money.of(currency, BigDecimal.ZERO);
+        final Money removedPrincipal = Money.of(currency, new BigDecimal("1000.00"));
+
+        final LoanRepaymentScheduleInstallment pastInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        final LoanRepaymentScheduleInstallment dueOnForeclosure = mock(LoanRepaymentScheduleInstallment.class);
+        when(pastInstallment.getDueDate()).thenReturn(FORECLOSURE_DATE.minusMonths(1));
+        when(pastInstallment.getPrincipal(currency)).thenReturn(zero);
+        when(dueOnForeclosure.getDueDate()).thenReturn(FORECLOSURE_DATE);
+        when(dueOnForeclosure.getPrincipal(currency)).thenReturn(removedPrincipal);
+
+        final List<LoanRepaymentScheduleInstallment> installments = new ArrayList<>(List.of(pastInstallment, dueOnForeclosure));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(installments);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.retrieveIncomeForOverlappingPeriod(FORECLOSURE_DATE)).thenReturn(new Money[] { zero, zero, zero, zero });
+        when(loan.getDisbursementDetails()).thenReturn(new ArrayList<>());
+        when(loan.getDisbursementDate()).thenReturn(FORECLOSURE_DATE.minusMonths(6));
+        when(loan.getLoanTransactions()).thenReturn(new ArrayList<>());
+
+        // Active overdue installment penalty charge linked to the installment that will be removed.
+        final LoanCharge overdueCharge = mock(LoanCharge.class);
+        final LoanOverdueInstallmentCharge overdueLink = mock(LoanOverdueInstallmentCharge.class);
+        when(overdueCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(overdueCharge.getOverdueInstallmentCharge()).thenReturn(overdueLink);
+        when(overdueCharge.getDueLocalDate()).thenReturn(FORECLOSURE_DATE);
+        when(overdueLink.getInstallment()).thenReturn(dueOnForeclosure);
+        final Set<LoanCharge> activeCharges = new HashSet<>();
+        activeCharges.add(overdueCharge);
+        when(loan.getActiveCharges()).thenReturn(activeCharges);
+
+        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "updateInstallmentsPostDate", loan, FORECLOSURE_DATE);
+
+        final InOrder ordered = inOrder(overdueCharge, loanRepositoryWrapper, loan);
+        ordered.verify(overdueCharge).setActive(false);
+        ordered.verify(loanRepositoryWrapper).saveAndFlush(loan);
+        ordered.verify(loan).updateLoanScheduleOnForeclosure(any());
+    }
+
+    /**
+     * Overdue installment charges linked to installments that SURVIVE foreclosure (due date strictly before the
+     * foreclosure date) must not be touched, and no extra flush should be triggered.
+     */
+    @Test
+    @DisplayName("Foreclosure leaves overdue charges on surviving installments untouched")
+    void testForeclosureKeepsOverdueChargesOnSurvivingInstallments() {
+        final Money zero = Money.of(currency, BigDecimal.ZERO);
+
+        final LoanRepaymentScheduleInstallment pastInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        when(pastInstallment.getDueDate()).thenReturn(FORECLOSURE_DATE.minusMonths(1));
+        when(pastInstallment.getPrincipal(currency)).thenReturn(zero);
+
+        final List<LoanRepaymentScheduleInstallment> installments = new ArrayList<>(List.of(pastInstallment));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(installments);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.retrieveIncomeForOverlappingPeriod(FORECLOSURE_DATE)).thenReturn(new Money[] { zero, zero, zero, zero });
+        when(loan.getDisbursementDetails()).thenReturn(new ArrayList<>());
+        when(loan.getDisbursementDate()).thenReturn(FORECLOSURE_DATE.minusMonths(6));
+        when(loan.getLoanTransactions()).thenReturn(new ArrayList<>());
+
+        final LoanCharge overdueCharge = mock(LoanCharge.class);
+        final LoanOverdueInstallmentCharge overdueLink = mock(LoanOverdueInstallmentCharge.class);
+        when(overdueCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(overdueCharge.getOverdueInstallmentCharge()).thenReturn(overdueLink);
+        when(overdueCharge.getDueLocalDate()).thenReturn(FORECLOSURE_DATE.minusMonths(1));
+        when(overdueLink.getInstallment()).thenReturn(pastInstallment);
+        final Set<LoanCharge> activeCharges = new HashSet<>();
+        activeCharges.add(overdueCharge);
+        when(loan.getActiveCharges()).thenReturn(activeCharges);
+
+        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "updateInstallmentsPostDate", loan, FORECLOSURE_DATE);
+
+        verify(overdueCharge, never()).setActive(false);
+        verify(loanRepositoryWrapper, never()).saveAndFlush(any());
+    }
+
+    /**
+     * Regression test for BUG_REPORT.md Finding #3: {@code foreCloseDetail.getPenaltyChargesCharged()} sums the
+     * repayment schedule's CACHED {@code penaltyChargesOutstanding} field, which can go stale/inflated relative to what
+     * the loan's actual active charges total on a multi-installment loan with 2+ overdue installments (the same
+     * stale-cache bug class as Finding #2). This test simulates exactly that: the stale cached figure (231.01) is
+     * higher than the sum of the loan's real active LPI charges (175.89, split across two overdue installments) - the
+     * fix must compute the penalty payable from the actual charges, not the stale cache, so foreclosure never withdraws
+     * more from the linked savings account than the loan truly owes.
+     */
+    @Test
+    @DisplayName("Foreclosure computes penalty payable from active charges, not the stale schedule cache (Finding #3)")
+    void computePenaltyPayableFromActiveCharges_usesRealChargeTotal_notStaleScheduleCache() {
+        final MonetaryCurrency realCurrency = new MonetaryCurrency(CURRENCY_CODE, 2, 0);
+
+        final LoanRepaymentScheduleInstallment installment2 = mock(LoanRepaymentScheduleInstallment.class);
+        when(installment2.getDueDate()).thenReturn(FORECLOSURE_DATE.minusMonths(2));
+        final LoanRepaymentScheduleInstallment installment3 = mock(LoanRepaymentScheduleInstallment.class);
+        when(installment3.getDueDate()).thenReturn(FORECLOSURE_DATE.minusMonths(1));
+
+        // 5 daily LPI charges of 13.35 on installment 2 (66.75 total), 5 of 13.56 on installment 3 (67.80 total) -
+        // both installments are due well before the foreclosure date, so both sets are payable. Real total: 134.55.
+        final Set<LoanCharge> activeCharges = new HashSet<>();
+        activeCharges.addAll(buildOverdueLpiCharges(installment2, new BigDecimal("13.35"), 5, realCurrency));
+        activeCharges.addAll(buildOverdueLpiCharges(installment3, new BigDecimal("13.56"), 5, realCurrency));
+
+        // A non-overdue, non-penalty charge must be ignored entirely.
+        final LoanCharge feeCharge = mock(LoanCharge.class);
+        when(feeCharge.isPenaltyCharge()).thenReturn(false);
+        activeCharges.add(feeCharge);
+
+        // An overdue LPI charge whose OWNING installment is due AFTER the foreclosure date must be excluded (the
+        // borrower is not charged for arrears that only accrue after the backdated settlement date).
+        final LoanRepaymentScheduleInstallment futureInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        when(futureInstallment.getDueDate()).thenReturn(FORECLOSURE_DATE.plusMonths(1));
+        activeCharges.addAll(buildOverdueLpiCharges(futureInstallment, new BigDecimal("999.99"), 1, realCurrency));
+
+        when(loan.getActiveCharges()).thenReturn(activeCharges);
+
+        final Money penaltyPayable = com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator
+                .computePenaltyPayableFromActiveCharges(loan, FORECLOSURE_DATE, realCurrency);
+
+        // The real, correct total (134.55) - NOT the inflated/stale schedule-cache figure (231.01) that this same
+        // fixture would previously have produced via foreCloseDetail.getPenaltyChargesCharged().
+        assertThat(penaltyPayable.getAmount()).isEqualByComparingTo(new BigDecimal("134.55"));
+    }
+
+    private List<LoanCharge> buildOverdueLpiCharges(final LoanRepaymentScheduleInstallment owningInstallment, final BigDecimal amountEach,
+            final int count, final MonetaryCurrency realCurrency) {
+        final List<LoanCharge> charges = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            final LoanCharge charge = mock(LoanCharge.class);
+            final LoanOverdueInstallmentCharge link = mock(LoanOverdueInstallmentCharge.class);
+            when(charge.isPenaltyCharge()).thenReturn(true);
+            when(charge.isOverdueInstallmentCharge()).thenReturn(true);
+            when(charge.getOverdueInstallmentCharge()).thenReturn(link);
+            when(link.getInstallment()).thenReturn(owningInstallment);
+            when(charge.getAmountOutstanding(realCurrency)).thenReturn(Money.of(realCurrency, amountEach));
+            charges.add(charge);
+        }
+        return charges;
     }
 }

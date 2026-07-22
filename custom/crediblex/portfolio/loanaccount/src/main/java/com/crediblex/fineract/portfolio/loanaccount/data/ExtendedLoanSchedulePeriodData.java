@@ -33,15 +33,16 @@ public class ExtendedLoanSchedulePeriodData extends LoanSchedulePeriodData {
     /** Amount of reversed penalty charges for this period (for display purposes) */
     public final BigDecimal reversedPenaltyChargesDue;
 
-    public static LoanSchedulePeriodData paymentsSummaryPeriod(final Integer periodNumber, final LocalDate dueDate,
-            final Boolean isComplete, final BigDecimal principalDue, final BigDecimal penaltyChargesDue,
+    public static LoanSchedulePeriodData paymentsSummaryPeriod(final Integer periodNumber, final LocalDate fromDate,
+            final LocalDate dueDate, final Boolean isComplete, final BigDecimal principalDue, final BigDecimal penaltyChargesDue,
             final BigDecimal totalPaidForPeriod, final BigDecimal totalOutstandingForPeriod, final BigDecimal interestOutstanding,
+            final BigDecimal interestPaid, final BigDecimal interestWaived, final BigDecimal interestWrittenOff,
             final BigDecimal principalOutstanding) {
 
-        return builder().period(periodNumber).dueDate(dueDate).complete(isComplete).principalDue(principalDue)
+        return builder().period(periodNumber).fromDate(fromDate).dueDate(dueDate).complete(isComplete).principalDue(principalDue)
                 .penaltyChargesDue(penaltyChargesDue).totalPaidForPeriod(totalPaidForPeriod)
-                .totalOutstandingForPeriod(totalOutstandingForPeriod).interestOutstanding(interestOutstanding)
-                .principalOutstanding(principalOutstanding).build();
+                .totalOutstandingForPeriod(totalOutstandingForPeriod).interestOutstanding(interestOutstanding).interestPaid(interestPaid)
+                .interestWaived(interestWaived).interestWrittenOff(interestWrittenOff).principalOutstanding(principalOutstanding).build();
     }
 
     public ExtendedLoanSchedulePeriodData(Integer period, LocalDate fromDate, LocalDate dueDate, LocalDate obligationsMetOnDate,

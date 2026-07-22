@@ -18,6 +18,7 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.google.gson.JsonElement;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
@@ -214,6 +215,13 @@ public class CredXLoanRescheduleRequestDataValidator implements LoanRescheduleRe
 
     public static void validateForOverdueCharges(final DataValidatorBuilder dataValidatorBuilder, final Loan loan,
             final LoanRepaymentScheduleInstallment installment) {
+        // The "Adjust Installment Date" custom feature intentionally allows moving an installment that is not
+        // itself overdue even when an EARLIER installment still carries unresolved LPI - it enforces its own,
+        // narrower guard (the target installment itself must not be overdue with outstanding charges) before
+        // reaching this engine-level check. See AdjustInstallmentDateOverdueChargeBypassContext javadoc.
+        if (AdjustInstallmentDateOverdueChargeBypassContext.isBypassed()) {
+            return;
+        }
         if (installment != null) {
             LocalDate rescheduleFromDate = installment.getFromDate();
             Collection<LoanCharge> charges = loan.getLoanCharges();

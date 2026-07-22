@@ -85,7 +85,13 @@ public class CustomStandingInstructionReadPlatformServiceImpl extends StandingIn
             sqlBuilder.append("sum(ls.fee_charges_amount) as feeAmount,");
             sqlBuilder.append("sum(ls.fee_charges_completed_derived) as feecompleted,");
             sqlBuilder.append("sum(ls.fee_charges_writtenoff_derived) as feeWrittenOff,");
-            sqlBuilder.append("sum(ls.fee_charges_waived_derived) as feeWaived ");
+            sqlBuilder.append("sum(ls.fee_charges_waived_derived) as feeWaived,");
+            // Tax must be included: factor-rate last installment absorbs fee/tax rounding residue into
+            // tax_charges_amount / fee_charges_amount. Omitting tax under-collects the final EMI.
+            sqlBuilder.append("sum(ls.tax_charges_amount) as taxAmount,");
+            sqlBuilder.append("sum(ls.tax_charges_completed_derived) as taxCompleted,");
+            sqlBuilder.append("sum(ls.tax_charges_writtenoff_derived) as taxWrittenOff,");
+            sqlBuilder.append("sum(ls.tax_charges_waived_derived) as taxWaived ");
             sqlBuilder.append("from m_loan_repayment_schedule ls ");
             sqlBuilder.append(" join m_loan ml on ml.id = ls.loan_id ");
 
@@ -127,8 +133,15 @@ public class CustomStandingInstructionReadPlatformServiceImpl extends StandingIn
             final BigDecimal feeChargesActualDue = feeChargesExpectedDue.subtract(feeChargesWaived).subtract(feeChargesWrittenOff);
             final BigDecimal feeChargesOutstanding = feeChargesActualDue.subtract(feeChargesPaid);
 
+            final BigDecimal taxChargesExpectedDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxAmount");
+            final BigDecimal taxChargesPaid = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxCompleted");
+            final BigDecimal taxChargesWrittenOff = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxWrittenOff");
+            final BigDecimal taxChargesWaived = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "taxWaived");
+            final BigDecimal taxChargesActualDue = taxChargesExpectedDue.subtract(taxChargesWaived).subtract(taxChargesWrittenOff);
+            final BigDecimal taxChargesOutstanding = taxChargesActualDue.subtract(taxChargesPaid);
+
             final BigDecimal totalOutstanding = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
-                    .add(penaltyChargesOutstanding);
+                    .add(penaltyChargesOutstanding).add(taxChargesOutstanding);
 
             return new StandingInstructionDuesData(dueDate, totalOutstanding);
         }

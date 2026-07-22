@@ -54,6 +54,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -265,6 +266,29 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
         // Setup loan charge read platform service
         when(loanChargeReadPlatformService.retrieveLoanChargesPaidBy(anyLong(), any(), any())).thenReturn(Collections.emptyList());
+
+        // Non-down-payment installment so LoanRepaymentScheduleProcessingWrapper#reprocess (invoked by the waive
+        // flow when the charge is not paid/partially paid) finds a "first normal period" instead of throwing
+        // NoSuchElementException on an empty repayment schedule.
+        final Money zeroMoneyForInstallment = Money.zero(monetaryCurrency);
+        LoanRepaymentScheduleInstallment repaymentScheduleInstallmentForReprocess = mock(LoanRepaymentScheduleInstallment.class);
+        when(repaymentScheduleInstallmentForReprocess.getInstallmentNumber()).thenReturn(1);
+        when(repaymentScheduleInstallmentForReprocess.isDownPayment()).thenReturn(false);
+        when(repaymentScheduleInstallmentForReprocess.getDueDate()).thenReturn(BUSINESS_DATE);
+        when(repaymentScheduleInstallmentForReprocess.isRecalculatedInterestComponent()).thenReturn(false);
+        when(repaymentScheduleInstallmentForReprocess.getInterestCharged(any(MonetaryCurrency.class))).thenReturn(zeroMoneyForInstallment);
+        when(repaymentScheduleInstallmentForReprocess.getPrincipal(any(MonetaryCurrency.class))).thenReturn(zeroMoneyForInstallment);
+        when(repaymentScheduleInstallmentForReprocess.getFeeChargesCharged(any(MonetaryCurrency.class)))
+                .thenReturn(zeroMoneyForInstallment);
+        when(repaymentScheduleInstallmentForReprocess.getPenaltyChargesCharged(any(MonetaryCurrency.class)))
+                .thenReturn(zeroMoneyForInstallment);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(repaymentScheduleInstallmentForReprocess));
+
+        // LoanChargeSettlementUtils.closeIfFullySettled (invoked after every waive) needs a non-null summary;
+        // default to "not repaid in full" so existing ACTIVE-status assertions in tests keep holding.
+        LoanSummary loanSummary = mock(LoanSummary.class);
+        when(loanSummary.isRepaidInFull(any(MonetaryCurrency.class))).thenReturn(false);
+        when(loan.getSummary()).thenReturn(loanSummary);
     }
 
     @AfterEach
@@ -519,6 +543,76 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
             // Verify accrual processing was called
             verify(loanChargeReadPlatformService).retrieveLoanChargesPaidBy(LOAN_CHARGE_ID, LoanTransactionType.ACCRUAL, null);
+        }
+    }
+
+    /**
+     * Reproduces the "Meltdown in advanced accounting...sum of all charges is not equal to the fee/penalty charge
+     * for a transaction" bug: when periodic accrual accounting is enabled and a charge (e.g. a daily overdue/LPI
+     * penalty charge, as waived by the backdated-settlement auto-waiver) is waived before it has been fully
+     * accrued, the accrued amount is less than the amount being waived. The transaction's penaltyChargesPortion
+     * (used by accounting) must then equal the "recognized" component only — NOT the full waived amount — and the
+     * LoanChargePaidBy record attached to the transaction must match it exactly, otherwise
+     * AccountingProcessorHelper#createJournalEntriesForLoanCharges throws the "Meltdown" exception because
+     * sum(loanChargesPaid.amount) != transaction.penaltyChargesPortion.
+     */
+    @Test
+    void testWaiveLoanChargePartiallyAccrued_transactionChargePortionMatchesLoanChargePaidByAmount() {
+        // Given: a penalty charge with 100.00 outstanding, but only 40.00 of it has actually been accrued so far.
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loanCharge.isWaived()).thenReturn(false);
+        when(loanCharge.isPaid()).thenReturn(false);
+        when(loanCharge.isInstalmentFee()).thenReturn(false);
+        when(loanCharge.isPenaltyCharge()).thenReturn(true);
+        when(loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()).thenReturn(true);
+        when(loan.isInterestBearingAndInterestRecalculationEnabled()).thenReturn(false);
+        when(loan.getDisbursementDate()).thenReturn(BUSINESS_DATE);
+        when(loan.getOfficeId()).thenReturn(1L);
+        when(loan.getClientId()).thenReturn(1L);
+        when(loan.getGroupId()).thenReturn(null);
+        when(loanTransactionRepository.saveAndFlush(any(LoanTransaction.class))).thenReturn(loanTransaction);
+        when(loanRepositoryWrapper.save(any(Loan.class))).thenReturn(loan);
+        when(loan.findExistingTransactionIds()).thenReturn(Collections.emptyList());
+        when(loan.findExistingReversedTransactionIds()).thenReturn(Collections.emptyList());
+        when(loanCharge.getAmount()).thenReturn(ADJUSTMENT_AMOUNT);
+        when(loanCharge.getAmountOutstanding()).thenReturn(ADJUSTMENT_AMOUNT);
+        when(loanCharge.getLoan()).thenReturn(loan);
+        when(loanCharge.getCharge()).thenReturn(mock(Charge.class));
+        when(loanCharge.getDueDate()).thenReturn(BUSINESS_DATE);
+
+        // The full outstanding (100.00) is what gets waived...
+        Money fullOutstanding = Money.of(monetaryCurrency.toData(), ADJUSTMENT_AMOUNT);
+        when(loanCharge.getAmountOutstanding(any(MonetaryCurrency.class))).thenReturn(fullOutstanding);
+        when(loanCharge.getAmountWaived(any(MonetaryCurrency.class))).thenReturn(fullOutstanding);
+
+        // ...but only 40.00 of it has been accrued so far (simulating a same-day auto-waive that races ahead of the
+        // nightly periodic accrual job).
+        LoanChargePaidByData chargePaidByData = mock(LoanChargePaidByData.class);
+        when(chargePaidByData.getAmount()).thenReturn(new BigDecimal("40.00"));
+        when(loanChargeReadPlatformService.retrieveLoanChargesPaidBy(LOAN_CHARGE_ID, LoanTransactionType.ACCRUAL, null))
+                .thenReturn(Collections.singletonList(chargePaidByData));
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+
+            // When
+            credXLoanChargeWritePlatformService.waiveLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
+
+            // Then: capture the real LoanTransaction that was built and would be handed to the accounting bridge.
+            ArgumentCaptor<LoanTransaction> transactionCaptor = ArgumentCaptor.forClass(LoanTransaction.class);
+            verify(loanTransactionRepository).saveAndFlush(transactionCaptor.capture());
+            LoanTransaction waiveTransaction = transactionCaptor.getValue();
+
+            BigDecimal penaltyChargesPortion = waiveTransaction.getPenaltyChargesPortion();
+            BigDecimal sumOfLoanChargesPaid = waiveTransaction.getLoanChargesPaid().stream().map(LoanChargePaidBy::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // Only 40.00 was actually recognized as accrued income, so that's what must flow through accounting -
+            // NOT the full 100.00 waived amount.
+            assertEquals(new BigDecimal("40.00"), penaltyChargesPortion);
+            assertEquals(penaltyChargesPortion, sumOfLoanChargesPaid,
+                    "sum(loanChargesPaid.amount) must equal transaction.penaltyChargesPortion, or accounting throws "
+                            + "'Meltdown in advanced accounting...'");
         }
     }
 

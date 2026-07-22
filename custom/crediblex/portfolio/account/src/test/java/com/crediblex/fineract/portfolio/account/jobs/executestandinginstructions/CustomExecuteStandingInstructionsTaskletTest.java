@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
+import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
 import java.math.BigDecimal;
@@ -77,6 +78,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private LoanStatusWebhookPublisher loanStatusWebhookPublisher;
     private TransactionTemplate transactionTemplate;
     private EzySqlLoanLocRepository ezySqlLoanLocRepository;
+    private LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
 
     @BeforeEach
     void setUp() {
@@ -91,6 +93,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         loanStatusWebhookPublisher = mock(LoanStatusWebhookPublisher.class);
         transactionTemplate = new TransactionTemplate(platformTransactionManager);
         ezySqlLoanLocRepository = mock(EzySqlLoanLocRepository.class);
+        lineOfCreditStatusWebhookPublisher = mock(LineOfCreditStatusWebhookPublisher.class);
 
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, DateUtils.parseLocalDate("2025-05-20"))));
@@ -99,7 +102,8 @@ class CustomExecuteStandingInstructionsTaskletTest {
 
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService,
-                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, ezySqlLoanLocRepository);
+                fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, ezySqlLoanLocRepository,
+                lineOfCreditStatusWebhookPublisher);
     }
 
     @Test

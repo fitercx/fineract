@@ -1,7 +1,9 @@
 package com.crediblex.fineract.portfolio.loanaccount.domain;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.EarlyRepaymentInterestCalculator;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
@@ -165,7 +167,37 @@ public class CredibleXLoanPenaltyCalculator {
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
-                .map(ExtendedLoanSchedulePeriodData::getInterestOutstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(p -> interestOutstandingForTransactionDate(p, transactionDate)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * For early settlement (transaction before due date), outstanding interest is based on pro-rated charged interest
+     * for days used in the period, minus already paid/waived amounts — matching backend
+     * {@code EarlyRepaymentInterestHookImpl}.
+     */
+    private BigDecimal interestOutstandingForTransactionDate(final ExtendedLoanSchedulePeriodData period, final LocalDate transactionDate) {
+        final BigDecimal outstanding = nullToZero(period.getInterestOutstanding());
+        if (transactionDate == null || period.getDueDate() == null || !transactionDate.isBefore(period.getDueDate())) {
+            return outstanding;
+        }
+        final BigDecimal paid = nullToZero(period.getInterestPaid());
+        final BigDecimal waived = nullToZero(period.getInterestWaived());
+        final BigDecimal writtenOff = nullToZero(period.getInterestWrittenOff());
+        final BigDecimal charged = outstanding.add(paid).add(waived).add(writtenOff);
+        BigDecimal proratedCharged = EarlyRepaymentInterestCalculator.calculateProRatedInterest(charged, period.getFromDate(),
+                period.getDueDate(), transactionDate);
+        // No genuine reduction (e.g. fromDate unknown, or transaction on/after due date): keep the schedule's own
+        // scale rather than forcing currency precision on an unmodified amount.
+        if (proratedCharged == null || proratedCharged.compareTo(charged) >= 0) {
+            return outstanding;
+        }
+        proratedCharged = proratedCharged.setScale(2, RoundingMode.HALF_UP);
+        final BigDecimal proratedOutstanding = proratedCharged.subtract(paid).subtract(waived).subtract(writtenOff);
+        return proratedOutstanding.compareTo(BigDecimal.ZERO) > 0 ? proratedOutstanding : BigDecimal.ZERO;
+    }
+
+    private static BigDecimal nullToZero(final BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     private ExtendedLoanSchedulePeriodData resolveInstallmentByTransactionDate(LocalDate transactionDate) {
@@ -227,11 +259,11 @@ public class CredibleXLoanPenaltyCalculator {
             LocalDate nextDueDate = (i + 1 < loanInstallments.size()) ? loanInstallments.get(i + 1).getDueDate() : null;
 
             if (nextDueDate != null && (!transactionDate.isBefore(currentDueDate) && transactionDate.isBefore(nextDueDate))) {
-                return currentInstallment.getInterestOutstanding();
+                return interestOutstandingForTransactionDate(currentInstallment, transactionDate);
             }
 
             if (nextDueDate == null && !transactionDate.isBefore(currentDueDate)) {
-                return currentInstallment.getInterestOutstanding();
+                return interestOutstandingForTransactionDate(currentInstallment, transactionDate);
             }
         }
 
@@ -242,13 +274,13 @@ public class CredibleXLoanPenaltyCalculator {
                 .min(Comparator.comparing(ExtendedLoanSchedulePeriodData::getDueDate)).orElse(null);
 
         if (firstUnpaidInstallment != null) {
-            return firstUnpaidInstallment.getInterestOutstanding();
+            return interestOutstandingForTransactionDate(firstUnpaidInstallment, transactionDate);
         }
 
         // Fallback: if all installments are paid or transaction date is after all due dates,
         // return interest from the last installment
         if (!loanInstallments.isEmpty()) {
-            return loanInstallments.get(loanInstallments.size() - 1).getInterestOutstanding();
+            return interestOutstandingForTransactionDate(loanInstallments.get(loanInstallments.size() - 1), transactionDate);
         }
 
         throw new PlatformApiDataValidationException(

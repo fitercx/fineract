@@ -128,14 +128,24 @@ public class LineOfCreditBalanceUpdateService {
                 validateAndReconcileIfNeeded(lineOfCredit, amount, loanId);
             }
 
+            // Snapshot the consumed amount BEFORE mutating the summary. createTransactionRecord() used to re-derive
+            // this from lineOfCredit.getSummary() AFTER updateLocSummaryBalances() had already mutated it in place,
+            // which corrupted the consumed_amount_before/consumed_amount_after audit columns on every ledger row
+            // (e.g. a REPAYMENT or FORECLOSURE showing no change, or a second transaction on the same LOC showing a
+            // "before" that was actually the previous transaction's "after"). The live m_line_of_credit balance
+            // columns were never affected by this - only the transaction ledger's audit trail was wrong.
+            BigDecimal consumedAmountBeforeTx = lineOfCredit.getSummary().getConsumedAmount();
+
             updateLocSummaryBalances(lineOfCredit, amount, lineOfCreditTransactionType, loanId, loanTransactionId);
 
             // Use the actual updated balance from LOC summary (which may have been capped at maximum)
             // instead of calculating from the old balance, to ensure transaction record matches actual state
             BigDecimal actualAvailableBalanceAfter = lineOfCredit.getSummary().getAvailableBalance();
+            BigDecimal consumedAmountAfterTx = lineOfCredit.getSummary().getConsumedAmount();
 
             LineOfCreditTransaction transaction = createTransactionRecord(lineOfCredit, loanId, loanTransactionId, amount,
-                    currentAvailableBalance, actualAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType);
+                    currentAvailableBalance, actualAvailableBalanceAfter, transactionDate, lineOfCreditTransactionType,
+                    consumedAmountBeforeTx, consumedAmountAfterTx);
 
             // Set backdated flag for auditing
             transaction.setIsBackdatedEntry(false);
@@ -148,7 +158,7 @@ public class LineOfCreditBalanceUpdateService {
             // First, create and save the new backdated transaction with placeholder balances
             // The actual balances will be corrected during recomputation
             LineOfCreditTransaction backdatedTransaction = createTransactionRecord(lineOfCredit, loanId, loanTransactionId, amount,
-                    BigDecimal.ZERO, BigDecimal.ZERO, transactionDate, lineOfCreditTransactionType);
+                    BigDecimal.ZERO, BigDecimal.ZERO, transactionDate, lineOfCreditTransactionType, null, null);
             backdatedTransaction.setIsBackdatedEntry(true);
             // Reset consumed amount fields as they will be recalculated during recomputation
             backdatedTransaction.setConsumedAmountBefore(null);
@@ -326,11 +336,18 @@ public class LineOfCreditBalanceUpdateService {
     }
 
     /**
-     * Creates the appropriate transaction record based on transaction type
+     * Creates the appropriate transaction record based on transaction type.
+     *
+     * @param consumedAmountBefore
+     *            the LOC's consumed amount immediately BEFORE this transaction was applied to the summary (null for the
+     *            backdated placeholder row, which is corrected by recomputeLocSummaryFromDate)
+     * @param consumedAmountAfter
+     *            the LOC's consumed amount immediately AFTER this transaction was applied to the summary (null for the
+     *            backdated placeholder row)
      */
     private LineOfCreditTransaction createTransactionRecord(LineOfCredit lineOfCredit, Long loanId, Long loanTransactionId,
             BigDecimal amount, BigDecimal balanceBefore, BigDecimal balanceAfter, LocalDate transactionDate,
-            LineOfCreditTransactionType loanTransactionType) {
+            LineOfCreditTransactionType loanTransactionType, BigDecimal consumedAmountBefore, BigDecimal consumedAmountAfter) {
 
         // Generate reference number based on transaction type
         // For loan-related transactions, include loan ID; for LOC operations (INCREMENT/DECREMENT), use LOC ID
@@ -344,9 +361,6 @@ public class LineOfCreditBalanceUpdateService {
             referenceNumber = "LOC_" + lineOfCredit.getId() + "_" + loanTransactionType.name();
         }
 
-        BigDecimal consumedAmountBefore = lineOfCredit.getSummary().getConsumedAmount();
-        BigDecimal consumedAmountAfter = calculateConsumedAmountAfter(lineOfCredit, amount, loanTransactionType, consumedAmountBefore);
-
         LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(lineOfCredit, amount, balanceBefore,
                 balanceAfter, transactionDate, referenceNumber, loanTransactionType);
 
@@ -358,23 +372,6 @@ public class LineOfCreditBalanceUpdateService {
         transaction.setConsumedAmountAfter(consumedAmountAfter);
 
         return transaction;
-    }
-
-    /**
-     * Calculates consumed amount after transaction based on transaction type
-     */
-    private BigDecimal calculateConsumedAmountAfter(LineOfCredit lineOfCredit, BigDecimal amount, LineOfCreditTransactionType type,
-            BigDecimal currentConsumedAmount) {
-        if (type.isDecrementTransaction() && !type.isBalanceDecrement()) {
-            // Disbursements increase consumed amount
-            return currentConsumedAmount.add(amount);
-        } else if (type.isIncrementTransaction() && !type.isBalanceIncrement()
-                && (type.isReversal() || type.isRefund() || type.isUndoDisbursement() || type.isWriteOff())) {
-            // Only reversals, refunds, undo disbursements, and write-offs decrease consumed amount
-            return currentConsumedAmount.subtract(amount);
-        }
-        // Repayments and other increment transactions don't change consumed amount
-        return currentConsumedAmount;
     }
 
     /**
@@ -534,7 +531,20 @@ public class LineOfCreditBalanceUpdateService {
 
     /**
      * Reconciles consumed_amount by recalculating it from actual loan data. This method ensures consumed_amount equals
-     * the sum of principal_disbursed_derived for all loans under the LOC.
+     * the sum of principal_outstanding_derived (i.e. the LOC's true CURRENT exposure) for loans under the LOC.
+     *
+     * <p>
+     * <b>Bug fixed:</b> this previously summed principal_disbursed_derived, which is a historical/cumulative column
+     * that Fineract never decreases once a loan is disbursed - it stays at the original disbursed amount even after the
+     * loan is fully repaid, foreclosed, or written off (principal_outstanding_derived correctly drops to 0 in all of
+     * those cases). Because this reconciliation runs automatically whenever a repayment/foreclosure would otherwise
+     * push consumed_amount negative (see validateAndReconcileIfNeeded / the negative-consumed-amount recovery block
+     * above), it was silently re-inflating consumed_amount - and shrinking available_balance - by the full original
+     * principal of every loan EVER drawn against the LOC and since closed, permanently locking up facility capacity on
+     * any LOC with more than one drawdown over its life (reproduced locally: LOC with a single foreclosed/fully-repaid
+     * loan correctly shows consumed_amount=0 after the transaction-level update, but this reconciliation query alone
+     * would have put it back to that loan's full original principal).
+     * </p>
      *
      * <p>
      * This is useful for:
@@ -550,9 +560,10 @@ public class LineOfCreditBalanceUpdateService {
      * covering scenarios such as:
      * <ul>
      * <li>LOC with zero loans (should return 0)</li>
-     * <li>LOC with multiple loans (should sum all principal_disbursed_derived)</li>
+     * <li>LOC with multiple loans (should sum all principal_outstanding_derived)</li>
+     * <li>LOC with a fully repaid/foreclosed/written-off loan (should NOT count its original principal)</li>
      * <li>Null handling for lineOfCredit parameter</li>
-     * <li>Edge cases with loans having null or zero principal_disbursed_derived</li>
+     * <li>Edge cases with loans having null or zero principal_outstanding_derived</li>
      * <li>Verification that available balance is correctly recalculated</li>
      * </ul>
      * </p>
@@ -568,14 +579,16 @@ public class LineOfCreditBalanceUpdateService {
         if (lineOfCredit == null) {
             throw new IllegalArgumentException("LineOfCredit cannot be null");
         }
-        // Query to get sum of principal_disbursed_derived for all loans under this LOC
+        // Query to get sum of principal_outstanding_derived (current exposure) for loans under this LOC. Closed /
+        // fully repaid / foreclosed / written-off loans naturally contribute 0 here, unlike
+        // principal_disbursed_derived which never decreases - see class-level note above.
         String sql = """
-                SELECT COALESCE(SUM(l.principal_disbursed_derived), 0)
+                SELECT COALESCE(SUM(l.principal_outstanding_derived), 0)
                 FROM m_loan l
                 INNER JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = l.id
                 WHERE mlcp.line_of_credit_id = ?
-                AND l.principal_disbursed_derived IS NOT NULL
-                AND l.principal_disbursed_derived > 0
+                AND l.principal_outstanding_derived IS NOT NULL
+                AND l.principal_outstanding_derived > 0
                 """;
 
         BigDecimal actualConsumedAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
@@ -584,18 +597,43 @@ public class LineOfCreditBalanceUpdateService {
         }
 
         // Update LOC summary
-        // Available Amount = Credit Limit - Blocked Amount - Consumed Amount
+        // Available Amount = Effective Drawable Limit (Credit Limit - Blocked Amount) - Consumed Amount
         BigDecimal oldConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
-        lineOfCredit.getSummary().setConsumedAmount(actualConsumedAmount);
-        lineOfCredit.getSummary().setAvailableBalance(lineOfCredit.getEffectiveDrawableLimit().subtract(actualConsumedAmount));
+
+        // Clamp so the row always satisfies the DB check constraints:
+        // chk_loc_consumed_amount_non_negative (consumed >= 0),
+        // chk_loc_consumed_amount_within_limit (consumed <= maximum_amount),
+        // chk_loc_available_balance_non_negative (available >= 0).
+        // When the actual disbursed principal exceeds the maximum/effective limit (e.g. limit decrease, blocked-amount
+        // increase, or historical over-disbursement) an unclamped write would push available_balance negative or
+        // consumed over the limit, which aborts the entire savings->loan repayment ("Unexpected error updating LOC
+        // balance."). We reconcile as close as the invariants allow and log the drift for follow-up.
+        final BigDecimal maximumAmount = lineOfCredit.getMaximumAmount();
+        final BigDecimal effectiveDrawableLimit = lineOfCredit.getEffectiveDrawableLimit();
+        final BigDecimal clampedConsumedAmount = actualConsumedAmount.max(BigDecimal.ZERO).min(maximumAmount);
+        final BigDecimal availableBalance = effectiveDrawableLimit.subtract(clampedConsumedAmount).max(BigDecimal.ZERO);
+
+        if (actualConsumedAmount.compareTo(clampedConsumedAmount) != 0
+                || effectiveDrawableLimit.subtract(clampedConsumedAmount).signum() < 0) {
+            log.warn("""
+                    LOC balance reconciliation clamped to satisfy DB constraints.
+                    LOC ID: {}, Maximum amount: {}, Effective drawable limit: {},
+                    Raw consumed (sum principal_outstanding_derived): {}, Clamped consumed: {}, Available balance: {}.
+                    This indicates disbursed principal exceeds the LOC limit - please review the LOC/loan data.
+                    """, lineOfCredit.getId(), maximumAmount, effectiveDrawableLimit, actualConsumedAmount, clampedConsumedAmount,
+                    availableBalance);
+        }
+
+        lineOfCredit.getSummary().setConsumedAmount(clampedConsumedAmount);
+        lineOfCredit.getSummary().setAvailableBalance(availableBalance);
 
         // Log reconciliation if there was a difference
-        if (oldConsumedAmount.compareTo(actualConsumedAmount) != 0) {
+        if (oldConsumedAmount.compareTo(clampedConsumedAmount) != 0) {
             // Optionally create a reconciliation transaction record for audit
             // For now, we just update the summary
         }
 
-        return actualConsumedAmount;
+        return clampedConsumedAmount;
     }
 
 }

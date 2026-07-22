@@ -30,6 +30,7 @@ public class LoanRepaymentsSummaryDAO {
         return """
                 select
                     installment as installmentNumber,
+                    fromdate as fromDate,
                     duedate as dueDate,
                     completed_derived as isComplete,
                     principal_amount as principalDue,
@@ -59,7 +60,8 @@ public class LoanRepaymentsSummaryDAO {
         public LoanSchedulePeriodData mapRow(ResultSet rs, int rowNum) throws SQLException {
             final Integer installmentNumber = JdbcSupport.getInteger(rs, "installmentNumber");
 
-            final Date dueDate = rs.getDate("duedate");
+            final Date fromDate = rs.getDate("fromDate");
+            final Date dueDate = rs.getDate("dueDate");
             final boolean isComplete = rs.getBoolean("isComplete");
 
             final BigDecimal principalDue = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalDue");
@@ -98,9 +100,9 @@ public class LoanRepaymentsSummaryDAO {
             final BigDecimal totalOutstandingForPeriod = principalOutstanding.add(interestOutstanding).add(feeChargesOutstanding)
                     .add(penaltyChargesOutstanding);
 
-            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(installmentNumber, toLocalDateSafe(dueDate), isComplete,
-                    principalDue, penaltyChargesExpectedDue, totalPaidForPeriod, totalOutstandingForPeriod, interestOutstanding,
-                    principalOutstanding);
+            return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(installmentNumber, toLocalDateSafe(fromDate),
+                    toLocalDateSafe(dueDate), isComplete, principalDue, penaltyChargesExpectedDue, totalPaidForPeriod,
+                    totalOutstandingForPeriod, interestOutstanding, interestPaid, interestWaived, interestWrittenOff, principalOutstanding);
         }
 
         private LocalDate toLocalDateSafe(Date date) {

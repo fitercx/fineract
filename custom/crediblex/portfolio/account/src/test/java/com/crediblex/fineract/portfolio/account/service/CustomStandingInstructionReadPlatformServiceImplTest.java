@@ -114,5 +114,10 @@ public class CustomStandingInstructionReadPlatformServiceImplTest {
         assertNotNull(capturedSql);
         // Verify SQL uses "completed_derived = false" instead of "completed_derived <> 1"
         assert (capturedSql.contains("completed_derived = false"));
+        // Factor-rate last EMI rounding residue can sit in tax; dues must include it.
+        assert (capturedSql.contains("tax_charges_amount"));
+        assert (capturedSql.contains("tax_charges_completed_derived"));
+        assert (capturedSql.contains("tax_charges_writtenoff_derived"));
+        assert (capturedSql.contains("tax_charges_waived_derived"));
     }
 }

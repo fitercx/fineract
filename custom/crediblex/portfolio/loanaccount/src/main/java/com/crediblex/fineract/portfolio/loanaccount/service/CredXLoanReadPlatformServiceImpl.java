@@ -41,6 +41,8 @@ import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParam
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
@@ -1727,8 +1729,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
+        final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
 
-        return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue);
+        return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue,
+                earliestAllowedTransactionDate);
     }
 
     /**
@@ -3052,7 +3056,15 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // This ensures the total amount includes all outstanding fees/taxes from loan summary for Factor Rate loans
         Money principalOutstanding = loanRepaymentScheduleInstallment.getPrincipalOutstanding(currency);
         Money interestOutstanding = loanRepaymentScheduleInstallment.getInterestOutstanding(currency);
-        Money penaltyChargesOutstanding = loanRepaymentScheduleInstallment.getPenaltyChargesOutstanding(currency);
+        // Quote the penalty from the loan's actual active charges, NOT loanRepaymentScheduleInstallment's cached
+        // penaltyChargesOutstanding field - that schedule-level cache can go stale/inflated on multi-installment
+        // loans with 2+ overdue installments (see BUG_REPORT.md Finding #2/#3). Using the same
+        // ForeclosurePenaltyCalculator here as the actual settlement path
+        // (CustomLoanAccountDomainServiceJpa#foreCloseLoan) guarantees this quoted amount always matches what is
+        // really withdrawn from the linked savings account - previously they could silently diverge, over-quoting
+        // (and over-withdrawing) by exactly the staleness amount.
+        Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, transactionDate,
+                currency);
         Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
                 .plus(taxChargesAmount);
 
@@ -3061,6 +3073,16 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 principalOutstanding.getAmount(), interestOutstanding.getAmount(), feeChargesAmount.getAmount(),
                 penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
                 ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
+
+        // Informational only (never throws here) - lets the foreclosure calendar's minDate reflect the same
+        // "MAX_BACKDATE_DAYS before business date, or disbursement date if later" rule that
+        // CustomLoanAccountDomainServiceJpa#foreCloseLoan enforces at actual submission time, so the UI can stop the
+        // operator from ever picking an invalid date rather than only rejecting it after the fact. The separate
+        // "not before the loan's last non-waiver transaction date" rule (LoanForeclosureValidator, checked above via
+        // validateForForeclosure) is loan-history-dependent and changes after every transaction, so it is left as a
+        // hard backend validation with a clear error message rather than folded into this minDate.
+        loanTransactionData.getAdditionalAttributes().put("earliestAllowedTransactionDate",
+                BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan));
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());

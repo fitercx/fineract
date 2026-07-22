@@ -321,6 +321,17 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     "Adjustment is not supported for the status of " + loan.getStatus().toString());
         }
 
+        // A charge with nothing outstanding (already fully waived and/or fully paid) has nothing left to
+        // adjust. Without this guard, calculateAvailableAmountForChargeAdjustmentSafe still reported the
+        // charge's full original amount (minus prior adjustment transactions only) as "available", letting
+        // an already-waived charge be adjusted for real, GL-posting income with zero trace on the charge
+        // itself (amountOutstanding stays 0 because updatePaidAmountBy caps the paid delta at outstanding).
+        if (loanCharge.isWaived() || loanCharge.isPaid()) {
+            final String errorCode = "loan.charge.adjustment.invalid.status";
+            throw new LoanChargeAdjustmentException(errorCode,
+                    "Charge with id:" + loanCharge.getId() + " has nothing outstanding to adjust (already waived or paid).");
+        }
+
         if (transactionAmount.compareTo(loanCharge.amount()) > 0) {
             final String errorCode = "loan.charge.adjustment.invalid.amount";
             throw new LoanChargeAdjustmentException(errorCode,
@@ -347,6 +358,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     }
                 }
             }
+        }
+        // Never report more available than what is genuinely still outstanding on the charge today. The
+        // loop above only accounts for prior Charge Adjustment transactions; it does not know about amounts
+        // already waived or paid through other paths (waive, normal repayment), which is what let adjustments
+        // slip through on already-fully-waived charges.
+        final BigDecimal amountOutstanding = loanCharge.getAmountOutstanding(loanCharge.getLoan().getCurrency()).getAmount();
+        if (amountOutstanding.compareTo(availableAmountForAdjustment) < 0) {
+            availableAmountForAdjustment = amountOutstanding;
         }
         return availableAmountForAdjustment;
     }
@@ -583,8 +602,16 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         final LoanTransaction waiveLoanChargeTransaction = LoanTransaction.waiveLoanCharge(loan, loan.getOffice(), amountWaived,
                 transactionDate, feeChargesWaived, penaltyChargesWaived, unrecognizedIncome, externalId);
-        final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(waiveLoanChargeTransaction, loanCharge,
-                waiveLoanChargeTransaction.getAmount(loan.getCurrency()).getAmount(), loanInstallmentNumber);
+        // IMPORTANT: use chargeComponent (== feeChargesWaived/penaltyChargesWaived), not the full amountWaived, here.
+        // The transaction's feeChargesPortion/penaltyChargesPortion only reflect the "recognized" component
+        // (amountWaived minus unrecognizedIncome, see updateChargesComponents above); if the charge is waived before
+        // it has been fully accrued (periodic accrual accounting + a charge waived same-day, before the nightly
+        // accrual job runs — e.g. our backdated-settlement LPI auto-waiver), amountWaived > chargeComponent. Using
+        // the full amountWaived here would make sum(loanChargesPaid.amount) != transaction.feeChargesPortion, which
+        // AccountingProcessorHelper.createJournalEntriesForLoanCharges rejects with "Meltdown in advanced
+        // accounting...sum of all charges is not equal to the fee charge for a transaction".
+        final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(waiveLoanChargeTransaction, loanCharge, chargeComponent.getAmount(),
+                loanInstallmentNumber);
         waiveLoanChargeTransaction.getLoanChargesPaid().add(loanChargePaidBy);
         loan.addLoanTransaction(waiveLoanChargeTransaction);
 
@@ -1063,19 +1090,41 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     @Override
     @Transactional
     public Map<String, Object> waiveOverdueChargesAccruedAfterSettlementDate(final Long loanId, final LocalDate settlementDate) {
+        if (settlementDate == null) {
+            return emptyWaiveSummary();
+        }
+        // Window strictly AFTER the actual payment day (money received Friday, settled Monday -> Sat/Sun/Mon LPI).
+        return waiveOverdueChargesInWindow(loanId, settlementDate.plusDays(1));
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> waiveOverdueChargesOnOrAfterDate(final Long loanId, final LocalDate valueDate) {
+        if (valueDate == null) {
+            return emptyWaiveSummary();
+        }
+        // Window inclusive of the value date so a backdated repayment settles exactly: paid LPI = charges strictly
+        // before the value date (penalties preview), waived LPI = charges on/after the value date up to today.
+        return waiveOverdueChargesInWindow(loanId, valueDate);
+    }
+
+    private Map<String, Object> emptyWaiveSummary() {
         final Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("chargesWaived", 0);
         summary.put("totalAmountWaived", BigDecimal.ZERO);
         summary.put("daysCovered", 0L);
+        return summary;
+    }
+
+    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate) {
+        final Map<String, Object> summary = emptyWaiveSummary();
 
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        // Only relevant for a backdated settlement: nothing to waive when the settlement date is today or in the
-        // future.
-        if (settlementDate == null || !settlementDate.isBefore(businessDate)) {
+        // Only relevant for a backdated settlement: nothing to waive when the window starts today or in the future.
+        if (fromDate == null || fromDate.isAfter(businessDate)) {
             return summary;
         }
 
-        final LocalDate fromDate = settlementDate.plusDays(1); // strictly AFTER the actual payment day
         final LocalDate toDate = businessDate;
         summary.put("fromDate", fromDate);
         summary.put("toDate", toDate);
@@ -1119,9 +1168,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     externalIdFactory.create());
 
             this.loanTransactionRepository.saveAndFlush(waiveTransaction);
-            final List<Long> existingTransactionIds = new ArrayList<>();
-            postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
-            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
             businessEventNotifierService.notifyPostBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
 
             totalAmountWaived = totalAmountWaived.add(outstandingBeforeWaive.getAmount());
@@ -1132,6 +1178,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
 
         if (chargesWaived > 0) {
+            // Post the journal entries for all waive transactions in a single pass instead of once per charge. The
+            // resulting accounting state is identical, but the operation stays linear (avoids re-posting the whole
+            // loan's journal entries N times) when a backdated settlement waives many daily LPI charges.
+            final List<Long> existingTransactionIds = new ArrayList<>();
+            postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
+            loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
             if (hasRepaymentScheduleChargeMismatch(loan)) {
                 recalculateInstallmentChargesFromActiveLoanCharges(loan);
             }
@@ -1143,8 +1195,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         }
 
-        log.info("Backdated-settlement LPI waive for loan {}: settlementDate={}, window=({}, {}], chargesWaived={}, totalAmount={}", loanId,
-                settlementDate, settlementDate, toDate, chargesWaived, totalAmountWaived);
+        log.info("Backdated-settlement LPI waive for loan {}: window=[{}, {}], chargesWaived={}, totalAmount={}", loanId, fromDate, toDate,
+                chargesWaived, totalAmountWaived);
 
         summary.put("chargesWaived", chargesWaived);
         summary.put("totalAmountWaived", totalAmountWaived);
@@ -1265,6 +1317,24 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // IMPORTANT: Only recalculate the specific installment that was affected by the reversed charge,
         // not all installments, to prevent removing charges from other periods.
         if (affectedInstallment != null) {
+            // recalculateInstallmentChargesForSpecificInstallment() below only rebuilds the CHARGED / WAIVED /
+            // WRITTEN-OFF totals (installment.updateChargePortion(...) never touches penaltyChargesPaid /
+            // feeChargesPaid) - it deliberately leaves the installment's own "paid" aggregate alone since that is
+            // normally only ever mutated by the transaction processors as money is applied/unapplied. But the
+            // CHARGE_ADJUSTMENT transaction created above is posted with a ZERO amount (by design, to avoid
+            // double-touching the schedule through normal transaction processing) and therefore does NOT run
+            // through any transaction processor's unpay path either. Without this explicit call, the installment
+            // would still show the just-reversed charge's amount as "paid" forever (penaltyChargesPaid stays
+            // stale), which then makes getPenaltyChargesOutstanding() UNDER-report what is actually still owed on
+            // that installment by exactly the reversed amount (charged total drops correctly, but so does neither
+            // paid nor - overall - outstanding, i.e. outstanding = charged - waived - writtenOff - STALE paid).
+            // Explicitly "unpay" exactly the amount this one charge contributed so the installment's paid aggregate
+            // reflects only the OTHER, still-genuinely-paid charges on it. See BUG_REPORT.md Finding #2.
+            if (loanCharge.isPenaltyCharge()) {
+                affectedInstallment.unpayPenaltyChargesComponent(reversalDate, Money.of(currency, totalAmountPaid));
+            } else {
+                affectedInstallment.unpayFeeChargesComponent(reversalDate, Money.of(currency, totalAmountPaid));
+            }
             recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
             log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
                     affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
@@ -2111,12 +2181,23 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     /**
      * Resolves the target EMI installment number for an overdue charge.
      * <p>
-     * Resolution order: 1) Due-date window mapping against repayment schedule installments: (fromDate, dueDate] when
-     * fromDate exists, otherwise (prevDueDate, currentDueDate]. 2) Direct LoanOverdueInstallmentCharge link as
-     * fallback.
-     *
-     * We intentionally prefer date-window mapping because overdue-charge direct links can point to the previous EMI
-     * while the repayment schedule view is rendered by due-date windows.
+     * Resolution order: 1) Direct {@code LoanOverdueInstallmentCharge} link, when it points to an installment that
+     * still exists in the current schedule. 2) Due-date window mapping against repayment schedule installments:
+     * (fromDate, dueDate] when fromDate exists, otherwise (prevDueDate, currentDueDate], as a fallback for when the
+     * direct link is missing or stale (e.g. after a reschedule/restructure replaced the installment it pointed to).
+     * <p>
+     * The direct link is preferred (see BUG_REPORT.md Finding #2): {@code applyChargeToOverdueLoanInstallment} creates
+     * every real overdue/LPI charge with {@code entry.getValue()} (the charge's own {@code dueDate}) set to the OWNING
+     * installment's due date PLUS the configured penalty-wait/grace days, and links it to that same owning installment
+     * via {@code LoanOverdueInstallmentCharge} at creation time - by design, a daily-accruing LPI charge's
+     * {@code dueDate} is always AFTER its own installment's due date. The date-window heuristic below assumes a
+     * charge's {@code dueDate} falls inside its owning installment's own (fromDate, dueDate] window, which is true for
+     * ordinary fees but is never true for these overdue charges - so on its own it systematically resolves them one
+     * installment too late (into whichever later installment's window their dueDate happens to land in), silently
+     * misattributing genuinely-outstanding penalties to the wrong installment (or to none) the moment either
+     * recalculation method below runs. The direct link, being set once at charge-creation time to the exact installment
+     * the penalty was actually charged against, does not have this problem and is safe to trust whenever it still
+     * resolves to a real installment in the current schedule.
      * </p>
      */
     private Integer resolveInstallmentNumberForOverdueCharge(LoanCharge loanCharge,
@@ -2125,11 +2206,12 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             return null;
         }
 
+        final Integer directLinkInstallmentNumber = resolveViaDirectOverdueInstallmentLink(loanCharge, sortedInstallments);
+        if (directLinkInstallmentNumber != null) {
+            return directLinkInstallmentNumber;
+        }
+
         if (sortedInstallments == null || sortedInstallments.isEmpty() || loanCharge.getDueDate() == null) {
-            if (loanCharge.getOverdueInstallmentCharge() != null && loanCharge.getOverdueInstallmentCharge().getInstallment() != null
-                    && loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber() != null) {
-                return loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
-            }
             return null;
         }
 
@@ -2173,13 +2255,32 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             return lastValid.getInstallmentNumber();
         }
 
-        // Fallback to direct relationship if date-based mapping did not resolve.
-        if (loanCharge.getOverdueInstallmentCharge() != null && loanCharge.getOverdueInstallmentCharge().getInstallment() != null
-                && loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber() != null) {
-            return loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
-        }
-
         return null;
+    }
+
+    /**
+     * Returns the installment number from the charge's direct {@code LoanOverdueInstallmentCharge} link, but ONLY when
+     * that link's installment can still be found in the CURRENT {@code sortedInstallments} (matched structurally via
+     * {@link #isSameInstallment}) - guarding against a stale link left over from before a reschedule/restructure
+     * replaced the installment it used to point to. Returns {@code null} when there is no link, or the link's
+     * installment no longer exists, so the caller falls back to date-window mapping.
+     */
+    private Integer resolveViaDirectOverdueInstallmentLink(LoanCharge loanCharge,
+            List<LoanRepaymentScheduleInstallment> sortedInstallments) {
+        if (loanCharge.getOverdueInstallmentCharge() == null || loanCharge.getOverdueInstallmentCharge().getInstallment() == null) {
+            return null;
+        }
+        final LoanRepaymentScheduleInstallment linkedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
+        if (linkedInstallment.getInstallmentNumber() == null) {
+            return null;
+        }
+        if (sortedInstallments == null || sortedInstallments.isEmpty()) {
+            // No current schedule to validate against (e.g. called before installments are loaded) - trust the link.
+            return linkedInstallment.getInstallmentNumber();
+        }
+        final boolean linkedInstallmentStillExists = sortedInstallments.stream()
+                .anyMatch(candidate -> isSameInstallment(candidate, linkedInstallment));
+        return linkedInstallmentStillExists ? linkedInstallment.getInstallmentNumber() : null;
     }
 
     private static boolean isReversedPaidCharge(final LoanCharge loanCharge) {

@@ -10,6 +10,7 @@ import static org.apache.fineract.portfolio.account.api.AccountTransfersApiConst
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanAccountTransferBusinessEvent;
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.monetary.domain.Money;
@@ -107,6 +109,22 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
      * + audit trail); repayment schedule dates are never touched. Returns a summary for surfacing to the operator, or
      * null when nothing was waived.
      */
+    /**
+     * Applies the exact same backdated-repayment guard as the direct-repayment path
+     * ({@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepaymentWithChargeRefundChargeType}) before a
+     * savings-to-loan "Transfer funds" settlement is allowed to post as a backdated (value date in the past) repayment.
+     * Previously this path did not call this check at all, silently accepting backdated transfers onto
+     * interest-recalculation-enabled loans that would be rejected outright as a direct repayment - see BUG_REPORT.md
+     * Finding #1. This is a no-op (throws nothing) for every loan product that does not have interest recalculation
+     * enabled, which today is every real production loan product.
+     */
+    private void validateBackdatedTransferAllowed(final Loan loan, final LocalDate transactionDate) {
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        if (transactionDate != null && transactionDate.isBefore(businessDate)) {
+            BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, transactionDate);
+        }
+    }
+
     private Map<String, Object> waiveBackdatedSettlementLpi(final Long loanId, final LocalDate settlementDate) {
         final Map<String, Object> summary = this.credXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
                 settlementDate);
@@ -193,6 +211,8 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             final HolidayDetailDTO holidayDetailDto = null;
             final boolean isRecoveryRepayment = false;
             final String chargeRefundChargeType = null;
+
+            validateBackdatedTransferAllowed(toLoanAccount, transactionDate);
 
             ExternalId externalId = externalIdFactory.create();
             final LoanTransaction loanRepaymentTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT,
@@ -338,6 +358,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 final Boolean isHolidayValidationDone = false;
                 final HolidayDetailDTO holidayDetailDto = null;
                 final String chargeRefundChargeType = null;
+                validateBackdatedTransferAllowed(toLoanAccount, accountTransferDTO.getTransactionDate());
                 loanTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanAccount,
                         accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
                         accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,

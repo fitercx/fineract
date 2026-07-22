@@ -45,4 +45,23 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      *         {@code toDate}. Empty counts when the settlement is not backdated or there is nothing to waive.
      */
     Map<String, Object> waiveOverdueChargesAccruedAfterSettlementDate(Long loanId, LocalDate settlementDate);
+
+    /**
+     * Waives the outstanding overdue (LPI) charges dated ON OR AFTER a backdated repayment value date, up to the
+     * current business date. Used by the direct loan-repayment path (UI "Make Repayment") so that a repayment recorded
+     * with a past value date settles the loan exactly: the customer pays LPI only for the days strictly before the
+     * value date (as returned by the penalties preview), while the LPI for the value date itself and every later day
+     * until the settlement was recorded is waived. Interest and future installments are never touched; the repayment
+     * schedule is not regenerated. This differs from {@link #waiveOverdueChargesAccruedAfterSettlementDate} only in
+     * that the window is inclusive of the value date, keeping the waived set complementary to the paid set.
+     *
+     * @param loanId
+     *            the loan being settled
+     * @param valueDate
+     *            the (backdated) transaction/value date of the repayment; LPI with due date on or after this and up to
+     *            the current business date is waived
+     * @return summary map: {@code chargesWaived}, {@code totalAmountWaived}, {@code daysCovered}, {@code fromDate},
+     *         {@code toDate}. Empty counts when the repayment is not backdated or there is nothing to waive.
+     */
+    Map<String, Object> waiveOverdueChargesOnOrAfterDate(Long loanId, LocalDate valueDate);
 }

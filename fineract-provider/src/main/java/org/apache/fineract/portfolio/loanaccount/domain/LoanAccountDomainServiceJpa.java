@@ -1031,6 +1031,29 @@ public class LoanAccountDomainServiceJpa implements LoanAccountDomainService {
                 balances[2].getAmount(), balances[3].getAmount(), isInterestComponent, null);
         newInstallment.updateInstallmentNumber(newInstallments.size() + 1);
         newInstallments.add(newInstallment);
+
+        // Foreclosure removes/rewrites every installment due on or after the foreclosure date. Any active overdue
+        // installment penalty charge still linked to one of those installments (via m_loan_overdue_installment_charge,
+        // whose FK to m_loan_repayment_schedule is ON DELETE RESTRICT) must be deactivated AND its join row flushed
+        // BEFORE the schedule rows are deleted. Otherwise the installment delete fails with a foreign-key data
+        // integrity violation and the whole foreclosure is rolled back.
+        boolean overdueInstallmentChargeDeactivated = false;
+        for (final LoanCharge loanCharge : loan.getActiveCharges()) {
+            if (loanCharge.isOverdueInstallmentCharge()) {
+                final LoanOverdueInstallmentCharge overdueInstallmentCharge = loanCharge.getOverdueInstallmentCharge();
+                if (overdueInstallmentCharge != null && overdueInstallmentCharge.getInstallment() != null
+                        && !DateUtils.isAfter(transactionDate, overdueInstallmentCharge.getInstallment().getDueDate())) {
+                    loanCharge.setActive(false);
+                    overdueInstallmentChargeDeactivated = true;
+                }
+            }
+        }
+        if (overdueInstallmentChargeDeactivated) {
+            // Flush the orphan-removal delete of the overdue installment charge join rows before the referenced
+            // schedule installments are removed, so Postgres never sees a dangling FK reference.
+            loanRepositoryWrapper.saveAndFlush(loan);
+        }
+
         loan.updateLoanScheduleOnForeclosure(newInstallments);
 
         final Set<LoanCharge> charges = loan.getActiveCharges();

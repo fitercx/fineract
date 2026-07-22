@@ -4,6 +4,8 @@ import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -252,7 +254,16 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
 
         Money interestPayable = foreCloseDetail.getInterestCharged(currency);
         Money feePayable = foreCloseDetail.getFeeChargesCharged(currency);
-        Money penaltyPayable = foreCloseDetail.getPenaltyChargesCharged(currency);
+        // foreCloseDetail.getPenaltyChargesCharged() sums each installment's CACHED penaltyChargesOutstanding
+        // field. On a multi-installment loan with 2+ separately-overdue installments (each carrying its own
+        // daily-accruing LPI charges), that cache can go stale/inflated relative to what the loan's charges
+        // actually total - the exact same class of stale-installment-penalty-cache bug fixed for reverse-LPI in
+        // CredXLoanChargeWritePlatformServiceImpl (see BUG_REPORT.md Finding #2), just reached via a different,
+        // unpatched path here. Recomputing directly from loan.getActiveCharges() (the source of truth) avoids
+        // ever withdrawing more than the loan actually owes from the linked savings account during foreclosure
+        // settlement - see BUG_REPORT.md Finding #3, where this stale cache caused a real 55.12 AED
+        // over-withdrawal and left the loan stuck "Overpaid" instead of "Closed".
+        Money penaltyPayable = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, foreClosureDate, currency);
         Money taxPayable = foreCloseDetail.getTaxChargesCharged(currency);
         Money payPrincipal = foreCloseDetail.getPrincipal(currency);
 
@@ -286,6 +297,10 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
 
         loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
+        // General backdate-too-far-in-the-past guard, independent of (and in addition to) the "not before the
+        // loan's last non-waiver transaction date" check just above - see BackdatedRepaymentValidator javadoc and
+        // BUG_REPORT.md "Backdate limit" finding.
+        BackdatedRepaymentValidator.validateWithinBackdateLimit(loan, foreClosureDate, "foreclosure");
 
         /// //This is where we should be doing the transfer from.
 

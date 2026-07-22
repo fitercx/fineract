@@ -99,6 +99,9 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         addChargeOnlyRepaymentInstallmentIfRequired(charges, installments);
 
         for (final LoanRepaymentScheduleInstallment currentInstallment : installments) {
+            // Optional deployment-specific hook (no-op unless a module registers one): undo any prior early-pay
+            // interest reduction so replay can re-apply it from the original charged amount.
+            EarlyRepaymentInterestHookRegistry.restoreBeforeReprocessing(currentInstallment);
             currentInstallment.resetDerivedComponents();
             currentInstallment.updateObligationsMet(currency, disbursementDate);
         }
@@ -698,6 +701,9 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                 if (currentInstallment.isNotFullyPaidOff()) {
                     if (isTransactionInAdvanceOfInstallment(installmentIndex, installments, transactionDate)) {
                         currentInstallment.setRecievableLineOfCreditInstallment(loanTransaction.getLoan().isReceivableLocLoan());
+                        // Optional deployment-specific hook (no-op unless a module registers one): reduce
+                        // interestCharged for unused days before allocation, applied uniformly across all strategies.
+                        EarlyRepaymentInterestHookRegistry.reduceForEarlyPayment(currentInstallment, transactionDate, currency);
                         transactionAmountUnprocessed = handleTransactionThatIsPaymentInAdvanceOfInstallment(currentInstallment,
                                 installments, loanTransaction, transactionAmountUnprocessed, transactionMappings, charges);
                     } else if (isTransactionALateRepaymentOnInstallment(installmentIndex, installments, transactionDate)) {
