@@ -18,31 +18,34 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its
- * loans is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's
- * active loans are nested under it, along with a per-client overdue {@link #summary}.
+ * Server-computed "overdue amounts collected" summary returned by {@code GET /loans/crediblex/overdue/collected/summary}.
+ * By default it covers the entire portfolio; when {@code clientId} and/or {@code loanId} are supplied it is scoped to
+ * that client/loan. Windows are computed from the tenant business date (inclusive).
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CredXOverdueClientData {
+public class CredXOverdueCollectedSummaryData {
 
-    private Long clientId;
-    private String clientName;
-    private String accountNo;
     /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
     private String currencyCode;
-    private CredXOverdueClientSummaryData summary;
-    /** Overdue amounts this client has paid, for all-time / last 7 days / last 30 days. */
+    /** Echo of the clientId filter applied (null = whole portfolio). */
+    private Long clientId;
+    /** Echo of the loanId filter applied (null = not scoped to a loan). */
+    private Long loanId;
+    /** Tenant business date the windows were computed against (yyyy-MM-dd). */
+    private String businessDate;
+    /** Inclusive lower bound of the last-7-days window (yyyy-MM-dd). */
+    private String last7DaysFrom;
+    /** Inclusive lower bound of the last-30-days window (yyyy-MM-dd). */
+    private String last30DaysFrom;
+    /** Collected amounts for all-time / last 7 days / last 30 days. */
     private CredXOverdueCollectedWindows collected;
-    /** All of the client's active loans (overdue and non-overdue). */
-    private List<CredXOverdueLoanData> loans;
 }

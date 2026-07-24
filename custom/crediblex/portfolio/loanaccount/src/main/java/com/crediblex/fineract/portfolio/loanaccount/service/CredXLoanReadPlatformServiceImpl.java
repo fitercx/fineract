@@ -27,6 +27,10 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultDa
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueAmountBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedStat;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedWindows;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
@@ -362,7 +366,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     .max(Integer::compareTo).orElse(0));
         }
 
-        // Roll each client's loans up into its summary.
+        // Per-client "overdue amounts collected" windows (all-time / last 7 / last 30 days) for the paged clients.
+        final Map<Long, CredXOverdueCollectedWindows> collectedByClient = retrieveCollectedWindowsByClient(clientIds);
+
+        // Roll each client's loans up into its summary and attach its collected windows.
         for (final CredXOverdueClientData client : clientsById.values()) {
             CredXOverdueAmountBreakdown totalOutstanding = CredXOverdueAmountBreakdown.zero();
             CredXOverdueAmountBreakdown totalOverdue = CredXOverdueAmountBreakdown.zero();
@@ -377,6 +384,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             client.setCurrencyCode(currencyCode != null ? currencyCode : DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE);
             client.setSummary(CredXOverdueClientSummaryData.builder().totalOutstanding(totalOutstanding).totalOverdue(totalOverdue)
                     .totalLpiOutstanding(totalOverdue.getLpi()).build());
+            client.setCollected(collectedByClient.getOrDefault(client.getClientId(), zeroCollectedWindows()));
         }
 
         return new Page<>(new ArrayList<>(clientsById.values()), totalFilteredRecords);
@@ -461,6 +469,194 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" and ").append(overdueInstallmentOutstandingSql("ls2")).append(" > 0))");
 
         return this.jdbcTemplate.queryForObject(sql.toString(), new CredXOverdueLoansSummaryMapper());
+    }
+
+    /**
+     * "Overdue amounts collected" - non-reversed repayment/recovery transactions (types 2 = REPAYMENT, 8 =
+     * RECOVERY_REPAYMENT) that reduced a PAST-DUE installment and collected some LPI (penalty). One row per transaction;
+     * amounts are the transaction-level portions. Optional filters: transactionDate range [fromDate, toDate] (ISO
+     * yyyy-MM-dd), loanId, clientId. Client-scoped (inner join m_client), so group/null-client loans are excluded.
+     * Callers aggregate the rows loan-wise / client-wise / over date windows (e.g. last 7 / 30 days).
+     */
+    public Page<CredXOverdueCollectedData> retrieveCrediblexOverdueCollected(final Integer offset, final Integer limit,
+            final String fromDate, final String toDate, final Long loanId, final Long clientId) {
+        final int normalizedOffset = Math.max(offset == null ? 0 : offset, 0);
+        final int normalizedLimit = Math.min(Math.max(limit == null ? DEFAULT_OVERDUE_LOANS_LIMIT : limit, 1), MAX_OVERDUE_LOANS_LIMIT);
+
+        final String from = " from m_loan_transaction lt join m_loan l on l.id = lt.loan_id join m_client c on c.id = l.client_id "
+                + "join m_loan_transaction_repayment_schedule_mapping map on map.loan_transaction_id = lt.id "
+                + "join m_loan_repayment_schedule ls on ls.id = map.loan_repayment_schedule_id";
+
+        final List<Object> params = new ArrayList<>();
+        final String where = overdueCollectedWhereClause(fromDate, toDate, loanId, clientId, params);
+        final Object[] filterParams = params.toArray();
+
+        // One qualifying transaction == one grouped row, so count(distinct lt.id) over the same joins/filters is the total.
+        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(distinct lt.id) " + from + where,
+                Integer.class, filterParams);
+        if (totalFilteredRecords == null || totalFilteredRecords == 0) {
+            return new Page<>(Collections.emptyList(), 0);
+        }
+
+        final String columns = "c.id as clientId, c.account_no as clientAccountNo, c.external_id as clientExternalId, "
+                + "c.display_name as clientName, l.id as loanId, l.account_no as loanAccountNo, l.loan_status_id as loanStatusId, "
+                + "l.closedon_date as closedOnDate, lt.id as transactionId, lt.transaction_date as transactionDate, "
+                + "lt.amount as totalPaid, coalesce(lt.principal_portion_derived, 0) as principalPaid, "
+                + "coalesce(lt.interest_portion_derived, 0) as interestPaid, coalesce(lt.fee_charges_portion_derived, 0) as feesPaid, "
+                + "coalesce(lt.penalty_charges_portion_derived, 0) as lpiPaid, max("
+                + this.sqlGenerator.dateDiff("lt.transaction_date", "ls.duedate") + ") as maxDaysOverdueAtPayment";
+
+        final String groupBy = " group by c.id, c.account_no, c.external_id, c.display_name, l.id, l.account_no, l.loan_status_id, "
+                + "l.closedon_date, lt.id, lt.transaction_date, lt.amount, lt.principal_portion_derived, lt.interest_portion_derived, "
+                + "lt.fee_charges_portion_derived, lt.penalty_charges_portion_derived";
+
+        final String sql = "select " + columns + from + where + groupBy + " order by lt.transaction_date, c.id, l.id "
+                + this.sqlGenerator.limit(normalizedLimit, normalizedOffset);
+
+        final List<CredXOverdueCollectedData> rows = this.jdbcTemplate.query(sql, new CredXOverdueCollectedMapper(), filterParams);
+        return new Page<>(rows, totalFilteredRecords);
+    }
+
+    private String overdueCollectedWhereClause(final String fromDate, final String toDate, final Long loanId, final Long clientId,
+            final List<Object> params) {
+        // Non-reversed REPAYMENT (2) / RECOVERY_REPAYMENT (8) that paid a past-due installment and collected LPI.
+        final StringBuilder sql = new StringBuilder()
+                .append(" where coalesce(lt.is_reversed, false) = false and lt.transaction_type_enum in (2, 8) ")
+                .append("and lt.transaction_date > ls.duedate and coalesce(lt.penalty_charges_portion_derived, 0) > 0");
+        final String trimmedFrom = StringUtils.trimToNull(fromDate);
+        if (trimmedFrom != null) {
+            sql.append(" and lt.transaction_date >= ?");
+            params.add(Date.valueOf(LocalDate.parse(trimmedFrom)));
+        }
+        final String trimmedTo = StringUtils.trimToNull(toDate);
+        if (trimmedTo != null) {
+            sql.append(" and lt.transaction_date <= ?");
+            params.add(Date.valueOf(LocalDate.parse(trimmedTo)));
+        }
+        if (loanId != null) {
+            sql.append(" and l.id = ?");
+            params.add(loanId);
+        }
+        if (clientId != null) {
+            sql.append(" and c.id = ?");
+            params.add(clientId);
+        }
+        return sql.toString();
+    }
+
+    private static final String COLLECTED_FROM_WHERE = " from m_loan_transaction lt join m_loan l on l.id = lt.loan_id "
+            + "join m_client c on c.id = l.client_id where coalesce(lt.is_reversed, false) = false and lt.transaction_type_enum in (2, 8) "
+            + "and coalesce(lt.penalty_charges_portion_derived, 0) > 0 and exists (select 1 from "
+            + "m_loan_transaction_repayment_schedule_mapping map join m_loan_repayment_schedule ls on ls.id = map.loan_repayment_schedule_id "
+            + "where map.loan_transaction_id = lt.id and lt.transaction_date > ls.duedate)";
+
+    // Aggregate columns for the collected windows: all-time totals plus conditional sums for the last 7 / 30 days. The
+    // 10 "?" placeholders (last7 x5, then last30 x5) must be bound before any client/loan filter params.
+    private static final String COLLECTED_AGG_COLUMNS = "count(*) as allCount, "
+            + "coalesce(sum(coalesce(lt.principal_portion_derived, 0)), 0) as allPrincipal, "
+            + "coalesce(sum(coalesce(lt.interest_portion_derived, 0)), 0) as allInterest, "
+            + "coalesce(sum(coalesce(lt.fee_charges_portion_derived, 0)), 0) as allFees, "
+            + "coalesce(sum(coalesce(lt.penalty_charges_portion_derived, 0)), 0) as allLpi, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then 1 else 0 end), 0) as count7, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.principal_portion_derived, 0) else 0 end), 0) as principal7, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.interest_portion_derived, 0) else 0 end), 0) as interest7, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.fee_charges_portion_derived, 0) else 0 end), 0) as fees7, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.penalty_charges_portion_derived, 0) else 0 end), 0) as lpi7, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then 1 else 0 end), 0) as count30, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.principal_portion_derived, 0) else 0 end), 0) as principal30, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.interest_portion_derived, 0) else 0 end), 0) as interest30, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.fee_charges_portion_derived, 0) else 0 end), 0) as fees30, "
+            + "coalesce(sum(case when lt.transaction_date >= ? then coalesce(lt.penalty_charges_portion_derived, 0) else 0 end), 0) as lpi30";
+
+    /**
+     * Server-computed "overdue amounts collected" summary: all-time, last-7-day and last-30-day totals (with component
+     * breakdown and transaction counts) over the same collected population as {@link #retrieveCrediblexOverdueCollected}.
+     * Windows are relative to the tenant business date (inclusive). Optional clientId/loanId scope the totals; omit both
+     * for the whole portfolio.
+     */
+    public CredXOverdueCollectedSummaryData retrieveCrediblexOverdueCollectedSummary(final Long clientId, final Long loanId) {
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final LocalDate last7From = businessDate.minusDays(6);
+        final LocalDate last30From = businessDate.minusDays(29);
+
+        final List<Object> params = new ArrayList<>();
+        addCollectedWindowParams(params, last7From, last30From);
+        final StringBuilder sql = new StringBuilder("select ").append(COLLECTED_AGG_COLUMNS).append(COLLECTED_FROM_WHERE);
+        if (clientId != null) {
+            sql.append(" and c.id = ?");
+            params.add(clientId);
+        }
+        if (loanId != null) {
+            sql.append(" and l.id = ?");
+            params.add(loanId);
+        }
+
+        final CredXOverdueCollectedWindows windows = this.jdbcTemplate.queryForObject(sql.toString(), new CredXCollectedWindowsMapper(),
+                params.toArray());
+        return CredXOverdueCollectedSummaryData.builder().currencyCode(DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE).clientId(clientId)
+                .loanId(loanId).businessDate(businessDate.toString()).last7DaysFrom(last7From.toString())
+                .last30DaysFrom(last30From.toString()).collected(windows).build();
+    }
+
+    private void addCollectedWindowParams(final List<Object> params, final LocalDate last7From, final LocalDate last30From) {
+        for (int i = 0; i < 5; i++) {
+            params.add(Date.valueOf(last7From));
+        }
+        for (int i = 0; i < 5; i++) {
+            params.add(Date.valueOf(last30From));
+        }
+    }
+
+    /** Per-client collected windows for the given clients (used to embed collected stats in the overdue list). */
+    private Map<Long, CredXOverdueCollectedWindows> retrieveCollectedWindowsByClient(final List<Long> clientIds) {
+        if (clientIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final List<Object> params = new ArrayList<>();
+        addCollectedWindowParams(params, businessDate.minusDays(6), businessDate.minusDays(29));
+        final String placeholders = String.join(",", Collections.nCopies(clientIds.size(), "?"));
+        params.addAll(clientIds);
+
+        final String sql = "select l.client_id as clientId, " + COLLECTED_AGG_COLUMNS + COLLECTED_FROM_WHERE + " and l.client_id in ("
+                + placeholders + ") group by l.client_id";
+
+        final Map<Long, CredXOverdueCollectedWindows> byClient = new HashMap<>();
+        this.jdbcTemplate.query(sql, (rs, rowNum) -> {
+            byClient.put(rs.getLong("clientId"), collectedWindows(rs));
+            return null;
+        }, params.toArray());
+        return byClient;
+    }
+
+    private static CredXOverdueCollectedWindows collectedWindows(final ResultSet rs) throws SQLException {
+        return CredXOverdueCollectedWindows.builder()
+                .allTime(collectedStat(rs, "allCount", "allPrincipal", "allInterest", "allFees", "allLpi"))
+                .last7Days(collectedStat(rs, "count7", "principal7", "interest7", "fees7", "lpi7"))
+                .last30Days(collectedStat(rs, "count30", "principal30", "interest30", "fees30", "lpi30")).build();
+    }
+
+    private static CredXOverdueCollectedStat collectedStat(final ResultSet rs, final String countCol, final String principalCol,
+            final String interestCol, final String feesCol, final String lpiCol) throws SQLException {
+        final BigDecimal principal = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, principalCol);
+        final BigDecimal interest = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, interestCol);
+        final BigDecimal fees = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, feesCol);
+        final BigDecimal lpi = JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, lpiCol);
+        return CredXOverdueCollectedStat.builder().total(principal.add(interest).add(fees).add(lpi)).principal(principal).interest(interest)
+                .fees(fees).lpi(lpi).count(rs.getLong(countCol)).build();
+    }
+
+    private static CredXOverdueCollectedWindows zeroCollectedWindows() {
+        return CredXOverdueCollectedWindows.builder().allTime(CredXOverdueCollectedStat.zero()).last7Days(CredXOverdueCollectedStat.zero())
+                .last30Days(CredXOverdueCollectedStat.zero()).build();
+    }
+
+    private static final class CredXCollectedWindowsMapper implements RowMapper<CredXOverdueCollectedWindows> {
+
+        @Override
+        public CredXOverdueCollectedWindows mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            return collectedWindows(rs);
+        }
     }
 
     /**
@@ -639,6 +835,27 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     .currencyCode(currencyCode != null ? currencyCode : DEFAULT_OVERDUE_SUMMARY_CURRENCY_CODE)
                     .totalClients(rs.getLong("totalClients")).totalLoans(rs.getLong("totalLoans")).totalOutstanding(totalOutstanding)
                     .totalOverdue(totalOverdue).totalLpiOutstanding(odLpi).build();
+        }
+    }
+
+    private static final class CredXOverdueCollectedMapper implements RowMapper<CredXOverdueCollectedData> {
+
+        @Override
+        public CredXOverdueCollectedData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+            final LocalDate closedOnDate = JdbcSupport.getLocalDate(rs, "closedOnDate");
+            final LocalDate transactionDate = JdbcSupport.getLocalDate(rs, "transactionDate");
+            return CredXOverdueCollectedData.builder().clientId(rs.getLong("clientId")).clientAccountNo(rs.getString("clientAccountNo"))
+                    .clientExternalId(rs.getString("clientExternalId")).clientName(rs.getString("clientName"))
+                    .loanId(rs.getLong("loanId")).loanAccountNo(rs.getString("loanAccountNo"))
+                    .loanStatusId(JdbcSupport.getInteger(rs, "loanStatusId"))
+                    .closedOnDate(closedOnDate != null ? closedOnDate.toString() : null).transactionId(rs.getLong("transactionId"))
+                    .transactionDate(transactionDate != null ? transactionDate.toString() : null)
+                    .totalPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalPaid"))
+                    .principalPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalPaid"))
+                    .interestPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestPaid"))
+                    .feesPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "feesPaid"))
+                    .lpiPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "lpiPaid"))
+                    .maxDaysOverdueAtPayment(rs.getInt("maxDaysOverdueAtPayment")).build();
         }
     }
 

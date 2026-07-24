@@ -18,31 +18,25 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its
- * loans is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's
- * active loans are nested under it, along with a per-client overdue {@link #summary}.
+ * Overdue amounts collected across the standard reporting windows. Used both for the portfolio-level summary and,
+ * per-client, embedded on {@link CredXOverdueClientData}.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CredXOverdueClientData {
+public class CredXOverdueCollectedWindows {
 
-    private Long clientId;
-    private String clientName;
-    private String accountNo;
-    /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
-    private String currencyCode;
-    private CredXOverdueClientSummaryData summary;
-    /** Overdue amounts this client has paid, for all-time / last 7 days / last 30 days. */
-    private CredXOverdueCollectedWindows collected;
-    /** All of the client's active loans (overdue and non-overdue). */
-    private List<CredXOverdueLoanData> loans;
+    /** All collected transactions, no date bound. */
+    private CredXOverdueCollectedStat allTime;
+    /** Collected within the last 7 days (up to and including the business date). */
+    private CredXOverdueCollectedStat last7Days;
+    /** Collected within the last 30 days (up to and including the business date). */
+    private CredXOverdueCollectedStat last30Days;
 }

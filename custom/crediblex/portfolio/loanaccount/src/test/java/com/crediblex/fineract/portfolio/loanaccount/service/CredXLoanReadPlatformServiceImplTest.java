@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
@@ -533,5 +535,98 @@ public class CredXLoanReadPlatformServiceImplTest {
                     final org.springframework.jdbc.core.RowMapper<CredXOverdueLoansSummaryData> mapper = invocation.getArgument(1);
                     return mapper.mapRow(rs, 0);
                 });
+    }
+
+    @Test
+    public void testRetrieveCrediblexOverdueCollectedReturnsRowsAndCount() throws SQLException {
+        final ResultSet row1 = collectedRow(199L, "CITY FAMOUS TYRE REPAIR LLC-OPC", 232L, 29320L, 300, "2026-01-26", "20762.72",
+                "843.75", 28);
+        final ResultSet row2 = collectedRow(430L, "Blue Apple Advertising FZ LLC", 298L, 19360L, 300, "2026-06-13", "162684.82",
+                "4639.45", 75);
+
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(2);
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    final String sql = invocation.getArgument(0);
+                    final org.springframework.jdbc.core.RowMapper<Object> mapper = invocation.getArgument(1);
+                    if (sql.contains("as lpiPaid")) {
+                        return List.of(mapper.mapRow(row1, 0), mapper.mapRow(row2, 1));
+                    }
+                    return List.of();
+                });
+
+        final Page<CredXOverdueCollectedData> page = credXLoanReadPlatformService.retrieveCrediblexOverdueCollected(0, 50, "2026-01-01",
+                "2026-07-21", null, null);
+
+        assertEquals(2, page.getTotalFilteredRecords());
+        assertEquals(2, page.getPageItems().size());
+
+        final CredXOverdueCollectedData r1 = page.getPageItems().get(0);
+        assertEquals(Long.valueOf(199L), r1.getClientId());
+        assertEquals("CITY FAMOUS TYRE REPAIR LLC-OPC", r1.getClientName());
+        assertEquals(Long.valueOf(232L), r1.getLoanId());
+        assertEquals(Long.valueOf(29320L), r1.getTransactionId());
+        assertEquals(Integer.valueOf(300), r1.getLoanStatusId());
+        assertEquals("2026-01-26", r1.getTransactionDate());
+        assertEquals(new BigDecimal("20762.72"), r1.getPrincipalPaid());
+        assertEquals(new BigDecimal("843.75"), r1.getLpiPaid());
+        assertEquals(Integer.valueOf(28), r1.getMaxDaysOverdueAtPayment());
+    }
+
+    private static ResultSet collectedRow(final long clientId, final String clientName, final long loanId, final long txId,
+            final int loanStatusId, final String transactionDate, final String principalPaid, final String lpiPaid, final int maxDays)
+            throws SQLException {
+        // Lenient: the mapper reads loanStatusId via JdbcSupport.getInteger (index-based findColumn -> getInt(index)) and
+        // several columns this fixture leaves at defaults; those would otherwise trip strict stubbing.
+        final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
+        when(rs.getLong("clientId")).thenReturn(clientId);
+        when(rs.getString("clientName")).thenReturn(clientName);
+        when(rs.getLong("loanId")).thenReturn(loanId);
+        when(rs.getLong("transactionId")).thenReturn(txId);
+        when(rs.findColumn("loanStatusId")).thenReturn(1);
+        when(rs.getInt(1)).thenReturn(loanStatusId);
+        when(rs.getDate("transactionDate")).thenReturn(Date.valueOf(transactionDate));
+        when(rs.getBigDecimal("principalPaid")).thenReturn(new BigDecimal(principalPaid));
+        when(rs.getBigDecimal("lpiPaid")).thenReturn(new BigDecimal(lpiPaid));
+        when(rs.getInt("maxDaysOverdueAtPayment")).thenReturn(maxDays);
+        return rs;
+    }
+
+    @Test
+    public void testRetrieveCrediblexOverdueCollectedSummaryWindows() throws SQLException {
+        // Single aggregate row: all-time totals + last-7 / last-30 conditional sums.
+        final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
+        when(rs.getLong("allCount")).thenReturn(5L);
+        when(rs.getBigDecimal("allPrincipal")).thenReturn(new BigDecimal("50000"));
+        when(rs.getBigDecimal("allInterest")).thenReturn(new BigDecimal("8000"));
+        when(rs.getBigDecimal("allFees")).thenReturn(new BigDecimal("100"));
+        when(rs.getBigDecimal("allLpi")).thenReturn(new BigDecimal("1000"));
+        when(rs.getLong("count7")).thenReturn(2L);
+        when(rs.getBigDecimal("lpi7")).thenReturn(new BigDecimal("300"));
+        when(rs.getLong("count30")).thenReturn(4L);
+        when(rs.getBigDecimal("lpi30")).thenReturn(new BigDecimal("800"));
+
+        when(jdbcTemplate.queryForObject(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    final org.springframework.jdbc.core.RowMapper<Object> mapper = invocation.getArgument(1);
+                    return mapper.mapRow(rs, 0);
+                });
+
+        final CredXOverdueCollectedSummaryData summary = credXLoanReadPlatformService.retrieveCrediblexOverdueCollectedSummary(null, null);
+
+        assertEquals("AED", summary.getCurrencyCode());
+        Assertions.assertNotNull(summary.getBusinessDate());
+        Assertions.assertNotNull(summary.getLast7DaysFrom());
+        Assertions.assertNotNull(summary.getLast30DaysFrom());
+
+        assertEquals(Long.valueOf(5L), summary.getCollected().getAllTime().getCount());
+        assertEquals(new BigDecimal("1000"), summary.getCollected().getAllTime().getLpi());
+        // total = principal + interest + fees + lpi = 50000 + 8000 + 100 + 1000
+        assertEquals(new BigDecimal("59100"), summary.getCollected().getAllTime().getTotal());
+
+        assertEquals(Long.valueOf(2L), summary.getCollected().getLast7Days().getCount());
+        assertEquals(new BigDecimal("300"), summary.getCollected().getLast7Days().getLpi());
+        assertEquals(Long.valueOf(4L), summary.getCollected().getLast30Days().getCount());
+        assertEquals(new BigDecimal("800"), summary.getCollected().getLast30Days().getLpi());
     }
 }

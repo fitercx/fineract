@@ -18,31 +18,35 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
-import java.util.List;
+import java.math.BigDecimal;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One row of the CrediblEX overdue list, which is now grouped by client. A client qualifies if at least one of its
- * loans is overdue (active with a past-due installment carrying a positive outstanding balance); all of the client's
- * active loans are nested under it, along with a per-client overdue {@link #summary}.
+ * Amount collected against overdue installments over one time window, with its component split and the number of
+ * contributing transactions. {@code total = principal + interest + fees + lpi}.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CredXOverdueClientData {
+public class CredXOverdueCollectedStat {
 
-    private Long clientId;
-    private String clientName;
-    private String accountNo;
-    /** ISO currency code for display. V1 assumes a single-currency tenant (effectively AED). */
-    private String currencyCode;
-    private CredXOverdueClientSummaryData summary;
-    /** Overdue amounts this client has paid, for all-time / last 7 days / last 30 days. */
-    private CredXOverdueCollectedWindows collected;
-    /** All of the client's active loans (overdue and non-overdue). */
-    private List<CredXOverdueLoanData> loans;
+    /** principal + interest + fees + lpi collected. */
+    private BigDecimal total;
+    private BigDecimal principal;
+    private BigDecimal interest;
+    private BigDecimal fees;
+    /** Late-payment interest (penalty) collected. */
+    private BigDecimal lpi;
+    /** Number of qualifying transactions in the window. */
+    private Long count;
+
+    /** A stat with every amount and the count set to zero. */
+    public static CredXOverdueCollectedStat zero() {
+        return CredXOverdueCollectedStat.builder().total(BigDecimal.ZERO).principal(BigDecimal.ZERO).interest(BigDecimal.ZERO)
+                .fees(BigDecimal.ZERO).lpi(BigDecimal.ZERO).count(0L).build();
+    }
 }
