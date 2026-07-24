@@ -539,10 +539,10 @@ public class CredXLoanReadPlatformServiceImplTest {
 
     @Test
     public void testRetrieveCrediblexOverdueCollectedReturnsRowsAndCount() throws SQLException {
-        final ResultSet row1 = collectedRow(199L, "CITY FAMOUS TYRE REPAIR LLC-OPC", 232L, 29320L, 300, "2026-01-26", "20762.72",
-                "843.75", 28);
-        final ResultSet row2 = collectedRow(430L, "Blue Apple Advertising FZ LLC", 298L, 19360L, 300, "2026-06-13", "162684.82",
-                "4639.45", 75);
+        final ResultSet row1 = collectedRow(199L, "CITY FAMOUS TYRE REPAIR LLC-OPC", 232L, 29320L, 300, "2026-01-26", "20762.72", "843.75",
+                28);
+        final ResultSet row2 = collectedRow(430L, "Blue Apple Advertising FZ LLC", 298L, 19360L, 300, "2026-06-13", "162684.82", "4639.45",
+                75);
 
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(2);
         when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
@@ -576,7 +576,8 @@ public class CredXLoanReadPlatformServiceImplTest {
     private static ResultSet collectedRow(final long clientId, final String clientName, final long loanId, final long txId,
             final int loanStatusId, final String transactionDate, final String principalPaid, final String lpiPaid, final int maxDays)
             throws SQLException {
-        // Lenient: the mapper reads loanStatusId via JdbcSupport.getInteger (index-based findColumn -> getInt(index)) and
+        // Lenient: the mapper reads loanStatusId via JdbcSupport.getInteger (index-based findColumn -> getInt(index))
+        // and
         // several columns this fixture leaves at defaults; those would otherwise trip strict stubbing.
         final ResultSet rs = Mockito.mock(ResultSet.class, Mockito.withSettings().strictness(Strictness.LENIENT));
         when(rs.getLong("clientId")).thenReturn(clientId);

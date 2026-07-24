@@ -26,9 +26,9 @@ import lombok.NoArgsConstructor;
 
 /**
  * One row of the CrediblEX "overdue amounts collected" list ({@code GET /loans/crediblex/overdue/collected}): a single
- * non-reversed repayment/recovery transaction that both reduced a past-due installment and collected some LPI (penalty).
- * The amounts are the transaction-level portions. Callers (loan service / portal) aggregate these rows loan-wise,
- * client-wise, and over date windows (e.g. last 7 / 30 days) by filtering on {@code transactionDate}.
+ * non-reversed repayment/recovery transaction that both reduced a past-due installment and collected some LPI
+ * (penalty). The amounts are the transaction-level portions. Callers (loan service / portal) aggregate these rows
+ * loan-wise, client-wise, and over date windows (e.g. last 7 / 30 days) by filtering on {@code transactionDate}.
  */
 @Data
 @Builder

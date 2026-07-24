@@ -24,9 +24,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Server-computed "overdue amounts collected" summary returned by {@code GET /loans/crediblex/overdue/collected/summary}.
- * By default it covers the entire portfolio; when {@code clientId} and/or {@code loanId} are supplied it is scoped to
- * that client/loan. Windows are computed from the tenant business date (inclusive).
+ * Server-computed "overdue amounts collected" summary returned by
+ * {@code GET /loans/crediblex/overdue/collected/summary}. By default it covers the entire portfolio; when
+ * {@code clientId} and/or {@code loanId} are supplied it is scoped to that client/loan. Windows are computed from the
+ * tenant business date (inclusive).
  */
 @Data
 @Builder

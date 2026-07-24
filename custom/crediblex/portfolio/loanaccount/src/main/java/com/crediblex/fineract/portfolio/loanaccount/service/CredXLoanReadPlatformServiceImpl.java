@@ -473,10 +473,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * "Overdue amounts collected" - non-reversed repayment/recovery transactions (types 2 = REPAYMENT, 8 =
-     * RECOVERY_REPAYMENT) that reduced a PAST-DUE installment and collected some LPI (penalty). One row per transaction;
-     * amounts are the transaction-level portions. Optional filters: transactionDate range [fromDate, toDate] (ISO
-     * yyyy-MM-dd), loanId, clientId. Client-scoped (inner join m_client), so group/null-client loans are excluded.
-     * Callers aggregate the rows loan-wise / client-wise / over date windows (e.g. last 7 / 30 days).
+     * RECOVERY_REPAYMENT) that reduced a PAST-DUE installment and collected some LPI (penalty). One row per
+     * transaction; amounts are the transaction-level portions. Optional filters: transactionDate range [fromDate,
+     * toDate] (ISO yyyy-MM-dd), loanId, clientId. Client-scoped (inner join m_client), so group/null-client loans are
+     * excluded. Callers aggregate the rows loan-wise / client-wise / over date windows (e.g. last 7 / 30 days).
      */
     public Page<CredXOverdueCollectedData> retrieveCrediblexOverdueCollected(final Integer offset, final Integer limit,
             final String fromDate, final String toDate, final Long loanId, final Long clientId) {
@@ -491,9 +491,10 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final String where = overdueCollectedWhereClause(fromDate, toDate, loanId, clientId, params);
         final Object[] filterParams = params.toArray();
 
-        // One qualifying transaction == one grouped row, so count(distinct lt.id) over the same joins/filters is the total.
-        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(distinct lt.id) " + from + where,
-                Integer.class, filterParams);
+        // One qualifying transaction == one grouped row, so count(distinct lt.id) over the same joins/filters is the
+        // total.
+        final Integer totalFilteredRecords = this.jdbcTemplate.queryForObject("select count(distinct lt.id) " + from + where, Integer.class,
+                filterParams);
         if (totalFilteredRecords == null || totalFilteredRecords == 0) {
             return new Page<>(Collections.emptyList(), 0);
         }
@@ -570,9 +571,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * Server-computed "overdue amounts collected" summary: all-time, last-7-day and last-30-day totals (with component
-     * breakdown and transaction counts) over the same collected population as {@link #retrieveCrediblexOverdueCollected}.
-     * Windows are relative to the tenant business date (inclusive). Optional clientId/loanId scope the totals; omit both
-     * for the whole portfolio.
+     * breakdown and transaction counts) over the same collected population as
+     * {@link #retrieveCrediblexOverdueCollected}. Windows are relative to the tenant business date (inclusive).
+     * Optional clientId/loanId scope the totals; omit both for the whole portfolio.
      */
     public CredXOverdueCollectedSummaryData retrieveCrediblexOverdueCollectedSummary(final Long clientId, final Long loanId) {
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
@@ -845,9 +846,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final LocalDate closedOnDate = JdbcSupport.getLocalDate(rs, "closedOnDate");
             final LocalDate transactionDate = JdbcSupport.getLocalDate(rs, "transactionDate");
             return CredXOverdueCollectedData.builder().clientId(rs.getLong("clientId")).clientAccountNo(rs.getString("clientAccountNo"))
-                    .clientExternalId(rs.getString("clientExternalId")).clientName(rs.getString("clientName"))
-                    .loanId(rs.getLong("loanId")).loanAccountNo(rs.getString("loanAccountNo"))
-                    .loanStatusId(JdbcSupport.getInteger(rs, "loanStatusId"))
+                    .clientExternalId(rs.getString("clientExternalId")).clientName(rs.getString("clientName")).loanId(rs.getLong("loanId"))
+                    .loanAccountNo(rs.getString("loanAccountNo")).loanStatusId(JdbcSupport.getInteger(rs, "loanStatusId"))
                     .closedOnDate(closedOnDate != null ? closedOnDate.toString() : null).transactionId(rs.getLong("transactionId"))
                     .transactionDate(transactionDate != null ? transactionDate.toString() : null)
                     .totalPaid(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "totalPaid"))
