@@ -17,6 +17,7 @@ import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -74,6 +75,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
@@ -2302,6 +2304,94 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 && left.getDueDate() != null && left.getDueDate().equals(right.getDueDate());
     }
 
+    /**
+     * Remaps existing overdue-installment links onto the current schedule and recreates missing
+     * {@code m_loan_overdue_installment_charge} join rows for active LPI charges. Returns {@code true} when any charge
+     * was mutated and needs a flush.
+     */
+    boolean repairOrphanOverdueInstallmentChargeLinks(final Loan loan) {
+        if (loan == null || loan.getLoanCharges() == null || loan.getLoanCharges().isEmpty()) {
+            return false;
+        }
+        boolean mutated = false;
+        final Long penaltyPostingWaitPeriod = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
+        final long postingWaitDays = penaltyPostingWaitPeriod != null ? penaltyPostingWaitPeriod : 0L;
+
+        for (final LoanCharge loanCharge : loan.getLoanCharges()) {
+            if (loanCharge == null || !loanCharge.isOverdueInstallmentCharge() || !loanCharge.isActive()) {
+                continue;
+            }
+
+            final LoanOverdueInstallmentCharge existingLink = loanCharge.getOverdueInstallmentCharge();
+            if (existingLink != null && existingLink.getInstallment() != null
+                    && existingLink.getInstallment().getInstallmentNumber() != null) {
+                final LoanRepaymentScheduleInstallment current = loan
+                        .fetchRepaymentScheduleInstallment(existingLink.getInstallment().getInstallmentNumber());
+                if (current != null && !isSameInstallment(current, existingLink.getInstallment())) {
+                    existingLink.updateLoanRepaymentScheduleInstallment(current);
+                    mutated = true;
+                }
+                continue;
+            }
+
+            final LoanRepaymentScheduleInstallment installment = resolveInstallmentForOrphanOverdueCharge(loan, loanCharge);
+            if (installment == null) {
+                log.warn(
+                        "Active overdue/LPI charge {} on loan {} has no m_loan_overdue_installment_charge join and no installment could be resolved; leaving charge active but unlinked (LPI frequency lookup will skip it)",
+                        loanCharge.getId(), loan.getId());
+                continue;
+            }
+
+            final Integer frequencyNumber = inferFrequencyNumberForOrphanOverdueCharge(loanCharge, installment, postingWaitDays);
+            final LoanOverdueInstallmentCharge repaired = new LoanOverdueInstallmentCharge(loanCharge, installment, frequencyNumber);
+            loanCharge.updateOverdueInstallmentCharge(repaired);
+            mutated = true;
+            log.info("Repaired orphan overdue/LPI charge {} on loan {} → installment {} frequency {}", loanCharge.getId(), loan.getId(),
+                    installment.getInstallmentNumber(), frequencyNumber);
+        }
+        return mutated;
+    }
+
+    /**
+     * Best-effort installment resolution for an active overdue charge that lost its join row. Prefers a sole normal
+     * installment (PF/RF bullet loans), then the latest installment whose due date is strictly before the charge due
+     * date (LPI due dates are always after the owning installment due date).
+     */
+    private LoanRepaymentScheduleInstallment resolveInstallmentForOrphanOverdueCharge(final Loan loan, final LoanCharge loanCharge) {
+        final List<LoanRepaymentScheduleInstallment> candidates = loan.getRepaymentScheduleInstallments().stream().filter(
+                i -> i != null && i.getInstallmentNumber() != null && i.getDueDate() != null && !i.isRecalculatedInterestComponent())
+                .sorted(Comparator.comparing(LoanRepaymentScheduleInstallment::getInstallmentNumber)).toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+        if (loanCharge.getDueLocalDate() == null) {
+            return null;
+        }
+        LoanRepaymentScheduleInstallment best = null;
+        for (final LoanRepaymentScheduleInstallment installment : candidates) {
+            if (loanCharge.getDueLocalDate().isAfter(installment.getDueDate())) {
+                best = installment;
+            }
+        }
+        return best;
+    }
+
+    private Integer inferFrequencyNumberForOrphanOverdueCharge(final LoanCharge loanCharge,
+            final LoanRepaymentScheduleInstallment installment, final long postingWaitDays) {
+        if (loanCharge.getDueLocalDate() == null || installment.getDueDate() == null) {
+            return 1;
+        }
+        // Core creates the first LPI occurrence at installmentDue + penaltyPostingWaitPeriod days; subsequent daily
+        // occurrences increment frequency_number. Infer from that so re-apply skips this occurrence.
+        final LocalDate firstChargeDate = installment.getDueDate().plusDays(postingWaitDays);
+        final long daysFromFirst = ChronoUnit.DAYS.between(firstChargeDate, loanCharge.getDueLocalDate());
+        final int frequency = (int) daysFromFirst + 1;
+        return Math.max(frequency, 1);
+    }
+
     private boolean hasRepaymentScheduleChargeMismatch(Loan loan) {
         MonetaryCurrency currency = loan.getCurrency();
 
@@ -2370,6 +2460,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     @Override
     @Transactional
     public void applyOverdueChargesForLoan(final Long loanId, final Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList) {
+        // Repair active overdue/LPI charges that lost their m_loan_overdue_installment_charge join (typically after a
+        // schedule regenerate/reschedule) BEFORE the core apply path runs. Core's frequency lookup used to NPE on those
+        // orphans and fail the whole LPI job batch for the loan.
+        try {
+            final Loan loanForRepair = this.loanAssembler.assembleFrom(loanId);
+            if (repairOrphanOverdueInstallmentChargeLinks(loanForRepair)) {
+                this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loanForRepair);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to repair orphan overdue installment charge links for loan {} before LPI apply: {}", loanId, e.getMessage());
+        }
+
         // Delegate to parent to apply penalties and perform schedule recalculation and transaction reprocessing
         super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
 

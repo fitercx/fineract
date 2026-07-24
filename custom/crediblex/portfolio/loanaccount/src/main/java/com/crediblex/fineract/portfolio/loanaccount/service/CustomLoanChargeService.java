@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
 import java.math.BigDecimal;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -56,7 +57,8 @@ public class CustomLoanChargeService extends LoanChargeService {
         BigDecimal totalChargeAmt = BigDecimal.ZERO;
         if (loanCharge.getChargeCalculation().isPercentageBased()) {
             if (loanCharge.isOverdueInstallmentCharge()) {
-                amount = loan.calculateOverdueAmountPercentageAppliedTo(loanCharge, penaltyWaitPeriod);
+                amount = OverdueInstallmentChargeLinkHelper.calculateOverdueAmountPercentageAppliedToSafely(loan, loanCharge,
+                        penaltyWaitPeriod);
             } else {
                 // For multi-disbursement loans with DISBURSEMENT charges not linked to a specific tranche,
                 // use disbursed principal when at least one tranche is already disbursed (e.g. after deleting
