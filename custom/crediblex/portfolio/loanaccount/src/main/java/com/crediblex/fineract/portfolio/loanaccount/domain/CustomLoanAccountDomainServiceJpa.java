@@ -6,6 +6,7 @@ import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInsta
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -352,8 +353,11 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             }
 
             payment = accountTransferTransaction.get().getToLoanTransaction();
+            if (payment != null && payment.getLoan() != null) {
+                loan = payment.getLoan();
+            }
             newTransactions.add(payment);
-            handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
+            // Loan-side foreclosure allocation already ran inside transferFunds (LOAN_FORECLOSURE branch).
 
         } else {
 
@@ -367,6 +371,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             }
 
             handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
+            if (payment != null) {
+                ForeclosureTransactionBreakdown.applyIfMissing(loan, payment, foreClosureDate);
+            }
         }
 
         if (loan.isReceivableLocLoan()) {

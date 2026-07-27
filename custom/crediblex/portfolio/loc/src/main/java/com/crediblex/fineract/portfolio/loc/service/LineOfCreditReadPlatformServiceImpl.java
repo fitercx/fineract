@@ -286,6 +286,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                     l.account_no as loanAccountNo,
                     lp.name as loanProductName,
                     l.principal_disbursed_derived as loanAmount,
+                    l.principal_outstanding_derived as loanPrincipalOutstanding,
                     l.total_outstanding_derived as loanOutstandingBalance,
                     l.total_repayment_derived as loanAmountPaid,
                     l.loan_status_id as loanStatusId,
@@ -435,6 +436,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             final String accountNo = rs.getString("loanAccountNo");
             final String loanProductName = rs.getString("loanProductName");
             final BigDecimal loanAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAmount");
+            final BigDecimal principalOutstanding = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanPrincipalOutstanding");
             final BigDecimal outstandingBalance = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanOutstandingBalance");
             final BigDecimal amountPaid = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "loanAmountPaid");
             final Integer loanStatusId = JdbcSupport.getInteger(rs, "loanStatusId");
@@ -485,6 +487,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             summaryData.getAdditionalProperties().put("approvedPayableAmount", approvedPayableAmount);
             summaryData.getAdditionalProperties().put("invoiceAmount", invoiceAmount);
             summaryData.getAdditionalProperties().put("advancePercentage", advancePercentage);
+            summaryData.getAdditionalProperties().put("principalOutstanding", principalOutstanding);
             summaryData.getAdditionalProperties().put("interestRate", annualNominalInterestRate);
             summaryData.getAdditionalProperties().put("disburseInInvoiceCurrency", disburseInInvoiceCurrency);
             summaryData.getAdditionalProperties().put("invoiceCurrency", invoiceCurrency);
@@ -530,6 +533,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             final LineOfCreditData lineOfCredit = this.jdbcTemplate.query(sql, extractor, queryParams); // NOSONAR
 
+            applyPayableBalancesFromLoanData(lineOfCredit);
             return enrichWithClientData(lineOfCredit);
         } catch (final EmptyResultDataAccessException e) {
             return null;
@@ -601,7 +605,67 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         final LineOfCreditWithLoansMapper mapper = new LineOfCreditWithLoansMapper(); // Simple query for listing
         final String sql = "SELECT " + mapper.schema() + " WHERE loc.client_id = ? " + mapper.groupBy() + " ORDER BY loc.id, l.id";
 
-        return this.jdbcTemplate.query(sql, mapper, clientId);
+        List<LineOfCreditWithLoansData> results = this.jdbcTemplate.query(sql, mapper, clientId);
+        results.forEach(this::applyPayableBalancesFromLoans);
+        return results;
+    }
+
+    /**
+     * For PAYABLE LOCs, consumed amount is the sum of principal outstanding on linked loans — not
+     * {@code creditLimit - availableBalance}, which double-counts blocked amount and can include interest/fees.
+     * Available balance is then {@code creditLimit - blockedAmount - consumedAmount}.
+     */
+    private void applyPayableBalancesFromLoans(LineOfCreditWithLoansData locWithLoans) {
+        if (locWithLoans == null || locWithLoans.getLineOfCredit() == null) {
+            return;
+        }
+        applyPayableBalancesFromLoanData(locWithLoans.getLineOfCredit(), locWithLoans.getLoans());
+    }
+
+    private void applyPayableBalancesFromLoanData(LineOfCreditData loc, List<LoanAccountSummaryData> loans) {
+        if (loc == null || !LocProductType.PAYABLE.name().equalsIgnoreCase(loc.getProductType())) {
+            return;
+        }
+
+        BigDecimal principalOutstanding;
+        if (loans != null && !loans.isEmpty()) {
+            principalOutstanding = BigDecimal.ZERO;
+            for (LoanAccountSummaryData loan : loans) {
+                Object value = loan.getAdditionalProperties().get("principalOutstanding");
+                if (value instanceof BigDecimal bd && bd.compareTo(BigDecimal.ZERO) > 0) {
+                    principalOutstanding = principalOutstanding.add(bd);
+                }
+            }
+        } else {
+            principalOutstanding = sumPrincipalOutstandingForLoc(loc.getId());
+        }
+
+        BigDecimal blocked = loc.getBlockedAmount() != null ? loc.getBlockedAmount() : BigDecimal.ZERO;
+        BigDecimal creditLimit = loc.getMaximumAmount() != null ? loc.getMaximumAmount() : BigDecimal.ZERO;
+        BigDecimal available = creditLimit.subtract(blocked).subtract(principalOutstanding).max(BigDecimal.ZERO);
+
+        loc.setConsumedAmount(principalOutstanding);
+        loc.setAvailableBalance(available);
+    }
+
+    private void applyPayableBalancesFromLoanData(LineOfCreditData loc) {
+        applyPayableBalancesFromLoanData(loc, null);
+    }
+
+    private BigDecimal sumPrincipalOutstandingForLoc(Long locId) {
+        if (locId == null) {
+            return BigDecimal.ZERO;
+        }
+        String sql = """
+                SELECT COALESCE(SUM(l.principal_outstanding_derived), 0)
+                FROM m_loan l
+                INNER JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = l.id
+                WHERE mlcp.line_of_credit_id = ?
+                AND l.principal_outstanding_derived IS NOT NULL
+                AND l.principal_outstanding_derived > 0
+                """;
+        BigDecimal total = jdbcTemplate.queryForObject(sql, BigDecimal.class, locId);
+        return total != null ? total : BigDecimal.ZERO;
     }
 
     @Override

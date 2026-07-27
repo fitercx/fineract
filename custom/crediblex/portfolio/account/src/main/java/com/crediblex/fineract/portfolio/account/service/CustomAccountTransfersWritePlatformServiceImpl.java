@@ -11,6 +11,7 @@ import com.crediblex.fineract.infrastructure.events.business.domain.accounttrans
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -340,6 +341,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 loanTransaction = LoanTransaction.repayment(toLoanAccount.getOffice(),
                         Money.of(toLoanAccount.getCurrency(), accountTransferDTO.getTransactionAmount()),
                         accountTransferDTO.getPaymentDetail(), accountTransferDTO.getTransactionDate(), externalId);
+                loanTransaction.updateLoan(toLoanAccount);
 
                 LocalDate recalculateFrom = null;
                 if (toLoanAccount.isInterestBearingAndInterestRecalculationEnabled()) {
@@ -352,6 +354,8 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
                 loanDownPaymentHandlerService.handleRepaymentOrRecoveryOrWaiverTransaction(toLoanAccount, loanTransaction,
                         defaultLoanLifecycleStateMachine, null, scheduleGeneratorDTO);
+
+                ForeclosureTransactionBreakdown.applyIfMissing(toLoanAccount, loanTransaction, accountTransferDTO.getTransactionDate());
                 toLoanAccount = loanTransaction.getLoan();
             } else {
                 final boolean isRecoveryRepayment = false;
