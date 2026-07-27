@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service.schedule;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
 import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -40,5 +41,12 @@ public class CustomLoanScheduleComponent extends LoanScheduleComponent {
 
         loan.updateLoanScheduleDependentDerivedFields();
         loan.updateLoanSummaryDerivedFields();
+        OverdueInstallmentChargeLinkHelper.remapActiveOverdueInstallmentCharges(loan);
+    }
+
+    @Override
+    public void updateLoanSchedule(final Loan loan, final List<LoanRepaymentScheduleInstallment> installments) {
+        super.updateLoanSchedule(loan, installments);
+        OverdueInstallmentChargeLinkHelper.remapActiveOverdueInstallmentCharges(loan);
     }
 }

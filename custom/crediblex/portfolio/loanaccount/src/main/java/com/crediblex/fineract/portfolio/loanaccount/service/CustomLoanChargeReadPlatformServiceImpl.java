@@ -25,15 +25,18 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
+import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.service.ChargeDropdownReadPlatformService;
 import org.apache.fineract.portfolio.charge.service.ChargeEnumerations;
 import org.apache.fineract.portfolio.common.service.DropdownReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargeData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanInstallmentChargeData;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRelation;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeReadPlatformServiceImpl;
@@ -52,6 +55,40 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
             LoanChargeRepository loanChargeRepository, CustomLoanChargeRepository customLoanChargeRepository) {
         super(jdbcTemplate, chargeDropdownReadPlatformService, dropdownReadPlatformService, loanChargeRepository);
         this.loanChargeRepository = customLoanChargeRepository;
+    }
+
+    /**
+     * Null-safe override of the core frequency lookup used by the LPI / apply-penalty job.
+     * <p>
+     * After a repayment-schedule regenerate/reschedule, Hibernate orphan-removal on
+     * {@code LoanCharge.overdueInstallmentCharge} can leave active {@code charge_time_enum = 9} rows with no
+     * {@code m_loan_overdue_installment_charge} join. Core's implementation then NPEs on
+     * {@code getOverdueInstallmentCharge().getInstallment()} and rolls back the whole loan batch. Skip those orphan
+     * charges here so the job can continue; repair of the join rows is handled separately when the schedule is updated
+     * / when overdue charges are applied.
+     */
+    @Override
+    public Collection<Integer> retrieveOverdueInstallmentChargeFrequencyNumber(final Loan loan, final Charge charge,
+            final Integer periodNumber) {
+        final List<Integer> frequencyNumbers = new ArrayList<>();
+        if (loan == null || charge == null || periodNumber == null) {
+            return frequencyNumbers;
+        }
+        for (final LoanCharge loanCharge : loan.getLoanCharges()) {
+            if (loanCharge == null || !loanCharge.isOverdueInstallmentCharge() || !loanCharge.isActive()
+                    || !charge.equals(loanCharge.getCharge())) {
+                continue;
+            }
+            final LoanOverdueInstallmentCharge overdueInstallmentCharge = loanCharge.getOverdueInstallmentCharge();
+            if (overdueInstallmentCharge == null || overdueInstallmentCharge.getInstallment() == null
+                    || overdueInstallmentCharge.getInstallment().getInstallmentNumber() == null) {
+                continue;
+            }
+            if (periodNumber.equals(overdueInstallmentCharge.getInstallment().getInstallmentNumber())) {
+                frequencyNumbers.add(overdueInstallmentCharge.getFrequencyNumber());
+            }
+        }
+        return frequencyNumbers;
     }
 
     @Override

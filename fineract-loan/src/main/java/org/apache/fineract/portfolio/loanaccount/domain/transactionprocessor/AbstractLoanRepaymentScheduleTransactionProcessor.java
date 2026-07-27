@@ -184,6 +184,10 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                 if (loanTransaction.getId() == null) {
                     processLatestTransaction(loanTransaction, new TransactionCtx(currency, installments, charges, overpaymentHolder, null));
                     loanTransaction.adjustInterestComponent();
+                } else if (loanTransaction.isManuallyAdjustedOrReversed()) {
+                    // SQL/manual repayment corrections set this flag so reprocess (e.g. LPI job) must not reverse
+                    // and replay the transaction under the product strategy (PIPF), which would undo the fix.
+                    reapplyManuallyAdjustedTransaction(loanTransaction, currency, installments, charges);
                 } else {
                     /**
                      * For existing transactions, check if the re-payment breakup (principal, interest, fees, penalties)
@@ -552,6 +556,46 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         newLoanTransaction.getLoanTransactionRelations().add(
                 LoanTransactionRelation.linkToTransaction(newLoanTransaction, loanTransaction, LoanTransactionRelationTypeEnum.REPLAYED));
         changedTransactionDetail.addTransactionChange(new TransactionChangeData(loanTransaction, newLoanTransaction));
+    }
+
+    /**
+     * Re-applies a manually corrected repayment using its persisted transaction-to-installment mappings instead of
+     * re-allocating under the product repayment strategy. Used when {@code manually_adjusted_or_reversed} is set after
+     * SQL or operational corrections (e.g. principal-first allocation).
+     */
+    protected void reapplyManuallyAdjustedTransaction(final LoanTransaction loanTransaction, final MonetaryCurrency currency,
+            final List<LoanRepaymentScheduleInstallment> installments, final Set<LoanCharge> charges) {
+        final LocalDate transactionDate = loanTransaction.getTransactionDate();
+        for (final LoanTransactionToRepaymentScheduleMapping mapping : loanTransaction.getLoanTransactionToRepaymentScheduleMappings()) {
+            final LoanRepaymentScheduleInstallment installment = mapping.getLoanRepaymentScheduleInstallment();
+            final Money principalPortion = mapping.getPrincipalPortion(currency);
+            if (principalPortion.isGreaterThanZero()) {
+                installment.payPrincipalComponent(transactionDate, principalPortion);
+            }
+            final Money interestPortion = mapping.getInterestPortion(currency);
+            if (interestPortion.isGreaterThanZero()) {
+                installment.payInterestComponent(transactionDate, interestPortion);
+            }
+            final Money feePortion = mapping.getFeeChargesPortion(currency);
+            if (feePortion.isGreaterThanZero()) {
+                installment.payFeeChargesComponent(transactionDate, feePortion);
+            }
+            final Money penaltyPortion = mapping.getPenaltyChargesPortion(currency);
+            if (penaltyPortion.isGreaterThanZero()) {
+                installment.payPenaltyChargesComponent(transactionDate, penaltyPortion);
+            }
+        }
+
+        final Set<LoanCharge> loanFees = extractFeeCharges(charges);
+        final Set<LoanCharge> loanPenalties = extractPenaltyCharges(charges);
+        final Money feeChargesPortion = loanTransaction.getFeeChargesPortion(currency);
+        if (feeChargesPortion.isGreaterThanZero()) {
+            updateChargesPaidAmountBy(loanTransaction, feeChargesPortion, loanFees, null);
+        }
+        final Money penaltyChargesPortion = loanTransaction.getPenaltyChargesPortion(currency);
+        if (penaltyChargesPortion.isGreaterThanZero()) {
+            updateChargesPaidAmountBy(loanTransaction, penaltyChargesPortion, loanPenalties, null);
+        }
     }
 
     protected void processCreditTransaction(LoanTransaction loanTransaction, MoneyHolder overpaymentHolder, MonetaryCurrency currency,

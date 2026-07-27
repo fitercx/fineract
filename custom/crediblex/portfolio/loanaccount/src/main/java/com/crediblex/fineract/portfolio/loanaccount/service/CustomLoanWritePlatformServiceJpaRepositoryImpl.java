@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOv
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
@@ -2284,11 +2285,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
             loan.updateLoanScheduleDependentDerivedFields();
 
-            for (final LoanCharge loanCharge : loan.getLoanCharges()) {
-                if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
-                    loan.updateOverdueScheduleInstallment(loanCharge);
-                }
-            }
+            OverdueInstallmentChargeLinkHelper.remapAllActiveOverdueInstallmentCharges(loan);
 
             loan.updateLoanSummaryAndStatus();
             loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
@@ -2475,11 +2472,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final Loan refreshedLoan = this.loanAssembler.assembleFrom(loanId);
         refreshedLoan.updateLoanScheduleDependentDerivedFields();
 
-        for (final LoanCharge loanCharge : refreshedLoan.getLoanCharges()) {
-            if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isActive()) {
-                refreshedLoan.updateOverdueScheduleInstallment(loanCharge);
-            }
-        }
+        OverdueInstallmentChargeLinkHelper.remapAllActiveOverdueInstallmentCharges(refreshedLoan);
+        // Recreate any overdue/LPI join rows that were orphan-removed during the reschedule regenerate, so the next
+        // LPI job run does not NPE on getOverdueInstallmentCharge().
+        this.credibleXLoanChargeWritePlatformService.repairOrphanOverdueInstallmentChargeLinks(refreshedLoan);
 
         refreshedLoan.updateLoanSummaryAndStatus();
         this.loanAccountDomainService.setLoanDelinquencyTag(refreshedLoan, DateUtils.getBusinessLocalDate());
