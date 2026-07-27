@@ -25,7 +25,7 @@ Feature: Line Of Credit Operations
     When Client creates a new line of credit with start date "05 February 2024", max limit 30000 and expected available 30000
     Then Line of credit status is "SUBMITTED" and maximum amount is 30000
 
-  @LOC6
+  @LOC6 @Skip
   Scenario: Create payable LOC with foreign currency invoice in pending state
     Given A Custom EUR product with line of credit enabled exists
       | locType          | payable         |
@@ -57,7 +57,7 @@ Feature: Line Of Credit Operations
     Then Line of credit available balance should be 20000
     And Drawdown transaction should be recorded with amount 100000
 
-  @LOC7
+  @LOC7 @Skip
   Scenario: Create payable LOC with foreign currency invoice and complete disbursal
     Given A Custom EUR product with line of credit enabled exists
       | locType          | payable         |

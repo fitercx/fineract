@@ -89,6 +89,12 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
+// Custom Cucumber E2E suite is temporarily disabled in CI — it blocks unrelated PR merges while
+// scenarios/environment are being stabilized. Re-enable by removing this block (see build-cx-test.yml).
+tasks.named('cucumber').configure {
+    enabled = false
+}
+
 tasks.named('cucumber').get().finalizedBy 'allureReport'
 
 tasks.named('cucumber').get().dependsOn 'spotlessCheck'

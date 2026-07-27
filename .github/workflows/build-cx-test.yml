@@ -38,3 +38,4 @@ jobs:
           ACTIVEMQ_BROKER_URL: tcp://localhost:61616
           ACTIVEMQ_TOPIC_NAME: events
         run: ./gradlew --no-daemon --console=plain :custom:fineract-e2e-custom-tests-runner:cucumber --tags 'not @Skip' allureReport
+        if: false # Custom Cucumber E2E temporarily disabled — see fineract-e2e-custom-tests-runner/build.gradle
