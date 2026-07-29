@@ -611,9 +611,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     }
 
     /**
-     * For PAYABLE LOCs, consumed amount is the sum of principal outstanding on linked loans — not
-     * {@code creditLimit - availableBalance}, which double-counts blocked amount and can include interest/fees.
-     * Available balance is then {@code creditLimit - blockedAmount - consumedAmount}.
+     * For PAYABLE LOCs: consumed = sum(principal outstanding) + blocked amount; available = credit limit − consumed.
      */
     private void applyPayableBalancesFromLoans(LineOfCreditWithLoansData locWithLoans) {
         if (locWithLoans == null || locWithLoans.getLineOfCredit() == null) {
@@ -642,9 +640,10 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
         BigDecimal blocked = loc.getBlockedAmount() != null ? loc.getBlockedAmount() : BigDecimal.ZERO;
         BigDecimal creditLimit = loc.getMaximumAmount() != null ? loc.getMaximumAmount() : BigDecimal.ZERO;
-        BigDecimal available = creditLimit.subtract(blocked).subtract(principalOutstanding).max(BigDecimal.ZERO);
+        BigDecimal consumed = principalOutstanding.add(blocked).max(BigDecimal.ZERO).min(creditLimit);
+        BigDecimal available = creditLimit.subtract(consumed).max(BigDecimal.ZERO);
 
-        loc.setConsumedAmount(principalOutstanding);
+        loc.setConsumedAmount(consumed);
         loc.setAvailableBalance(available);
     }
 

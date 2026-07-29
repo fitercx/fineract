@@ -479,7 +479,7 @@ public class LineOfCredit extends AbstractAuditableWithUTCDateTimeCustom<Long> {
      * <p>
      * Effective Drawable Limit = Credit Limit (maximumAmount) - Blocked Amount
      * <p>
-     * Available Amount = Effective Drawable Limit - Consumed Amount
+     * Available Amount = Credit Limit - Consumed Amount, where consumed includes blocked + principal outstanding.
      */
     public BigDecimal getEffectiveDrawableLimit() {
         BigDecimal blocked = (this.summary != null && this.summary.getBlockedAmount() != null) ? this.summary.getBlockedAmount()

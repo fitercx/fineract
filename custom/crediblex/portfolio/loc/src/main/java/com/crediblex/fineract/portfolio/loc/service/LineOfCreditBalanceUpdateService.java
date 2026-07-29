@@ -106,6 +106,14 @@ public class LineOfCreditBalanceUpdateService {
         Optional<LineOfCreditTransaction> latestTransaction = lineOfCreditTransactionRepository
                 .findLatestTransaction(lineOfCredit.getId(), PageRequest.of(0, 1)).stream().findFirst();
 
+        // PAYABLE LOCs: reconcile summary from live loan principal and heal ledger drift before any validation.
+        if (isPayableLineOfCredit(lineOfCredit)) {
+            reconcilePayableLocSummaryAndLedger(lineOfCredit);
+            currentAvailableBalance = lineOfCredit.getSummary().getAvailableBalance();
+            latestTransaction = lineOfCreditTransactionRepository.findLatestTransaction(lineOfCredit.getId(), PageRequest.of(0, 1)).stream()
+                    .findFirst();
+        }
+
         LocalDate latestTransactionDate = latestTransaction.map(LineOfCreditTransaction::getTransactionDate).orElse(LocalDate.MIN);
 
         boolean isBackdatedTransaction = transactionDate.isBefore(latestTransactionDate);
@@ -169,11 +177,9 @@ public class LineOfCreditBalanceUpdateService {
             recomputeLocSummaryFromDate(transactionDate, lineOfCredit);
         }
 
-        // PAYABLE LOCs track consumed amount as sum(principal_outstanding) on linked loans, not as
-        // creditLimit - availableBalance (which ignores blocked amount and can drift via interest-inclusive
-        // repayments).
-        if (lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isPayable()) {
-            reconcileConsumedAmountFromLoanData(lineOfCredit);
+        // PAYABLE LOCs: consumed = sum(principal_outstanding) + blocked; available = credit_limit - consumed.
+        if (isPayableLineOfCredit(lineOfCredit)) {
+            reconcilePayableLocSummaryAndLedger(lineOfCredit);
         }
 
         // Final validation: Ensure consumed amount is never negative (defensive check)
@@ -212,9 +218,13 @@ public class LineOfCreditBalanceUpdateService {
      */
     private void validateAndReconcileIfNeeded(LineOfCredit lineOfCredit, BigDecimal repaymentAmount, Long loanId) {
         BigDecimal currentConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
+        BigDecimal blockedAmount = lineOfCredit.getSummary().getBlockedAmount() != null ? lineOfCredit.getSummary().getBlockedAmount()
+                : BigDecimal.ZERO;
+        // Consumed includes blocked; only the principal portion can be reduced by a repayment.
+        BigDecimal principalConsumed = currentConsumedAmount.subtract(blockedAmount).max(BigDecimal.ZERO);
 
-        // If repayment amount exceeds current consumed amount, check if reconciliation is needed
-        if (repaymentAmount.compareTo(currentConsumedAmount) > 0) {
+        // If repayment amount exceeds current principal consumed, check if reconciliation is needed
+        if (repaymentAmount.compareTo(principalConsumed) > 0) {
             log.warn("""
                     Repayment amount ({}) exceeds current LOC consumed amount ({}) for LOC ID: {}, Loan ID: {}.
                     Attempting reconciliation to ensure data consistency.
@@ -225,8 +235,13 @@ public class LineOfCreditBalanceUpdateService {
                 log.info("Reconciled LOC consumed amount. LOC ID: {}, Loan ID: {}, Old consumed: {}, New consumed: {}",
                         lineOfCredit.getId(), loanId, currentConsumedAmount, reconciledConsumedAmount);
 
+                BigDecimal reconciledBlocked = lineOfCredit.getSummary().getBlockedAmount() != null
+                        ? lineOfCredit.getSummary().getBlockedAmount()
+                        : BigDecimal.ZERO;
+                BigDecimal reconciledPrincipalConsumed = reconciledConsumedAmount.subtract(reconciledBlocked).max(BigDecimal.ZERO);
+
                 // After reconciliation, check again if repayment would still cause negative balance
-                if (repaymentAmount.compareTo(reconciledConsumedAmount) > 0) {
+                if (repaymentAmount.compareTo(reconciledPrincipalConsumed) > 0) {
                     log.warn("""
                             After reconciliation, repayment amount ({}) still exceeds LOC consumed amount ({})
                             for LOC ID: {}, Loan ID: {}. This will be handled gracefully by capping at zero.
@@ -292,24 +307,28 @@ public class LineOfCreditBalanceUpdateService {
             // Note: For INCREMENT (balance increment), consumed_amount should not change as it represents a limit
             // increase
             if (!type.isBalanceIncrement()) {
-                // PREVENTIVE VALIDATION: Check if repayment amount exceeds current consumed amount
-                if (repaymentAmount.compareTo(currentConsumedAmount) > 0) {
-                    BigDecimal excessAmount = repaymentAmount.subtract(currentConsumedAmount);
-                    log.warn("""
-                            LOC consumed amount would go negative.
-                            LOC ID: {}, Loan ID: {}, Loan Transaction ID: {},
-                            Current consumed amount: {}, Repayment amount: {}, Excess amount: {}, Transaction type: {}.
-                            Capping consumed amount at zero. Excess repayment amount ({}) cannot be applied to available balance
-                            as it would exceed maximum LOC limit. This may indicate a data inconsistency.
-                            """, lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, repaymentAmount, excessAmount,
-                            type, excessAmount);
+                BigDecimal blockedAmount = lineOfCredit.getSummary().getBlockedAmount() != null
+                        ? lineOfCredit.getSummary().getBlockedAmount()
+                        : BigDecimal.ZERO;
+                BigDecimal principalConsumed = currentConsumedAmount.subtract(blockedAmount).max(BigDecimal.ZERO);
 
-                    // Graceful handling: Cap consumed amount at zero
-                    // Set available balance using constraint:
-                    // available = effectiveDrawableLimit - consumed = (creditLimit - blockedAmount) - 0
-                    // This ensures we don't lose the excess amount silently - it's logged as a warning
-                    lineOfCredit.getSummary().setConsumedAmount(BigDecimal.ZERO);
-                    BigDecimal newAvailableBalance = lineOfCredit.getEffectiveDrawableLimit();
+                // PREVENTIVE VALIDATION: repayment can only reduce the principal portion of consumed
+                if (repaymentAmount.compareTo(principalConsumed) > 0) {
+                    BigDecimal excessAmount = repaymentAmount.subtract(principalConsumed);
+                    log.warn(
+                            """
+                                    LOC principal consumed would go negative.
+                                    LOC ID: {}, Loan ID: {}, Loan Transaction ID: {},
+                                    Current consumed amount: {}, Blocked amount: {}, Principal consumed: {}, Repayment amount: {}, Excess amount: {}, Transaction type: {}.
+                                    Capping consumed at blocked amount ({}). Excess repayment amount ({}) cannot be applied to available balance
+                                    as it would exceed maximum LOC limit. This may indicate a data inconsistency.
+                                    """,
+                            lineOfCredit.getId(), loanId, loanTransactionId, currentConsumedAmount, blockedAmount, principalConsumed,
+                            repaymentAmount, excessAmount, type, blockedAmount, excessAmount);
+
+                    // Graceful handling: consumed cannot drop below blocked (available + consumed = credit_limit)
+                    lineOfCredit.getSummary().setConsumedAmount(blockedAmount);
+                    BigDecimal newAvailableBalance = lineOfCredit.getMaximumAmount().subtract(blockedAmount);
                     lineOfCredit.getSummary().setAvailableBalance(newAvailableBalance);
                 } else {
                     // Normal case: consumed amount can be reduced without going negative
@@ -417,7 +436,8 @@ public class LineOfCreditBalanceUpdateService {
             baseTotalDrawDownCount = BigDecimal.ZERO;
         }
 
-        BigDecimal baseConsumedAmount = lineOfCredit.getEffectiveDrawableLimit().subtract(baseAvailableBalance).max(BigDecimal.ZERO);
+        // consumed = credit_limit - available (blocked is included in consumed)
+        BigDecimal baseConsumedAmount = lineOfCredit.getMaximumAmount().subtract(baseAvailableBalance).max(BigDecimal.ZERO);
 
         // 4. Start running values from the baseline
         BigDecimal runningAvailableBalance = baseAvailableBalance;
@@ -464,11 +484,13 @@ public class LineOfCreditBalanceUpdateService {
                                         + "Capping consumed amount at zero.",
                                 lineOfCredit.getId(), tx.getId(), runningConsumedAmount.add(transactionAmount), transactionAmount,
                                 tx.getTransactionType());
-                        // Cap at zero to maintain data integrity
-                        runningConsumedAmount = BigDecimal.ZERO;
-                        // Adjust available balance to maintain constraint:
-                        // available_balance + consumed_amount = effectiveDrawableLimit (creditLimit - blockedAmount)
-                        runningAvailableBalance = lineOfCredit.getEffectiveDrawableLimit();
+                        // Cap at blocked amount — consumed includes blocked and cannot go lower
+                        BigDecimal blockedFloor = lineOfCredit.getSummary().getBlockedAmount() != null
+                                ? lineOfCredit.getSummary().getBlockedAmount()
+                                : BigDecimal.ZERO;
+                        runningConsumedAmount = blockedFloor;
+                        // available + consumed = credit_limit
+                        runningAvailableBalance = lineOfCredit.getMaximumAmount().subtract(blockedFloor);
                     }
                 }
             }
@@ -509,7 +531,7 @@ public class LineOfCreditBalanceUpdateService {
         // 6. Update LOC summary — PAYABLE LOCs derive consumed from live loan principal outstanding
         lineOfCredit.getSummary().setTotalDrawDownCountDerived(totalDrawDownCount);
         if (lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isPayable()) {
-            reconcileConsumedAmountFromLoanData(lineOfCredit);
+            reconcilePayableLocSummaryAndLedger(lineOfCredit);
         } else {
             lineOfCredit.getSummary().setConsumedAmount(runningConsumedAmount);
             lineOfCredit.getSummary().setAvailableBalance(runningAvailableBalance);
@@ -541,8 +563,9 @@ public class LineOfCreditBalanceUpdateService {
     }
 
     /**
-     * Reconciles consumed_amount by recalculating it from actual loan data. This method ensures consumed_amount equals
-     * the sum of principal_outstanding_derived (i.e. the LOC's true CURRENT exposure) for loans under the LOC.
+     * Reconciles consumed_amount by recalculating it from actual loan data. For PAYABLE LOCs:
+     * {@code consumed = SUM(principal_outstanding_derived) + blocked_amount} and
+     * {@code available = credit_limit - consumed}.
      *
      * <p>
      * <b>Bug fixed:</b> this previously summed principal_disbursed_derived, which is a historical/cumulative column
@@ -602,49 +625,111 @@ public class LineOfCreditBalanceUpdateService {
                 AND l.principal_outstanding_derived > 0
                 """;
 
-        BigDecimal actualConsumedAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
-        if (actualConsumedAmount == null) {
-            actualConsumedAmount = BigDecimal.ZERO;
+        BigDecimal principalOutstanding = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
+        if (principalOutstanding == null) {
+            principalOutstanding = BigDecimal.ZERO;
         }
 
-        // Update LOC summary
-        // Available Amount = Effective Drawable Limit (Credit Limit - Blocked Amount) - Consumed Amount
+        final LocBalanceSnapshot balances = computeLocBalancesFromExposure(lineOfCredit, principalOutstanding);
         BigDecimal oldConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
 
-        // Clamp so the row always satisfies the DB check constraints:
-        // chk_loc_consumed_amount_non_negative (consumed >= 0),
-        // chk_loc_consumed_amount_within_limit (consumed <= maximum_amount),
-        // chk_loc_available_balance_non_negative (available >= 0).
-        // When the actual disbursed principal exceeds the maximum/effective limit (e.g. limit decrease, blocked-amount
-        // increase, or historical over-disbursement) an unclamped write would push available_balance negative or
-        // consumed over the limit, which aborts the entire savings->loan repayment ("Unexpected error updating LOC
-        // balance."). We reconcile as close as the invariants allow and log the drift for follow-up.
         final BigDecimal maximumAmount = lineOfCredit.getMaximumAmount();
-        final BigDecimal effectiveDrawableLimit = lineOfCredit.getEffectiveDrawableLimit();
-        final BigDecimal clampedConsumedAmount = actualConsumedAmount.max(BigDecimal.ZERO).min(maximumAmount);
-        final BigDecimal availableBalance = effectiveDrawableLimit.subtract(clampedConsumedAmount).max(BigDecimal.ZERO);
+        final BigDecimal rawConsumed = principalOutstanding
+                .add(lineOfCredit.getSummary().getBlockedAmount() != null ? lineOfCredit.getSummary().getBlockedAmount() : BigDecimal.ZERO);
 
-        if (actualConsumedAmount.compareTo(clampedConsumedAmount) != 0
-                || effectiveDrawableLimit.subtract(clampedConsumedAmount).signum() < 0) {
+        if (rawConsumed.compareTo(balances.consumedAmount()) != 0 || maximumAmount.subtract(balances.consumedAmount()).signum() < 0) {
             log.warn("""
                     LOC balance reconciliation clamped to satisfy DB constraints.
-                    LOC ID: {}, Maximum amount: {}, Effective drawable limit: {},
-                    Raw consumed (sum principal_outstanding_derived): {}, Clamped consumed: {}, Available balance: {}.
+                    LOC ID: {}, Credit limit: {},
+                    Raw consumed (principal outstanding + blocked): {}, Clamped consumed: {}, Available balance: {}.
                     This indicates disbursed principal exceeds the LOC limit - please review the LOC/loan data.
-                    """, lineOfCredit.getId(), maximumAmount, effectiveDrawableLimit, actualConsumedAmount, clampedConsumedAmount,
-                    availableBalance);
+                    """, lineOfCredit.getId(), maximumAmount, rawConsumed, balances.consumedAmount(), balances.availableBalance());
         }
 
-        lineOfCredit.getSummary().setConsumedAmount(clampedConsumedAmount);
-        lineOfCredit.getSummary().setAvailableBalance(availableBalance);
+        lineOfCredit.getSummary().setConsumedAmount(balances.consumedAmount());
+        lineOfCredit.getSummary().setAvailableBalance(balances.availableBalance());
 
         // Log reconciliation if there was a difference
-        if (oldConsumedAmount.compareTo(clampedConsumedAmount) != 0) {
+        if (oldConsumedAmount.compareTo(balances.consumedAmount()) != 0) {
             // Optionally create a reconciliation transaction record for audit
             // For now, we just update the summary
         }
 
-        return clampedConsumedAmount;
+        return balances.consumedAmount();
+    }
+
+    /**
+     * PAYABLE LOC formula: consumed = principal outstanding + blocked; available = credit limit − consumed.
+     */
+    private LocBalanceSnapshot computeLocBalancesFromExposure(final LineOfCredit lineOfCredit, final BigDecimal principalOutstanding) {
+        final BigDecimal creditLimit = lineOfCredit.getMaximumAmount();
+        final BigDecimal blocked = lineOfCredit.getSummary().getBlockedAmount() != null ? lineOfCredit.getSummary().getBlockedAmount()
+                : BigDecimal.ZERO;
+        final BigDecimal principal = principalOutstanding != null ? principalOutstanding : BigDecimal.ZERO;
+        final BigDecimal rawConsumed = principal.add(blocked);
+        final BigDecimal clampedConsumed = rawConsumed.max(BigDecimal.ZERO).min(creditLimit);
+        final BigDecimal availableBalance = creditLimit.subtract(clampedConsumed).max(BigDecimal.ZERO);
+        return new LocBalanceSnapshot(clampedConsumed, availableBalance);
+    }
+
+    private record LocBalanceSnapshot(BigDecimal consumedAmount, BigDecimal availableBalance) {
+    }
+
+    /**
+     * Reconciles a PAYABLE LOC summary from live loan principal outstanding and aligns the latest ledger row so
+     * {@link #validateBalanceConsistency} does not block the next drawdown after an approved-but-not-disbursed loan
+     * reserved capacity on CREATE.
+     */
+    @Transactional
+    public BigDecimal reconcilePayableLineOfCredit(final LineOfCredit lineOfCredit) {
+        if (!isPayableLineOfCredit(lineOfCredit)) {
+            return lineOfCredit.getSummary().getConsumedAmount();
+        }
+        reconcilePayableLocSummaryAndLedger(lineOfCredit);
+        return lineOfCredit.getSummary().getConsumedAmount();
+    }
+
+    private void reconcilePayableLocSummaryAndLedger(final LineOfCredit lineOfCredit) {
+        reconcileConsumedAmountFromLoanData(lineOfCredit);
+        syncLatestTransactionLedgerWithSummary(lineOfCredit);
+    }
+
+    private boolean isPayableLineOfCredit(final LineOfCredit lineOfCredit) {
+        return lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isPayable();
+    }
+
+    /**
+     * After PAYABLE reconciliation the summary row is authoritative; patch the most recent transaction's running
+     * balances when they drift (e.g. loan CREATE posted DISBURSEMENT but reconcile restored available from live loans).
+     */
+    private void syncLatestTransactionLedgerWithSummary(final LineOfCredit lineOfCredit) {
+        Optional<LineOfCreditTransaction> latestTransaction = lineOfCreditTransactionRepository
+                .findLatestTransaction(lineOfCredit.getId(), PageRequest.of(0, 1)).stream().findFirst();
+        if (latestTransaction.isEmpty()) {
+            return;
+        }
+
+        final LineOfCreditTransaction transaction = latestTransaction.get();
+        final BigDecimal summaryAvailable = lineOfCredit.getSummary().getAvailableBalance();
+        final BigDecimal summaryConsumed = lineOfCredit.getSummary().getConsumedAmount();
+        final boolean balanceDrift = transaction.getBalanceAfter() == null
+                || transaction.getBalanceAfter().compareTo(summaryAvailable) != 0;
+        final boolean consumedDrift = transaction.getConsumedAmountAfter() == null
+                || transaction.getConsumedAmountAfter().compareTo(summaryConsumed) != 0;
+
+        if (!balanceDrift && !consumedDrift) {
+            return;
+        }
+
+        log.info("""
+                Syncing latest LOC transaction ledger to reconciled summary.
+                LOC ID: {}, transaction ID: {}, balanceAfter: {} -> {}, consumedAfter: {} -> {}
+                """, lineOfCredit.getId(), transaction.getId(), transaction.getBalanceAfter(), summaryAvailable,
+                transaction.getConsumedAmountAfter(), summaryConsumed);
+
+        transaction.setBalanceAfter(summaryAvailable);
+        transaction.setConsumedAmountAfter(summaryConsumed);
+        lineOfCreditTransactionRepository.saveAndFlush(transaction);
     }
 
 }
