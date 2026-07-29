@@ -142,8 +142,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
      * @param transactionType
      *            BLOCK or UNBLOCK
      */
-    private void createBlockUnblockTransaction(LineOfCredit loc, BigDecimal amount, LineOfCreditTransactionType transactionType,
-            BigDecimal consumedAmountBefore) {
+    private void createBlockUnblockTransaction(LineOfCredit loc, BigDecimal amount, LineOfCreditTransactionType transactionType) {
         BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
         BigDecimal balanceBefore;
         BigDecimal balanceAfter = currentAvailableBalance;
@@ -158,14 +157,13 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         String referenceNumber = "LOC_" + loc.getId() + "_" + transactionType.name();
 
-        BigDecimal consumedAmountAfter = loc.getSummary().getConsumedAmount() != null ? loc.getSummary().getConsumedAmount()
-                : BigDecimal.ZERO;
+        BigDecimal consumedAmount = loc.getSummary().getConsumedAmount() != null ? loc.getSummary().getConsumedAmount() : BigDecimal.ZERO;
 
         LineOfCreditTransaction transaction = LineOfCreditTransaction.newTransactionInstance(loc, amount, balanceBefore, balanceAfter,
                 DateUtils.getBusinessLocalDate(), referenceNumber, transactionType);
 
-        transaction.setConsumedAmountBefore(consumedAmountBefore);
-        transaction.setConsumedAmountAfter(consumedAmountAfter);
+        transaction.setConsumedAmountBefore(consumedAmount);
+        transaction.setConsumedAmountAfter(consumedAmount);
         transaction.setIsBackdatedEntry(false);
 
         lineOfCreditTransactionRepository.saveAndFlush(transaction);
@@ -294,33 +292,26 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                         // Calculate the difference to determine if we're blocking or unblocking
                         BigDecimal difference = newBlockedAmount.subtract(currentBlocked);
 
-                        // Update blocked amount and apply unified formula: consumed includes blocked
+                        // Update the blocked amount first
                         lineOfCredit.getSummary().setBlockedAmount(newBlockedAmount);
 
+                        // Recalculate available balance: MaxLimit - Blocked - Consumed
                         final BigDecimal consumed = lineOfCredit.getSummary().getConsumedAmount() != null
                                 ? lineOfCredit.getSummary().getConsumedAmount()
                                 : BigDecimal.ZERO;
-                        BigDecimal newConsumed = consumed.add(difference);
-                        if (newConsumed.compareTo(BigDecimal.ZERO) < 0) {
-                            newConsumed = BigDecimal.ZERO;
-                        }
-                        if (newConsumed.compareTo(lineOfCredit.getMaximumAmount()) > 0) {
-                            newConsumed = lineOfCredit.getMaximumAmount();
-                        }
-                        BigDecimal newAvailable = lineOfCredit.getMaximumAmount().subtract(newConsumed);
+                        BigDecimal newAvailable = lineOfCredit.getMaximumAmount().subtract(newBlockedAmount).subtract(consumed);
                         if (newAvailable.compareTo(BigDecimal.ZERO) < 0) {
                             newAvailable = BigDecimal.ZERO;
                         }
-                        lineOfCredit.getSummary().setConsumedAmount(newConsumed);
                         lineOfCredit.getSummary().setAvailableBalance(newAvailable);
 
                         // Create transaction record for the block/unblock operation
                         if (difference.compareTo(BigDecimal.ZERO) > 0) {
                             // Blocking more amount (decreasing effective limit)
-                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.BLOCK, consumed);
+                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.BLOCK);
                         } else {
                             // Unblocking amount (increasing effective limit)
-                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.UNBLOCK, consumed);
+                            createBlockUnblockTransaction(lineOfCredit, difference.abs(), LineOfCreditTransactionType.UNBLOCK);
                         }
 
                         changes.put("blockedAmount", newBlockedAmount);
@@ -1361,15 +1352,13 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
                     ADJUSTED_CREDIT_LIMIT);
         }
 
-        // Update blocked amount; consumed includes blocked (available + consumed = credit limit)
-        BigDecimal consumedBefore = loc.getSummary().getConsumedAmount() != null ? loc.getSummary().getConsumedAmount() : BigDecimal.ZERO;
+        // Update blocked amount and recalculate available balance
         loc.getSummary().setBlockedAmount(newBlockedAmount);
-        BigDecimal newConsumed = consumedBefore.add(amountToBlock);
-        loc.getSummary().setConsumedAmount(newConsumed);
-        loc.getSummary().setAvailableBalance(loc.getMaximumAmount().subtract(newConsumed));
+        BigDecimal newAvailableBalance = currentAvailableBalance.subtract(amountToBlock);
+        loc.getSummary().setAvailableBalance(newAvailableBalance);
 
         // Create transaction record for the block operation
-        createBlockUnblockTransaction(loc, amountToBlock, LineOfCreditTransactionType.BLOCK, consumedBefore);
+        createBlockUnblockTransaction(loc, amountToBlock, LineOfCreditTransactionType.BLOCK);
 
         this.lineOfCreditRepository.saveAndFlush(loc);
 
@@ -1378,7 +1367,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         Map<String, Object> changes = new LinkedHashMap<>();
         changes.put("previousBlockedAmount", currentBlockedAmount);
         changes.put("newBlockedAmount", newBlockedAmount);
-        changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+        changes.put("availableBalance", newAvailableBalance);
 
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
     }
@@ -1387,7 +1376,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
      * Unblocks (releases) a specified amount from the LOC blocked reserve, restoring it to the drawable available
      * balance.
      * <p>
-     * Formula after unblocking: consumed = principal outstanding + blocked; available = credit limit − consumed
+     * Formula after unblocking: Available Amount = Credit Limit − Blocked Amount − Consumed Amount
      *
      * @param lineOfCreditId
      *            the LOC identifier
@@ -1421,18 +1410,14 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
         BigDecimal newBlockedAmount = currentBlockedAmount.subtract(amountToUnblock);
 
-        // Update blocked amount; consumed includes blocked (available + consumed = credit limit)
-        BigDecimal consumedBefore = loc.getSummary().getConsumedAmount() != null ? loc.getSummary().getConsumedAmount() : BigDecimal.ZERO;
+        // Update blocked amount and recalculate available balance
         loc.getSummary().setBlockedAmount(newBlockedAmount);
-        BigDecimal newConsumed = consumedBefore.subtract(amountToUnblock);
-        if (newConsumed.compareTo(BigDecimal.ZERO) < 0) {
-            newConsumed = BigDecimal.ZERO;
-        }
-        loc.getSummary().setConsumedAmount(newConsumed);
-        loc.getSummary().setAvailableBalance(loc.getMaximumAmount().subtract(newConsumed));
+        BigDecimal currentAvailableBalance = loc.getSummary().getAvailableBalance();
+        BigDecimal newAvailableBalance = currentAvailableBalance.add(amountToUnblock);
+        loc.getSummary().setAvailableBalance(newAvailableBalance);
 
         // Create transaction record for the unblock operation
-        createBlockUnblockTransaction(loc, amountToUnblock, LineOfCreditTransactionType.UNBLOCK, consumedBefore);
+        createBlockUnblockTransaction(loc, amountToUnblock, LineOfCreditTransactionType.UNBLOCK);
 
         this.lineOfCreditRepository.saveAndFlush(loc);
 
@@ -1441,7 +1426,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         Map<String, Object> changes = new LinkedHashMap<>();
         changes.put("previousBlockedAmount", currentBlockedAmount);
         changes.put("newBlockedAmount", newBlockedAmount);
-        changes.put("availableBalance", loc.getSummary().getAvailableBalance());
+        changes.put("availableBalance", newAvailableBalance);
 
         return new CommandProcessingResultBuilder().withEntityId(lineOfCreditId).with(changes).build();
     }
