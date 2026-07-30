@@ -2472,7 +2472,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             log.warn("Failed to repair orphan overdue installment charge links for loan {} before LPI apply: {}", loanId, e.getMessage());
         }
 
-        // Delegate to parent to apply penalties and perform schedule recalculation and transaction reprocessing
+        // Delegate to parent to apply penalties; CredX skips full transaction reprocess on this path (see override hook).
         super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
 
         // After penalties and schedule changes, recompute custom statuses and fire webhooks
@@ -2518,5 +2518,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         } catch (Exception e) {
             log.warn("Failed to recompute/publish custom statuses after overdue penalties for loan {}: {}", loanId, e.getMessage());
         }
+    }
+
+    /**
+     * Daily LPI accrual posts new penalty charges only. Replaying all repayments under PIPF reverses SQL/manual
+     * principal-first corrections and creates duplicate UI rows — skip full reprocess on this path.
+     */
+    @Override
+    protected boolean shouldReprocessTransactionsAfterOverdueChargeApply(final Loan loan) {
+        return false;
     }
 }

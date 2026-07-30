@@ -928,7 +928,12 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
                     final ScheduleGeneratorDTO scheduleGeneratorDTO = loanUtilService.buildScheduleGeneratorDTO(loan, null);
                     loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
                 }
-                reprocessLoanTransactionsService.reprocessTransactions(loan);
+                if (shouldReprocessTransactionsAfterOverdueChargeApply(loan)) {
+                    reprocessLoanTransactionsService.reprocessTransactions(loan);
+                } else {
+                    log.info("Skipping transaction reprocess after overdue charge apply for loan {}", loan.getId());
+                    loan.updateLoanSummaryDerivedFields();
+                }
                 loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             }
 
@@ -944,6 +949,14 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         final Long processingEndTime = System.currentTimeMillis();
         log.info("Time taken to process overdue charges for loan {} is {} seconds", loanId,
                 (processingEndTime - processingStartTime) / 1000);
+    }
+
+    /**
+     * Hook for subclasses. When {@code false}, overdue (LPI) charge application updates charges and derived loan
+     * summary without replaying historical repayments. Default {@code true} preserves upstream Fineract behaviour.
+     */
+    protected boolean shouldReprocessTransactionsAfterOverdueChargeApply(final Loan loan) {
+        return true;
     }
 
     private boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
