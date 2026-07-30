@@ -2472,7 +2472,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             log.warn("Failed to repair orphan overdue installment charge links for loan {} before LPI apply: {}", loanId, e.getMessage());
         }
 
-        // Delegate to parent to apply penalties; CredX skips full transaction reprocess on this path (see override hook).
+        // Delegate to parent to apply penalties; CredX skips full transaction reprocess on this path (see override
+        // hook).
         super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
 
         // After penalties and schedule changes, recompute custom statuses and fire webhooks
