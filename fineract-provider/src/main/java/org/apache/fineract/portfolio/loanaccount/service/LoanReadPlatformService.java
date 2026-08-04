@@ -72,6 +72,15 @@ public interface LoanReadPlatformService {
 
     LoanTransactionData retrieveLoanTransactionTemplate(Long loanId);
 
+    /**
+     * Date-aware variant of the repayment template. Defaults to the date-agnostic template; the CredibleX
+     * implementation overrides it to quote the penalty net of the LPI that will be auto-waived when a LOC
+     * (payable/receivable) loan is settled ON an installment due date, so the previewed amount matches what is charged.
+     */
+    default LoanTransactionData retrieveLoanTransactionTemplate(Long loanId, LocalDate onDate) {
+        return retrieveLoanTransactionTemplate(loanId);
+    }
+
     LoanTransactionData retrieveWaiveInterestDetails(Long loanId);
 
     LoanTransactionData retrieveLoanTransaction(Long loanId, Long transactionId);

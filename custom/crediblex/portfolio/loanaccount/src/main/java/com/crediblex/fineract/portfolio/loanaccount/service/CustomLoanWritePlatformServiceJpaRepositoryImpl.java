@@ -22,6 +22,7 @@ import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisb
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -1529,6 +1530,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // The parent will call validateRepayment which has the broken validation, so we need to
         // catch and handle that exception, then re-validate with the fixed logic
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        // Fix 2: for a LOC (payable/receivable) repayment recorded ON an installment due date, auto-waive the LPI that
+        // accrued on/after that date up to today, so the operator no longer has to manually waive it before repaying.
+        // Runs once here, BEFORE the repayment settles - so the payment allocates against the reduced penalty and does
+        // not overpay (mirrors the reduced amount the date-aware repayment template previews). The waive is idempotent
+        // (already-waived/paid charges are skipped), so the multi-tranche retry path below cannot double-waive. Scope:
+        // LOC drawdown loans only; every other product is untouched.
+        final LocalDate repaymentValueDate = command.localDateValueOfParameterNamed("transactionDate");
+        if (repaymentTransactionType.isRepayment() && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()
+                && LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, repaymentValueDate)) {
+            this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesOnOrAfterDate(loanId, repaymentValueDate);
+        }
         try {
             // Call the parent implementation to handle the core repayment logic
             CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);

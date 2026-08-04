@@ -602,7 +602,11 @@ public class LoanTransactionsApiResource {
         LoanTransactionData transactionData;
 
         if (CommandParameterUtil.is(commandParam, "repayment")) {
-            transactionData = this.loanReadPlatformService.retrieveLoanTransactionTemplate(resolvedLoanId);
+            // Forward the chosen date so the (LOC) repayment template can preview the penalty net of LPI that will be
+            // auto-waived when settling on an installment due date. Defaults to today when no date is supplied.
+            final LocalDate transactionDate = transactionDateParam == null ? DateUtils.getBusinessLocalDate()
+                    : transactionDateParam.getDate("transactionDate", dateFormat, locale);
+            transactionData = this.loanReadPlatformService.retrieveLoanTransactionTemplate(resolvedLoanId, transactionDate);
         } else if (CommandParameterUtil.is(commandParam, "merchantIssuedRefund")) {
             LocalDate transactionDate = DateUtils.getBusinessLocalDate();
             transactionData = this.loanReadPlatformService.retrieveLoanPrePaymentTemplate(LoanTransactionType.MERCHANT_ISSUED_REFUND,

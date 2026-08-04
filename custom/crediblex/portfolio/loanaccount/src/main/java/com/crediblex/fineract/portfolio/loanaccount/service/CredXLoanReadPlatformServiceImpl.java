@@ -47,6 +47,7 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransact
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
@@ -251,6 +252,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     @Override
     public LoanTransactionData retrieveLoanTransactionTemplate(Long loanId) {
+        return retrieveLoanTransactionTemplate(loanId, null);
+    }
+
+    @Override
+    public LoanTransactionData retrieveLoanTransactionTemplate(Long loanId, LocalDate onDate) {
         RapaymentStatusQuery.Result result = credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId);
 
         CurrencyData currencyData = new CurrencyData(result.getCurrencyCode(), result.getCurrencyName(), result.getCurrencyDigits(),
@@ -263,8 +269,24 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal principalPortion = result.getPrincipalDue();
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
-        final BigDecimal penaltyDue = result.getPenaltyDue();
+        BigDecimal penaltyDue = result.getPenaltyDue();
         final BigDecimal taxDue = result.getTaxDue();
+
+        // Fix 2: live preview. When settling a LOC (payable/receivable) loan ON an installment due date, the repayment
+        // (CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment) auto-waives the LPI accrued on/after that
+        // date, so quote the penalty net of it here - otherwise the shown/charged amount would overpay. Uses the exact
+        // same window + filter as the waive (via LocDueDateRepaymentUtils), guaranteeing preview == settled amount.
+        // No-op for non-LOC loans, non-due-date dates, or when there is no post-due LPI to waive.
+        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0
+                && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()) {
+            final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+            if (LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, onDate)) {
+                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate, DateUtils.getBusinessLocalDate(),
+                        loan.getCurrency());
+                penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
+            }
+        }
+
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
         final BigDecimal netDisbursalAmount = result.getNetDisbursalAmount();
         boolean manuallyReversed = false;
