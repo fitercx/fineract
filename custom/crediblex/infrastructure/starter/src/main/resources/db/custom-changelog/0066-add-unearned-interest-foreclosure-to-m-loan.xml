@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet author="crediblex" id="0066-add-unearned-interest-foreclosure-to-m-loan">
+        <addColumn tableName="m_loan">
+            <column name="unearned_interest_foreclosure_derived" type="decimal(19,6)" defaultValueNumeric="0">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <changeSet author="crediblex" id="0066-backfill-unearned-interest-foreclosure">
+        <sql>
+            UPDATE m_loan l
+            SET unearned_interest_foreclosure_derived = GREATEST(
+                COALESCE((
+                    SELECT SUM(lrs.interest_amount)
+                    FROM m_loan_repayment_schedule_history lrs
+                    WHERE lrs.loan_id = l.id
+                      AND lrs.version = (
+                          SELECT MIN(lrs2.version)
+                          FROM m_loan_repayment_schedule_history lrs2
+                          WHERE lrs2.loan_id = l.id
+                      )
+                ), 0)
+                - COALESCE(l.interest_repaid_derived, 0)
+                - COALESCE(l.interest_outstanding_derived, 0),
+                0
+            )
+            WHERE l.loan_sub_status_id = 100
+              AND COALESCE(l.unearned_interest_foreclosure_derived, 0) = 0;
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

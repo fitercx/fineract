@@ -46,6 +46,13 @@ import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.Rapaymen
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.OriginalInstallmentRow;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInterestCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.EarlyRepaymentInterestDayCountEnricher;
+import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureWaivedSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureUnearnedInterestDetailsData;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
@@ -1738,6 +1745,20 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_FORCED_CLOSURE, isForcedClosure);
             extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.IS_RESTRUCTURED, isRestructured);
 
+            try {
+                final ForeclosureUnearnedInterestDetailsData foreclosureUnearnedInterestDetails = resolveForeclosureUnearnedInterestDetails(
+                        loanSubStatus, id);
+                if (foreclosureUnearnedInterestDetails != null) {
+                    extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.FORECLOSURE_UNEARNED_INTEREST_DETAILS,
+                            foreclosureUnearnedInterestDetails);
+                    extendedLoanAccountData.addCustomParameter(LoanAccountAdditionalProperties.UNEARNED_INTEREST_DUE_TO_FORECLOSURE,
+                            foreclosureUnearnedInterestDetails.getUnearnedInterest());
+                }
+            } catch (Exception e) {
+                log.warn("Unable to compute foreclosure unearned interest details for loan {}: {}", id, e.getMessage());
+            }
+
+
             extractLocDetails(extendedLoanAccountData, rs);
 
             extendedLoanAccountData.setFactorRate(factorRate);
@@ -3321,4 +3342,168 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return loanTransactionData;
     }
 
+    private ForeclosureUnearnedInterestDetailsData resolveForeclosureUnearnedInterestDetails(final EnumOptionData loanSubStatus,
+            final Long loanId) {
+        final ForeclosureUnearnedInterestDetailsData earlyRepaymentDetails = loadEarlyRepaymentUnearnedInterestDetails(loanId);
+        if (earlyRepaymentDetails != null) {
+            return earlyRepaymentDetails;
+        }
+
+        if (loanSubStatus == null || loanSubStatus.getId() == null
+                || loanSubStatus.getId().intValue() != LoanSubStatus.FORECLOSED.getValue()) {
+            return null;
+        }
+
+        final String sql = """
+                SELECT l.closedon_date AS foreclosureDate,
+                       COALESCE(l.expected_maturedon_date, MAX(h.duedate)) AS originalMaturityDate,
+                       GREATEST(COALESCE(l.expected_maturedon_date, MAX(h.duedate)) - l.closedon_date, 0) AS remainingDays,
+                       COALESCE(SUM(h.interest_amount), 0) AS originalScheduleInterest,
+                       COALESCE(l.interest_repaid_derived, 0) AS interestCollected,
+                       COALESCE(l.interest_outstanding_derived, 0) AS interestOutstanding,
+                       COUNT(*) FILTER (WHERE h.duedate > l.closedon_date) AS removedInstallmentCount
+                FROM m_loan l
+                LEFT JOIN m_loan_repayment_schedule_history h
+                    ON h.loan_id = l.id
+                   AND h.version = (
+                       SELECT MIN(h2.version)
+                       FROM m_loan_repayment_schedule_history h2
+                       WHERE h2.loan_id = l.id
+                   )
+                WHERE l.id = ?
+                GROUP BY l.id, l.closedon_date, l.expected_maturedon_date, l.interest_repaid_derived, l.interest_outstanding_derived
+                """;
+
+        return jdbcTemplate.query(sql, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+
+            final LocalDate foreclosureDate = JdbcSupport.getLocalDate(rs, "foreclosureDate");
+            final LocalDate originalMaturityDate = JdbcSupport.getLocalDate(rs, "originalMaturityDate");
+            final Integer remainingDays = JdbcSupport.getInteger(rs, "remainingDays");
+            final BigDecimal originalScheduleInterest = rs.getBigDecimal("originalScheduleInterest");
+            final BigDecimal interestCollected = rs.getBigDecimal("interestCollected");
+            final BigDecimal interestOutstanding = rs.getBigDecimal("interestOutstanding");
+            final Integer removedInstallmentCount = JdbcSupport.getInteger(rs, "removedInstallmentCount");
+
+            BigDecimal unearnedInterest = ForeclosureUnearnedInterestCalculator.computeFromOriginalScheduleHistory(originalScheduleInterest,
+                    interestCollected, interestOutstanding);
+
+            if (unearnedInterest == null || unearnedInterest.compareTo(BigDecimal.ZERO) <= 0) {
+                return null;
+            }
+
+            final List<ForeclosureWaivedSchedulePeriodData> waivedPeriods = loadForeclosureWaivedPeriods(loanId, foreclosureDate);
+
+            final ForeclosureUnearnedInterestDetailsData details = new ForeclosureUnearnedInterestDetailsData(unearnedInterest,
+                    foreclosureDate, originalMaturityDate, remainingDays, removedInstallmentCount, originalScheduleInterest,
+                    interestCollected, waivedPeriods, "FORECLOSURE");
+            return details;
+        }, loanId);
+    }
+
+    private ForeclosureUnearnedInterestDetailsData loadEarlyRepaymentUnearnedInterestDetails(final Long loanId) {
+        final String summarySql = """
+                SELECT l.closedon_date AS closureDate,
+                       MAX(rs.duedate) AS originalMaturityDate,
+                       GREATEST(MAX(rs.duedate) - l.closedon_date, 0) AS remainingDays,
+                       COALESCE(SUM(snap.interest_charged_original), 0) AS originalScheduleInterest,
+                       COALESCE(SUM(rs.interest_amount), 0) AS interestCollected,
+                       COALESCE(SUM(snap.interest_charged_original - rs.interest_amount), 0) AS unearnedInterest,
+                       COUNT(*) AS waivedPeriodCount
+                FROM m_loan l
+                JOIN m_loan_repayment_schedule rs ON rs.loan_id = l.id
+                JOIN crediblex_loan_installment_interest_snapshot snap ON snap.loan_repayment_schedule_id = rs.id
+                WHERE l.id = ?
+                  AND l.closedon_date IS NOT NULL
+                  AND snap.interest_charged_original > rs.interest_amount
+                GROUP BY l.id, l.closedon_date
+                HAVING COALESCE(SUM(snap.interest_charged_original - rs.interest_amount), 0) > 0
+                """;
+
+        final ForeclosureUnearnedInterestDetailsData summary = jdbcTemplate.query(summarySql, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+            return new ForeclosureUnearnedInterestDetailsData(rs.getBigDecimal("unearnedInterest"),
+                    JdbcSupport.getLocalDate(rs, "closureDate"), JdbcSupport.getLocalDate(rs, "originalMaturityDate"),
+                    JdbcSupport.getInteger(rs, "remainingDays"), JdbcSupport.getInteger(rs, "waivedPeriodCount"),
+                    rs.getBigDecimal("originalScheduleInterest"), rs.getBigDecimal("interestCollected"), null, "EARLY_REPAYMENT");
+        }, loanId);
+
+        if (summary == null) {
+            return null;
+        }
+
+        summary.setWaivedPeriods(loadEarlyRepaymentWaivedPeriods(loanId));
+        if (summary.getWaivedPeriods() != null && !summary.getWaivedPeriods().isEmpty()) {
+            EarlyRepaymentInterestDayCountEnricher.enrichSummaryFromFirstPeriod(summary, summary.getWaivedPeriods().get(0));
+        }
+        return summary;
+    }
+
+    private List<ForeclosureWaivedSchedulePeriodData> loadEarlyRepaymentWaivedPeriods(final Long loanId) {
+        final String sql = """
+                SELECT rs.installment, rs.fromdate, rs.duedate,
+                       COALESCE(rs.obligations_met_on_date, rs.duedate) AS paymentDate,
+                       snap.interest_charged_original AS scheduledInterest,
+                       rs.interest_amount AS interestCharged,
+                       snap.interest_charged_original - rs.interest_amount AS waivedInterest
+                FROM m_loan_repayment_schedule rs
+                JOIN crediblex_loan_installment_interest_snapshot snap ON snap.loan_repayment_schedule_id = rs.id
+                WHERE rs.loan_id = ?
+                  AND snap.interest_charged_original > rs.interest_amount
+                ORDER BY rs.installment
+                """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            final ForeclosureWaivedSchedulePeriodData period = new ForeclosureWaivedSchedulePeriodData(
+                    JdbcSupport.getInteger(rs, "installment"), JdbcSupport.getLocalDate(rs, "fromdate"),
+                    JdbcSupport.getLocalDate(rs, "duedate"), rs.getBigDecimal("scheduledInterest"), rs.getBigDecimal("waivedInterest"));
+            EarlyRepaymentInterestDayCountEnricher.enrichPeriod(period, JdbcSupport.getLocalDate(rs, "paymentDate"),
+                    rs.getBigDecimal("interestCharged"));
+            return period;
+        }, loanId);
+    }
+
+    private List<ForeclosureWaivedSchedulePeriodData> loadForeclosureWaivedPeriods(final Long loanId, final LocalDate foreclosureDate) {
+        if (foreclosureDate == null) {
+            return List.of();
+        }
+
+        final String originalScheduleSql = """
+                SELECT h.installment, h.fromdate, h.duedate, h.interest_amount
+                FROM m_loan_repayment_schedule_history h
+                WHERE h.loan_id = ?
+                  AND h.version = (
+                      SELECT MIN(h2.version)
+                      FROM m_loan_repayment_schedule_history h2
+                      WHERE h2.loan_id = h.loan_id
+                  )
+                ORDER BY h.installment
+                """;
+
+        final List<OriginalInstallmentRow> originalInstallments = jdbcTemplate.query(originalScheduleSql,
+                (rs, rowNum) -> new OriginalInstallmentRow(JdbcSupport.getInteger(rs, "installment"),
+                        JdbcSupport.getLocalDate(rs, "fromdate"), JdbcSupport.getLocalDate(rs, "duedate"),
+                        rs.getBigDecimal("interest_amount")),
+                loanId);
+
+        final String currentScheduleSql = """
+                SELECT rs.fromdate, rs.duedate, rs.interest_amount
+                FROM m_loan_repayment_schedule rs
+                WHERE rs.loan_id = ?
+                ORDER BY rs.installment
+                """;
+
+        final List<CurrentInstallmentRow> currentInstallments = jdbcTemplate.query(currentScheduleSql,
+                (rs, rowNum) -> new CurrentInstallmentRow(JdbcSupport.getLocalDate(rs, "fromdate"), JdbcSupport.getLocalDate(rs, "duedate"),
+                        rs.getBigDecimal("interest_amount")),
+                loanId);
+
+        return ForeclosureWaivedPeriodCalculator.computeWaivedPeriods(foreclosureDate, originalInstallments, currentInstallments);
+    }
+
 }
+

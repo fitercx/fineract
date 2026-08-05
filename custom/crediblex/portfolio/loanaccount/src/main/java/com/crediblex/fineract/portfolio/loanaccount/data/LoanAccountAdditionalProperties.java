@@ -11,6 +11,8 @@ public final class LoanAccountAdditionalProperties {
 
     public static String IS_FORCED_CLOSURE = "isForcedClosure";
     public static String IS_RESTRUCTURED = "isRestructured";
+    public static String UNEARNED_INTEREST_DUE_TO_FORECLOSURE = "unearnedInterestDueToForeclosure";
+    public static String FORECLOSURE_UNEARNED_INTEREST_DETAILS = "foreclosureUnearnedInterestDetails";
     public static String LOAN_INTEREST_VARIATIONS = "loanInterestVariations";
     // Added invoice related parameters
     public static String INVOICE_NO = "invoiceNo";
