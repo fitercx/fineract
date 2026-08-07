@@ -3,7 +3,6 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
-import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanOverdueDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
@@ -46,7 +45,6 @@ import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRu
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
-import org.apache.fineract.infrastructure.event.business.domain.loan.LoanApplyOverdueChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.LoanBalanceChangedBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanUpdateChargeBusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.loan.charge.LoanWaiveChargeBusinessEvent;
@@ -60,12 +58,10 @@ import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
-import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
-import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
@@ -91,8 +87,6 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepositor
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.exception.LoanChargeAdjustmentException;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.OverdueLoanScheduleData;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.DefaultScheduledDateGenerator;
-import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.ScheduledDateGenerator;
 import org.apache.fineract.portfolio.loanaccount.mapper.LoanAccountingBridgeMapper;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJsonValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
@@ -109,7 +103,6 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
-import org.apache.fineract.portfolio.loanproduct.data.LoanOverdueDTO;
 import org.apache.fineract.portfolio.note.domain.Note;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
@@ -142,10 +135,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     private final LoanChargeApiJsonValidator loanChargeApiJsonValidator;
     private final ExternalIdFactory externalIdFactory;
     private final LoanAssembler loanAssembler;
-    private final ChargeRepositoryWrapper chargeRepository;
-    private final LoanChargeAssembler loanChargeAssembler;
-    private final LoanWritePlatformService loanWritePlatformService;
-    private final LoanScheduleService loanScheduleService;
     private final PaymentDetailWritePlatformService paymentDetailWritePlatformService;
     private final LoanAccountDomainService loanAccountDomainService;
     private final BusinessEventNotifierService businessEventNotifierService;
@@ -224,10 +213,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         this.loanChargeApiJsonValidator = loanChargeApiJsonValidator;
         this.externalIdFactory = externalIdFactory;
         this.loanAssembler = loanAssembler;
-        this.chargeRepository = chargeRepository;
-        this.loanChargeAssembler = loanChargeAssembler;
-        this.loanWritePlatformService = loanWritePlatformService;
-        this.loanScheduleService = loanScheduleService;
         this.paymentDetailWritePlatformService = paymentDetailWritePlatformService;
         this.loanAccountDomainService = loanAccountDomainService;
         this.businessEventNotifierService = businessEventNotifierService;
@@ -2470,79 +2455,6 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             }
         }
         return false;
-    }
-
-    @Override
-    protected LoanOverdueDTO applyChargeToOverdueLoanInstallment(final Loan loan, final Long loanChargeId, final Integer periodNumber,
-            final JsonCommand command) {
-        boolean runInterestRecalculation = false;
-        boolean chargesApplied = false;
-        final Charge chargeDefinition = this.chargeRepository.findOneWithNotFoundDetection(loanChargeId);
-
-        Collection<Integer> frequencyNumbers = loanChargeReadPlatformService.retrieveOverdueInstallmentChargeFrequencyNumber(loan,
-                chargeDefinition, periodNumber);
-
-        Integer feeFrequency = chargeDefinition.feeFrequency();
-        final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
-        Map<Integer, LocalDate> scheduleDates = new HashMap<>();
-        final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
-        final LocalDate dueDate = command.localDateValueOfParameterNamed("dueDate");
-        long diff = penaltyWaitPeriodValue + 1 - penaltyPostingWaitPeriodValue;
-        if (diff < 1) {
-            diff = 1L;
-        }
-        LocalDate startDate = dueDate.plusDays(penaltyWaitPeriodValue + 1L);
-        int frequencyNumber = 1;
-        if (feeFrequency == null) {
-            scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
-        } else {
-            while (!DateUtils.isDateInTheFuture(startDate)) {
-                scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
-
-                startDate = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency),
-                        chargeDefinition.feeInterval(), startDate);
-            }
-        }
-
-        for (Integer frequency : frequencyNumbers) {
-            scheduleDates.remove(frequency);
-        }
-
-        LoanRepaymentScheduleInstallment installment = null;
-        LocalDate lastChargeAppliedDate = dueDate;
-        LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
-        if (!scheduleDates.isEmpty()) {
-            installment = loan.fetchRepaymentScheduleInstallment(periodNumber);
-            lastChargeAppliedDate = installment.getDueDate();
-            businessEventNotifierService.notifyPreBusinessEvent(new LoanApplyOverdueChargeBusinessEvent(loan));
-
-            for (Map.Entry<Integer, LocalDate> entry : scheduleDates.entrySet()) {
-
-                final LoanCharge loanCharge = loanChargeAssembler.createNewFromJson(loan, chargeDefinition, command, entry.getValue());
-
-                if (BigDecimal.ZERO.compareTo(loanCharge.amount()) == 0) {
-                    continue;
-                }
-                LoanOverdueInstallmentCharge overdueInstallmentCharge = new LoanOverdueInstallmentCharge(loanCharge, installment,
-                        entry.getKey());
-                loanCharge.updateOverdueInstallmentCharge(overdueInstallmentCharge);
-
-                boolean isAppliedOnBackDate = addCharge(loan, chargeDefinition, loanCharge);
-                chargesApplied = true;
-                runInterestRecalculation = runInterestRecalculation || isAppliedOnBackDate;
-                if (DateUtils.isBefore(entry.getValue(), recalculateFrom)) {
-                    recalculateFrom = entry.getValue();
-                }
-                if (DateUtils.isAfter(entry.getValue(), lastChargeAppliedDate)) {
-                    lastChargeAppliedDate = entry.getValue();
-                }
-            }
-            businessEventNotifierService.notifyPostBusinessEvent(new LoanApplyOverdueChargeBusinessEvent(loan));
-            businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
-        }
-
-        return new CredXLoanOverdueDTO(loan, runInterestRecalculation, recalculateFrom, lastChargeAppliedDate, chargesApplied);
     }
 
     @Override

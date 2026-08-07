@@ -738,6 +738,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         return "(" + principalOutstandingSql(alias) + " + " + interestOutstandingSql(alias) + " + " + lpiOutstandingSql(alias) + ")";
     }
 
+    private String overdueInstallmentHasChargeableOutstandingSql(final String alias) {
+        return "(" + principalOutstandingSql(alias) + " > 0 or " + interestOutstandingSql(alias) + " > 0 or " + lpiOutstandingSql(alias)
+                + " > 0)";
+    }
+
     private String principalOutstandingSql(final String alias) {
         return "(coalesce(" + alias + ".principal_amount, 0) - coalesce(" + alias + ".principal_completed_derived, 0) - coalesce(" + alias
                 + ".principal_writtenoff_derived, 0))";
@@ -2201,7 +2206,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
                 .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and ")
-                .append(overdueInstallmentOutstandingSql("ls")).append(" > 0 ");
+                .append(overdueInstallmentHasChargeableOutstandingSql("ls")).append(" ");
         if (loanId != null) {
             sqlBuilder.append(" and ml.id = ? ");
         }
