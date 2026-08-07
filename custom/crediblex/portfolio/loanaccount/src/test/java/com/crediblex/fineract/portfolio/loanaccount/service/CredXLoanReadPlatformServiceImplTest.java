@@ -630,4 +630,24 @@ public class CredXLoanReadPlatformServiceImplTest {
         assertEquals(Long.valueOf(4L), summary.getCollected().getLast30Days().getCount());
         assertEquals(new BigDecimal("800"), summary.getCollected().getLast30Days().getLpi());
     }
+
+    @Test
+    void retrieveAllLoansWithOverdueInstallments_filtersToInstallmentsWithOutstandingBalance() {
+        when(sqlGenerator.currentBusinessDate()).thenReturn("CURRENT_DATE");
+        when(sqlGenerator.subDate(anyString(), anyString(), anyString())).thenReturn("DATE_SUB(CURRENT_DATE, INTERVAL ? DAY)");
+        when(jdbcTemplate.query(anyString(), any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                any(Object[].class))).thenReturn(List.of());
+
+        credXLoanReadPlatformService.retrieveAllLoansWithOverdueInstallments(0L, true);
+
+        final org.mockito.ArgumentCaptor<String> sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbcTemplate).query(sqlCaptor.capture(),
+                any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                eq(0L));
+        final String sql = sqlCaptor.getValue();
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("principal_amount"), "SQL should compute principal outstanding");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("interest_amount"), "SQL should compute interest outstanding");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("penalty_charges_amount"), "SQL should compute LPI outstanding");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("> 0"), "SQL should require overdue outstanding > 0");
+    }
 }

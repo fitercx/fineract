@@ -156,18 +156,17 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     }
 
     /**
-     * Process a batch of loans in a separate transaction
+     * Process a batch of loans, each in its own transaction, so one slow/failed loan does not hold locks for the whole
+     * batch.
      */
     private void processBatch(List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> batch, List<Throwable> exceptions) {
         final TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
 
-        transactionTemplate.executeWithoutResult(status -> {
-            for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : batch) {
-                processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions);
-            }
-        });
+        for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : batch) {
+            transactionTemplate.executeWithoutResult(status -> processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions));
+        }
     }
 
     /**

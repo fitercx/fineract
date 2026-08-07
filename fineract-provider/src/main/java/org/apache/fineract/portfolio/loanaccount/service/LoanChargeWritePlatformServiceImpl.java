@@ -959,7 +959,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         return true;
     }
 
-    private boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
+    protected boolean isPenaltyChargeApplicableForLoan(final Loan loan) {
         final boolean factorRateEnabled = loan.isFactorRateEnabled();
         if (!factorRateEnabled) {
             return true;
@@ -1165,7 +1165,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         }
     }
 
-    private boolean addCharge(final Loan loan, final Charge chargeDefinition, LoanCharge loanCharge) {
+    protected boolean addCharge(final Loan loan, final Charge chargeDefinition, LoanCharge loanCharge) {
         if (!loan.hasCurrencyCodeOf(chargeDefinition.getCurrencyCode())) {
             final String errorMessage = "Charge and Loan must have the same currency.";
             throw new InvalidCurrencyException("loanCharge", "attach.to.loan", errorMessage);
@@ -1201,7 +1201,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         return DateUtils.isBeforeBusinessDate(loanCharge.getDueLocalDate());
     }
 
-    private LoanOverdueDTO applyChargeToOverdueLoanInstallment(final Loan loan, final Long loanChargeId, final Integer periodNumber,
+    protected LoanOverdueDTO applyChargeToOverdueLoanInstallment(final Loan loan, final Long loanChargeId, final Integer periodNumber,
             final JsonCommand command) {
         boolean runInterestRecalculation = false;
         final Charge chargeDefinition = this.chargeRepository.findOneWithNotFoundDetection(loanChargeId);
@@ -1271,7 +1271,7 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         return new LoanOverdueDTO(loan, runInterestRecalculation, recalculateFrom, lastChargeAppliedDate);
     }
 
-    private void addInstallmentIfPenaltyAppliedAfterLastDueDate(Loan loan, LocalDate lastChargeDate) {
+    protected void addInstallmentIfPenaltyAppliedAfterLastDueDate(Loan loan, LocalDate lastChargeDate) {
         if (lastChargeDate != null) {
             List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
             LoanRepaymentScheduleInstallment lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
