@@ -888,7 +888,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
                 // Update loan schedule and summary WITHOUT reprocessing transactions (to avoid date validation)
                 loan.updateLoanScheduleDependentDerivedFields();
-                loan.updateLoanSummaryAndStatus();
+                // Recompute status AND close as obligations-met if fully settled. A bare updateLoanSummaryAndStatus()
+                // leaves a fully-repaid loan stuck ACTIVE when a settled charge's paid/waived flag is unset.
+                LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, DateUtils.getBusinessLocalDate(),
+                        defaultLoanLifecycleStateMachine);
                 loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
                 loanRepositoryWrapper.saveAndFlush(loan);
                 // Ensure delinquency tags and m_loan_arrears_aging are refreshed for date-based, EMI-only and
@@ -1066,7 +1069,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 recalculateInstallmentChargesFromActiveLoanCharges(loan);
             }
             loan.updateLoanScheduleDependentDerivedFields();
-            loan.updateLoanSummaryAndStatus();
+            // Recompute status AND close as obligations-met if fully settled (see refreshSummaryStatusAndCloseIfSettled).
+            LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, DateUtils.getBusinessLocalDate(),
+                    defaultLoanLifecycleStateMachine);
             this.loanRepositoryWrapper.saveAndFlush(loan);
             this.loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
             loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
@@ -1190,7 +1195,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 recalculateInstallmentChargesFromActiveLoanCharges(loan);
             }
             loan.updateLoanScheduleDependentDerivedFields();
-            loan.updateLoanSummaryAndStatus();
+            // Recompute status AND close as obligations-met if fully settled (see refreshSummaryStatusAndCloseIfSettled).
+            LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, DateUtils.getBusinessLocalDate(),
+                    defaultLoanLifecycleStateMachine);
             this.loanRepositoryWrapper.saveAndFlush(loan);
             this.loanAccountDomainService.setLoanDelinquencyTag(loan, DateUtils.getBusinessLocalDate());
             loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
@@ -1346,7 +1353,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
 
         loan.updateLoanScheduleDependentDerivedFields();
-        loan.updateLoanSummaryAndStatus();
+        // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0)
+        // this is a no-op; on a fully-repaid one it stops the loan being left stuck ACTIVE after the reversal.
+        LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, reversalDate, defaultLoanLifecycleStateMachine);
         loanRepositoryWrapper.saveAndFlush(loan);
 
         // Log loan status and overpaid balance AFTER reversal
