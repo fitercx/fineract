@@ -100,7 +100,8 @@ class LocDueDateRepaymentUtilsTest {
         final LoanCharge inWindow = overdueLpi(LocalDate.of(2026, 7, 26), "50.00", false, false); // counted
         final LoanCharge waived = overdueLpi(LocalDate.of(2026, 7, 27), "30.00", true, false); // waived -> excluded
         final LoanCharge paid = overdueLpi(LocalDate.of(2026, 7, 28), "20.00", false, true); // paid -> excluded
-        final LoanCharge beforeWindow = overdueLpi(LocalDate.of(2026, 7, 20), "40.00", false, false); // before -> excluded
+        final LoanCharge beforeWindow = overdueLpi(LocalDate.of(2026, 7, 20), "40.00", false, false); // before ->
+                                                                                                      // excluded
         final LoanCharge nonLpi = mock(LoanCharge.class); // not overdue-installment -> excluded
         when(nonLpi.isOverdueInstallmentCharge()).thenReturn(false);
 

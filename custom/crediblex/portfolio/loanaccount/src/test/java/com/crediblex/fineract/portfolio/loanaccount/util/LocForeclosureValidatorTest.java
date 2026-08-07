@@ -89,7 +89,6 @@ class LocForeclosureValidatorTest {
         final LoanRepaymentScheduleInstallment paid = mock(LoanRepaymentScheduleInstallment.class);
         when(paid.isNotFullyPaidOff()).thenReturn(false);
         when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(paid));
-        assertThatCode(() -> LocForeclosureValidator.validateNotDueOrOverdue(loan, DUE_DATE, locParams()))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> LocForeclosureValidator.validateNotDueOrOverdue(loan, DUE_DATE, locParams())).doesNotThrowAnyException();
     }
 }

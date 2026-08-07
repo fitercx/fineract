@@ -29,8 +29,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 /**
  * Fix 2 pure-logic helpers for auto-waiving post-due-date LPI on a LOC (payable/receivable) repayment made ON an
  * installment due date. Kept as a stateless util (no Spring wiring) shared by the write path (the actual auto-waive in
- * {@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (the live-preview penalty
- * adjustment in {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
+ * {@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (the live-preview
+ * penalty adjustment in {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
  */
 public final class LocDueDateRepaymentUtils {
 
