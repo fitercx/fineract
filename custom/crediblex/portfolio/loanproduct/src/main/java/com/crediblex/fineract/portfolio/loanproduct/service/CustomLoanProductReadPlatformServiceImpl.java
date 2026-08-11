@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanproduct.service;
 
+import com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentProductConfigService;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,12 +31,16 @@ import org.springframework.stereotype.Service;
 @Primary
 public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPlatformServiceImpl {
 
+    private final DpdRepaymentProductConfigService dpdRepaymentProductConfigService;
+
     public CustomLoanProductReadPlatformServiceImpl(PlatformSecurityContext context, JdbcTemplate jdbcTemplate,
             org.apache.fineract.portfolio.charge.service.ChargeReadPlatformService chargeReadPlatformService,
             RateReadService rateReadService, DatabaseSpecificSQLGenerator sqlGenerator, FineractEntityAccessUtil fineractEntityAccessUtil,
-            DelinquencyReadPlatformService delinquencyReadPlatformService, LoanProductRepository loanProductRepository) {
+            DelinquencyReadPlatformService delinquencyReadPlatformService, LoanProductRepository loanProductRepository,
+            DpdRepaymentProductConfigService dpdRepaymentProductConfigService) {
         super(context, jdbcTemplate, chargeReadPlatformService, rateReadService, sqlGenerator, fineractEntityAccessUtil,
                 delinquencyReadPlatformService, loanProductRepository);
+        this.dpdRepaymentProductConfigService = dpdRepaymentProductConfigService;
     }
 
     @Override
@@ -55,7 +60,9 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
             final String sql = "SELECT lp.enable_loc_payable as enableLocPayable,lp.enable_loc_receivable as enableLocReceivable, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.penalty_grace_period AS penaltyGracePeriod, lp.enable_loc_receivable as enableLocReceivable, "
                     + rm.getSchema() + " where lp.id = ?";
 
-            return this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
+            final ExtendedLoanProductData loanProductData = this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
+            dpdRepaymentProductConfigService.enrichProductAdditionalProperties(loanProductId, loanProductData.getAdditionalProperties());
+            return loanProductData;
 
         } catch (final EmptyResultDataAccessException e) {
             throw new LoanProductNotFoundException(loanProductId, e);

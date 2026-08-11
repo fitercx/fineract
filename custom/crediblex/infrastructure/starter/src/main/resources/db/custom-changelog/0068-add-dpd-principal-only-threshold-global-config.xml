@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!--
+      Fleet-wide DPD threshold (days) for principal-only repayment mode. When a loan product has
+      enableDpdPrincipalOnlyRepayment=true and maxDpd exceeds this value, repayments use the
+      dpd-principal-only-strategy at runtime. Editable from System > Global Configurations (Number Value).
+    -->
+    <changeSet id="0068-1-add-dpd-principal-only-threshold-global-config" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="c_configuration"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM c_configuration WHERE name = 'dpd-principal-only-threshold'
+            </sqlCheck>
+        </preConditions>
+        <comment>Add global DPD threshold for principal-only repayment (default 60 days)</comment>
+        <insert tableName="c_configuration">
+            <column name="name" value="dpd-principal-only-threshold"/>
+            <column name="value" valueNumeric="60"/>
+            <column name="enabled" valueBoolean="true"/>
+            <column name="is_trap_door" valueBoolean="false"/>
+            <column name="description"
+                    value="Maximum days past due (DPD) before principal-only repayment mode applies on products with DPD principal-only enabled. Loans with maxDpd above this value repay principal only; at or below this value the product's normal repayment strategy applies."/>
+        </insert>
+    </changeSet>
+</databaseChangeLog>

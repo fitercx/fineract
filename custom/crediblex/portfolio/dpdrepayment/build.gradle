@@ -16,17 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+description = 'CredibleX DPD Principal-Only Repayment Strategy'
 
-dependencies {
-    implementation(project(':custom:crediblex:portfolio:account'))
-    implementation(project(':custom:crediblex:portfolio:accountdetails'))
-    implementation(project(':custom:crediblex:portfolio:note'))
-    implementation(project(':custom:crediblex:portfolio:client'))
-    implementation(project(':custom:crediblex:portfolio:loanaccount'))
-    implementation(project(':custom:crediblex:portfolio:loanproduct'))
-    implementation(project(':custom:crediblex:portfolio:dpdrepayment'))
-    implementation(project(':custom:crediblex:portfolio:loc'))
-    implementation(project(':custom:crediblex:portfolio:tax'))
-    implementation(project(':fineract-savings'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
+group = 'com.crediblex.fineract.dpdrepayment'
+
+base {
+    archivesName = 'crediblex-fineract-dpdrepayment'
 }
+
+apply from: 'dependencies.gradle'

@@ -616,4 +616,18 @@ class CredXLoanChargeWritePlatformServiceImplTest {
         }
     }
 
+    /**
+     * Regression guard for the midnight LPI (Apply Charge To Overdue Loan Installment) job. Core Fineract replays all
+     * repayments after posting overdue penalties; CredX disables that so principal-first / DPD allocations and manual
+     * corrections are not reversed.
+     */
+    @Test
+    void shouldNotReprocessTransactionsAfterOverdueChargeApply() throws Exception {
+        var method = CredXLoanChargeWritePlatformServiceImpl.class.getDeclaredMethod("shouldReprocessTransactionsAfterOverdueChargeApply",
+                Loan.class);
+        method.setAccessible(true);
+
+        assertFalse((Boolean) method.invoke(credXLoanChargeWritePlatformService, loan));
+    }
+
 }

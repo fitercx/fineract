@@ -65,6 +65,9 @@ public class CredXLoanReadPlatformServiceImplTest {
     @Mock
     private org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator sqlGenerator;
 
+    @Mock
+    private com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentStrategyResolver dpdRepaymentStrategyResolver;
+
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
 
@@ -629,5 +632,76 @@ public class CredXLoanReadPlatformServiceImplTest {
         assertEquals(new BigDecimal("300"), summary.getCollected().getLast7Days().getLpi());
         assertEquals(Long.valueOf(4L), summary.getCollected().getLast30Days().getCount());
         assertEquals(new BigDecimal("800"), summary.getCollected().getLast30Days().getLpi());
+    }
+
+    @Test
+    void retrieveAllLoansWithOverdueInstallments_filtersToInstallmentsWithOutstandingBalance() {
+        when(sqlGenerator.currentBusinessDate()).thenReturn("CURRENT_DATE");
+        when(sqlGenerator.subDate(anyString(), anyString(), anyString())).thenReturn("DATE_SUB(CURRENT_DATE, INTERVAL ? DAY)");
+        when(jdbcTemplate.query(anyString(), any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                any(Object[].class))).thenReturn(List.of());
+
+        credXLoanReadPlatformService.retrieveAllLoansWithOverdueInstallments(0L, true);
+
+        final org.mockito.ArgumentCaptor<String> sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbcTemplate).query(sqlCaptor.capture(),
+                any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                eq(0L));
+        assertPenaltyJobEligibleOverdueInstallmentSql(sqlCaptor.getValue(), true, false);
+    }
+
+    @Test
+    void retrieveAllLoansWithOverdueInstallments_withoutBackdate_addsDueDateLowerBound() {
+        when(sqlGenerator.currentBusinessDate()).thenReturn("CURRENT_DATE");
+        when(sqlGenerator.subDate(anyString(), anyString(), anyString())).thenReturn("DATE_SUB(CURRENT_DATE, INTERVAL ? DAY)");
+        when(jdbcTemplate.query(anyString(), any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                any(Object[].class))).thenReturn(List.of());
+
+        credXLoanReadPlatformService.retrieveAllLoansWithOverdueInstallments(2L, false);
+
+        final org.mockito.ArgumentCaptor<String> sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbcTemplate).query(sqlCaptor.capture(),
+                any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                eq(2L), eq(2L));
+        assertPenaltyJobEligibleOverdueInstallmentSql(sqlCaptor.getValue(), false, false);
+    }
+
+    @Test
+    void retrieveLoanOverdueInstallments_filtersToInstallmentsWithOutstandingBalance() {
+        when(sqlGenerator.currentBusinessDate()).thenReturn("CURRENT_DATE");
+        when(sqlGenerator.subDate(anyString(), anyString(), anyString())).thenReturn("DATE_SUB(CURRENT_DATE, INTERVAL ? DAY)");
+        when(jdbcTemplate.query(anyString(), any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                any(Object[].class))).thenReturn(List.of());
+
+        credXLoanReadPlatformService.retrieveLoanOverdueInstallments(42L, 1L, true);
+
+        final org.mockito.ArgumentCaptor<String> sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(jdbcTemplate).query(sqlCaptor.capture(),
+                any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
+                eq(1L), eq(42L));
+        assertPenaltyJobEligibleOverdueInstallmentSql(sqlCaptor.getValue(), true, true);
+    }
+
+    private void assertPenaltyJobEligibleOverdueInstallmentSql(final String sql, final boolean backdatePenalties,
+            final boolean perLoanQuery) {
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("ls.completed_derived <> true"),
+                "SQL should exclude completed installments");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("ls.recalculated_interest_component <> true"),
+                "SQL should exclude recalculated interest installments");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("mc.charge_time_enum = 9"), "SQL should filter to overdue charge time");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("principal_completed_derived"),
+                "SQL should compute principal outstanding from completed derived");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("interest_completed_derived"),
+                "SQL should compute interest outstanding from completed derived");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("penalty_charges_completed_derived"),
+                "SQL should compute LPI outstanding from completed derived");
+        org.junit.jupiter.api.Assertions.assertTrue(sql.contains("> 0 or"), "SQL should require chargeable outstanding on any component");
+        if (perLoanQuery) {
+            org.junit.jupiter.api.Assertions.assertTrue(sql.contains("ml.id = ?"), "SQL should filter to the requested loan");
+        }
+        if (!backdatePenalties) {
+            org.junit.jupiter.api.Assertions.assertTrue(sql.contains("ls.duedate >="),
+                    "SQL should bound due date when backdate penalties is disabled");
+        }
     }
 }
