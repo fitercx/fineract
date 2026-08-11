@@ -1875,13 +1875,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
 
         if (transactionType.isRepayment() || transactionType.isReversal() || transactionType.isRefund()) {
-            if (locProductTypeOpt.isPresent() && !locProductTypeOpt.get().getLineOfCredit().getProductType().isReceivable()) {
-                // For non-receivable LOC products, use principal portion if available, otherwise use the provided
-                // amount
-                if (loanTransaction != null) {
+            if (locProductTypeOpt.isPresent() && loanTransaction != null) {
+                if (locProductTypeOpt.get().getLineOfCredit().getProductType().isReceivable()) {
+                    // RECEIVABLE reserves P+I at disbursement; do not release late-payment penalties/fees that were
+                    // never added to consumed (FGF LOC 2294). computeLocBalance also re-anchors to total outstanding.
+                    amount = receivableLocCreditReleaseAmount(loanTransaction);
+                } else {
+                    // PAYABLE: principal portion only
                     amount = loanTransaction.getPrincipalPortion();
                 }
-                // If loanTransaction is null, use the provided amount as-is (should not happen in normal flow)
             }
         }
 
@@ -1892,6 +1894,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, locProductTypeOpt.get().getLineOfCredit(),
                     transactionDate, transactionType);
         }
+    }
+
+    /**
+     * Amount of RECEIVABLE facility to free on a loan repayment/reversal/refund: principal + interest only.
+     * Penalties/fees are excluded because they were never reserved against the LOC at disbursement.
+     */
+    static BigDecimal receivableLocCreditReleaseAmount(LoanTransaction loanTransaction) {
+        BigDecimal principal = loanTransaction.getPrincipalPortion() != null ? loanTransaction.getPrincipalPortion() : BigDecimal.ZERO;
+        BigDecimal interest = loanTransaction.getInterestPortion() != null ? loanTransaction.getInterestPortion() : BigDecimal.ZERO;
+        BigDecimal release = principal.add(interest);
+        // Defensive fallback if portions are missing on an atypical transaction
+        if (release.compareTo(BigDecimal.ZERO) <= 0 && loanTransaction.getAmount() != null) {
+            return loanTransaction.getAmount();
+        }
+        return release;
     }
 
     private final class SavingsToLoanTransferBusinessEventListener
@@ -1930,7 +1947,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     BigDecimal amount;
                     if (lineOfCredit.getProductType().isReceivable()) {
-                        amount = loanTransaction.getAmount();
+                        // P+I only — exclude penalties/fees never reserved on the LOC (see
+                        // receivableLocCreditReleaseAmount)
+                        amount = receivableLocCreditReleaseAmount(loanTransaction);
                     } else {
                         amount = loanTransaction.getPrincipalPortion();
                     }

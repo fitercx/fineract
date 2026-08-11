@@ -105,6 +105,8 @@ class SavingsToLoanTransferBusinessEventListenerTest {
         when(loanTransaction.getTransactionDate()).thenReturn(LocalDate.of(2025, 1, 15));
         when(loanTransaction.getAmount()).thenReturn(new BigDecimal("500.00"));
         when(loanTransaction.getPrincipalPortion()).thenReturn(new BigDecimal("400.00"));
+        when(loanTransaction.getInterestPortion()).thenReturn(new BigDecimal("80.00"));
+        when(loanTransaction.getPenaltyChargesPortion()).thenReturn(new BigDecimal("20.00"));
 
         accountTransferTransaction = mock(AccountTransferTransaction.class);
         when(accountTransferTransaction.getToLoanTransaction()).thenReturn(loanTransaction);
@@ -161,17 +163,17 @@ class SavingsToLoanTransferBusinessEventListenerTest {
     }
 
     @Test
-    @DisplayName("Should update LOC balance for receivable LOC using full transaction amount")
-    void testReceivableLoc_UseFullTransactionAmount() throws Exception {
-        // Given: Receivable LOC
+    @DisplayName("Should update LOC balance for receivable LOC using principal + interest only (exclude penalty)")
+    void testReceivableLoc_UsePrincipalPlusInterestExcludingPenalty() throws Exception {
+        // Given: Receivable LOC — txn amount 500 = P400 + I80 + penalty20
         when(lineOfCredit.getProductType()).thenReturn(LocProductType.RECEIVABLE);
         when(loanLineOfCreditParamsRepository.findByLoanId(100L)).thenReturn(Optional.of(locParams));
 
         // When: Event is processed
         invokeOnBusinessEvent();
 
-        // Then: Should call computeLocBalance with full transaction amount
-        verify(lineOfCreditBalanceUpdateService).computeLocBalance(eq(100L), eq(300L), eq(new BigDecimal("500.00")),
+        // Then: Should free only P+I (480), not the penalty portion that was never reserved on the LOC
+        verify(lineOfCreditBalanceUpdateService).computeLocBalance(eq(100L), eq(300L), eq(new BigDecimal("480.00")),
                 eq(lineOfCredit), eq(LocalDate.of(2025, 1, 15)), eq(LineOfCreditTransactionType.REPAYMENT));
     }
 
