@@ -289,13 +289,13 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             }
         }
 
-        if (!loan.isFactorRateEnabled()) {
-            updateInstallmentsPostDate(loan, foreClosureDate);
-        }
-
         LoanTransaction payment = null;
         List<Long> transactionIds = new ArrayList<>();
 
+        // Validations MUST run before updateInstallmentsPostDate: that rewrite replaces the unpaid installment's due
+        // date with the foreclosure date itself. LocForeclosureValidator (and any check that reads the live schedule
+        // due dates) would then always see foreclosureDate == dueDate and incorrectly reject every early LOC
+        // foreclosure as "on or past due".
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
 
         loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
@@ -306,6 +306,10 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // loan's last non-waiver transaction date" check just above - see BackdatedRepaymentValidator javadoc and
         // BUG_REPORT.md "Backdate limit" finding.
         BackdatedRepaymentValidator.validateWithinBackdateLimit(loan, foreClosureDate, "foreclosure");
+
+        if (!loan.isFactorRateEnabled()) {
+            updateInstallmentsPostDate(loan, foreClosureDate);
+        }
 
         /// //This is where we should be doing the transfer from.
 

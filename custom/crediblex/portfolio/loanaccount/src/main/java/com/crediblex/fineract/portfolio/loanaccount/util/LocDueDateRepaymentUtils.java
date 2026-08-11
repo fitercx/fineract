@@ -31,6 +31,9 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
  * installment due date. Kept as a stateless util (no Spring wiring) shared by the write path (the actual auto-waive in
  * {@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (the live-preview
  * penalty adjustment in {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
+ * <p>
+ * The write path waives LPI strictly AFTER the value/due date (processing-delay days only). Callers that preview the
+ * waivable amount should therefore pass {@code onDate.plusDays(1)} as {@code fromDate}.
  */
 public final class LocDueDateRepaymentUtils {
 

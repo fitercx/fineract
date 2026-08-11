@@ -26,6 +26,42 @@ public class LoanRepaymentsSummaryDAO {
         return jdbcTemplate.query(loanPaymentsSummarySchema(), new LoanRepaymentsSummaryMapper(), loanId);
     }
 
+    /**
+     * Sums installment principal/interest paid by repayments dated on or before {@code asOfDate} (excludes reversed
+     * txns). Used by the backdated penalties template so P/I due match the selected value date, not later partial
+     * payments.
+     */
+    public java.util.Map<Integer, InstallmentPaymentsAsOf> fetchInstallmentPaymentsOnOrBefore(final Long loanId, final LocalDate asOfDate) {
+        final String sql = """
+                select rs.installment as installmentNumber,
+                       coalesce(sum(m.principal_portion_derived), 0) as principalPaid,
+                       coalesce(sum(m.interest_portion_derived), 0) as interestPaid
+                from m_loan_transaction_repayment_schedule_mapping m
+                join m_loan_transaction t on t.id = m.loan_transaction_id
+                join m_loan_repayment_schedule rs on rs.id = m.loan_repayment_schedule_id
+                where t.loan_id = ?
+                  and t.is_reversed = false
+                  and t.transaction_type_enum = 2
+                  and t.transaction_date <= ?
+                group by rs.installment
+                """;
+        return jdbcTemplate.query(sql, rs -> {
+            java.util.Map<Integer, InstallmentPaymentsAsOf> map = new java.util.HashMap<>();
+            while (rs.next()) {
+                map.put(rs.getInt("installmentNumber"),
+                        new InstallmentPaymentsAsOf(JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "principalPaid"),
+                                JdbcSupport.getBigDecimalDefaultToZeroIfNull(rs, "interestPaid")));
+            }
+            return map;
+        }, loanId, java.sql.Date.valueOf(asOfDate));
+    }
+
+    public record InstallmentPaymentsAsOf(java.math.BigDecimal principalPaid, java.math.BigDecimal interestPaid) {
+
+        public static final InstallmentPaymentsAsOf ZERO = new InstallmentPaymentsAsOf(java.math.BigDecimal.ZERO,
+                java.math.BigDecimal.ZERO);
+    }
+
     public String loanPaymentsSummarySchema() {
         return """
                 select
@@ -102,7 +138,8 @@ public class LoanRepaymentsSummaryDAO {
 
             return ExtendedLoanSchedulePeriodData.paymentsSummaryPeriod(installmentNumber, toLocalDateSafe(fromDate),
                     toLocalDateSafe(dueDate), isComplete, principalDue, penaltyChargesExpectedDue, totalPaidForPeriod,
-                    totalOutstandingForPeriod, interestOutstanding, interestPaid, interestWaived, interestWrittenOff, principalOutstanding);
+                    totalOutstandingForPeriod, interestOutstanding, interestExpectedDue, interestPaid, interestWaived, interestWrittenOff,
+                    principalOutstanding);
         }
 
         private LocalDate toLocalDateSafe(Date date) {

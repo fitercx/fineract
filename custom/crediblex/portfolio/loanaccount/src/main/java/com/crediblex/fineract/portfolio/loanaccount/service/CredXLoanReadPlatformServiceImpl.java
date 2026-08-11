@@ -288,8 +288,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
             if (LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, onDate)) {
-                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate, DateUtils.getBusinessLocalDate(),
-                        loan.getCurrency());
+                // Preview must match waiveOverdueChargesAccruedAfterSettlementDate (strictly AFTER value/due date).
+                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate.plusDays(1),
+                        DateUtils.getBusinessLocalDate(), loan.getCurrency());
                 penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
             }
         }
@@ -1983,8 +1984,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         // All loans now allow early repayments before the first installment due date
         final boolean isDrawdownLoan = true;
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final java.util.Map<Integer, LoanRepaymentsSummaryDAO.InstallmentPaymentsAsOf> paymentsAsOf = transactionDate.isBefore(businessDate)
+                ? this.loanRepaymentsSummaryDAO.fetchInstallmentPaymentsOnOrBefore(loanId, transactionDate)
+                : null;
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue, isDrawdownLoan);
+                penaltyWaitPeriodValue, isDrawdownLoan, paymentsAsOf, businessDate);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
@@ -2186,8 +2191,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     /**
-     * Override to enhance SQL query to exclude installments that already have overdue charges applied. This ensures
-     * late fees are applied consistently for both single-tranche and multi-tranche loans.
+     * LPI / penalty-job candidate selection. Uses the same overdue predicate as {@link #retrieveCrediblexOverdueLoans}:
+     * past-due installment with chargeable outstanding &gt; 0, so the job skips fully repaid schedule rows.
      */
     @Override
     public Collection<OverdueLoanScheduleData> retrieveAllLoansWithOverdueInstallments(final Long penaltyWaitPeriod,
@@ -2195,17 +2200,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
 
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema()).append(" where ")
-                .append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
-                .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
-                .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ");
+        sqlBuilder.append("select ").append(rm.schema()).append(" where ");
+        appendPenaltyJobEligibleOverdueInstallmentFilters(sqlBuilder, penaltyWaitPeriod, backdatePenalties, null);
         if (backdatePenalties) {
             return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod);
         }
-        // Only apply for duedate = yesterday (so that we don't apply penalties on the duedate itself)
-        sqlBuilder.append(" and ls.duedate >= " + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
-
         return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, penaltyWaitPeriod);
     }
 
@@ -2214,16 +2213,36 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final Boolean backdatePenalties) {
         final MusoniOverdueLoanScheduleMapper rm = new MusoniOverdueLoanScheduleMapper();
         final StringBuilder sqlBuilder = new StringBuilder(400);
-        sqlBuilder.append("select ").append(rm.schema()).append(" where ")
-                .append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
-                .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
-                .append(" and ls.recalculated_interest_component <> true ")
-                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and ml.id = ? ");
+        sqlBuilder.append("select ").append(rm.schema()).append(" where ");
+        appendPenaltyJobEligibleOverdueInstallmentFilters(sqlBuilder, penaltyWaitPeriod, backdatePenalties, loanId);
         if (backdatePenalties) {
             return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, loanId);
         }
-        sqlBuilder.append(" and ls.duedate >= ").append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
         return this.jdbcTemplate.query(sqlBuilder.toString(), rm, penaltyWaitPeriod, loanId, penaltyWaitPeriod);
+    }
+
+    private void appendPenaltyJobEligibleOverdueInstallmentFilters(final StringBuilder sqlBuilder, final Long penaltyWaitPeriod,
+            final Boolean backdatePenalties, final Long loanId) {
+        sqlBuilder.append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "?", "day")).append(" > ls.duedate ")
+                .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
+                .append(" and ls.recalculated_interest_component <> true ")
+                .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and ")
+                .append(hasChargeableInstallmentOutstanding("ls")).append(" ");
+        if (loanId != null) {
+            sqlBuilder.append(" and ml.id = ? ");
+        }
+        if (!backdatePenalties) {
+            sqlBuilder.append(" and ls.duedate >= ").append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
+        }
+    }
+
+    private static String hasChargeableInstallmentOutstanding(final String alias) {
+        return "((coalesce(" + alias + ".principal_amount, 0) - coalesce(" + alias + ".principal_completed_derived, 0) - coalesce(" + alias
+                + ".principal_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".interest_amount, 0) - coalesce(" + alias
+                + ".interest_completed_derived, 0) - coalesce(" + alias + ".interest_waived_derived, 0) - coalesce(" + alias
+                + ".interest_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".penalty_charges_amount, 0) - coalesce(" + alias
+                + ".penalty_charges_completed_derived, 0) - coalesce(" + alias + ".penalty_charges_waived_derived, 0) - coalesce(" + alias
+                + ".penalty_charges_writtenoff_derived, 0)) > 0)";
     }
 
     @Override

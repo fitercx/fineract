@@ -495,6 +495,22 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             final LoanLifecycleStateMachine loanLifecycleStateMachine, final Map<String, Object> changes,
             final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds, final Integer loanInstallmentNumber,
             final ScheduleGeneratorDTO scheduleGeneratorDTO, final Money accruedCharge, final ExternalId externalId) {
+        return customWaiveLoanCharge(loan, loanCharge, loanLifecycleStateMachine, changes, existingTransactionIds,
+                existingReversedTransactionIds, loanInstallmentNumber, scheduleGeneratorDTO, accruedCharge, externalId, null);
+    }
+
+    /**
+     * Core waive logic. When {@code maxTransactionDate} is non-null (set by the auto-waive window), the waive
+     * transaction is dated at most at that date. This prevents post-value-date LPI waive transactions from landing
+     * after the backdated repayment, which would cause {@code isChronologicallyLatestRepaymentOrWaiver} to return
+     * false, force a full {@code reprocessTransactions}, and wipe the kept LPI charges from the installment penalty
+     * cache — leaving those charges unallocated and the loan overpaid.
+     */
+    private LoanTransaction customWaiveLoanCharge(final Loan loan, final LoanCharge loanCharge,
+            final LoanLifecycleStateMachine loanLifecycleStateMachine, final Map<String, Object> changes,
+            final List<Long> existingTransactionIds, final List<Long> existingReversedTransactionIds, final Integer loanInstallmentNumber,
+            final ScheduleGeneratorDTO scheduleGeneratorDTO, final Money accruedCharge, final ExternalId externalId,
+            final LocalDate maxTransactionDate) {
 
         // Get the current outstanding amount to be waived
         Money amountOutstanding = loanCharge.getAmountOutstanding(loan.getCurrency());
@@ -595,6 +611,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             }
         }
 
+        // Cap the waive transaction date at maxTransactionDate when called from the auto-waive window.
+        // Without this cap, post-value-date LPI waive transactions (e.g. Aug 6-8) would be dated AFTER the
+        // backdated repayment (Aug 5), making isChronologicallyLatestRepaymentOrWaiver return false and
+        // forcing a full reprocessTransactions that wipes the kept LPI from the installment penalty cache.
+        if (maxTransactionDate != null && transactionDate.isAfter(maxTransactionDate)) {
+            transactionDate = maxTransactionDate;
+        }
+
         scheduleGeneratorDTO.setRecalculateFrom(transactionDate);
 
         loan.updateSummaryWithTotalFeeChargesDueAtDisbursement(loan.deriveSumTotalOfChargesDueAtDisbursement());
@@ -619,8 +643,20 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         // Reprocess loan schedule/transactions so waived component stays on the correct installment.
         // This mirrors core behavior and prevents overdue charge portions from drifting to another EMI.
-        if (!loanCharge.isDueAtDisbursement() && loanCharge.isPaidOrPartiallyPaid(loan.getCurrency())) {
+        //
+        // IMPORTANT: use amountPaid > 0, NOT isPaidOrPartiallyPaid(). The latter is also true for a pure waive of an
+        // unpaid charge (it counts amountWaived), which incorrectly sent every backdated-settlement LPI auto-waive
+        // through full transaction reprocessing. That reprocess drops sibling overdue LPI from the installment's
+        // penalty cache when those charges have no accrual transactions yet, so the subsequent repayment allocates
+        // nothing to the LPI that should remain payable (keep 2 / reverse 3 becomes overpay + orphaned charges).
+        if (!loanCharge.isDueAtDisbursement() && loanCharge.getAmountPaid(loan.getCurrency()).isGreaterThanZero()) {
             reprocessLoanTransactionsService.reprocessTransactions(loan);
+        } else if (loanCharge.isOverdueInstallmentCharge() && loanCharge.isPenaltyCharge()) {
+            // Daily LPI charges are dated AFTER their owning installment due date. The schedule wrapper's
+            // isDueInPeriod window is (prevDue, installmentDue], so it never attributes those charges and would
+            // wipe penaltyCharges on the installment to zero — orphaning sibling LPI that must remain payable
+            // after a partial backdated waive. Rebuild portions from the overdue-installment links instead.
+            recalculateInstallmentChargesFromActiveLoanCharges(loan);
         } else {
             final LoanRepaymentScheduleProcessingWrapper wrapper = new LoanRepaymentScheduleProcessingWrapper();
             wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
@@ -1165,9 +1201,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             }
 
             final Money outstandingBeforeWaive = loanCharge.getAmountOutstanding(currency);
+            // Pass fromDate.minusDays(1) as the settlement value date cap so that waive transactions for
+            // post-value-date charges (e.g. Aug 6-8) are stamped no later than the repayment date (Aug 5).
+            // Without this, those transactions postdate the repayment, isChronologicallyLatestRepaymentOrWaiver
+            // returns false, and the subsequent reprocessTransactions wipes kept LPI from the penalty cache.
+            final LocalDate settlementValueDate = fromDate.minusDays(1);
             final LoanTransaction waiveTransaction = customWaiveLoanCharge(loan, loanCharge, defaultLoanLifecycleStateMachine,
                     new LinkedHashMap<>(), new ArrayList<>(), new ArrayList<>(), null, scheduleGeneratorDTO, accruedCharge,
-                    externalIdFactory.create());
+                    externalIdFactory.create(), settlementValueDate);
 
             this.loanTransactionRepository.saveAndFlush(waiveTransaction);
             businessEventNotifierService.notifyPostBusinessEvent(new LoanWaiveChargeBusinessEvent(loanCharge));
@@ -1186,9 +1227,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             final List<Long> existingTransactionIds = new ArrayList<>();
             postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
-            if (hasRepaymentScheduleChargeMismatch(loan)) {
-                recalculateInstallmentChargesFromActiveLoanCharges(loan);
-            }
+            // Always rebuild installment penalty portions from the surviving active charges. Relying on the mismatch
+            // heuristic alone is not enough after a multi-day LPI waive window: wrapper.reprocess may leave the
+            // schedule penalty cache empty even though unpaid sibling LPI charges are still active.
+            recalculateInstallmentChargesFromActiveLoanCharges(loan);
             loan.updateLoanScheduleDependentDerivedFields();
             loan.updateLoanSummaryAndStatus();
             this.loanRepositoryWrapper.saveAndFlush(loan);

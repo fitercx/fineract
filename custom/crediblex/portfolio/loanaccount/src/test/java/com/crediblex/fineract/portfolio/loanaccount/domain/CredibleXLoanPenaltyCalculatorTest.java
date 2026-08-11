@@ -341,6 +341,64 @@ class CredibleXLoanPenaltyCalculatorTest {
                 "Should return first installment's interest for early repayment before first due date");
     }
 
+    @Test
+    void testCalculatePenaltySum_IncludesPenaltyDueExactlyOnTransactionDate() {
+        LocalDate installmentDueDate = LocalDate.of(2026, 7, 24);
+        LocalDate transactionDate = LocalDate.of(2026, 7, 24);
+
+        loanInstallments.add(createInstallment(1, installmentDueDate, BigDecimal.valueOf(1000.00), BigDecimal.valueOf(100.00),
+                ExtendedLoanSchedulePeriodData.Status.OVERDUE));
+
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 7, 24), BigDecimal.valueOf(73.97)));
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 7, 25), BigDecimal.valueOf(50.00)));
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true);
+
+        assertEquals(BigDecimal.valueOf(73.97), calculator.calculatePenaltySum(transactionDate));
+    }
+
+    @Test
+    void testCalculatePenaltySum_WhenEmiFullyPaid_IncludesAllUnpaidPenaltiesDueOnOrBeforeTransactionDate() {
+        LocalDate firstInstallmentDueDate = LocalDate.of(2026, 7, 2);
+        LocalDate secondInstallmentDueDate = LocalDate.of(2026, 7, 26);
+        LocalDate transactionDate = LocalDate.of(2026, 7, 24);
+
+        loanInstallments.add(createInstallment(1, firstInstallmentDueDate, BigDecimal.ZERO, BigDecimal.ZERO,
+                ExtendedLoanSchedulePeriodData.Status.PAID));
+        loanInstallments.add(createInstallment(2, secondInstallmentDueDate, BigDecimal.ZERO, BigDecimal.ZERO,
+                ExtendedLoanSchedulePeriodData.Status.SCHEDULED));
+
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 7, 3), BigDecimal.valueOf(246.57)));
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 7, 4), BigDecimal.valueOf(246.57)));
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 7, 25), BigDecimal.valueOf(246.57)));
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true);
+
+        assertEquals(BigDecimal.valueOf(493.14), calculator.calculatePenaltySum(transactionDate));
+    }
+
+    @Test
+    void calculateTotalOutstandingInterest_backdatedOnDueDate_ignoresLaterPartialPayments() {
+        LocalDate dueDate = LocalDate.of(2026, 7, 24);
+        LocalDate businessDate = LocalDate.of(2026, 7, 29);
+        LocalDate transactionDate = LocalDate.of(2026, 7, 24);
+        BigDecimal interestDue = new BigDecimal("2441.10");
+
+        LoanSchedulePeriodData periodData = LoanSchedulePeriodData.builder().period(1).dueDate(dueDate)
+                .principalDue(new BigDecimal("55000")).interestDue(interestDue).interestPaid(new BigDecimal("500.00"))
+                .interestOutstanding(new BigDecimal("1941.10")).principalOutstanding(new BigDecimal("55000")).build();
+        loanInstallments.add(new ExtendedLoanSchedulePeriodData(periodData, ExtendedLoanSchedulePeriodData.Status.OVERDUE));
+
+        java.util.Map<Integer, com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO.InstallmentPaymentsAsOf> asOf = java.util.Map
+                .of();
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true, asOf, businessDate);
+
+        assertEquals(0, interestDue.compareTo(calculator.calculateTotalOutstandingInterest(transactionDate)));
+    }
+
     /**
      * Helper method to create an ExtendedLoanSchedulePeriodData for testing.
      */
@@ -349,5 +407,10 @@ class CredibleXLoanPenaltyCalculatorTest {
         LoanSchedulePeriodData periodData = LoanSchedulePeriodData.builder().period(period).dueDate(dueDate).principalDue(principalDue)
                 .interestOutstanding(interestOutstanding).principalOutstanding(principalDue).build();
         return new ExtendedLoanSchedulePeriodData(periodData, status);
+    }
+
+    private LoanChargeData createPenaltyCharge(final LocalDate dueDate, final BigDecimal amount) {
+        return LoanChargeData.builder().penalty(true).waived(false).paid(false).dueDate(dueDate).amount(amount).amountPaid(BigDecimal.ZERO)
+                .build();
     }
 }
