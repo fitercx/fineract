@@ -8,6 +8,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValid
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocForeclosureValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
@@ -288,20 +289,27 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             }
         }
 
-        if (!loan.isFactorRateEnabled()) {
-            updateInstallmentsPostDate(loan, foreClosureDate);
-        }
-
         LoanTransaction payment = null;
         List<Long> transactionIds = new ArrayList<>();
 
+        // Validations MUST run before updateInstallmentsPostDate: that rewrite replaces the unpaid installment's due
+        // date with the foreclosure date itself. LocForeclosureValidator (and any check that reads the live schedule
+        // due dates) would then always see foreclosureDate == dueDate and incorrectly reject every early LOC
+        // foreclosure as "on or past due".
         loanDownPaymentTransactionValidator.validateAccountStatus(loan, LoanEvent.LOAN_FORECLOSURE);
 
         loanForeclosureValidator.validateForForeclosure(loan, foreClosureDate);
+        // Fix 1: for LOC (payable/receivable) loans, block foreclosure once the loan is on/past its earliest unpaid
+        // installment due date - that is no longer an early-settlement scenario. No-op for non-LOC loans.
+        LocForeclosureValidator.validateNotDueOrOverdue(loan, foreClosureDate, loanLineOfCreditParamsRepository.findByLoanId(loan.getId()));
         // General backdate-too-far-in-the-past guard, independent of (and in addition to) the "not before the
         // loan's last non-waiver transaction date" check just above - see BackdatedRepaymentValidator javadoc and
         // BUG_REPORT.md "Backdate limit" finding.
         BackdatedRepaymentValidator.validateWithinBackdateLimit(loan, foreClosureDate, "foreclosure");
+
+        if (!loan.isFactorRateEnabled()) {
+            updateInstallmentsPostDate(loan, foreClosureDate);
+        }
 
         /// //This is where we should be doing the transfer from.
 

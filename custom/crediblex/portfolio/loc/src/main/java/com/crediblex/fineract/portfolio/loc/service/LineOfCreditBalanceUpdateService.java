@@ -138,6 +138,15 @@ public class LineOfCreditBalanceUpdateService {
 
             updateLocSummaryBalances(lineOfCredit, amount, lineOfCreditTransactionType, loanId, loanTransactionId);
 
+            // RECEIVABLE LOCs consume expected P+I at disbursement, but repayments historically passed the full loan
+            // transaction amount (including late-payment penalties / residual amounts never added to consumed). That
+            // understates consumed and overstates available (FGF LOC 2294: AED 3,821.25 drift). After the incremental
+            // update, re-anchor RECEIVABLE exposure to SUM(total_outstanding_derived) so the ledger "after" values
+            // match true drawdown exposure. PAYABLE keeps principal-outstanding reconciliation (LMS-106).
+            if (shouldReconcileReceivableExposure(lineOfCredit, loanId)) {
+                reconcileConsumedAmountFromLoanData(lineOfCredit);
+            }
+
             // Use the actual updated balance from LOC summary (which may have been capped at maximum)
             // instead of calculating from the old balance, to ensure transaction record matches actual state
             BigDecimal actualAvailableBalanceAfter = lineOfCredit.getSummary().getAvailableBalance();
@@ -504,6 +513,19 @@ public class LineOfCreditBalanceUpdateService {
         lineOfCredit.getSummary().setAvailableBalance(runningAvailableBalance);
         lineOfCredit.getSummary().setTotalDrawDownCountDerived(totalDrawDownCount);
 
+        // RECEIVABLE: historical ledger amounts may include penalties never reserved at disbursement. Re-anchor
+        // final summary to live loan total outstanding, then align the latest recomputed row's after-balances.
+        if (lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable()) {
+            reconcileConsumedAmountFromLoanData(lineOfCredit);
+            runningConsumedAmount = lineOfCredit.getSummary().getConsumedAmount();
+            runningAvailableBalance = lineOfCredit.getSummary().getAvailableBalance();
+            if (!transactionsToSave.isEmpty()) {
+                LineOfCreditTransaction last = transactionsToSave.get(transactionsToSave.size() - 1);
+                last.setBalanceAfter(runningAvailableBalance);
+                last.setConsumedAmountAfter(runningConsumedAmount);
+            }
+        }
+
         // 7. Save updated transactions (those from startDate onward)
         lineOfCreditTransactionRepository.saveAll(transactionsToSave);
     }
@@ -530,42 +552,17 @@ public class LineOfCreditBalanceUpdateService {
     }
 
     /**
-     * Reconciles consumed_amount by recalculating it from actual loan data. This method ensures consumed_amount equals
-     * the sum of principal_outstanding_derived (i.e. the LOC's true CURRENT exposure) for loans under the LOC.
+     * Reconciles consumed_amount by recalculating it from actual loan data under this LOC.
      *
      * <p>
-     * <b>Bug fixed:</b> this previously summed principal_disbursed_derived, which is a historical/cumulative column
-     * that Fineract never decreases once a loan is disbursed - it stays at the original disbursed amount even after the
-     * loan is fully repaid, foreclosed, or written off (principal_outstanding_derived correctly drops to 0 in all of
-     * those cases). Because this reconciliation runs automatically whenever a repayment/foreclosure would otherwise
-     * push consumed_amount negative (see validateAndReconcileIfNeeded / the negative-consumed-amount recovery block
-     * above), it was silently re-inflating consumed_amount - and shrinking available_balance - by the full original
-     * principal of every loan EVER drawn against the LOC and since closed, permanently locking up facility capacity on
-     * any LOC with more than one drawdown over its life (reproduced locally: LOC with a single foreclosed/fully-repaid
-     * loan correctly shows consumed_amount=0 after the transaction-level update, but this reconciliation query alone
-     * would have put it back to that loan's full original principal).
-     * </p>
-     *
-     * <p>
-     * This is useful for:
+     * Exposure definition by product type:
      * <ul>
-     * <li>Fixing data inconsistencies between LOC summary and actual loan disbursements</li>
-     * <li>Validating consumed_amount accuracy during audits</li>
-     * <li>Recovering from data corruption or migration issues</li>
+     * <li><b>RECEIVABLE</b> — {@code SUM(total_outstanding_derived)} (P+I+fees/penalties still owed). Matches how
+     * Receivable drawdowns reserve facility at disbursement (expected repayment) and what Ops compares against the LOC
+     * Consumed / Available UI.</li>
+     * <li><b>PAYABLE</b> — {@code SUM(principal_outstanding_derived)} (LMS-106; do not change).</li>
      * </ul>
-     * </p>
-     *
-     * <p>
-     * <b>Note:</b> This method directly queries and updates financial data. Comprehensive unit tests are required
-     * covering scenarios such as:
-     * <ul>
-     * <li>LOC with zero loans (should return 0)</li>
-     * <li>LOC with multiple loans (should sum all principal_outstanding_derived)</li>
-     * <li>LOC with a fully repaid/foreclosed/written-off loan (should NOT count its original principal)</li>
-     * <li>Null handling for lineOfCredit parameter</li>
-     * <li>Edge cases with loans having null or zero principal_outstanding_derived</li>
-     * <li>Verification that available balance is correctly recalculated</li>
-     * </ul>
+     * Closed / fully repaid loans contribute 0 via outstanding columns (unlike {@code principal_disbursed_derived}).
      * </p>
      *
      * @param lineOfCredit
@@ -579,17 +576,17 @@ public class LineOfCreditBalanceUpdateService {
         if (lineOfCredit == null) {
             throw new IllegalArgumentException("LineOfCredit cannot be null");
         }
-        // Query to get sum of principal_outstanding_derived (current exposure) for loans under this LOC. Closed /
-        // fully repaid / foreclosed / written-off loans naturally contribute 0 here, unlike
-        // principal_disbursed_derived which never decreases - see class-level note above.
+
+        final boolean receivable = lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable();
+        final String outstandingColumn = receivable ? "total_outstanding_derived" : "principal_outstanding_derived";
         String sql = """
-                SELECT COALESCE(SUM(l.principal_outstanding_derived), 0)
+                SELECT COALESCE(SUM(l.%s), 0)
                 FROM m_loan l
                 INNER JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = l.id
                 WHERE mlcp.line_of_credit_id = ?
-                AND l.principal_outstanding_derived IS NOT NULL
-                AND l.principal_outstanding_derived > 0
-                """;
+                AND l.%s IS NOT NULL
+                AND l.%s > 0
+                """.formatted(outstandingColumn, outstandingColumn, outstandingColumn);
 
         BigDecimal actualConsumedAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
         if (actualConsumedAmount == null) {
@@ -604,7 +601,7 @@ public class LineOfCreditBalanceUpdateService {
         // chk_loc_consumed_amount_non_negative (consumed >= 0),
         // chk_loc_consumed_amount_within_limit (consumed <= maximum_amount),
         // chk_loc_available_balance_non_negative (available >= 0).
-        // When the actual disbursed principal exceeds the maximum/effective limit (e.g. limit decrease, blocked-amount
+        // When the actual outstanding exceeds the maximum/effective limit (e.g. limit decrease, blocked-amount
         // increase, or historical over-disbursement) an unclamped write would push available_balance negative or
         // consumed over the limit, which aborts the entire savings->loan repayment ("Unexpected error updating LOC
         // balance."). We reconcile as close as the invariants allow and log the drift for follow-up.
@@ -617,23 +614,30 @@ public class LineOfCreditBalanceUpdateService {
                 || effectiveDrawableLimit.subtract(clampedConsumedAmount).signum() < 0) {
             log.warn("""
                     LOC balance reconciliation clamped to satisfy DB constraints.
-                    LOC ID: {}, Maximum amount: {}, Effective drawable limit: {},
-                    Raw consumed (sum principal_outstanding_derived): {}, Clamped consumed: {}, Available balance: {}.
-                    This indicates disbursed principal exceeds the LOC limit - please review the LOC/loan data.
-                    """, lineOfCredit.getId(), maximumAmount, effectiveDrawableLimit, actualConsumedAmount, clampedConsumedAmount,
-                    availableBalance);
+                    LOC ID: {}, Product type: {}, Maximum amount: {}, Effective drawable limit: {},
+                    Raw consumed (sum {}): {}, Clamped consumed: {}, Available balance: {}.
+                    This indicates outstanding exceeds the LOC limit - please review the LOC/loan data.
+                    """, lineOfCredit.getId(), lineOfCredit.getProductType(), maximumAmount, effectiveDrawableLimit, outstandingColumn,
+                    actualConsumedAmount, clampedConsumedAmount, availableBalance);
         }
 
         lineOfCredit.getSummary().setConsumedAmount(clampedConsumedAmount);
         lineOfCredit.getSummary().setAvailableBalance(availableBalance);
 
-        // Log reconciliation if there was a difference
         if (oldConsumedAmount.compareTo(clampedConsumedAmount) != 0) {
-            // Optionally create a reconciliation transaction record for audit
-            // For now, we just update the summary
+            log.info("Reconciled LOC consumed from loan outstanding. LOC ID: {}, productType: {}, column: {}, old: {}, new: {}",
+                    lineOfCredit.getId(), lineOfCredit.getProductType(), outstandingColumn, oldConsumedAmount, clampedConsumedAmount);
         }
 
         return clampedConsumedAmount;
+    }
+
+    /**
+     * RECEIVABLE loan-linked paths must re-anchor consumed to loan total outstanding so penalty/residual repayments
+     * cannot drift available limit. Limit INCREMENT/DECREMENT/BLOCK/UNBLOCK (no loanId) are left untouched.
+     */
+    private static boolean shouldReconcileReceivableExposure(LineOfCredit lineOfCredit, Long loanId) {
+        return loanId != null && lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable();
     }
 
 }

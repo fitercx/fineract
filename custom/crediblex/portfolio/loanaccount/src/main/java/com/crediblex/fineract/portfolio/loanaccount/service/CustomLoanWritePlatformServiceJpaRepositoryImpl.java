@@ -22,6 +22,7 @@ import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisb
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -1529,6 +1530,22 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // The parent will call validateRepayment which has the broken validation, so we need to
         // catch and handle that exception, then re-validate with the fixed logic
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        // Fix 2: for a LOC (payable/receivable) repayment recorded ON an installment due date, auto-waive the LPI that
+        // accrued strictly after that date up to today, so the operator no longer has to manually waive it before
+        // repaying.
+        // Runs once here, BEFORE the repayment settles - so the payment allocates against the reduced penalty and does
+        // not overpay (mirrors the reduced amount the date-aware repayment template previews). The waive is idempotent
+        // (already-waived/paid charges are skipped), so the multi-tranche retry path below cannot double-waive. Scope:
+        // LOC drawdown loans only; every other product is untouched.
+        final LocalDate repaymentValueDate = command.localDateValueOfParameterNamed("transactionDate");
+        Map<String, Object> backdatedLpiWaiveSummary = null;
+        if (repaymentTransactionType.isRepayment() && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()
+                && LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, repaymentValueDate)) {
+            // Exclusive of the value/due date: LPI for the payment day itself remains payable; only LPI accrued for
+            // the processing delay (strictly after the value date) is auto-waived.
+            backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
+                    repaymentValueDate);
+        }
         try {
             // Call the parent implementation to handle the core repayment logic
             CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
@@ -1601,6 +1618,14 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         Map<String, Object> additionalChanges = new HashMap<>();
                         if (result.getChanges() != null) {
                             additionalChanges.putAll(result.getChanges());
+                        }
+
+                        // Surface backdated LPI waive summary so the UI can notify the operator.
+                        if (backdatedLpiWaiveSummary != null
+                                && ((Number) backdatedLpiWaiveSummary.getOrDefault("chargesWaived", 0)).intValue() > 0) {
+                            additionalChanges.put("chargesWaived", backdatedLpiWaiveSummary.get("chargesWaived"));
+                            additionalChanges.put("totalAmountWaived", backdatedLpiWaiveSummary.get("totalAmountWaived"));
+                            additionalChanges.put("daysCovered", backdatedLpiWaiveSummary.get("daysCovered"));
                         }
 
                         // Add affected installments and transaction details to the changes
@@ -1679,22 +1704,36 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
         final boolean isBackdatedSettlement = transactionDate != null && transactionDate.isBefore(businessDate);
 
+        final Map<String, Object> backdatedLpiWaiveSummary;
         if (isBackdatedSettlement) {
             // The product configuration may make a safe backdated adjustment impossible -> surface a clear error to
             // the UI instead of silently producing an inconsistent financial state.
             validateBackdatedRepaymentAllowed(loan, transactionDate);
 
-            // Adjust the paid EMI to its value date: waive the overdue (LPI) charges dated on/after the value date up
-            // to today (money received on the value date must not incur LPI for the days until it was recorded). The
-            // customer still pays the LPI that accrued strictly before the value date (as shown by the penalties
-            // preview), so the incoming payment settles the outstanding exactly with no overpayment or orphaned
-            // charges. Interest is schedule-fixed for these products (no daily interest past due) and future EMIs are
-            // untouched because only already-accrued LPI charges are waived and the schedule is never regenerated.
-            this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesOnOrAfterDate(loanId, transactionDate);
+            // Adjust the paid EMI to its value date: waive the overdue (LPI) charges dated strictly AFTER the value
+            // date up to today (money received on the value date must not incur LPI for the processing delay). The
+            // customer still pays the LPI that accrued on/before the value date (due→payment day inclusive), so e.g.
+            // due 26th / paid 28th / settled 31st keeps 2 days LPI and reverses the other 3. Interest is schedule-fixed
+            // for these products (no daily interest past due) and future EMIs are untouched because only
+            // already-accrued
+            // LPI charges are waived and the schedule is never regenerated.
+            backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
+                    transactionDate);
+        } else {
+            backdatedLpiWaiveSummary = null;
         }
 
-        return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment,
-                chargeRefundChargeType);
+        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
+                isRecoveryRepayment, chargeRefundChargeType);
+
+        // Surface the waive summary in the response so the UI can notify the operator about auto-waived charges.
+        if (backdatedLpiWaiveSummary != null && result != null && result.hasChanges()
+                && ((Number) backdatedLpiWaiveSummary.getOrDefault("chargesWaived", 0)).intValue() > 0) {
+            result.getChanges().put("chargesWaived", backdatedLpiWaiveSummary.get("chargesWaived"));
+            result.getChanges().put("totalAmountWaived", backdatedLpiWaiveSummary.get("totalAmountWaived"));
+            result.getChanges().put("daysCovered", backdatedLpiWaiveSummary.get("daysCovered"));
+        }
+        return result;
     }
 
     /**
@@ -1836,13 +1875,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         Optional<LoanLineOfCreditParams> locProductTypeOpt = loanLineOfCreditParamsRepository.findByLoanId(loanId);
 
         if (transactionType.isRepayment() || transactionType.isReversal() || transactionType.isRefund()) {
-            if (locProductTypeOpt.isPresent() && !locProductTypeOpt.get().getLineOfCredit().getProductType().isReceivable()) {
-                // For non-receivable LOC products, use principal portion if available, otherwise use the provided
-                // amount
-                if (loanTransaction != null) {
+            if (locProductTypeOpt.isPresent() && loanTransaction != null) {
+                if (locProductTypeOpt.get().getLineOfCredit().getProductType().isReceivable()) {
+                    // RECEIVABLE reserves P+I at disbursement; do not release late-payment penalties/fees that were
+                    // never added to consumed (FGF LOC 2294). computeLocBalance also re-anchors to total outstanding.
+                    amount = receivableLocCreditReleaseAmount(loanTransaction);
+                } else {
+                    // PAYABLE: principal portion only
                     amount = loanTransaction.getPrincipalPortion();
                 }
-                // If loanTransaction is null, use the provided amount as-is (should not happen in normal flow)
             }
         }
 
@@ -1853,6 +1894,21 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             lineOfCreditBalanceUpdateService.computeLocBalance(loanId, loanTransactionId, amount, locProductTypeOpt.get().getLineOfCredit(),
                     transactionDate, transactionType);
         }
+    }
+
+    /**
+     * Amount of RECEIVABLE facility to free on a loan repayment/reversal/refund: principal + interest only.
+     * Penalties/fees are excluded because they were never reserved against the LOC at disbursement.
+     */
+    static BigDecimal receivableLocCreditReleaseAmount(LoanTransaction loanTransaction) {
+        BigDecimal principal = loanTransaction.getPrincipalPortion() != null ? loanTransaction.getPrincipalPortion() : BigDecimal.ZERO;
+        BigDecimal interest = loanTransaction.getInterestPortion() != null ? loanTransaction.getInterestPortion() : BigDecimal.ZERO;
+        BigDecimal release = principal.add(interest);
+        // Defensive fallback if portions are missing on an atypical transaction
+        if (release.compareTo(BigDecimal.ZERO) <= 0 && loanTransaction.getAmount() != null) {
+            return loanTransaction.getAmount();
+        }
+        return release;
     }
 
     private final class SavingsToLoanTransferBusinessEventListener
@@ -1891,7 +1947,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
                     BigDecimal amount;
                     if (lineOfCredit.getProductType().isReceivable()) {
-                        amount = loanTransaction.getAmount();
+                        // P+I only — exclude penalties/fees never reserved on the LOC (see
+                        // receivableLocCreditReleaseAmount)
+                        amount = receivableLocCreditReleaseAmount(loanTransaction);
                     } else {
                         amount = loanTransaction.getPrincipalPortion();
                     }

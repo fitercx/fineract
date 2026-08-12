@@ -54,6 +54,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInte
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.OriginalInstallmentRow;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
@@ -258,6 +259,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     @Override
     public LoanTransactionData retrieveLoanTransactionTemplate(Long loanId) {
+        return retrieveLoanTransactionTemplate(loanId, null);
+    }
+
+    @Override
+    public LoanTransactionData retrieveLoanTransactionTemplate(Long loanId, LocalDate onDate) {
         RapaymentStatusQuery.Result result = credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId);
 
         CurrencyData currencyData = new CurrencyData(result.getCurrencyCode(), result.getCurrencyName(), result.getCurrencyDigits(),
@@ -270,8 +276,25 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final BigDecimal principalPortion = result.getPrincipalDue();
         final BigDecimal interestDue = result.getInterestDue();
         final BigDecimal feeDue = result.getFeeDue();
-        final BigDecimal penaltyDue = result.getPenaltyDue();
+        BigDecimal penaltyDue = result.getPenaltyDue();
         final BigDecimal taxDue = result.getTaxDue();
+
+        // Fix 2: live preview. When settling a LOC (payable/receivable) loan ON an installment due date, the repayment
+        // (CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment) auto-waives the LPI accrued on/after that
+        // date, so quote the penalty net of it here - otherwise the shown/charged amount would overpay. Uses the exact
+        // same window + filter as the waive (via LocDueDateRepaymentUtils), guaranteeing preview == settled amount.
+        // No-op for non-LOC loans, non-due-date dates, or when there is no post-due LPI to waive.
+        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0
+                && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()) {
+            final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
+            if (LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, onDate)) {
+                // Preview must match waiveOverdueChargesAccruedAfterSettlementDate (strictly AFTER value/due date).
+                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate.plusDays(1),
+                        DateUtils.getBusinessLocalDate(), loan.getCurrency());
+                penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
+            }
+        }
+
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
         final BigDecimal netDisbursalAmount = result.getNetDisbursalAmount();
         boolean manuallyReversed = false;
@@ -736,11 +759,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     private String overdueInstallmentOutstandingSql(final String alias) {
         return "(" + principalOutstandingSql(alias) + " + " + interestOutstandingSql(alias) + " + " + lpiOutstandingSql(alias) + ")";
-    }
-
-    private String overdueInstallmentHasChargeableOutstandingSql(final String alias) {
-        return "(" + principalOutstandingSql(alias) + " > 0 or " + interestOutstandingSql(alias) + " > 0 or " + lpiOutstandingSql(alias)
-                + " > 0)";
     }
 
     private String principalOutstandingSql(final String alias) {
@@ -1966,8 +1984,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
         // All loans now allow early repayments before the first installment due date
         final boolean isDrawdownLoan = true;
+        final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final java.util.Map<Integer, LoanRepaymentsSummaryDAO.InstallmentPaymentsAsOf> paymentsAsOf = transactionDate.isBefore(businessDate)
+                ? this.loanRepaymentsSummaryDAO.fetchInstallmentPaymentsOnOrBefore(loanId, transactionDate)
+                : null;
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
-                penaltyWaitPeriodValue, isDrawdownLoan);
+                penaltyWaitPeriodValue, isDrawdownLoan, paymentsAsOf, businessDate);
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
@@ -2170,8 +2192,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
     /**
      * LPI / penalty-job candidate selection. Uses the same overdue predicate as {@link #retrieveCrediblexOverdueLoans}:
-     * past-due installment with principal + interest + LPI outstanding &gt; 0, so the job skips fully repaid schedule
-     * rows and only loads loans that actually need LPI processing.
+     * past-due installment with chargeable outstanding &gt; 0, so the job skips fully repaid schedule rows.
      */
     @Override
     public Collection<OverdueLoanScheduleData> retrieveAllLoansWithOverdueInstallments(final Long penaltyWaitPeriod,
@@ -2206,14 +2227,22 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
                 .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and ")
-                .append(overdueInstallmentHasChargeableOutstandingSql("ls")).append(" ");
+                .append(hasChargeableInstallmentOutstanding("ls")).append(" ");
         if (loanId != null) {
             sqlBuilder.append(" and ml.id = ? ");
         }
         if (!backdatePenalties) {
-            // Only apply for duedate = yesterday (so that we don't apply penalties on the duedate itself)
             sqlBuilder.append(" and ls.duedate >= ").append(sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "(? + 1)", "day"));
         }
+    }
+
+    private static String hasChargeableInstallmentOutstanding(final String alias) {
+        return "((coalesce(" + alias + ".principal_amount, 0) - coalesce(" + alias + ".principal_completed_derived, 0) - coalesce(" + alias
+                + ".principal_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".interest_amount, 0) - coalesce(" + alias
+                + ".interest_completed_derived, 0) - coalesce(" + alias + ".interest_waived_derived, 0) - coalesce(" + alias
+                + ".interest_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".penalty_charges_amount, 0) - coalesce(" + alias
+                + ".penalty_charges_completed_derived, 0) - coalesce(" + alias + ".penalty_charges_waived_derived, 0) - coalesce(" + alias
+                + ".penalty_charges_writtenoff_derived, 0)) > 0)";
     }
 
     @Override
