@@ -2,12 +2,14 @@ package com.crediblex.fineract.portfolio.loanaccount.domain;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.EarlyRepaymentInterestCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO.InstallmentPaymentsAsOf;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
@@ -21,14 +23,23 @@ public class CredibleXLoanPenaltyCalculator {
     private final List<LoanChargeData> loanCharges;
     private final long penaltyWaitPeriodValue;
     private final boolean isDrawdownLoan;
+    /** When backdating, repayments after the value date must not reduce P/I shown in the template. */
+    private final Map<Integer, InstallmentPaymentsAsOf> paymentsOnOrBeforeValueDate;
+    private final LocalDate businessDate;
 
     public CredibleXLoanPenaltyCalculator(List<ExtendedLoanSchedulePeriodData> periods, Collection<LoanChargeData> loanCharges,
             long penaltyWaitPeriodValue) {
-        this(periods, loanCharges, penaltyWaitPeriodValue, false);
+        this(periods, loanCharges, penaltyWaitPeriodValue, false, null, null);
     }
 
     public CredibleXLoanPenaltyCalculator(List<ExtendedLoanSchedulePeriodData> periods, Collection<LoanChargeData> loanCharges,
             long penaltyWaitPeriodValue, boolean isDrawdownLoan) {
+        this(periods, loanCharges, penaltyWaitPeriodValue, isDrawdownLoan, null, null);
+    }
+
+    public CredibleXLoanPenaltyCalculator(List<ExtendedLoanSchedulePeriodData> periods, Collection<LoanChargeData> loanCharges,
+            long penaltyWaitPeriodValue, boolean isDrawdownLoan, Map<Integer, InstallmentPaymentsAsOf> paymentsOnOrBeforeValueDate,
+            LocalDate businessDate) {
         // Always store installments sorted by period number
         this.loanInstallments = periods.stream().sorted(Comparator.comparingInt(ExtendedLoanSchedulePeriodData::getPeriod)).toList();
 
@@ -37,6 +48,8 @@ public class CredibleXLoanPenaltyCalculator {
                 .sorted(Comparator.comparing(LoanChargeData::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))).toList();
         this.penaltyWaitPeriodValue = penaltyWaitPeriodValue;
         this.isDrawdownLoan = isDrawdownLoan;
+        this.paymentsOnOrBeforeValueDate = paymentsOnOrBeforeValueDate;
+        this.businessDate = businessDate;
     }
 
     public BigDecimal calculatePenaltySum(LocalDate transactionDate) {
@@ -44,11 +57,16 @@ public class CredibleXLoanPenaltyCalculator {
         final LocalDate firstPendingInstallmentDate = getFirstPendingInstallmentDate(transactionDate);
 
         // Business rule validation - allow early repayments for drawdown loans
-        if (transactionDate.isBefore(firstPendingInstallmentDate) && !isDrawdownLoan) {
+        if (transactionDate.isBefore(firstPendingInstallmentDate) && !isDrawdownLoan && hasPendingEmiInstallment()) {
             throw new PlatformApiDataValidationException(
                     List.of(ApiParameterError.parameterError("validation.msg.transactionDate.before.nextPeriodDueDate",
                             "The parameter `transactionDate` cannot be before the first unpaid installment: " + firstPendingInstallmentDate,
                             "transactionDate", transactionDate, firstPendingInstallmentDate)));
+        }
+
+        // EMI fully settled but LPI remains — include every unpaid penalty due on or before the settlement date.
+        if (!hasPendingEmiInstallment()) {
+            return sumUnpaidPenaltiesDueOnOrBefore(transactionDate);
         }
 
         // For drawdown loans with early repayment, use transaction date as lower bound
@@ -84,9 +102,23 @@ public class CredibleXLoanPenaltyCalculator {
         }
 
         return switch (PenaltyApplicabilityWindow.of(chargeDueDate, firstPendingInstallmentDate, transactionDate)) {
-            case EQUAL_TO_FIRST_PENDING_INSTALLMENT, BETWEEN -> true;
+            case EQUAL_TO_FIRST_PENDING_INSTALLMENT, BETWEEN, EQUAL_TO_TRANSACTION_DATE -> true;
             default -> false;
         };
+    }
+
+    private boolean hasPendingEmiInstallment() {
+        return loanInstallments.stream()
+                .anyMatch(p -> p.status != ExtendedLoanSchedulePeriodData.Status.PAID
+                        && (nullToZero(p.getPrincipalOutstanding()).compareTo(BigDecimal.ZERO) > 0
+                                || nullToZero(p.getInterestOutstanding()).compareTo(BigDecimal.ZERO) > 0));
+    }
+
+    private BigDecimal sumUnpaidPenaltiesDueOnOrBefore(final LocalDate transactionDate) {
+        return loanCharges.stream().filter(LoanChargeData::isPenalty).filter(charge -> !charge.isWaived())
+                .filter(charge -> !charge.isPaid())
+                .filter(charge -> charge.getDueDate() != null && !charge.getDueDate().isAfter(transactionDate))
+                .map(LoanChargeData::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private enum PenaltyApplicabilityWindow {
@@ -155,7 +187,19 @@ public class CredibleXLoanPenaltyCalculator {
 
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
-                .map(ExtendedLoanSchedulePeriodData::getPrincipalOutstanding).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(p -> principalOutstandingForTransactionDate(p, transactionDate)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal principalOutstandingForTransactionDate(final ExtendedLoanSchedulePeriodData period,
+            final LocalDate transactionDate) {
+        if (useAsOfPayments(transactionDate)) {
+            final InstallmentPaymentsAsOf paid = paymentsOnOrBeforeValueDate.getOrDefault(period.getPeriod(), InstallmentPaymentsAsOf.ZERO);
+            final BigDecimal principalDue = nullToZero(period.getPrincipalDue());
+            final BigDecimal writtenOff = nullToZero(period.getPrincipalWrittenOff());
+            final BigDecimal outstanding = principalDue.subtract(paid.principalPaid()).subtract(writtenOff);
+            return outstanding.compareTo(BigDecimal.ZERO) > 0 ? outstanding : BigDecimal.ZERO;
+        }
+        return nullToZero(period.getPrincipalOutstanding());
     }
 
     public BigDecimal calculateTotalOutstandingInterest(LocalDate transactionDate) {
@@ -176,6 +220,15 @@ public class CredibleXLoanPenaltyCalculator {
      * {@code EarlyRepaymentInterestHookImpl}.
      */
     private BigDecimal interestOutstandingForTransactionDate(final ExtendedLoanSchedulePeriodData period, final LocalDate transactionDate) {
+        if (useAsOfPayments(transactionDate) && period.getDueDate() != null && !transactionDate.isBefore(period.getDueDate())) {
+            final InstallmentPaymentsAsOf paid = paymentsOnOrBeforeValueDate.getOrDefault(period.getPeriod(), InstallmentPaymentsAsOf.ZERO);
+            final BigDecimal interestDue = nullToZero(period.getInterestDue());
+            final BigDecimal waived = nullToZero(period.getInterestWaived());
+            final BigDecimal writtenOff = nullToZero(period.getInterestWrittenOff());
+            final BigDecimal actualDue = interestDue.subtract(waived).subtract(writtenOff);
+            final BigDecimal outstanding = actualDue.subtract(paid.interestPaid());
+            return outstanding.compareTo(BigDecimal.ZERO) > 0 ? outstanding : BigDecimal.ZERO;
+        }
         final BigDecimal outstanding = nullToZero(period.getInterestOutstanding());
         if (transactionDate == null || period.getDueDate() == null || !transactionDate.isBefore(period.getDueDate())) {
             return outstanding;
@@ -194,6 +247,11 @@ public class CredibleXLoanPenaltyCalculator {
         proratedCharged = proratedCharged.setScale(2, RoundingMode.HALF_UP);
         final BigDecimal proratedOutstanding = proratedCharged.subtract(paid).subtract(waived).subtract(writtenOff);
         return proratedOutstanding.compareTo(BigDecimal.ZERO) > 0 ? proratedOutstanding : BigDecimal.ZERO;
+    }
+
+    private boolean useAsOfPayments(final LocalDate transactionDate) {
+        return paymentsOnOrBeforeValueDate != null && businessDate != null && transactionDate != null
+                && transactionDate.isBefore(businessDate);
     }
 
     private static BigDecimal nullToZero(final BigDecimal value) {

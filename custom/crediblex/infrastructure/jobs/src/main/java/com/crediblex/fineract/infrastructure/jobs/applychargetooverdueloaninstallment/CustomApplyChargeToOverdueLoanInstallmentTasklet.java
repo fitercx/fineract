@@ -131,10 +131,10 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
             final long batchStartTime = System.currentTimeMillis();
             log.info("Processing batch {}: loans {} to {} ({} loans)", batchNumber, i + 1, endIndex, batch.size());
 
-            try {
-                processBatch(batch, exceptions);
-                processedCount += batch.size();
+            final int batchProcessed = processBatch(batch, exceptions);
+            processedCount += batchProcessed;
 
+            if (batchProcessed > 0) {
                 final long batchTime = System.currentTimeMillis() - batchStartTime;
                 final double avgTimePerLoan = batchTime / (double) batch.size();
                 final int remainingLoans = totalLoans - processedCount;
@@ -144,11 +144,6 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
                         batchNumber, batch.size(), batchTime, String.format("%.1f", avgTimePerLoan), processedCount, totalLoans,
                         String.format("%.1f", (processedCount * 100.0 / totalLoans)),
                         String.format("%.1f", estimatedRemainingTime / 1000.0));
-
-            } catch (Exception e) {
-                log.error("Error processing batch {}", batchNumber, e);
-                // Continue processing next batch even if current batch fails
-                // Individual loan failures are already captured in exceptions list
             }
         }
 
@@ -156,47 +151,66 @@ public class CustomApplyChargeToOverdueLoanInstallmentTasklet implements Tasklet
     }
 
     /**
-     * Process a batch of loans in a separate transaction
+     * Process a batch of loans, each in its own transaction, so one slow/failed loan does not hold locks for the whole
+     * batch.
      */
-    private void processBatch(List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> batch, List<Throwable> exceptions) {
-        final TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
-
-        transactionTemplate.executeWithoutResult(status -> {
-            for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : batch) {
-                processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions);
-            }
-        });
-    }
-
-    /**
-     * Process loans sequentially (fallback mode when batch processing is disabled)
-     */
-    private int processLoansSequentially(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData, List<Throwable> exceptions) {
+    private int processBatch(List<Map.Entry<Long, Collection<OverdueLoanScheduleData>>> batch, List<Throwable> exceptions) {
+        final TransactionTemplate transactionTemplate = newPerLoanTransactionTemplate();
         int processedCount = 0;
-        for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
-            processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions);
+        for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : batch) {
+            try {
+                processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions, transactionTemplate);
+            } catch (Exception e) {
+                log.error("Unexpected failure processing loan {} in penalty job batch", entry.getKey(), e);
+                exceptions.add(e);
+            }
             processedCount++;
         }
         return processedCount;
     }
 
     /**
-     * Process a single loan with deadlock retry logic
+     * Process loans sequentially (fallback mode when batch processing is disabled)
+     */
+    private int processLoansSequentially(Map<Long, Collection<OverdueLoanScheduleData>> overdueScheduleData, List<Throwable> exceptions) {
+        final TransactionTemplate transactionTemplate = newPerLoanTransactionTemplate();
+        int processedCount = 0;
+        for (Map.Entry<Long, Collection<OverdueLoanScheduleData>> entry : overdueScheduleData.entrySet()) {
+            try {
+                processLoanWithRetry(entry.getKey(), entry.getValue(), exceptions, transactionTemplate);
+            } catch (Exception e) {
+                log.error("Unexpected failure processing loan {} in penalty job", entry.getKey(), e);
+                exceptions.add(e);
+            }
+            processedCount++;
+        }
+        return processedCount;
+    }
+
+    private TransactionTemplate newPerLoanTransactionTemplate() {
+        final TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        return transactionTemplate;
+    }
+
+    /**
+     * Process a single loan with deadlock retry logic. Each attempt runs in a fresh transaction so Postgres deadlock
+     * abort does not poison retries.
      */
     private void processLoanWithRetry(Long loanId, Collection<OverdueLoanScheduleData> overdueLoanScheduleDataList,
-            List<Throwable> exceptions) {
+            List<Throwable> exceptions, TransactionTemplate transactionTemplate) {
         int attempt = 0;
         Exception lastException = null;
         final int maxRetries = penaltyJobProperties.getMaxRetries();
 
         while (attempt <= maxRetries) {
             try {
-                if (!overdueLoanScheduleDataList.isEmpty()) {
-                    loanChargeWritePlatformService.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
-                }
-                // Success - return
+                transactionTemplate.executeWithoutResult(status -> {
+                    if (!overdueLoanScheduleDataList.isEmpty()) {
+                        loanChargeWritePlatformService.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
+                    }
+                });
                 if (attempt > 0) {
                     log.info("Successfully processed loan {} after {} retry attempts", loanId, attempt);
                 }

@@ -59,6 +59,7 @@ import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -623,13 +624,14 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     public Integer getTotalOfActiveLoans(Long lineOfCreditId) {
 
         try {
+            // Block LOC deactivate while linked loans are still Active (300) or Overpaid (700).
+            // Closed/Obligations met is 600 — do NOT treat it as blocking (previous bug used 600
+            // with a wrong "Overpaid" comment, which blocked deactivate for settled LOCs).
             final String sql = "SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp " + "JOIN m_loan l ON l.id = mlcp.loan_id "
-                    + "WHERE mlcp.line_of_credit_id = ? AND (l.loan_status_id = 300 or (l.loan_status_id = 600 and l.loan_sub_status_id is null))"; // 300:
-                                                                                                                                                    // Active,
-                                                                                                                                                    // 600:
-            // Overpaid
+                    + "WHERE mlcp.line_of_credit_id = ? AND l.loan_status_id IN (?, ?)";
 
-            return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
+            return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId, LoanStatus.ACTIVE.getValue(),
+                    LoanStatus.OVERPAID.getValue());
         } catch (final EmptyResultDataAccessException e) {
             return 0;
         }
