@@ -27,9 +27,9 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 
 /**
- * LPI for an EMI is posted after midnight on the due date (first charge dated dueDate+wait+1). Paying with value
- * date equal to that due date is on-time: the overnight LPI (and any later LPI through today) is waived, and the
- * required due is the EMI without it. Shared by the write path
+ * LPI for an EMI is posted after midnight on the due date (first charge dated dueDate+wait+1). Paying with value date
+ * equal to that due date is on-time: the overnight LPI (and any later LPI through today) is waived, and the required
+ * due is the EMI without it. Shared by the write path
  * ({@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (live preview in
  * {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
  * <p>
@@ -56,10 +56,10 @@ public final class LocDueDateRepaymentUtils {
     /**
      * First date whose overdue LPI charges should be waived when settling on {@code settlementDate}.
      * <p>
-     * Paying on an installment due date is on-time. LPI for that EMI is not charged until after midnight, so the
-     * charge is dated the next calendar day; the waiver window still starts on the due date so that overnight LPI
-     * is waived when the operator backdates to the due date (e.g. due 14 Aug, LPI posted 15 Aug, value date 14 Aug).
-     * Paying on any other date keeps that day's LPI (window starts the next calendar day).
+     * Paying on an installment due date is on-time. LPI for that EMI is not charged until after midnight, so the charge
+     * is dated the next calendar day; the waiver window still starts on the due date so that overnight LPI is waived
+     * when the operator backdates to the due date (e.g. due 14 Aug, LPI posted 15 Aug, value date 14 Aug). Paying on
+     * any other date keeps that day's LPI (window starts the next calendar day).
      */
     public static LocalDate overdueChargeWaiverFromDate(final Loan loan, final LocalDate settlementDate) {
         if (settlementDate == null) {

@@ -286,8 +286,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
             final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, onDate);
             if (waiveFrom != null && !waiveFrom.isAfter(DateUtils.getBusinessLocalDate())) {
-                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom,
-                        DateUtils.getBusinessLocalDate(), loan.getCurrency());
+                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, DateUtils.getBusinessLocalDate(),
+                        loan.getCurrency());
                 penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
             }
         }

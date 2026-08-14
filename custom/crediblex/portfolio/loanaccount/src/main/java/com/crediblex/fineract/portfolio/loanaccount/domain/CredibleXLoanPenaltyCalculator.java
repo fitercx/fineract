@@ -205,9 +205,9 @@ public class CredibleXLoanPenaltyCalculator {
     }
 
     /**
-     * Remaining principal across every installment as of {@code transactionDate}. Used for full-settlement close
-     * amount (mifos-standard / pro-rata-mifos-standard apply extra funds to later principal; they do not collect
-     * future EMI interest).
+     * Remaining principal across every installment as of {@code transactionDate}. Used for full-settlement close amount
+     * (mifos-standard / pro-rata-mifos-standard apply extra funds to later principal; they do not collect future EMI
+     * interest).
      */
     public BigDecimal calculateRemainingPrincipalOutstanding(LocalDate transactionDate) {
         return loanInstallments.stream().map(p -> principalOutstandingForTransactionDate(p, transactionDate)).reduce(BigDecimal.ZERO,
