@@ -110,7 +110,7 @@ public class LoanStatusChangedWebhookListener implements BusinessEventListener<L
         try {
             loanStatusWebhookPublisher.publishCoreStatusChange(loan, oldStatus, isDrawdown, locId);
         } catch (final RuntimeException e) {
-            log.error("Failed to publish core LOAN STATUS_CHANGED webhook for loan {}: {}", loan.getId(), e.getMessage(), e);
+            log.error("Failed to publish core LOAN STATUS_CHANGED webhook for loan {}", loan.getId(), e);
         }
     }
 }

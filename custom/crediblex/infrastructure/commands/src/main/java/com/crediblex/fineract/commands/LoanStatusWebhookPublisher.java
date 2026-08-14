@@ -180,7 +180,7 @@ public class LoanStatusWebhookPublisher {
             dispatched = true;
         } catch (final RuntimeException ex) {
             error = ex.getMessage();
-            log.error("Failed to dispatch LOAN STATUS_CHANGED webhook: {}", ex.getMessage(), ex);
+            log.error("Failed to dispatch LOAN STATUS_CHANGED webhook", ex);
         } finally {
             try {
                 trailRecorder.record(trail.payload(new Gson().toJson(payload)).dispatched(dispatched).errorMessage(error).build());

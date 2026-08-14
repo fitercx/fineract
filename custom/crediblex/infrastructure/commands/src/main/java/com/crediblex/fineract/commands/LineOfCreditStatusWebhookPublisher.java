@@ -149,7 +149,7 @@ public class LineOfCreditStatusWebhookPublisher {
             dispatched = true;
         } catch (final RuntimeException ex) {
             error = ex.getMessage();
-            log.error("Failed to dispatch LINE_OF_CREDIT STATUS_CHANGED webhook: {}", ex.getMessage(), ex);
+            log.error("Failed to dispatch LINE_OF_CREDIT STATUS_CHANGED webhook", ex);
         } finally {
             try {
                 trailRecorder.record(trail.payload(new Gson().toJson(payload)).dispatched(dispatched).errorMessage(error).build());
