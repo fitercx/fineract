@@ -7,7 +7,9 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationDat
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
+import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
@@ -1137,8 +1139,11 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         if (settlementDate == null) {
             return emptyWaiveSummary();
         }
-        // Window strictly AFTER the actual payment day (money received Friday, settled Monday -> Sat/Sun/Mon LPI).
-        return waiveOverdueChargesInWindow(loanId, settlementDate.plusDays(1));
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        // On an installment due date the payment is on-time. LPI for that EMI is posted after midnight
+        // (charge dated the next day); the waiver window starts on the due date so that overnight LPI is
+        // waived when the operator backdates to the due date.
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate));
     }
 
     @Override
@@ -2529,15 +2534,30 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // hook).
         super.applyOverdueChargesForLoan(loanId, overdueLoanScheduleDataList);
 
-        // After penalties and schedule changes, recompute custom statuses and fire webhooks
+        // After penalties and schedule changes, map LPI onto the overdue EMI (not the dummy grace row), then
+        // recompute custom statuses and fire webhooks.
         try {
             Loan updatedLoan = this.loanAssembler.assembleFrom(loanId);
+            boolean scheduleMutated = false;
+            if (hasRepaymentScheduleChargeMismatch(updatedLoan)) {
+                recalculateInstallmentChargesFromActiveLoanCharges(updatedLoan);
+                scheduleMutated = true;
+            }
+            if (InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(updatedLoan)) {
+                scheduleMutated = true;
+            }
+            if (scheduleMutated) {
+                updatedLoan.updateLoanSummaryDerivedFields();
+            }
 
             // Compute new custom loan status based on updated schedule/installments
             CustomLoanStatus oldCustomLoanStatus = updatedLoan.hasCustomStatus() ? updatedLoan.getCustomLoanStatus() : null;
             CustomLoanStatus newCustomLoanStatus = LoanTransactionInstallmentUtils.computeCustomLoanStatusForLoan(updatedLoan);
             updatedLoan.setCustomLoanStatus(newCustomLoanStatus);
             updatedLoan = this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(updatedLoan);
+            if (scheduleMutated) {
+                this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(updatedLoan);
+            }
 
             // LOC status aggregation if drawdown
             Optional<LoanLineOfCreditParams> invoice = loanLineOfCreditParamsRepository.findByLoanId(updatedLoan.getId());
@@ -2581,5 +2601,29 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
     @Override
     protected boolean shouldReprocessTransactionsAfterOverdueChargeApply(final Loan loan) {
         return false;
+    }
+
+    @Override
+    @Transactional
+    public void syncOutstandingOverduePenaltyOntoSchedule(final Long loanId) {
+        if (loanId == null) {
+            return;
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        boolean mutated = false;
+        if (hasRepaymentScheduleChargeMismatch(loan)) {
+            // Rebuild installment penalty from real overdue/LPI charge rows so the schedule Overdue Interest
+            // column and arrears (totalOverdue) match the Charges tab, instead of a dummy 1.00 grace row.
+            recalculateInstallmentChargesFromActiveLoanCharges(loan);
+            mutated = true;
+        }
+        if (InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(loan)) {
+            mutated = true;
+        }
+        if (mutated) {
+            loan.updateLoanSummaryDerivedFields();
+            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+            this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
+        }
     }
 }

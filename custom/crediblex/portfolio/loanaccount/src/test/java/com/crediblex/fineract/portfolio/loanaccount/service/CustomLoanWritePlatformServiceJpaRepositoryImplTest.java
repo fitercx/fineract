@@ -25,10 +25,13 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
@@ -85,6 +88,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     @Mock
     private LoanApplicationValidator loanApplicationValidator;
 
+    @Mock
+    private CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
+
     @InjectMocks
     private CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanWritePlatformService;
 
@@ -111,9 +117,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         mockLocData.put("tenor_days", 90);
         mockLocData.put("product_type", "RECEIVABLE");
 
-        // Initialize customLoanWritePlatformService with minimal mocks for testing validation logic
-        // We'll use reflection to test private methods or test through public API
-        // For now, we'll create a partial mock that allows us to test the validation
+        final HashMap<BusinessDateType, LocalDate> businessDates = new HashMap<>();
+        businessDates.put(BusinessDateType.BUSINESS_DATE, LocalDate.of(2025, 1, 15));
+        ThreadLocalContextUtil.setBusinessDates(businessDates);
+        ThreadLocalContextUtil.setTenant(new FineractPlatformTenant(1L, "default", "default", "UTC", null));
     }
 
     // NOTE: The following tests are commented out because adjustLocBalanceOnRepayment method doesn't exist

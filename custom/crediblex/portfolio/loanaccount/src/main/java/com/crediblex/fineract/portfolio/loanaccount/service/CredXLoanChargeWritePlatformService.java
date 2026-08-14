@@ -39,8 +39,9 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      * @param loanId
      *            the loan being settled
      * @param settlementDate
-     *            the (backdated) transaction date of the settlement; only LPI with due date strictly after this and up
-     *            to the current business date is waived
+     *            the (backdated) transaction date of the settlement. Paying on an installment due date waives LPI dated
+     *            that day as well (on-time). Paying on any other date keeps that day's LPI (window starts the next
+     *            calendar day) and waives later charges up to the current business date.
      * @return summary map: {@code chargesWaived}, {@code totalAmountWaived}, {@code daysCovered}, {@code fromDate},
      *         {@code toDate}. Empty counts when the settlement is not backdated or there is nothing to waive.
      */
@@ -64,4 +65,11 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      *         {@code toDate}. Empty counts when the repayment is not backdated or there is nothing to waive.
      */
     Map<String, Object> waiveOverdueChargesOnOrAfterDate(Long loanId, LocalDate valueDate);
+
+    /**
+     * Copies unpaid overdue/LPI charge outstanding that is missing from the repayment schedule onto the last
+     * installment, then flushes. Must run immediately before a repayment for every product so the strategy collects
+     * that LPI instead of treating the same amount as an overpayment.
+     */
+    void syncOutstandingOverduePenaltyOntoSchedule(Long loanId);
 }

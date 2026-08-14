@@ -279,17 +279,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal penaltyDue = result.getPenaltyDue();
         final BigDecimal taxDue = result.getTaxDue();
 
-        // Fix 2: live preview. When settling a LOC (payable/receivable) loan ON an installment due date, the repayment
-        // (CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment) auto-waives the LPI accrued on/after that
-        // date, so quote the penalty net of it here - otherwise the shown/charged amount would overpay. Uses the exact
-        // same window + filter as the waive (via LocDueDateRepaymentUtils), guaranteeing preview == settled amount.
-        // No-op for non-LOC loans, non-due-date dates, or when there is no post-due LPI to waive.
-        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0
-                && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()) {
+        // Fix 2: live preview. Settling ON an installment due date is on-time, so LPI posted after midnight
+        // for that EMI (and any later LPI through today) is auto-waived. Quote penalty net of that window
+        // for every product — not only LOC.
+        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-            if (LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, onDate)) {
-                // Preview must match waiveOverdueChargesAccruedAfterSettlementDate (strictly AFTER value/due date).
-                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate.plusDays(1),
+            final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, onDate);
+            if (waiveFrom != null && !waiveFrom.isAfter(DateUtils.getBusinessLocalDate())) {
+                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom,
                         DateUtils.getBusinessLocalDate(), loan.getCurrency());
                 penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
             }
@@ -1993,10 +1990,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
+        BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
         final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
 
         return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue,
-                earliestAllowedTransactionDate);
+                remainingPrincipalOutstanding, earliestAllowedTransactionDate);
     }
 
     /**
@@ -2019,9 +2017,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
-        final long diffRaw = penaltyWaitPeriodValue + 1L - penaltyPostingWaitPeriodValue;
-        final long diff = diffRaw < 1L ? 1L : diffRaw;
 
         // EMI (principal + interest) at the selected future date for UI display.
         final BackdatedRepaymentPenaltyDTO penaltiesTemplate = retrieveLoanPenaltiesTemplate(loanId, futureDate);
@@ -2073,11 +2068,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             int frequencyNumber = 1;
 
             if (feeFrequency == null) {
-                scheduleDates.put(frequencyNumber++, firstStartDate.minusDays(diff));
+                if (!firstStartDate.isAfter(futureDate)) {
+                    scheduleDates.put(frequencyNumber++, firstStartDate);
+                }
             } else {
                 LocalDate start = firstStartDate;
                 while (!start.isAfter(futureDate)) {
-                    scheduleDates.put(frequencyNumber++, start.minusDays(diff));
+                    scheduleDates.put(frequencyNumber++, start);
                     start = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency), feeInterval, start);
                 }
             }

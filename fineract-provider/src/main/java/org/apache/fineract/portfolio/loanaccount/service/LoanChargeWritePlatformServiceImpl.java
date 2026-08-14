@@ -1213,19 +1213,18 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
         Map<Integer, LocalDate> scheduleDates = new HashMap<>();
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
         final LocalDate dueDate = command.localDateValueOfParameterNamed("dueDate");
-        long diff = penaltyWaitPeriodValue + 1 - penaltyPostingWaitPeriodValue;
-        if (diff < 1) {
-            diff = 1L;
-        }
+        // First LPI is the day after the installment due date (plus wait). Paying on the due date is on-time
+        // and must not attract a charge — do not shift startDate back onto the due date.
         LocalDate startDate = dueDate.plusDays(penaltyWaitPeriodValue + 1L);
         int frequencyNumber = 1;
         if (feeFrequency == null) {
-            scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
+            if (!DateUtils.isDateInTheFuture(startDate)) {
+                scheduleDates.put(frequencyNumber++, startDate);
+            }
         } else {
             while (!DateUtils.isDateInTheFuture(startDate)) {
-                scheduleDates.put(frequencyNumber++, startDate.minusDays(diff));
+                scheduleDates.put(frequencyNumber++, startDate);
 
                 startDate = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency),
                         chargeDefinition.feeInterval(), startDate);
@@ -1240,6 +1239,11 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         LocalDate lastChargeAppliedDate = dueDate;
         LocalDate recalculateFrom = DateUtils.getBusinessLocalDate();
         if (!scheduleDates.isEmpty()) {
+            // Ensure a post-maturity installment exists before charges are added so they attach to the schedule
+            // instead of remaining as LoanCharge rows the repayment processor never collects.
+            final LocalDate latestScheduledChargeDate = scheduleDates.values().stream().max(LocalDate::compareTo).orElse(null);
+            addInstallmentIfPenaltyAppliedAfterLastDueDate(loan, latestScheduledChargeDate);
+
             installment = loan.fetchRepaymentScheduleInstallment(periodNumber);
             lastChargeAppliedDate = installment.getDueDate();
             businessEventNotifierService.notifyPreBusinessEvent(new LoanApplyOverdueChargeBusinessEvent(loan));
@@ -1272,27 +1276,32 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
     }
 
     private void addInstallmentIfPenaltyAppliedAfterLastDueDate(Loan loan, LocalDate lastChargeDate) {
-        if (lastChargeDate != null) {
-            List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
-            LoanRepaymentScheduleInstallment lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
-            if (DateUtils.isAfter(lastChargeDate, lastInstallment.getDueDate()) && !loan.isFactorRateEnabled()) {
-                if (lastInstallment.isRecalculatedInterestComponent()) {
-                    installments.remove(lastInstallment);
-                    lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
-                }
-                boolean recalculatedInterestComponent = true;
-                BigDecimal principal = BigDecimal.ZERO;
-                BigDecimal interest = BigDecimal.ZERO;
-                BigDecimal feeCharges = BigDecimal.ZERO;
-                BigDecimal penaltyCharges = BigDecimal.ONE;
-                BigDecimal taxCharges = BigDecimal.ZERO;
-                final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
-                LoanRepaymentScheduleInstallment newEntry = new LoanRepaymentScheduleInstallment(loan, installments.size() + 1,
-                        lastInstallment.getDueDate(), lastChargeDate, principal, interest, feeCharges, penaltyCharges, taxCharges,
-                        recalculatedInterestComponent, compoundingDetails);
-                loan.addLoanRepaymentScheduleInstallment(newEntry);
-            }
+        if (lastChargeDate == null) {
+            return;
         }
+        List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        LoanRepaymentScheduleInstallment lastInstallment = loan.fetchRepaymentScheduleInstallment(installments.size());
+        if (loan.isFactorRateEnabled() || !DateUtils.isAfter(lastChargeDate, lastInstallment.getDueDate())) {
+            return;
+        }
+        // Keep accumulated penalty on an existing post-maturity installment. Replacing it with a dummy 1.00
+        // dropped real LPI from the schedule while LoanCharge rows remained, so repayment treated that LPI as
+        // overpayment.
+        if (lastInstallment.isRecalculatedInterestComponent() || lastInstallment.isAdditional()) {
+            lastInstallment.updateDueDate(lastChargeDate);
+            return;
+        }
+        boolean recalculatedInterestComponent = true;
+        BigDecimal principal = BigDecimal.ZERO;
+        BigDecimal interest = BigDecimal.ZERO;
+        BigDecimal feeCharges = BigDecimal.ZERO;
+        BigDecimal penaltyCharges = BigDecimal.ZERO;
+        BigDecimal taxCharges = BigDecimal.ZERO;
+        final Set<LoanInterestRecalcualtionAdditionalDetails> compoundingDetails = null;
+        LoanRepaymentScheduleInstallment newEntry = new LoanRepaymentScheduleInstallment(loan, installments.size() + 1,
+                lastInstallment.getDueDate(), lastChargeDate, principal, interest, feeCharges, penaltyCharges, taxCharges,
+                recalculatedInterestComponent, compoundingDetails);
+        loan.addLoanRepaymentScheduleInstallment(newEntry);
     }
 
     public Loan runScheduleRecalculation(Loan loan, final LocalDate recalculateFrom) {

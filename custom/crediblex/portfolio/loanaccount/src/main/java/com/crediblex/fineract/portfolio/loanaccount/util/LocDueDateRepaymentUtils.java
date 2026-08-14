@@ -27,13 +27,14 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 
 /**
- * Fix 2 pure-logic helpers for auto-waiving post-due-date LPI on a LOC (payable/receivable) repayment made ON an
- * installment due date. Kept as a stateless util (no Spring wiring) shared by the write path (the actual auto-waive in
- * {@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (the live-preview
- * penalty adjustment in {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
+ * LPI for an EMI is posted after midnight on the due date (first charge dated dueDate+wait+1). Paying with value
+ * date equal to that due date is on-time: the overnight LPI (and any later LPI through today) is waived, and the
+ * required due is the EMI without it. Shared by the write path
+ * ({@code CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment}) and the read path (live preview in
+ * {@code CredXLoanReadPlatformServiceImpl#retrieveLoanTransactionTemplate}).
  * <p>
- * The write path waives LPI strictly AFTER the value/due date (processing-delay days only). Callers that preview the
- * waivable amount should therefore pass {@code onDate.plusDays(1)} as {@code fromDate}.
+ * Preview callers must use {@link #overdueChargeWaiverFromDate(Loan, LocalDate)} so the quoted penalty matches the
+ * write path.
  */
 public final class LocDueDateRepaymentUtils {
 
@@ -41,15 +42,30 @@ public final class LocDueDateRepaymentUtils {
 
     /** True when {@code date} exactly equals any installment's due date on the loan. */
     public static boolean isOnInstallmentDueDate(final Loan loan, final LocalDate date) {
-        if (date == null) {
+        if (loan == null || date == null || loan.getRepaymentScheduleInstallments() == null) {
             return false;
         }
         for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
-            if (DateUtils.isEqual(date, installment.getDueDate())) {
+            if (installment != null && DateUtils.isEqual(date, installment.getDueDate())) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * First date whose overdue LPI charges should be waived when settling on {@code settlementDate}.
+     * <p>
+     * Paying on an installment due date is on-time. LPI for that EMI is not charged until after midnight, so the
+     * charge is dated the next calendar day; the waiver window still starts on the due date so that overnight LPI
+     * is waived when the operator backdates to the due date (e.g. due 14 Aug, LPI posted 15 Aug, value date 14 Aug).
+     * Paying on any other date keeps that day's LPI (window starts the next calendar day).
+     */
+    public static LocalDate overdueChargeWaiverFromDate(final Loan loan, final LocalDate settlementDate) {
+        if (settlementDate == null) {
+            return null;
+        }
+        return isOnInstallmentDueDate(loan, settlementDate) ? settlementDate : settlementDate.plusDays(1);
     }
 
     /**

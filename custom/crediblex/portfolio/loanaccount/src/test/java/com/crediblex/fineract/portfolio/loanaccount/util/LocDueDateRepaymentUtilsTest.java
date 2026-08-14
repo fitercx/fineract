@@ -82,6 +82,35 @@ class LocDueDateRepaymentUtilsTest {
         assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, null)).isFalse();
     }
 
+    @Test
+    void overdueChargeWaiverFromDateIsInclusiveOnInstallmentDueDate() {
+        final LoanRepaymentScheduleInstallment i1 = installment(LocalDate.of(2026, 8, 3));
+        final Loan loan = mock(Loan.class);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(i1));
+
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 3)))
+                .isEqualTo(LocalDate.of(2026, 8, 3));
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 4)))
+                .isEqualTo(LocalDate.of(2026, 8, 5));
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, null)).isNull();
+    }
+
+    @Test
+    void backdatingToDueDateWaivesOvernightLpiPostedTheNextMorning() {
+        final LocalDate dueDate = LocalDate.of(2026, 8, 14);
+        final LocalDate overnightLpiDate = LocalDate.of(2026, 8, 15);
+        final LoanRepaymentScheduleInstallment emi = installment(dueDate);
+        final LoanCharge overnightLpi = overdueLpi(overnightLpiDate, "93.20", false, false);
+        final Loan loan = mock(Loan.class);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(emi));
+        when(loan.getActiveCharges()).thenReturn(Set.of(overnightLpi));
+
+        final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, dueDate);
+        assertThat(waiveFrom).isEqualTo(dueDate);
+        final Money waived = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, overnightLpiDate, currency);
+        assertThat(waived.getAmount()).isEqualByComparingTo("93.20");
+    }
+
     private LoanCharge overdueLpi(final LocalDate ownDueDate, final String outstanding, final boolean waived, final boolean paid) {
         final Money outMoney = Money.of(currency, new BigDecimal(outstanding));
         final LoanCharge c = mock(LoanCharge.class);
