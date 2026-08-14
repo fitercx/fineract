@@ -48,8 +48,12 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.organisation.office.domain.Office;
+import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
+import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
+import org.apache.fineract.portfolio.savings.service.SavingsAccountWritePlatformService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -193,6 +197,12 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     // Additional dependencies from parent class
     @Mock
     private LoanAccountDomainService loanAccountDomainService;
+
+    @Mock
+    private SavingsAccountWritePlatformService savingsAccountWritePlatformService;
+
+    @Mock
+    private PaymentTypeReadPlatformService paymentTypeReadPlatformService;
 
     @InjectMocks
     private CredXLoanChargeWritePlatformServiceImpl credXLoanChargeWritePlatformService;
@@ -613,6 +623,92 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             assertEquals(penaltyChargesPortion, sumOfLoanChargesPaid,
                     "sum(loanChargesPaid.amount) must equal transaction.penaltyChargesPortion, or accounting throws "
                             + "'Meltdown in advanced accounting...'");
+        }
+    }
+
+    // ----------------------------------------------------------------------------------------------------------------
+    // reversePaidLoanCharge - regression coverage for the loan-2091 phantom-overpayment fix.
+    // The fix replaces the old hand-unpay (which never reprocessed) with a reprocess so the freed charge is re-applied
+    // down the waterfall, and makes the savings refund conditional on a genuine post-reprocess overpayment.
+    // Both tests are RED against the pre-fix code: it never called reprocessTransactions and always deposited.
+    // ----------------------------------------------------------------------------------------------------------------
+
+    private static final BigDecimal REVERSED_PENALTY = new BigDecimal("483.87");
+
+    /** Common wiring for a reversible, already-paid overdue (LPI) penalty charge on loan {@link #LOAN_ID}. */
+    private void givenReversablePaidPenalty() {
+        final CurrencyData currencyData = new CurrencyData(CURRENCY_CODE, 2, 1);
+        // Precompute OUTSIDE when(...) so the mocked-static MoneyHelper interaction does not interleave with stubbing.
+        final Money paidAmount = Money.of(currencyData, REVERSED_PENALTY);
+        when(loanCharge.getAmountPaid(any(MonetaryCurrency.class))).thenReturn(paidAmount);
+        when(loanCharge.isActive()).thenReturn(true);
+        when(loanCharge.isPenaltyCharge()).thenReturn(true);
+        when(loanCharge.name()).thenReturn("Overdue Interest (LPI)");
+        when(loanCharge.getLoanChargePaidBySet()).thenReturn(new HashSet<>());
+        when(loan.getLoanTransactions()).thenReturn(Collections.emptyList());
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loan.getOffice()).thenReturn(mock(Office.class));
+        when(loanRepositoryWrapper.findOneWithNotFoundDetection(LOAN_ID)).thenReturn(loan);
+        when(externalIdFactory.create()).thenReturn(externalId);
+    }
+
+    @Test
+    void reversePaidLoanCharge_onPartiallyPaidLoan_reprocessesAndDoesNotRefundToSavings() {
+        givenReversablePaidPenalty();
+        // Partially-paid loan: the reprocess re-applies the freed penalty to principal, so it is never overpaid.
+        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+
+            credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
+
+            // Core fix: the freed charge is re-applied down the waterfall via a full reprocess (the pre-fix code never
+            // did this, which is what stranded the 483.87 as a phantom overpayment on loan 2091).
+            verify(reprocessLoanTransactionsService).reprocessTransactions(loan);
+            // Nothing became a genuine overpayment, so NO money is credited back to savings (prevents the double-credit).
+            verify(savingsAccountWritePlatformService, never()).deposit(anyLong(), any(JsonCommand.class));
+        }
+    }
+
+    @Test
+    void reversePaidLoanCharge_refundsOnlyTheGenuinePostReprocessOverpaymentNotTheFullReversedAmount() {
+        givenReversablePaidPenalty();
+        // Reverse the 483.87 penalty on a loan that ends up only 200.00 overpaid after the reprocess (the other 283.87
+        // was re-applied to principal). The refund to savings must be exactly the 200.00 genuine overpayment - NOT the
+        // full 483.87 reversed amount (that unconditional refund was the historical double-credit bug).
+        // The `getTotalOverpaid() != null ? getTotalOverpaid() : ZERO` ternary calls the getter twice per read, so stub
+        // four sequential values: (before: 0, 0) then (after: 200.00, 200.00).
+        final BigDecimal genuineOverpayment = new BigDecimal("200.00");
+        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO, BigDecimal.ZERO, genuineOverpayment, genuineOverpayment);
+
+        final PortfolioAccountData linkedSavings = mock(PortfolioAccountData.class);
+        when(linkedSavings.getId()).thenReturn(3393L);
+        when(linkedSavings.getAccountNo()).thenReturn("000003393");
+        when(accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(LOAN_ID)).thenReturn(linkedSavings);
+
+        final CommandProcessingResult depositResult = mock(CommandProcessingResult.class);
+        when(depositResult.getResourceId()).thenReturn(999L);
+        when(savingsAccountWritePlatformService.deposit(eq(3393L), any(JsonCommand.class))).thenReturn(depositResult);
+        when(paymentTypeReadPlatformService.retrieveAllPaymentTypesWithCode()).thenReturn(Collections.emptyList());
+        // toJson(Object) - disambiguate from the toJson(JsonElement) overload with a Map matcher - so the built deposit
+        // command carries real JSON we can assert the amount on.
+        when(fromApiJsonHelper.toJson(any(Map.class)))
+                .thenAnswer(invocation -> new com.google.gson.Gson().toJson((Object) invocation.getArgument(0)));
+        when(fromApiJsonHelper.parse(anyString()))
+                .thenAnswer(invocation -> com.google.gson.JsonParser.parseString(invocation.getArgument(0)));
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+
+            credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
+
+            verify(reprocessLoanTransactionsService).reprocessTransactions(loan);
+            final ArgumentCaptor<JsonCommand> depositCommand = ArgumentCaptor.forClass(JsonCommand.class);
+            verify(savingsAccountWritePlatformService).deposit(eq(3393L), depositCommand.capture());
+            final String depositJson = depositCommand.getValue().json();
+            assertTrue(depositJson.contains("200"), "savings deposit must be for the genuine overpayment amount 200.00");
+            assertFalse(depositJson.contains("483.87"), "savings deposit must NOT refund the full reversed amount 483.87");
         }
     }
 

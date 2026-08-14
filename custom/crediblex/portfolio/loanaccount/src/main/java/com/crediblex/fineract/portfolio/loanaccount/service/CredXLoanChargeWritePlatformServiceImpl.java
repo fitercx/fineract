@@ -1306,14 +1306,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore, overpaidBefore,
                 loanChargeId, totalAmountPaid);
 
-        LoanRepaymentScheduleInstallment affectedInstallment = null;
-        if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getOverdueInstallmentCharge() != null) {
-            affectedInstallment = loanCharge.getOverdueInstallmentCharge().getInstallment();
-        }
-
-        // Mark the charge as INACTIVE and reset paid amounts.
-        // This will naturally reduce the loan's overpaid balance when we update the loan summary,
-        // since the charge is no longer considered "paid".
+        // Mark the charge as INACTIVE and reset its paid/outstanding amounts so it drops out of loan.getActiveCharges().
         loanCharge.setActive(false);
         loanCharge.resetPaidAmount(currency);
         loanCharge.setOutstandingAmount(BigDecimal.ZERO);
@@ -1321,100 +1314,59 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Marked charge {} as inactive and reset paid amounts (amountPaid: {}, amountOutstanding: {})", loanChargeId,
                 loanCharge.getAmountPaid(currency), loanCharge.getAmountOutstanding(currency));
 
-        // Create a CHARGE_ADJUSTMENT transaction on the loan side for audit trail.
-        // This transaction will be visible in the loan transactions list to prove the charge was reversed.
-        // IMPORTANT: This transaction should NOT have journal entries - journal entries will only be created
-        // when the savings deposit is created.
-        final ExternalId externalId = externalIdFactory.create();
-        LoanTransaction chargeAdjustmentTransaction = LoanTransaction.chargeAdjustment(loan, BigDecimal.ZERO, // Zero
-                                                                                                              // amount
-                                                                                                              // to
-                                                                                                              // avoid
-                                                                                                              // schedule
-                                                                                                              // impact
-                reversalDate, externalId, null // No payment detail
-        );
+        // Re-run the payment waterfall now that the reversed charge is inactive. reprocessTransactions replays the loan's
+        // historical repayments against loan.getActiveCharges() - which no longer contains the reversed penalty - so the
+        // amount that had been applied to that penalty is re-applied down the schedule (to principal/interest) instead of
+        // being stranded as a phantom overpayment. This is the same "inactivate + reprocess" contract that base
+        // applyChargeAdjustment and ReprocessLoanTransactionsService#removeLoanCharge use.
+        //   - Partially-paid loan: the freed amount reduces principal outstanding -> no overpayment, no refund ("Model A").
+        //   - Fully-repaid loan: nothing is left to absorb it, so it becomes a genuine overpayment (refunded to savings below).
+        // Historically this method skipped the reprocess and instead hand-unpaid the installment penalty component, which
+        // lowered the installment-side paid total WITHOUT touching the transaction-side total - producing exactly the
+        // phantom overpayment seen on loan 2091 (see ReversePaidPhantomOverpaymentTest).
+        reprocessLoanTransactionsService.reprocessTransactions(loan);
 
-        // Set the fee and penalty portions (negative to indicate reversal)
+        loan.updateLoanScheduleDependentDerivedFields();
+        // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0) this
+        // is a no-op; on a fully-repaid one it stops the loan being left stuck ACTIVE after the reversal.
+        LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, reversalDate, defaultLoanLifecycleStateMachine);
+
+        // Audit trail: post a zero-amount CHARGE_ADJUSTMENT transaction that records the reversal (and makes it idempotent
+        // via hasExistingChargeReversal). Created AFTER the reprocess above so it is never itself replayed through the
+        // waterfall, and so its fee/penalty reversal portions survive as the visible reversal signal. It carries no
+        // journal entries - GL for any genuine refund is created by the savings deposit below.
+        final ExternalId externalId = externalIdFactory.create();
+        LoanTransaction chargeAdjustmentTransaction = LoanTransaction.chargeAdjustment(loan, BigDecimal.ZERO, reversalDate, externalId,
+                null);
         BigDecimal feeAmount = BigDecimal.ZERO;
         BigDecimal penaltyAmount = BigDecimal.ZERO;
         if (loanCharge.isPenaltyCharge()) {
-            penaltyAmount = totalAmountPaid.negate(); // Negative to reverse
+            penaltyAmount = totalAmountPaid.negate(); // Negative to indicate reversal
         } else {
-            feeAmount = totalAmountPaid.negate(); // Negative to reverse
+            feeAmount = totalAmountPaid.negate(); // Negative to indicate reversal
         }
-
-        chargeAdjustmentTransaction.updateComponents(Money.zero(currency), // principal
-                Money.zero(currency), // interest
-                Money.of(currency, feeAmount), // fees (negative)
-                Money.of(currency, penaltyAmount) // penalties (negative)
-        );
-
-        // Link the charge to the transaction so it can be identified as reversed
+        chargeAdjustmentTransaction.updateComponents(Money.zero(currency), Money.zero(currency), Money.of(currency, feeAmount),
+                Money.of(currency, penaltyAmount));
         final LoanChargePaidBy chargePaidBy = new LoanChargePaidBy(chargeAdjustmentTransaction, loanCharge, totalAmountPaid, null);
         chargeAdjustmentTransaction.getLoanChargesPaid().add(chargePaidBy);
         loanCharge.getLoanChargePaidBySet().add(chargePaidBy);
         final LoanTransactionRelation chargeAdjustmentRelation = LoanTransactionRelation.linkToCharge(chargeAdjustmentTransaction,
                 loanCharge, LoanTransactionRelationTypeEnum.CHARGE_ADJUSTMENT);
         chargeAdjustmentTransaction.getLoanTransactionRelations().add(chargeAdjustmentRelation);
-
-        // Add the transaction to the loan (for audit trail, visible in transactions list)
         loan.addLoanTransaction(chargeAdjustmentTransaction);
-        // Save the transaction first, then the loan (to avoid duplicate saves)
         this.loanTransactionRepository.saveAndFlush(chargeAdjustmentTransaction);
         loanRepositoryWrapper.saveAndFlush(loan);
         log.info("Created CHARGE_ADJUSTMENT transaction {} on loan {} for charge reversal (audit trail only, no journal entries)",
                 chargeAdjustmentTransaction.getId(), loanId);
 
-        // Update schedule/summary from charges only (like our bulk overdue deactivation flow).
-        // IMPORTANT: Only recalculate the specific installment that was affected by the reversed charge,
-        // not all installments, to prevent removing charges from other periods.
-        if (affectedInstallment != null) {
-            // recalculateInstallmentChargesForSpecificInstallment() below only rebuilds the CHARGED / WAIVED /
-            // WRITTEN-OFF totals (installment.updateChargePortion(...) never touches penaltyChargesPaid /
-            // feeChargesPaid) - it deliberately leaves the installment's own "paid" aggregate alone since that is
-            // normally only ever mutated by the transaction processors as money is applied/unapplied. But the
-            // CHARGE_ADJUSTMENT transaction created above is posted with a ZERO amount (by design, to avoid
-            // double-touching the schedule through normal transaction processing) and therefore does NOT run
-            // through any transaction processor's unpay path either. Without this explicit call, the installment
-            // would still show the just-reversed charge's amount as "paid" forever (penaltyChargesPaid stays
-            // stale), which then makes getPenaltyChargesOutstanding() UNDER-report what is actually still owed on
-            // that installment by exactly the reversed amount (charged total drops correctly, but so does neither
-            // paid nor - overall - outstanding, i.e. outstanding = charged - waived - writtenOff - STALE paid).
-            // Explicitly "unpay" exactly the amount this one charge contributed so the installment's paid aggregate
-            // reflects only the OTHER, still-genuinely-paid charges on it. See BUG_REPORT.md Finding #2.
-            if (loanCharge.isPenaltyCharge()) {
-                affectedInstallment.unpayPenaltyChargesComponent(reversalDate, Money.of(currency, totalAmountPaid));
-            } else {
-                affectedInstallment.unpayFeeChargesComponent(reversalDate, Money.of(currency, totalAmountPaid));
-            }
-            recalculateInstallmentChargesForSpecificInstallment(loan, affectedInstallment);
-            log.info("Recalculated charges only for installment {} (due: {}) affected by reversed charge {}",
-                    affectedInstallment.getInstallmentNumber(), affectedInstallment.getDueDate(), loanChargeId);
-        } else {
-            log.warn("Reversed charge {} has no linked installment; recalculating all installments", loanChargeId);
-            recalculateInstallmentChargesFromActiveLoanCharges(loan);
-        }
-
-        loan.updateLoanScheduleDependentDerivedFields();
-        // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0)
-        // this is a no-op; on a fully-repaid one it stops the loan being left stuck ACTIVE after the reversal.
-        LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, reversalDate, defaultLoanLifecycleStateMachine);
-        loanRepositoryWrapper.saveAndFlush(loan);
-
-        // Log loan status and overpaid balance AFTER reversal
+        // Only the portion of the reversed amount the reprocess could NOT re-apply to the loan is a genuine overpayment to
+        // return to the client. On a partially-paid loan this is zero (the amount reduced outstanding); on a fully-repaid
+        // loan it equals the reversed amount. Refunding just this delta is what prevents the historical double-credit.
         final BigDecimal overpaidAfter = loan.getTotalOverpaid() != null ? loan.getTotalOverpaid() : BigDecimal.ZERO;
         final String statusAfter = loan.getStatus() != null ? loan.getStatus().getCode() : "null";
-        final BigDecimal overpaidReduction = overpaidBefore.subtract(overpaidAfter);
-        log.info("AFTER reversal - Loan {} status: {}, totalOverpaid: {} (reduced by {}), expected reduction: {}", loanId, statusAfter,
-                overpaidAfter, overpaidReduction, totalAmountPaid);
-
-        if (overpaidReduction.compareTo(totalAmountPaid) != 0) {
-            log.warn("Overpaid reduction ({}) does not match reversed charge amount ({}). Loan may still be overpaid.", overpaidReduction,
-                    totalAmountPaid);
-        } else {
-            log.info("Overpaid balance correctly reduced by {} (matches reversed charge amount)", overpaidReduction);
-        }
+        final BigDecimal refundableToSavings = overpaidAfter.subtract(overpaidBefore).max(BigDecimal.ZERO).min(totalAmountPaid);
+        log.info("AFTER reversal - Loan {} status: {}, totalOverpaid: {} (was {}), reversed amount: {}, refundable to savings: {}", loanId,
+                statusAfter, overpaidAfter, overpaidBefore, totalAmountPaid, refundableToSavings);
 
         // DO NOT create GL entries here - they will be created only when savings deposit is created
 
@@ -1426,9 +1378,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         try {
             linkedSavingsAccount = accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(loanId);
 
-            if (linkedSavingsAccount != null && linkedSavingsAccount.getId() != null) {
-                log.info("Found linked savings account {} for loan {}, creating deposit transaction for amount {}",
-                        linkedSavingsAccount.getId(), loanId, totalAmountPaid);
+            if (refundableToSavings.compareTo(BigDecimal.ZERO) > 0 && linkedSavingsAccount != null
+                    && linkedSavingsAccount.getId() != null) {
+                log.info("Found linked savings account {} for loan {}, refunding genuine overpayment of {} (reversed amount {})",
+                        linkedSavingsAccount.getId(), loanId, refundableToSavings, totalAmountPaid);
 
                 // Resolve payment type from the original transaction that paid the charge
                 Long paymentTypeId = resolvePaymentTypeIdForCharge(loan, loanCharge);
@@ -1438,7 +1391,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // We will update the transaction type after creation
                 final Map<String, Object> depositData = new HashMap<>();
                 depositData.put("transactionDate", reversalDate.format(DateTimeFormatter.ISO_DATE));
-                depositData.put("transactionAmount", totalAmountPaid);
+                depositData.put("transactionAmount", refundableToSavings);
                 depositData.put("note", "Refund for reversed charge: " + loanCharge.name() + " (Loan Charge ID: " + loanChargeId + ")");
                 if (paymentTypeId != null) {
                     depositData.put("paymentTypeId", paymentTypeId);
@@ -1460,10 +1413,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                     if (depositResult != null) {
                         savingsDepositTransactionId = depositResult.getResourceId();
                         log.info("Created savings deposit transaction {} for account {} with amount {}", savingsDepositTransactionId,
-                                linkedSavingsAccount.getId(), totalAmountPaid);
+                                linkedSavingsAccount.getId(), refundableToSavings);
                     } else {
                         log.error("Deposit operation returned null result for account {} with amount {}", linkedSavingsAccount.getId(),
-                                totalAmountPaid);
+                                refundableToSavings);
                     }
                 } catch (Exception depositException) {
                     log.error("Exception during deposit creation for account {}", linkedSavingsAccount.getId(), depositException);
@@ -1539,10 +1492,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 // The accounting processor detects charge reversals via notes and uses GL 300015.
                 log.info("GL entries for charge reversal will be automatically created by savings deposit transaction {}",
                         savingsDepositTransactionId);
+            } else if (refundableToSavings.compareTo(BigDecimal.ZERO) <= 0) {
+                log.info(
+                        "Reversed charge {} was fully re-applied to loan {} by the reprocess (no genuine overpayment); no savings refund needed.",
+                        loanChargeId, loanId);
             } else {
                 log.warn(
-                        "No linked savings account found for loan {}. Cannot create deposit. Charge reversal completed but funds remain in loan.",
-                        loanId);
+                        "No linked savings account found for loan {}. Genuine overpayment of {} could not be refunded; funds remain on the loan.",
+                        loanId, refundableToSavings);
             }
         } catch (Exception e) {
             log.error("Failed to create savings deposit for loan {}", loanId, e);
@@ -1561,12 +1518,16 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         String auditNote;
         if (savingsDepositTransactionId != null) {
             auditNote = String.format(
-                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked as inactive and unpaid. GL entries created to reverse fee/penalty income. Savings deposit transaction %d created. Loan balance updated (overpaid amount reduced).",
-                    loanCharge.name(), loanChargeId, totalAmountPaid, savingsDepositTransactionId);
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed. Genuine overpayment of %s refunded to savings (deposit transaction %d).",
+                    loanCharge.name(), loanChargeId, totalAmountPaid, refundableToSavings, savingsDepositTransactionId);
+        } else if (refundableToSavings.compareTo(BigDecimal.ZERO) <= 0) {
+            auditNote = String.format(
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed; the amount was re-applied to the loan (reduced outstanding), so no savings refund was required.",
+                    loanCharge.name(), loanChargeId, totalAmountPaid);
         } else {
             auditNote = String.format(
-                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked as inactive and unpaid. GL entries created to reverse fee/penalty income. Warning: Savings deposit not created - manual intervention may be required.",
-                    loanCharge.name(), loanChargeId, totalAmountPaid);
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed. Warning: genuine overpayment of %s could not be refunded to savings - manual intervention may be required.",
+                    loanCharge.name(), loanChargeId, totalAmountPaid, refundableToSavings);
         }
         final Note auditNoteEntity = Note.loanNote(loan, auditNote);
         this.noteRepository.save(auditNoteEntity);
