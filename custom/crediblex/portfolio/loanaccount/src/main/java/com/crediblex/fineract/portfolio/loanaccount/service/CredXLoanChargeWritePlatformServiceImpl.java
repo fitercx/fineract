@@ -1306,7 +1306,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore, overpaidBefore,
                 loanChargeId, totalAmountPaid);
 
-        // Mark the charge as INACTIVE and reset its paid/outstanding amounts so it drops out of loan.getActiveCharges().
+        // Mark the charge as INACTIVE and reset its paid/outstanding amounts so it drops out of
+        // loan.getActiveCharges().
         loanCharge.setActive(false);
         loanCharge.resetPaidAmount(currency);
         loanCharge.setOutstandingAmount(BigDecimal.ZERO);
@@ -1314,24 +1315,32 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Marked charge {} as inactive and reset paid amounts (amountPaid: {}, amountOutstanding: {})", loanChargeId,
                 loanCharge.getAmountPaid(currency), loanCharge.getAmountOutstanding(currency));
 
-        // Re-run the payment waterfall now that the reversed charge is inactive. reprocessTransactions replays the loan's
-        // historical repayments against loan.getActiveCharges() - which no longer contains the reversed penalty - so the
-        // amount that had been applied to that penalty is re-applied down the schedule (to principal/interest) instead of
+        // Re-run the payment waterfall now that the reversed charge is inactive. reprocessTransactions replays the
+        // loan's
+        // historical repayments against loan.getActiveCharges() - which no longer contains the reversed penalty - so
+        // the
+        // amount that had been applied to that penalty is re-applied down the schedule (to principal/interest) instead
+        // of
         // being stranded as a phantom overpayment. This is the same "inactivate + reprocess" contract that base
         // applyChargeAdjustment and ReprocessLoanTransactionsService#removeLoanCharge use.
-        //   - Partially-paid loan: the freed amount reduces principal outstanding -> no overpayment, no refund ("Model A").
-        //   - Fully-repaid loan: nothing is left to absorb it, so it becomes a genuine overpayment (refunded to savings below).
-        // Historically this method skipped the reprocess and instead hand-unpaid the installment penalty component, which
+        // - Partially-paid loan: the freed amount reduces principal outstanding -> no overpayment, no refund ("Model
+        // A").
+        // - Fully-repaid loan: nothing is left to absorb it, so it becomes a genuine overpayment (refunded to savings
+        // below).
+        // Historically this method skipped the reprocess and instead hand-unpaid the installment penalty component,
+        // which
         // lowered the installment-side paid total WITHOUT touching the transaction-side total - producing exactly the
         // phantom overpayment seen on loan 2091 (see ReversePaidPhantomOverpaymentTest).
         reprocessLoanTransactionsService.reprocessTransactions(loan);
 
         loan.updateLoanScheduleDependentDerivedFields();
-        // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0) this
+        // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0)
+        // this
         // is a no-op; on a fully-repaid one it stops the loan being left stuck ACTIVE after the reversal.
         LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, reversalDate, defaultLoanLifecycleStateMachine);
 
-        // Audit trail: post a zero-amount CHARGE_ADJUSTMENT transaction that records the reversal (and makes it idempotent
+        // Audit trail: post a zero-amount CHARGE_ADJUSTMENT transaction that records the reversal (and makes it
+        // idempotent
         // via hasExistingChargeReversal). Created AFTER the reprocess above so it is never itself replayed through the
         // waterfall, and so its fee/penalty reversal portions survive as the visible reversal signal. It carries no
         // journal entries - GL for any genuine refund is created by the savings deposit below.
@@ -1359,8 +1368,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Created CHARGE_ADJUSTMENT transaction {} on loan {} for charge reversal (audit trail only, no journal entries)",
                 chargeAdjustmentTransaction.getId(), loanId);
 
-        // Only the portion of the reversed amount the reprocess could NOT re-apply to the loan is a genuine overpayment to
-        // return to the client. On a partially-paid loan this is zero (the amount reduced outstanding); on a fully-repaid
+        // Only the portion of the reversed amount the reprocess could NOT re-apply to the loan is a genuine overpayment
+        // to
+        // return to the client. On a partially-paid loan this is zero (the amount reduced outstanding); on a
+        // fully-repaid
         // loan it equals the reversed amount. Refunding just this delta is what prevents the historical double-credit.
         final BigDecimal overpaidAfter = loan.getTotalOverpaid() != null ? loan.getTotalOverpaid() : BigDecimal.ZERO;
         final String statusAfter = loan.getStatus() != null ? loan.getStatus().getCode() : "null";

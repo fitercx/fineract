@@ -22,6 +22,8 @@ import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.organisation.office.domain.Office;
+import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
@@ -48,8 +50,6 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
-import org.apache.fineract.organisation.office.domain.Office;
-import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
@@ -666,7 +666,8 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             // Core fix: the freed charge is re-applied down the waterfall via a full reprocess (the pre-fix code never
             // did this, which is what stranded the 483.87 as a phantom overpayment on loan 2091).
             verify(reprocessLoanTransactionsService).reprocessTransactions(loan);
-            // Nothing became a genuine overpayment, so NO money is credited back to savings (prevents the double-credit).
+            // Nothing became a genuine overpayment, so NO money is credited back to savings (prevents the
+            // double-credit).
             verify(savingsAccountWritePlatformService, never()).deposit(anyLong(), any(JsonCommand.class));
         }
     }

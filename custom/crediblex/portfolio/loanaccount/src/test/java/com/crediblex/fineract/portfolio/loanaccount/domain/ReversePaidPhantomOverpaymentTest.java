@@ -49,8 +49,8 @@ import org.mockito.MockedStatic;
  *
  * <p>
  * Root-cause arithmetic ({@link Loan#calculateTotalOverpayment()}): overpayment is the gap between the
- * <b>transaction-side</b> total ({@link Loan#getTotalPaidInRepayments()}) and the <b>installment-side</b> total
- * (sum of {@code principalCompleted + interestPaid + feeChargesPaid + penaltyChargesPaid}). Today
+ * <b>transaction-side</b> total ({@link Loan#getTotalPaidInRepayments()}) and the <b>installment-side</b> total (sum of
+ * {@code principalCompleted + interestPaid + feeChargesPaid + penaltyChargesPaid}). Today
  * {@code CredXLoanChargeWritePlatformServiceImpl.reversePaidLoanCharge} calls
  * {@link LoanRepaymentScheduleInstallment#unpayPenaltyChargesComponent} — which lowers the installment side — but never
  * calls {@code reprocessLoanTransactionsService.reprocessTransactions(loan)} and leaves the original repayment
@@ -75,8 +75,10 @@ class ReversePaidPhantomOverpaymentTest {
     private static final BigDecimal PRINCIPAL = new BigDecimal("776824.04");
     private static final BigDecimal INTEREST = new BigDecimal("28731.85");
     private static final BigDecimal PENALTY = new BigDecimal("483.87"); // overdue LPI charge 10751
-    private static final BigDecimal PRINCIPAL_PAID = new BigDecimal("216353.21"); // portion of the SI sweep applied to principal
-    private static final BigDecimal SWEEP = new BigDecimal("216837.08"); // SI 1806 partial sweep = PRINCIPAL_PAID + PENALTY
+    private static final BigDecimal PRINCIPAL_PAID = new BigDecimal("216353.21"); // portion of the SI sweep applied to
+                                                                                  // principal
+    private static final BigDecimal SWEEP = new BigDecimal("216837.08"); // SI 1806 partial sweep = PRINCIPAL_PAID +
+                                                                         // PENALTY
 
     private MockedStatic<MoneyHelper> moneyHelperMock;
 
@@ -169,7 +171,6 @@ class ReversePaidPhantomOverpaymentTest {
         assertThat(loan.calculateTotalOverpayment().getAmount()).isEqualByComparingTo("0.00");
 
         // ...and the freed amount reduced principal outstanding instead of becoming excess cash (Model A).
-        assertThat(installment.getPrincipalOutstanding(AED).getAmount())
-                .isEqualByComparingTo(principalOutstandingBefore.subtract(PENALTY));
+        assertThat(installment.getPrincipalOutstanding(AED).getAmount()).isEqualByComparingTo(principalOutstandingBefore.subtract(PENALTY));
     }
 }
