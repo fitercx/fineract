@@ -101,10 +101,24 @@ public class CredibleXLoanPenaltyCalculator {
             return false;
         }
 
+        // Paying on an installment due date is on-time. LPI for that EMI is posted after midnight (charge dated
+        // the next calendar day) and must not be quoted. Exclude a legacy charge dated on the due date itself;
+        // the overnight charge is AFTER_TRANSACTION_DATE below.
+        if (isOnInstallmentDueDate(transactionDate) && chargeDueDate.isEqual(transactionDate)) {
+            return false;
+        }
+
         return switch (PenaltyApplicabilityWindow.of(chargeDueDate, firstPendingInstallmentDate, transactionDate)) {
             case EQUAL_TO_FIRST_PENDING_INSTALLMENT, BETWEEN, EQUAL_TO_TRANSACTION_DATE -> true;
             default -> false;
         };
+    }
+
+    private boolean isOnInstallmentDueDate(final LocalDate transactionDate) {
+        if (transactionDate == null) {
+            return false;
+        }
+        return loanInstallments.stream().anyMatch(p -> p.getDueDate() != null && p.getDueDate().isEqual(transactionDate));
     }
 
     private boolean hasPendingEmiInstallment() {
@@ -188,6 +202,16 @@ public class CredibleXLoanPenaltyCalculator {
         return loanInstallments.stream().filter(p -> !p.getDueDate().isBefore(lowerBound)) // on or after lower bound
                 .filter(p -> !p.getDueDate().isAfter(targetInstallment.getDueDate())) // on or before target
                 .map(p -> principalOutstandingForTransactionDate(p, transactionDate)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Remaining principal across every installment as of {@code transactionDate}. Used for full-settlement close amount
+     * (mifos-standard / pro-rata-mifos-standard apply extra funds to later principal; they do not collect future EMI
+     * interest).
+     */
+    public BigDecimal calculateRemainingPrincipalOutstanding(LocalDate transactionDate) {
+        return loanInstallments.stream().map(p -> principalOutstandingForTransactionDate(p, transactionDate)).reduce(BigDecimal.ZERO,
+                BigDecimal::add);
     }
 
     private BigDecimal principalOutstandingForTransactionDate(final ExtendedLoanSchedulePeriodData period,

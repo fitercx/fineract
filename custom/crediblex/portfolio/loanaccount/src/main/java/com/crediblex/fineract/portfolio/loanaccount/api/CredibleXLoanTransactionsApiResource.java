@@ -110,7 +110,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
-        return this.penaltyJsonSerializer.serialize(settings, penaltiesData, this.responseDataParameters);
+        return this.penaltyJsonSerializer.serialize(settings, penaltiesData, BackdatedRepaymentPenaltyDTO.RESPONSE_DATA_PARAMETERS);
     }
 
     @GET

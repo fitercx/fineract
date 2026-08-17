@@ -2,6 +2,7 @@ package com.crediblex.fineract.portfolio.loanaccount.data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -11,9 +12,19 @@ import lombok.Setter;
 @RequiredArgsConstructor
 public class BackdatedRepaymentPenaltyDTO {
 
+    public static final Set<String> RESPONSE_DATA_PARAMETERS = Set.of("penaltyAmountDue", "principalOutstanding", "interestOutstanding",
+            "remainingPrincipalOutstanding", "earliestAllowedTransactionDate");
+
     private final BigDecimal penaltyAmountDue;
+    /** Principal still due on the installment that contains the transaction date (current EMI). */
     private final BigDecimal principalOutstanding;
     private final BigDecimal interestOutstanding;
+    /**
+     * Remaining principal across every unpaid installment as of the transaction date. Full settlement under
+     * mifos-standard / pro-rata-mifos-standard applies extra funds to this amount (future EMI interest is not
+     * collected).
+     */
+    private final BigDecimal remainingPrincipalOutstanding;
     /**
      * The earliest date this loan may currently be backdated to for a repayment/transfer - see
      * {@code BackdatedRepaymentValidator#computeEarliestAllowedTransactionDate}. Surfaced here so the UI's
