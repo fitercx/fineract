@@ -19,41 +19,57 @@
 package com.crediblex.fineract.commands;
 
 import com.crediblex.fineract.commands.repository.EzySqlLoanLocLookupRepository;
+import com.google.gson.Gson;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.portfolio.loanaccount.domain.CustomLoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.springframework.stereotype.Component;
 
+/**
+ * Publishes the {@code LINE_OF_CREDIT / STATUS_CHANGED} webhook (the drawdown's umbrella line-of-credit status).
+ *
+ * <p>
+ * LOC status is an aggregated CrediblEx concept (not a Fineract state-machine status), so unlike {@code LOAN} it has no
+ * business event to hook; it continues to be published from the aggregation path. Every attempt is now written to the
+ * shared {@link LoanStatusWebhookTrailRecorder} audit trail. No de-duplication is needed because this is a distinct
+ * entity from {@code LOAN}.
+ */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class LineOfCreditStatusWebhookPublisher {
 
     private static final String ENTITY = "LINE_OF_CREDIT";
     private static final String ACTION = "STATUS_CHANGED";
+    private static final String TRIGGER_LOC = "LOC_STATUS_CHANGE";
 
     private final CredXSynchronousCommandProcessingService credXSyncCommandService;
     private final EzySqlLoanLocLookupRepository ezyLoanLocLookupRepository;
+    private final LoanStatusWebhookTrailRecorder trailRecorder;
 
     // Publish with full loan context and both default/custom old statuses
-    public void publish(Loan loan, CustomLoanStatus oldCustomStatus) {
+    public void publish(final Loan loan, final CustomLoanStatus oldCustomStatus) {
         if (loan == null || loan.getStatus() == null) {
             return;
         }
 
-        Map<String, Object> customStatus = new HashMap<>();
-        Map<String, Object> changes = new HashMap<>();
-        Map<String, Object> response = new HashMap<>();
-        Map<String, Object> payload = new HashMap<>();
+        final Map<String, Object> customStatus = new HashMap<>();
+        final Map<String, Object> changes = new HashMap<>();
+        final Map<String, Object> response = new HashMap<>();
+        final Map<String, Object> payload = new HashMap<>();
 
-        customStatus.put("newStatus", loan.hasCustomStatus() ? loan.getCustomLoanStatus().toString() : null);
-        customStatus.put("oldStatus", oldCustomStatus == null ? null : oldCustomStatus.toString());
+        final String newCustom = loan.hasCustomStatus() ? loan.getCustomLoanStatus().toString() : null;
+        final String oldCustom = oldCustomStatus == null ? null : oldCustomStatus.toString();
+        customStatus.put("newStatus", newCustom);
+        customStatus.put("oldStatus", oldCustom);
 
         // Skip if custom status did not change
-        if (Objects.equals(customStatus.get("oldStatus"), customStatus.get("newStatus"))) {
+        if (Objects.equals(oldCustom, newCustom)) {
             return;
         }
 
@@ -63,12 +79,11 @@ public class LineOfCreditStatusWebhookPublisher {
         changes.put("officeId", loan.getOfficeId());
         changes.put("statusChanged", true);
 
-        boolean isDrawdown = ezyLoanLocLookupRepository.existsByLoanId(loan.getId());
+        final boolean isDrawdown = ezyLoanLocLookupRepository.existsByLoanId(loan.getId());
 
         // Optional LOC id when drawdown
-        if (isDrawdown) {
-            ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()).ifPresent(locId -> changes.put("locId", locId));
-        }
+        final Optional<Long> locIdOpt = isDrawdown ? ezyLoanLocLookupRepository.findLocIdByLoanId(loan.getId()) : Optional.empty();
+        locIdOpt.ifPresent(locId -> changes.put("locId", locId));
 
         response.put("changes", changes);
 
@@ -78,12 +93,17 @@ public class LineOfCreditStatusWebhookPublisher {
         payload.put("resourceId", loan.getId());
         payload.put("resourceIdentifier", String.valueOf(loan.getId()));
 
-        credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
+        final WebhookTrailEntry.WebhookTrailEntryBuilder trail = WebhookTrailEntry.builder().entityName(ENTITY).actionName(ACTION)
+                .resourceId(locIdOpt.orElse(loan.getId())).loanId(loan.getId()).clientId(loan.getClientId()).officeId(loan.getOfficeId())
+                .isDrawdown(isDrawdown).locId(locIdOpt.orElse(null)).newCoreStatus(loan.getStatus().toString())
+                .newCoreStatusCode(loan.getStatus().getValue()).oldCustomStatus(oldCustom).newCustomStatus(newCustom)
+                .triggerSource(TRIGGER_LOC);
+        dispatchAndRecord(payload, trail);
     }
 
     // New overload to publish without repository access (use precomputed flags)
-    public void publish(Loan loan, String defaultLocStatus, String oldCustomStatus, String newCustomStatus, boolean isDrawdown,
-            Optional<Long> locIdOpt) {
+    public void publish(final Loan loan, final String defaultLocStatus, final String oldCustomStatus, final String newCustomStatus,
+            final boolean isDrawdown, final Optional<Long> locIdOpt) {
         if (loan == null || loan.getStatus() == null) {
             return;
         }
@@ -91,10 +111,10 @@ public class LineOfCreditStatusWebhookPublisher {
         if (Objects.equals(oldCustomStatus, newCustomStatus)) {
             return;
         }
-        Map<String, Object> customStatus = new HashMap<>();
-        Map<String, Object> changes = new HashMap<>();
-        Map<String, Object> response = new HashMap<>();
-        Map<String, Object> payload = new HashMap<>();
+        final Map<String, Object> customStatus = new HashMap<>();
+        final Map<String, Object> changes = new HashMap<>();
+        final Map<String, Object> response = new HashMap<>();
+        final Map<String, Object> payload = new HashMap<>();
 
         customStatus.put("newStatus", newCustomStatus);
         customStatus.put("oldStatus", oldCustomStatus);
@@ -114,6 +134,28 @@ public class LineOfCreditStatusWebhookPublisher {
         payload.put("actionName", ACTION);
         payload.put("resourceIdentifier", locIdOpt.map(String::valueOf).orElse(null));
 
-        credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
+        final WebhookTrailEntry.WebhookTrailEntryBuilder trail = WebhookTrailEntry.builder().entityName(ENTITY).actionName(ACTION)
+                .resourceId(locIdOpt.orElse(null)).loanId(loan.getId()).clientId(loan.getClientId()).officeId(loan.getOfficeId())
+                .isDrawdown(isDrawdown).locId(locIdOpt.orElse(null)).newCoreStatus(defaultLocStatus).oldCustomStatus(oldCustomStatus)
+                .newCustomStatus(newCustomStatus).triggerSource(TRIGGER_LOC);
+        dispatchAndRecord(payload, trail);
+    }
+
+    private void dispatchAndRecord(final Map<String, Object> payload, final WebhookTrailEntry.WebhookTrailEntryBuilder trail) {
+        boolean dispatched = false;
+        String error = null;
+        try {
+            credXSyncCommandService.publishHookEventRaw(ENTITY, ACTION, payload);
+            dispatched = true;
+        } catch (final RuntimeException ex) {
+            error = ex.getMessage();
+            log.error("Failed to dispatch LINE_OF_CREDIT STATUS_CHANGED webhook", ex);
+        } finally {
+            try {
+                trailRecorder.record(trail.payload(new Gson().toJson(payload)).dispatched(dispatched).errorMessage(error).build());
+            } catch (final RuntimeException e) {
+                log.error("Failed to record LINE_OF_CREDIT status webhook trail: {}", e.getMessage());
+            }
+        }
     }
 }
