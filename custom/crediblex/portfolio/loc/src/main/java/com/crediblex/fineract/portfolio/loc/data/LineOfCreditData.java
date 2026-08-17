@@ -52,6 +52,11 @@ public final class LineOfCreditData implements Serializable {
     private BigDecimal consumedAmount;
     /** Administrative reserved amount — reduces the drawable available balance. */
     private BigDecimal blockedAmount;
+    /**
+     * Utilisation as a whole-number percentage of the credit limit (consumedAmount / maximumAmount * 100), computed
+     * server-side so the UI never has to derive limit/utilisation figures itself.
+     */
+    private BigDecimal utilizationPercentage;
     private EnumOptionData status;
     private LocalDate startDate;
     private LocalDate endDate;

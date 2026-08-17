@@ -33,6 +33,7 @@ import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -78,6 +79,17 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private final LineOfCreditChargeReadService chargeReadService;
     private final StaffReadPlatformService staffReadPlatformService;
     private final LineOfCreditRepository lineOfCreditRepository;
+
+    /**
+     * Utilisation as a whole-number percentage of the credit limit. Computed once here so every LOC response carries a
+     * single authoritative figure and no client has to derive it. Returns 0 when the limit is missing/zero.
+     */
+    private static BigDecimal utilizationPercentage(final BigDecimal consumedAmount, final BigDecimal creditLimit) {
+        if (creditLimit == null || creditLimit.signum() <= 0 || consumedAmount == null) {
+            return BigDecimal.ZERO;
+        }
+        return consumedAmount.multiply(BigDecimal.valueOf(100)).divide(creditLimit, 0, RoundingMode.HALF_UP);
+    }
 
     private static final class LineOfCreditExtractor implements ResultSetExtractor<LineOfCreditData> {
 
@@ -237,6 +249,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
                     .availableBalance(availableBalance).consumedAmount(consumedAmount).blockedAmount(blockedAmount)
+                    .utilizationPercentage(utilizationPercentage(consumedAmount, maximumAmount))
                     .status(getActivationStatusEnumOptionData(activationStatus)).startDate(startDate).endDate(endDate)
                     .approvedCreditFacilityAmount(approvedCreditFacilityAmount).externalId(externalId).currency(currency)
                     .advancePercentage(advancePercentage).tenorDays(tenorDays).cashMarginType(cashMarginType)
@@ -414,6 +427,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             LineOfCreditData.LineOfCreditDataBuilder builder = LineOfCreditData.builder().id(id).productType(productType)
                     .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount).blockedAmount(blockedAmount)
+                    .utilizationPercentage(utilizationPercentage(utilizationAmount, creditLimit))
                     .status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId).accountNumber(accountNumber)
                     .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays)
                     .annualInterestRate(locAnnualInterestRate);
