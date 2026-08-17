@@ -1530,19 +1530,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // The parent will call validateRepayment which has the broken validation, so we need to
         // catch and handle that exception, then re-validate with the fixed logic
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
-        // Waive LPI that should not be collected for this value date, then copy any remaining unpaid overdue
-        // charges onto the schedule so repayment collects them instead of booking an overpayment. Applies to every
-        // product (Short Term, RBF, Payables, Receivables, etc.). Idempotent if the transfer/backdated path already
-        // waived.
-        final LocalDate repaymentValueDate = command.localDateValueOfParameterNamed("transactionDate");
-        Map<String, Object> backdatedLpiWaiveSummary = null;
-        if (repaymentTransactionType.isRepayment() && repaymentValueDate != null
-                && (repaymentValueDate.isBefore(DateUtils.getBusinessLocalDate())
-                        || LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, repaymentValueDate))) {
-            backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
-                    repaymentValueDate);
-        }
-        this.credibleXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(loanId);
+        // Waive + schedule sync run once in makeLoanRepaymentWithChargeRefundChargeType (this method delegates
+        // there via super.makeLoanRepayment). Do not repeat them here - that doubled assemble/flush on every UI
+        // repayment. Transfer/charge-refund callers hit the shared method directly.
         try {
             // Call the parent implementation to handle the core repayment logic
             CommandProcessingResult result = super.makeLoanRepayment(repaymentTransactionType, loanId, command, isRecoveryRepayment);
@@ -1615,14 +1605,6 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         Map<String, Object> additionalChanges = new HashMap<>();
                         if (result.getChanges() != null) {
                             additionalChanges.putAll(result.getChanges());
-                        }
-
-                        // Surface backdated LPI waive summary so the UI can notify the operator.
-                        if (backdatedLpiWaiveSummary != null
-                                && ((Number) backdatedLpiWaiveSummary.getOrDefault("chargesWaived", 0)).intValue() > 0) {
-                            additionalChanges.put("chargesWaived", backdatedLpiWaiveSummary.get("chargesWaived"));
-                            additionalChanges.put("totalAmountWaived", backdatedLpiWaiveSummary.get("totalAmountWaived"));
-                            additionalChanges.put("daysCovered", backdatedLpiWaiveSummary.get("daysCovered"));
                         }
 
                         // Add affected installments and transaction details to the changes
@@ -1702,6 +1684,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
         final boolean isBackdatedSettlement = transactionDate != null && transactionDate.isBefore(businessDate);
+        // Same-day due-date pays are on-time (not backdated) and still auto-waive overnight/legacy due-date LPI.
         final boolean waiveLpiForValueDate = isBackdatedSettlement
                 || LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
 
@@ -1714,13 +1697,16 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         if (waiveLpiForValueDate) {
             // On a due date the payment is on-time: LPI for that EMI is posted after midnight (dated the next
             // day) and is waived when the value date is the due date. On any other date that day's LPI stays
-            // payable and later charges up to today are waived. Same rule for every product.
+            // payable and later charges up to today are waived. Same rule for every product (Short Term, RBF,
+            // Payables, Receivables) - not LOC-only.
             backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
                     transactionDate);
         } else {
             backdatedLpiWaiveSummary = null;
         }
 
+        // Always invoke: GET is read-only, so same-day non-due-date pays still need to heal schedule/charge
+        // gaps (loan 14299). Inner method skips flush/arrears when mismatch/gap is 0.
         this.credibleXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(loanId);
 
         CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,

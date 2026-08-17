@@ -1143,7 +1143,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // On an installment due date the payment is on-time. LPI for that EMI is posted after midnight
         // (charge dated the next day); the waiver window starts on the due date so that overnight LPI is
         // waived when the operator backdates to the due date.
-        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate));
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan);
     }
 
     @Override
@@ -1154,7 +1154,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
         // Window inclusive of the value date so a backdated repayment settles exactly: paid LPI = charges strictly
         // before the value date (penalties preview), waived LPI = charges on/after the value date up to today.
-        return waiveOverdueChargesInWindow(loanId, valueDate);
+        return waiveOverdueChargesInWindow(loanId, valueDate, null);
     }
 
     private Map<String, Object> emptyWaiveSummary() {
@@ -1165,7 +1165,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         return summary;
     }
 
-    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate) {
+    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate, final Loan assembledLoan) {
         final Map<String, Object> summary = emptyWaiveSummary();
 
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
@@ -1185,7 +1185,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             return summary;
         }
 
-        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final Loan loan = assembledLoan != null ? assembledLoan : this.loanAssembler.assembleFrom(loanId);
         final MonetaryCurrency currency = loan.getCurrency();
         final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
 
