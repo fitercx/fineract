@@ -666,10 +666,9 @@ public class LineOfCreditBalanceUpdateService {
      * Limit INCREMENT/DECREMENT/BLOCK/UNBLOCK (no loanId) are left untouched.
      * </p>
      */
-    private static boolean shouldReconcileReceivableExposure(LineOfCredit lineOfCredit, Long loanId,
-            LineOfCreditTransactionType type) {
-        return loanId != null && lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable()
-                && type != null && type.isIncrementTransaction();
+    private static boolean shouldReconcileReceivableExposure(LineOfCredit lineOfCredit, Long loanId, LineOfCreditTransactionType type) {
+        return loanId != null && lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable() && type != null
+                && type.isIncrementTransaction();
     }
 
 }
