@@ -67,7 +67,23 @@ class LocDueDateRepaymentUtilsTest {
     private LoanRepaymentScheduleInstallment installment(final LocalDate dueDate) {
         final LoanRepaymentScheduleInstallment i = mock(LoanRepaymentScheduleInstallment.class);
         when(i.getDueDate()).thenReturn(dueDate);
+        when(i.isDownPayment()).thenReturn(false);
+        when(i.isAdditional()).thenReturn(false);
+        when(i.isRecalculatedInterestComponent()).thenReturn(false);
         return i;
+    }
+
+    @Test
+    void dummyGraceInstallmentDueDateIsIgnoredForOnTimeSettlement() {
+        final LoanRepaymentScheduleInstallment emi = installment(LocalDate.of(2026, 8, 2));
+        final LoanRepaymentScheduleInstallment dummyGrace = installment(LocalDate.of(2026, 8, 18));
+        when(dummyGrace.isRecalculatedInterestComponent()).thenReturn(true);
+
+        final Loan loan = mock(Loan.class);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(emi, dummyGrace));
+
+        assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 8, 2))).isTrue();
+        assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 8, 18))).isFalse();
     }
 
     @Test

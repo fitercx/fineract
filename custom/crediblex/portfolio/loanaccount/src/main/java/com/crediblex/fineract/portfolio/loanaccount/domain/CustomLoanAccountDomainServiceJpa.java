@@ -7,6 +7,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationDat
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
+import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocForeclosureValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
@@ -250,6 +251,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         existingTransactionIds.addAll(loan.findExistingTransactionIds());
         existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
         final ScheduleGeneratorDTO scheduleGeneratorDTO = null;
+        if (InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(loan)) {
+            loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
         final LoanRepaymentScheduleInstallment foreCloseDetail = loan.fetchLoanForeclosureDetail(foreClosureDate);
 
         loanAccrualsProcessingService.processAccrualsOnLoanForeClosure(loan, foreClosureDate, newTransactions);
@@ -375,13 +379,11 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                         payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
                         foreClosureDate, externalId);
                 payment.updateLoan(loan);
+                ForeclosureTransactionBreakdown.applyIfMissing(loan, payment, foreClosureDate);
                 newTransactions.add(payment);
             }
 
             handleForeClosureTransactions(loan, payment, defaultLoanLifecycleStateMachine, scheduleGeneratorDTO);
-            if (payment != null) {
-                ForeclosureTransactionBreakdown.applyIfMissing(loan, payment, foreClosureDate);
-            }
         }
 
         if (loan.isReceivableLocLoan()) {

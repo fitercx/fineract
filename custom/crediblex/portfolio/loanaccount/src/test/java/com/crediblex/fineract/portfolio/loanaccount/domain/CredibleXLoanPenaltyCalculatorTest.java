@@ -342,6 +342,25 @@ class CredibleXLoanPenaltyCalculatorTest {
     }
 
     @Test
+    void dummyGraceRowDueDateMustNotExcludeSameDayLpiWhenSettlingToday() {
+        final LocalDate emiDueDate = LocalDate.of(2026, 8, 2);
+        final LocalDate transactionDate = LocalDate.of(2026, 8, 18);
+
+        loanInstallments.add(createInstallment(1, emiDueDate, BigDecimal.valueOf(90000.00), BigDecimal.valueOf(4038.90),
+                ExtendedLoanSchedulePeriodData.Status.OVERDUE));
+        loanInstallments.add(
+                createInstallment(2, transactionDate, BigDecimal.ZERO, BigDecimal.ZERO, ExtendedLoanSchedulePeriodData.Status.OVERDUE));
+
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 8, 17), BigDecimal.valueOf(73.97)));
+        loanCharges.add(createPenaltyCharge(transactionDate, BigDecimal.valueOf(73.97)));
+
+        CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true);
+
+        assertEquals(0, BigDecimal.valueOf(147.94).compareTo(calculator.calculatePenaltySum(transactionDate)));
+    }
+
+    @Test
     void testCalculatePenaltySum_ExcludesPenaltyDueExactlyOnInstallmentDueDate() {
         LocalDate installmentDueDate = LocalDate.of(2026, 7, 24);
         LocalDate transactionDate = LocalDate.of(2026, 7, 24);

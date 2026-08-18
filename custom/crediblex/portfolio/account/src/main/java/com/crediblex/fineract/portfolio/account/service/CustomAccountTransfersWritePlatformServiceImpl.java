@@ -12,6 +12,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDT
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
+import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -348,6 +349,10 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                         isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
                 toLoanAccount = loanTransaction.getLoan();
             } else if (AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
+                // Map unpaid charge LPI onto the schedule before allocation so post-maturity grace-period rows
+                // receive the payment instead of booking it as an overpayment (loan 14441 class of bug).
+                InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccount);
+
                 loanTransaction = LoanTransaction.repayment(toLoanAccount.getOffice(),
                         Money.of(toLoanAccount.getCurrency(), accountTransferDTO.getTransactionAmount()),
                         accountTransferDTO.getPaymentDetail(), accountTransferDTO.getTransactionDate(), externalId);
@@ -360,12 +365,14 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(toLoanAccount,
                         recalculateFrom, null);
 
+                // Component breakdown must be set before allocation so penalty-only grace-period closures pay LPI,
+                // not credit the loan overpaid.
+                ForeclosureTransactionBreakdown.applyIfMissing(toLoanAccount, loanTransaction, accountTransferDTO.getTransactionDate());
+
                 toLoanAccount.setLoanSubStatus(LoanSubStatus.FORECLOSED);
 
                 loanDownPaymentHandlerService.handleRepaymentOrRecoveryOrWaiverTransaction(toLoanAccount, loanTransaction,
                         defaultLoanLifecycleStateMachine, null, scheduleGeneratorDTO);
-
-                ForeclosureTransactionBreakdown.applyIfMissing(toLoanAccount, loanTransaction, accountTransferDTO.getTransactionDate());
                 toLoanAccount = loanTransaction.getLoan();
             } else {
                 final boolean isRecoveryRepayment = false;

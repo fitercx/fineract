@@ -36,6 +36,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureOriginalSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureUnearnedInterestDetailsData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureWaivedSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
@@ -55,6 +56,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriod
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.OriginalInstallmentRow;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocForeclosureValidator;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
@@ -1993,8 +1995,18 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
         final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
 
-        return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue,
-                remainingPrincipalOutstanding, earliestAllowedTransactionDate);
+        final BackdatedRepaymentPenaltyDTO dto = new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue,
+                installmentInterestAmountDue, remainingPrincipalOutstanding, earliestAllowedTransactionDate);
+        final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
+        dto.setOnInstallmentDueDate(onInstallmentDueDate);
+        if (transactionDate != null && (onInstallmentDueDate || transactionDate.isBefore(businessDate))) {
+            final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, transactionDate);
+            if (waiveFrom != null && !waiveFrom.isAfter(businessDate)) {
+                dto.setLpiWaivedOnSettlement(
+                        LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, businessDate, loan.getCurrency()).getAmount());
+            }
+        }
+        return dto;
     }
 
     /**
@@ -3288,6 +3300,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         final Optional<LoanLineOfCreditParams> lineOfCreditOptions = this.loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
         loanForeclosureValidator.validateForForeclosure(loan, transactionDate);
+        LocForeclosureValidator.validateNotDueOrOverdue(loan, transactionDate, lineOfCreditOptions);
         final MonetaryCurrency currency = loan.getCurrency();
         final ApplicationCurrency applicationCurrency = this.applicationCurrencyRepository.findOneWithNotFoundDetection(currency);
 
@@ -3358,6 +3371,22 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // hard backend validation with a clear error message rather than folded into this minDate.
         loanTransactionData.getAdditionalAttributes().put("earliestAllowedTransactionDate",
                 BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan));
+
+        final LocalDate maturityDate = loan.getMaturityDate();
+        if (maturityDate != null) {
+            loanTransactionData.getAdditionalAttributes().put("expectedMaturityDate", maturityDate);
+            final Integer penaltyGraceDays = loan.getLoanProduct().getPenaltyGracePeriod();
+            if (penaltyGraceDays != null) {
+                loanTransactionData.getAdditionalAttributes().put("penaltyGracePeriodDays", penaltyGraceDays);
+            }
+            final boolean postMaturity = !transactionDate.isBefore(maturityDate);
+            loanTransactionData.getAdditionalAttributes().put("postMaturityClosure", postMaturity);
+            if (postMaturity && principalOutstanding.getAmount().compareTo(BigDecimal.ZERO) <= 0
+                    && interestOutstanding.getAmount().compareTo(BigDecimal.ZERO) <= 0 && penaltyChargesOutstanding.isGreaterThanZero()) {
+                loanTransactionData.getAdditionalAttributes().put("postMaturityGracePeriodLpiClosure", true);
+                loanTransactionData.getAdditionalAttributes().put("postMaturityGracePeriodLpiDue", penaltyChargesOutstanding.getAmount());
+            }
+        }
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());
@@ -3436,6 +3465,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final ForeclosureUnearnedInterestDetailsData details = new ForeclosureUnearnedInterestDetailsData(unearnedInterest,
                     foreclosureDate, originalMaturityDate, remainingDays, removedInstallmentCount, originalScheduleInterest,
                     interestCollected, waivedPeriods, "FORECLOSURE");
+            details.setOriginalSchedulePeriods(loadOriginalSchedulePeriods(loanId));
             return details;
         }, loanId);
     }
@@ -3540,6 +3570,27 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 loanId);
 
         return ForeclosureWaivedPeriodCalculator.computeWaivedPeriods(foreclosureDate, originalInstallments, currentInstallments);
+    }
+
+    private List<ForeclosureOriginalSchedulePeriodData> loadOriginalSchedulePeriods(final Long loanId) {
+        final String originalScheduleSql = """
+                SELECT h.installment, h.fromdate, h.duedate, h.principal_amount, h.interest_amount
+                FROM m_loan_repayment_schedule_history h
+                WHERE h.loan_id = ?
+                  AND h.version = (
+                      SELECT MIN(h2.version)
+                      FROM m_loan_repayment_schedule_history h2
+                      WHERE h2.loan_id = h.loan_id
+                  )
+                  AND h.installment IS NOT NULL
+                ORDER BY h.installment
+                """;
+
+        return jdbcTemplate.query(originalScheduleSql,
+                (rs, rowNum) -> new ForeclosureOriginalSchedulePeriodData(JdbcSupport.getInteger(rs, "installment"),
+                        JdbcSupport.getLocalDate(rs, "fromdate"), JdbcSupport.getLocalDate(rs, "duedate"),
+                        rs.getBigDecimal("principal_amount"), rs.getBigDecimal("interest_amount")),
+                loanId);
     }
 
 }

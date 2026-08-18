@@ -40,13 +40,19 @@ public final class LocDueDateRepaymentUtils {
 
     private LocDueDateRepaymentUtils() {}
 
-    /** True when {@code date} exactly equals any installment's due date on the loan. */
+    /** True when {@code date} exactly equals a real EMI installment's due date (excludes dummy LPI grace rows). */
     public static boolean isOnInstallmentDueDate(final Loan loan, final LocalDate date) {
         if (loan == null || date == null || loan.getRepaymentScheduleInstallments() == null) {
             return false;
         }
         for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
-            if (installment != null && DateUtils.isEqual(date, installment.getDueDate())) {
+            if (installment == null || installment.isDownPayment()) {
+                continue;
+            }
+            if (installment.isAdditional() || installment.isRecalculatedInterestComponent()) {
+                continue;
+            }
+            if (DateUtils.isEqual(date, installment.getDueDate())) {
                 return true;
             }
         }
