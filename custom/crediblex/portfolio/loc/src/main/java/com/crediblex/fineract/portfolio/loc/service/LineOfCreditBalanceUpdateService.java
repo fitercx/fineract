@@ -143,7 +143,7 @@ public class LineOfCreditBalanceUpdateService {
             // understates consumed and overstates available (FGF LOC 2294: AED 3,821.25 drift). After the incremental
             // update, re-anchor RECEIVABLE exposure to SUM(total_outstanding_derived) so the ledger "after" values
             // match true drawdown exposure. PAYABLE keeps principal-outstanding reconciliation (LMS-106).
-            if (shouldReconcileReceivableExposure(lineOfCredit, loanId)) {
+            if (shouldReconcileReceivableExposure(lineOfCredit, loanId, lineOfCreditTransactionType)) {
                 reconcileConsumedAmountFromLoanData(lineOfCredit);
             }
 
@@ -555,14 +555,18 @@ public class LineOfCreditBalanceUpdateService {
      * Reconciles consumed_amount by recalculating it from actual loan data under this LOC.
      *
      * <p>
-     * Exposure definition by product type:
+     * Exposure is the FULL commitment against the facility — disbursed <em>and</em> pending — summed per loan:
      * <ul>
-     * <li><b>RECEIVABLE</b> — {@code SUM(total_outstanding_derived)} (P+I+fees/penalties still owed). Matches how
-     * Receivable drawdowns reserve facility at disbursement (expected repayment) and what Ops compares against the LOC
-     * Consumed / Available UI.</li>
-     * <li><b>PAYABLE</b> — {@code SUM(principal_outstanding_derived)} (LMS-106; do not change).</li>
+     * <li><b>Disbursed &amp; still owing</b> — the amount outstanding: {@code total_outstanding_derived} for RECEIVABLE
+     * (P+I+fees/penalties still owed), {@code principal_outstanding_derived} for PAYABLE (LMS-106).</li>
+     * <li><b>Submitted (100) / Approved (200) but not yet disbursed</b> — the amount reserved at application
+     * ({@code principal_amount_proposed}), so a pending invoice keeps holding the limit even when another loan on the
+     * same LOC is repaid.</li>
+     * <li><b>Rejected / withdrawn / closed / fully repaid</b> — 0, so an application that never disburses and is then
+     * closed releases its hold again.</li>
      * </ul>
-     * Closed / fully repaid loans contribute 0 via outstanding columns (unlike {@code principal_disbursed_derived}).
+     * Counting pending applications is what makes RECEIVABLE behave like PAYABLE's running ledger; previously it summed
+     * only disbursed outstanding, which silently dropped a pending reservation on an unrelated repayment.
      * </p>
      *
      * @param lineOfCredit
@@ -579,14 +583,27 @@ public class LineOfCreditBalanceUpdateService {
 
         final boolean receivable = lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable();
         final String outstandingColumn = receivable ? "total_outstanding_derived" : "principal_outstanding_derived";
+        // Per-loan exposure against the LOC:
+        // * disbursed and still owing -> the amount still outstanding (outstandingColumn);
+        // * submitted (100) / approved (200) but NOT yet disbursed -> the amount reserved at application
+        // (principal_amount_proposed), so a pending invoice keeps holding the limit even when another loan on the
+        // same LOC is repaid;
+        // * everything else (rejected / withdrawn / closed / fully repaid) -> 0, so an application that never
+        // disburses and is then closed releases its hold again.
+        // This makes exposure track the FULL commitment (disbursed + pending) the way PAYABLE's running ledger
+        // already does, instead of counting only disbursed loans - which silently dropped a pending reservation the
+        // moment an unrelated loan on the same LOC was repaid.
         String sql = """
-                SELECT COALESCE(SUM(l.%s), 0)
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.%s, 0) > 0 THEN l.%s
+                        WHEN l.loan_status_id IN (100, 200) THEN COALESCE(l.principal_amount_proposed, l.principal_amount, 0)
+                        ELSE 0
+                    END), 0)
                 FROM m_loan l
                 INNER JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = l.id
                 WHERE mlcp.line_of_credit_id = ?
-                AND l.%s IS NOT NULL
-                AND l.%s > 0
-                """.formatted(outstandingColumn, outstandingColumn, outstandingColumn);
+                """.formatted(outstandingColumn, outstandingColumn);
 
         BigDecimal actualConsumedAmount = jdbcTemplate.queryForObject(sql, BigDecimal.class, lineOfCredit.getId());
         if (actualConsumedAmount == null) {
@@ -633,11 +650,25 @@ public class LineOfCreditBalanceUpdateService {
     }
 
     /**
-     * RECEIVABLE loan-linked paths must re-anchor consumed to loan total outstanding so penalty/residual repayments
-     * cannot drift available limit. Limit INCREMENT/DECREMENT/BLOCK/UNBLOCK (no loanId) are left untouched.
+     * RECEIVABLE loan-linked repayment paths must re-anchor consumed to loan total outstanding so penalty/residual
+     * repayments cannot drift the available limit.
+     *
+     * <p>
+     * Crucially this must NOT run on the DISBURSEMENT (drawdown-creation) path. A new drawdown is recorded at loan
+     * submission time, when the loan has not been disbursed yet and its {@code total_outstanding_derived} is still 0.
+     * Re-anchoring to SUM(outstanding) at that instant wipes the amount we just reserved, leaving consumed_amount = 0
+     * and the LOC utilisation showing no change (the drawdown-does-not-reduce-limit bug). On disbursement we therefore
+     * keep the straight reservation ({@code consumed += drawdown amount}); reconciliation to true outstanding happens
+     * later on the first repayment/increment event, by which point the outstanding columns are populated.
+     * </p>
+     *
+     * <p>
+     * Limit INCREMENT/DECREMENT/BLOCK/UNBLOCK (no loanId) are left untouched.
+     * </p>
      */
-    private static boolean shouldReconcileReceivableExposure(LineOfCredit lineOfCredit, Long loanId) {
-        return loanId != null && lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable();
+    private static boolean shouldReconcileReceivableExposure(LineOfCredit lineOfCredit, Long loanId, LineOfCreditTransactionType type) {
+        return loanId != null && lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable() && type != null
+                && type.isIncrementTransaction();
     }
 
 }
