@@ -19,18 +19,27 @@
 package com.crediblex.fineract.portfolio.loanaccount.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.ReversePaidChargeReallocator;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
+import org.apache.fineract.infrastructure.core.domain.ExternalId;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
@@ -50,18 +59,18 @@ import org.mockito.MockedStatic;
  * <p>
  * Root-cause arithmetic ({@link Loan#calculateTotalOverpayment()}): overpayment is the gap between the
  * <b>transaction-side</b> total ({@link Loan#getTotalPaidInRepayments()}) and the <b>installment-side</b> total (sum of
- * {@code principalCompleted + interestPaid + feeChargesPaid + penaltyChargesPaid}). Today
- * {@code CredXLoanChargeWritePlatformServiceImpl.reversePaidLoanCharge} calls
- * {@link LoanRepaymentScheduleInstallment#unpayPenaltyChargesComponent} — which lowers the installment side — but never
- * calls {@code reprocessLoanTransactionsService.reprocessTransactions(loan)} and leaves the original repayment
- * transaction untouched (its audit CHARGE_ADJUSTMENT is posted with a zero amount). The transaction side therefore
- * stays put, so the reversed amount surfaces as overpayment.
+ * {@code principalCompleted + interestPaid + feeChargesPaid + penaltyChargesPaid}). Today The original reversePaid path
+ * called {@link LoanRepaymentScheduleInstallment#unpayPenaltyChargesComponent} — which lowers the installment side —
+ * but left the original repayment transaction untouched (its audit CHARGE_ADJUSTMENT is posted with a zero amount). The
+ * transaction side therefore stayed put, so the reversed amount surfaced as overpayment. LMS-107 fixed that by
+ * re-applying the freed amount to principal. The follow-up must do that <b>locally</b> (unpay penalty + pay principal +
+ * move the txn penalty→principal) and must not {@code reprocessTransactions} the whole loan.
  *
  * <p>
- * {@link #reproduce_reversePaidWithoutReprocess_producesPhantomOverpayment()} confirms the defect on the current
- * mutation; {@link #fix_reprocessReallocatesFreedPenaltyToPrincipal_noOverpaymentAndOutstandingReduced()} confirms that
- * re-applying the freed amount down the waterfall (what a reprocess does) removes the phantom overpayment and instead
- * reduces principal outstanding — the "Model A" behavior the permanent fix wires in.
+ * {@link #reproduce_reversePaidWithoutReprocess_producesPhantomOverpayment()} confirms the defect;
+ * {@link #fix_reprocessReallocatesFreedPenaltyToPrincipal_noOverpaymentAndOutstandingReduced()} confirms that unpaying
+ * the penalty and paying that amount onto principal removes the phantom overpayment and reduces principal outstanding —
+ * the "Model A" mutation {@code ReversePaidChargeReallocator} applies without a full-history reprocess.
  */
 class ReversePaidPhantomOverpaymentTest {
 
@@ -172,5 +181,53 @@ class ReversePaidPhantomOverpaymentTest {
 
         // ...and the freed amount reduced principal outstanding instead of becoming excess cash (Model A).
         assertThat(installment.getPrincipalOutstanding(AED).getAmount()).isEqualByComparingTo(principalOutstandingBefore.subtract(PENALTY));
+    }
+
+    @Test
+    void targetedReallocator_movesPenaltyToPrincipalOnSameTxn_withoutFullHistoryReplay() {
+        final LoanProduct loanProduct = mock(LoanProduct.class);
+        final LoanProductRelatedDetail detail = mock(LoanProductRelatedDetail.class);
+        when(loanProduct.getLoanProductRelatedDetail()).thenReturn(detail);
+        when(detail.getCurrency()).thenReturn(AED);
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(REVERSAL);
+            mockedDateUtils.when(() -> DateUtils.isBefore(any(LocalDate.class), any(LocalDate.class)))
+                    .thenAnswer(invocation -> invocation.<LocalDate>getArgument(0).isBefore(invocation.getArgument(1)));
+            mockedDateUtils.when(() -> DateUtils.isAfter(any(LocalDate.class), any(LocalDate.class)))
+                    .thenAnswer(invocation -> invocation.<LocalDate>getArgument(0).isAfter(invocation.getArgument(1)));
+
+            final Money sweepAmount = Money.of(AED, SWEEP);
+            final LoanTransaction sweep = LoanTransaction.repayment(mock(Office.class), sweepAmount, null, DUE, ExternalId.empty());
+            sweep.updateComponents(Money.of(AED, PRINCIPAL_PAID), Money.zero(AED), Money.zero(AED), Money.of(AED, PENALTY));
+
+            final Loan loan = new LoanBuilder(loanProduct).withId(2091L).withLoanStatus(LoanStatus.ACTIVE).withLoanTransaction(sweep)
+                    .build();
+            final LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 1, DISBURSEMENT, DUE, PRINCIPAL,
+                    INTEREST, BigDecimal.ZERO, BigDecimal.ZERO, PENALTY, false, null, BigDecimal.ZERO);
+            installment.payPenaltyChargesComponent(DUE, Money.of(AED, PENALTY));
+            installment.payPrincipalComponent(DUE, Money.of(AED, PRINCIPAL_PAID));
+            loan.getRepaymentScheduleInstallments().add(installment);
+
+            final LoanCharge charge = mock(LoanCharge.class);
+            when(charge.isPenaltyCharge()).thenReturn(true);
+            when(charge.getId()).thenReturn(10751L);
+            final LoanChargePaidBy paidBy = new LoanChargePaidBy(sweep, charge, PENALTY, 1);
+            final Set<LoanChargePaidBy> paidBySet = new HashSet<>();
+            paidBySet.add(paidBy);
+            when(charge.getLoanChargePaidBySet()).thenReturn(paidBySet);
+            when(charge.getOverdueInstallmentCharge()).thenReturn(null);
+
+            final BigDecimal principalOutstandingBefore = installment.getPrincipalOutstanding(AED).getAmount();
+
+            ReversePaidChargeReallocator.reallocate(loan, charge, PENALTY, REVERSAL);
+
+            assertThat(loan.calculateTotalOverpayment().getAmount()).isEqualByComparingTo("0.00");
+            assertThat(installment.getPrincipalOutstanding(AED).getAmount())
+                    .isEqualByComparingTo(principalOutstandingBefore.subtract(PENALTY));
+            assertThat(installment.getPenaltyChargesPaid(AED).getAmount()).isEqualByComparingTo("0.00");
+            assertThat(sweep.getPrincipalPortion(AED).getAmount()).isEqualByComparingTo(PRINCIPAL_PAID.add(PENALTY));
+            assertThat(sweep.getPenaltyChargesPortion(AED).getAmount()).isEqualByComparingTo("0.00");
+        }
     }
 }

@@ -627,10 +627,9 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     // ----------------------------------------------------------------------------------------------------------------
-    // reversePaidLoanCharge - regression coverage for the loan-2091 phantom-overpayment fix.
-    // The fix replaces the old hand-unpay (which never reprocessed) with a reprocess so the freed charge is re-applied
-    // down the waterfall, and makes the savings refund conditional on a genuine post-reprocess overpayment.
-    // Both tests are RED against the pre-fix code: it never called reprocessTransactions and always deposited.
+    // reversePaidLoanCharge - regression coverage for the loan-2091 phantom-overpayment fix, plus the
+    // Cloud Fifty One follow-up: do NOT full-history reprocess (that recasts unrelated repayments).
+    // Savings refund stays conditional on a genuine post-reallocation overpayment.
     // ----------------------------------------------------------------------------------------------------------------
 
     private static final BigDecimal REVERSED_PENALTY = new BigDecimal("483.87");
@@ -646,6 +645,7 @@ class CredXLoanChargeWritePlatformServiceImplTest {
         when(loanCharge.name()).thenReturn("Overdue Interest (LPI)");
         when(loanCharge.getLoanChargePaidBySet()).thenReturn(new HashSet<>());
         when(loan.getLoanTransactions()).thenReturn(Collections.emptyList());
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(Collections.emptyList());
         when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
         when(loan.getOffice()).thenReturn(mock(Office.class));
         when(loanRepositoryWrapper.findOneWithNotFoundDetection(LOAN_ID)).thenReturn(loan);
@@ -653,7 +653,7 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     @Test
-    void reversePaidLoanCharge_onPartiallyPaidLoan_reprocessesAndDoesNotRefundToSavings() {
+    void reversePaidLoanCharge_onPartiallyPaidLoan_doesNotReprocessOrRefundToSavings() {
         givenReversablePaidPenalty();
         // Partially-paid loan: the reprocess re-applies the freed penalty to principal, so it is never overpaid.
         when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
@@ -663,9 +663,8 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
             credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
 
-            // Core fix: the freed charge is re-applied down the waterfall via a full reprocess (the pre-fix code never
-            // did this, which is what stranded the 483.87 as a phantom overpayment on loan 2091).
-            verify(reprocessLoanTransactionsService).reprocessTransactions(loan);
+            // Must not replay the full history — that is what recast Cloud Fifty One loan 1.
+            verify(reprocessLoanTransactionsService, never()).reprocessTransactions(loan);
             // Nothing became a genuine overpayment, so NO money is credited back to savings (prevents the
             // double-credit).
             verify(savingsAccountWritePlatformService, never()).deposit(anyLong(), any(JsonCommand.class));
@@ -704,7 +703,7 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
             credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
 
-            verify(reprocessLoanTransactionsService).reprocessTransactions(loan);
+            verify(reprocessLoanTransactionsService, never()).reprocessTransactions(loan);
             final ArgumentCaptor<JsonCommand> depositCommand = ArgumentCaptor.forClass(JsonCommand.class);
             verify(savingsAccountWritePlatformService).deposit(eq(3393L), depositCommand.capture());
             final String depositJson = depositCommand.getValue().json();

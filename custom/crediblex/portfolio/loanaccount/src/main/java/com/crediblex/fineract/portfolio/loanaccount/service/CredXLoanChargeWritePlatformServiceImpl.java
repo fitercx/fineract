@@ -11,6 +11,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncU
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.ReversePaidChargeReallocator;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -1320,23 +1321,18 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Marked charge {} as inactive and reset paid amounts (amountPaid: {}, amountOutstanding: {})", loanChargeId,
                 loanCharge.getAmountPaid(currency), loanCharge.getAmountOutstanding(currency));
 
-        // Re-run the payment waterfall now that the reversed charge is inactive. reprocessTransactions replays the
-        // loan's
-        // historical repayments against loan.getActiveCharges() - which no longer contains the reversed penalty - so
-        // the
-        // amount that had been applied to that penalty is re-applied down the schedule (to principal/interest) instead
-        // of
-        // being stranded as a phantom overpayment. This is the same "inactivate + reprocess" contract that base
-        // applyChargeAdjustment and ReprocessLoanTransactionsService#removeLoanCharge use.
-        // - Partially-paid loan: the freed amount reduces principal outstanding -> no overpayment, no refund ("Model
-        // A").
-        // - Fully-repaid loan: nothing is left to absorb it, so it becomes a genuine overpayment (refunded to savings
-        // below).
-        // Historically this method skipped the reprocess and instead hand-unpaid the installment penalty component,
-        // which
-        // lowered the installment-side paid total WITHOUT touching the transaction-side total - producing exactly the
-        // phantom overpayment seen on loan 2091 (see ReversePaidPhantomOverpaymentTest).
-        reprocessLoanTransactionsService.reprocessTransactions(loan);
+        // Targeted reallocation (not a full-history reprocess). LMS-107 Model A still applies: unpay the reversed
+        // charge and pay that amount onto outstanding principal/interest, and move the same amount from penalty/fee
+        // to principal on the repayment(s) that paid the charge. That keeps transaction-side and installment-side
+        // totals aligned (no phantom overpayment — see ReversePaidPhantomOverpaymentTest).
+        //
+        // Do NOT call reprocessTransactions here. A full replay recasts every historical repayment whose stored
+        // P/I/penalty split no longer matches the current schedule. On Cloud Fifty One prod loan 1 that reversed
+        // and recast 8 live repayments and dumped the Jul-16 leftover as 303k advance on the Aug EMI.
+        // Scoped to this one charge. Waive / bulk-waive / due-date auto-waive / SI repayment still use their
+        // own paths (including reprocessTransactions when a paid charge is waived — see waiveLoanCharge above).
+        ReversePaidChargeReallocator.reallocate(loan, loanCharge, totalAmountPaid, reversalDate);
+        updateRepaymentScheduleForReversedCharge(loan, loanCharge, totalAmountPaid);
 
         loan.updateLoanScheduleDependentDerivedFields();
         // Recompute status AND close as obligations-met if fully settled. On a partially-paid loan (outstanding > 0)
@@ -1346,9 +1342,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
         // Audit trail: post a zero-amount CHARGE_ADJUSTMENT transaction that records the reversal (and makes it
         // idempotent
-        // via hasExistingChargeReversal). Created AFTER the reprocess above so it is never itself replayed through the
-        // waterfall, and so its fee/penalty reversal portions survive as the visible reversal signal. It carries no
-        // journal entries - GL for any genuine refund is created by the savings deposit below.
+        // via hasExistingChargeReversal). Created AFTER the targeted reallocation so it is never itself treated as a
+        // repayment. It carries no journal entries - GL for any genuine refund is created by the savings deposit below.
         final ExternalId externalId = externalIdFactory.create();
         LoanTransaction chargeAdjustmentTransaction = LoanTransaction.chargeAdjustment(loan, BigDecimal.ZERO, reversalDate, externalId,
                 null);
@@ -1373,11 +1368,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("Created CHARGE_ADJUSTMENT transaction {} on loan {} for charge reversal (audit trail only, no journal entries)",
                 chargeAdjustmentTransaction.getId(), loanId);
 
-        // Only the portion of the reversed amount the reprocess could NOT re-apply to the loan is a genuine overpayment
-        // to
-        // return to the client. On a partially-paid loan this is zero (the amount reduced outstanding); on a
-        // fully-repaid
-        // loan it equals the reversed amount. Refunding just this delta is what prevents the historical double-credit.
+        // Only the portion of the reversed amount the targeted reallocation could NOT re-apply to the loan is a genuine
+        // overpayment to return to the client. On a partially-paid loan this is zero (the amount reduced outstanding);
+        // on a fully-repaid loan it equals the reversed amount. Refunding just this delta is what prevents the
+        // historical double-credit.
         final BigDecimal overpaidAfter = loan.getTotalOverpaid() != null ? loan.getTotalOverpaid() : BigDecimal.ZERO;
         final String statusAfter = loan.getStatus() != null ? loan.getStatus().getCode() : "null";
         final BigDecimal refundableToSavings = overpaidAfter.subtract(overpaidBefore).max(BigDecimal.ZERO).min(totalAmountPaid);
@@ -1510,7 +1504,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                         savingsDepositTransactionId);
             } else if (refundableToSavings.compareTo(BigDecimal.ZERO) <= 0) {
                 log.info(
-                        "Reversed charge {} was fully re-applied to loan {} by the reprocess (no genuine overpayment); no savings refund needed.",
+                        "Reversed charge {} was fully re-applied to loan {} by targeted reallocation (no genuine overpayment); no savings refund needed.",
                         loanChargeId, loanId);
             } else {
                 log.warn(
@@ -1534,15 +1528,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         String auditNote;
         if (savingsDepositTransactionId != null) {
             auditNote = String.format(
-                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed. Genuine overpayment of %s refunded to savings (deposit transaction %d).",
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the freed amount was re-applied to outstanding. Genuine overpayment of %s refunded to savings (deposit transaction %d).",
                     loanCharge.name(), loanChargeId, totalAmountPaid, refundableToSavings, savingsDepositTransactionId);
         } else if (refundableToSavings.compareTo(BigDecimal.ZERO) <= 0) {
             auditNote = String.format(
-                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed; the amount was re-applied to the loan (reduced outstanding), so no savings refund was required.",
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the freed amount was re-applied to the loan (reduced outstanding), so no savings refund was required.",
                     loanCharge.name(), loanChargeId, totalAmountPaid);
         } else {
             auditNote = String.format(
-                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the loan reprocessed. Warning: genuine overpayment of %s could not be refunded to savings - manual intervention may be required.",
+                    "Reversed paid charge '%s' (ID: %d) with amount %s. Charge marked inactive and the freed amount was re-applied to outstanding. Warning: genuine overpayment of %s could not be refunded to savings - manual intervention may be required.",
                     loanCharge.name(), loanChargeId, totalAmountPaid, refundableToSavings);
         }
         final Note auditNoteEntity = Note.loanNote(loan, auditNote);

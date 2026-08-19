@@ -19,11 +19,13 @@
 package com.crediblex.fineract.commands;
 
 import java.sql.Timestamp;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Persists an audit trail row for every loan/LOC status-change webhook attempt into
@@ -37,12 +39,16 @@ import org.springframework.stereotype.Component;
  * dispatch and building visible, and the row gives Ops a reconciliation anchor).
  *
  * <p>
+ * The publisher runs this from {@code afterCommit}, when the originating command's JDBC connection is already closed.
+ * Inserts therefore use a {@code REQUIRES_NEW} transaction so they never reuse that closed connection (the failure mode
+ * that left this table empty in UAT/STG/local).
+ *
+ * <p>
  * Recording is strictly best-effort: a failure to write the trail must never break the originating business operation
  * nor the webhook itself, so all exceptions are swallowed and logged.
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class LoanStatusWebhookTrailRecorder {
 
     private static final String INSERT_SQL = """
@@ -56,21 +62,34 @@ public class LoanStatusWebhookTrailRecorder {
 
     private final JdbcTemplate jdbcTemplate;
     private final PlatformSecurityContext context;
+    private final TransactionTemplate requiresNewTx;
+
+    public LoanStatusWebhookTrailRecorder(final JdbcTemplate jdbcTemplate, final PlatformSecurityContext context,
+            final PlatformTransactionManager platformTransactionManager) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.context = context;
+        this.requiresNewTx = new TransactionTemplate(platformTransactionManager);
+        this.requiresNewTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
 
     public void record(final WebhookTrailEntry entry) {
         try {
-            final String truncatedError = entry.getErrorMessage() == null ? null
-                    : entry.getErrorMessage().substring(0, Math.min(entry.getErrorMessage().length(), 1000));
-            jdbcTemplate.update(INSERT_SQL, entry.getEntityName(), entry.getActionName(), entry.getResourceId(), entry.getLoanId(),
-                    entry.getClientId(), entry.getOfficeId(), entry.isDrawdown(), entry.getLocId(), entry.getOldCoreStatus(),
-                    entry.getOldCoreStatusCode(), entry.getNewCoreStatus(), entry.getNewCoreStatusCode(), entry.getOldCustomStatus(),
-                    entry.getNewCustomStatus(), entry.getTriggerSource(), entry.getPayload(), entry.isDispatched(), truncatedError,
-                    new Timestamp(System.currentTimeMillis()), resolveCreatedBy());
+            requiresNewTx.executeWithoutResult(status -> insert(entry));
         } catch (final RuntimeException e) {
             // Never let an audit-trail failure affect the business operation or the webhook dispatch.
             log.error("Failed to record loan status webhook trail for {} {}: {}", entry.getEntityName(), entry.getResourceId(),
                     e.getMessage());
         }
+    }
+
+    private void insert(final WebhookTrailEntry entry) {
+        final String truncatedError = entry.getErrorMessage() == null ? null
+                : entry.getErrorMessage().substring(0, Math.min(entry.getErrorMessage().length(), 1000));
+        jdbcTemplate.update(INSERT_SQL, entry.getEntityName(), entry.getActionName(), entry.getResourceId(), entry.getLoanId(),
+                entry.getClientId(), entry.getOfficeId(), entry.isDrawdown(), entry.getLocId(), entry.getOldCoreStatus(),
+                entry.getOldCoreStatusCode(), entry.getNewCoreStatus(), entry.getNewCoreStatusCode(), entry.getOldCustomStatus(),
+                entry.getNewCustomStatus(), entry.getTriggerSource(), entry.getPayload(), entry.isDispatched(), truncatedError,
+                new Timestamp(System.currentTimeMillis()), resolveCreatedBy());
     }
 
     private Long resolveCreatedBy() {

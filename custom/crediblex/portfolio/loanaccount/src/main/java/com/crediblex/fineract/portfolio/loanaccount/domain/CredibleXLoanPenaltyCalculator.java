@@ -118,7 +118,23 @@ public class CredibleXLoanPenaltyCalculator {
         if (transactionDate == null) {
             return false;
         }
-        return loanInstallments.stream().anyMatch(p -> p.getDueDate() != null && p.getDueDate().isEqual(transactionDate));
+        return loanInstallments.stream().filter(this::isRealEmiPeriod)
+                .anyMatch(p -> p.getDueDate() != null && p.getDueDate().isEqual(transactionDate));
+    }
+
+    /** Real EMI rows only — excludes dummy post-maturity LPI grace rows (zero scheduled P+I). */
+    private boolean isRealEmiPeriod(final ExtendedLoanSchedulePeriodData period) {
+        if (period == null || period.getPeriod() == null || period.getPeriod() < 1) {
+            return false;
+        }
+        if (period.isDownPaymentPeriod()) {
+            return false;
+        }
+        final BigDecimal principalScheduled = nullToZero(
+                period.getPrincipalOriginalDue() != null ? period.getPrincipalOriginalDue() : period.getPrincipalDue());
+        final BigDecimal interestScheduled = nullToZero(
+                period.getInterestOriginalDue() != null ? period.getInterestOriginalDue() : period.getInterestDue());
+        return principalScheduled.add(interestScheduled).compareTo(BigDecimal.ZERO) > 0;
     }
 
     private boolean hasPendingEmiInstallment() {

@@ -13,7 +13,7 @@ import lombok.Setter;
 public class BackdatedRepaymentPenaltyDTO {
 
     public static final Set<String> RESPONSE_DATA_PARAMETERS = Set.of("penaltyAmountDue", "principalOutstanding", "interestOutstanding",
-            "remainingPrincipalOutstanding", "earliestAllowedTransactionDate");
+            "remainingPrincipalOutstanding", "earliestAllowedTransactionDate", "onInstallmentDueDate", "lpiWaivedOnSettlement");
 
     private final BigDecimal penaltyAmountDue;
     /** Principal still due on the installment that contains the transaction date (current EMI). */
@@ -32,4 +32,13 @@ public class BackdatedRepaymentPenaltyDTO {
      * drift out of sync with the server-side rule.
      */
     private final LocalDate earliestAllowedTransactionDate;
+
+    /** True when the selected date exactly matches an installment due date (on-time payment). */
+    private boolean onInstallmentDueDate;
+
+    /**
+     * Outstanding LPI on the loan today that will be auto-waived if a repayment/transfer is posted with this value date
+     * (matches {@code CredXLoanChargeWritePlatformServiceImpl#waiveOverdueChargesAccruedAfterSettlementDate}).
+     */
+    private BigDecimal lpiWaivedOnSettlement = BigDecimal.ZERO;
 }
