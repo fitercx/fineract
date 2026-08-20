@@ -846,6 +846,11 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
         boolean isNew = loanTransaction.getId() == null;
         LoanTransaction processTransaction = loanTransaction;
         if (!isNew) {
+            // A paid-charge reversal is an audit-only marker. Replaying it as a zero-value repayment clears its
+            // negative charge component and creates a misleading replacement transaction during foreclosure.
+            if (isPaidChargeReversalAudit(loanTransaction)) {
+                return;
+            }
             // For existing transactions, check if the re-payment breakup (principal, interest, fees, penalties) has
             // changed.
             processTransaction = LoanTransaction.copyTransactionProperties(loanTransaction);
@@ -861,6 +866,16 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
         } else {
             updateOrRegisterNewTransaction(loanTransaction, processTransaction, ctx);
         }
+    }
+
+    private boolean isPaidChargeReversalAudit(LoanTransaction loanTransaction) {
+        return loanTransaction.isChargeAdjustment() && MathUtil.isZero(loanTransaction.getAmount())
+                && (isNegative(loanTransaction.getFeeChargesPortion()) || isNegative(loanTransaction.getPenaltyChargesPortion())
+                        || isNegative(loanTransaction.getTaxChargesPortion()));
+    }
+
+    private boolean isNegative(BigDecimal amount) {
+        return amount != null && amount.signum() < 0;
     }
 
     private List<LoanTransaction> processOverpaidTransactions(List<LoanTransaction> overpaidTransactions, ProgressiveTransactionCtx ctx) {

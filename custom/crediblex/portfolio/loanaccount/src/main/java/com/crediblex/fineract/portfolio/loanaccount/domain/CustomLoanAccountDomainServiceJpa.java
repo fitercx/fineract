@@ -5,6 +5,7 @@ import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
@@ -65,6 +66,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCollateralManagement
 import org.apache.fineract.portfolio.loanaccount.domain.LoanEvent;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanLifecycleStateMachine;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleProcessingWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
@@ -311,9 +313,72 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // BUG_REPORT.md "Backdate limit" finding.
         BackdatedRepaymentValidator.validateWithinBackdateLimit(loan, foreClosureDate, "foreclosure");
 
+        // LMS-119 (part 2): updateInstallmentsPostDate rebuilds the final installment from GROSS scheduled principal
+        // with zero paid, relying on the full-history reprocess to re-apply payments already made against the merged
+        // installments. On the single-transaction settlement path (non-recalc foreclosure, see
+        // CustomLoanDownPaymentHandlerService) history is NOT replayed, so a partial principal/interest already paid on
+        // a merged installment - e.g. a mid-period repayment or an LPI-reversal reallocation - would be dropped and
+        // double-counted as a phantom overpayment (loan 14288: 9.67). Capture what was already paid on the
+        // to-be-merged installments here, then carry it onto the rewritten final installment below so its outstanding
+        // reflects reality. No-op when nothing was pre-paid on those installments (the normal foreclosure case).
+        final boolean singleTxnSettlementPath = !loan.isFactorRateEnabled() && !loan.isInterestBearingAndInterestRecalculationEnabled();
+        Money mergedPaidPrincipal = Money.zero(currency);
+        Money mergedPaidInterest = Money.zero(currency);
+        if (singleTxnSettlementPath) {
+            for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+                if (!DateUtils.isAfter(foreClosureDate, installment.getDueDate())) {
+                    mergedPaidPrincipal = mergedPaidPrincipal.plus(installment.getPrincipalCompleted(currency));
+                    mergedPaidInterest = mergedPaidInterest.plus(installment.getInterestPaid(currency));
+                }
+            }
+        }
+
         if (!loan.isFactorRateEnabled()) {
             updateInstallmentsPostDate(loan, foreClosureDate);
         }
+
+        if (singleTxnSettlementPath && (mergedPaidPrincipal.isGreaterThanZero() || mergedPaidInterest.isGreaterThanZero())) {
+            final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+            if (!installments.isEmpty()) {
+                final LoanRepaymentScheduleInstallment finalInstallment = installments.get(installments.size() - 1);
+                if (mergedPaidInterest.isGreaterThanZero()) {
+                    finalInstallment.payInterestComponent(foreClosureDate, mergedPaidInterest);
+                }
+                if (mergedPaidPrincipal.isGreaterThanZero()) {
+                    finalInstallment.payPrincipalComponent(foreClosureDate, mergedPaidPrincipal);
+                }
+            }
+        }
+
+        // Overpayment guard (all products). The components above are assembled from sources that do not always line up
+        // with the schedule this settlement is finally allocated against - Factor Rate fees come from the loan summary,
+        // and LPI/penalty comes from active charges that may sit on an already-complete installment or one the
+        // updateInstallmentsPostDate rewrite just removed. The waterfall processor books exactly
+        // (rawAmount - Σ installment.totalOutstanding) as overpayment, which over-withdraws from the linked savings
+        // account and leaves the loan stuck "Overpaid" instead of "Closed" (see UAT loans 15628, 15109, 11188).
+        // Clamp the settlement to what the (now-prepared) schedule can actually absorb; the trimmed amount is the
+        // LPI / unearned fee that an early foreclosure is meant to waive anyway. No-op when the amount already fits.
+        final ForeclosureAmountReconciler.Result reconciled = ForeclosureAmountReconciler.reconcile(loan, currency, payPrincipal,
+                interestPayable, feePayable, penaltyPayable, taxPayable);
+        if (reconciled.wasReduced()) {
+            org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class)
+                    .info("Foreclosure on loan {} as of {}: auto-waived {} of LPI/unearned fee to prevent overpayment "
+                            + "(raw {} -> settleable {}).", loan.getId(), foreClosureDate, reconciled.waived().getAmount(),
+                            payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).getAmount(),
+                            reconciled.total().getAmount());
+            payPrincipal = reconciled.principal();
+            interestPayable = reconciled.interest();
+            feePayable = reconciled.fee();
+            penaltyPayable = reconciled.penalty();
+            taxPayable = reconciled.tax();
+        }
+
+        org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class)
+                .info("Foreclosure on loan {} as of {}: about to settle {} (principal={} interest={} fees={} penalties={} tax={}) "
+                        + "against schedule state: {}", loan.getId(), foreClosureDate,
+                        payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable).getAmount(),
+                        payPrincipal.getAmount(), interestPayable.getAmount(), feePayable.getAmount(), penaltyPayable.getAmount(),
+                        taxPayable.getAmount(), describeOutstandingComponents(loan, currency));
 
         /// //This is where we should be doing the transfer from.
 
@@ -379,7 +444,10 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                         payPrincipal.plus(interestPayable).plus(feePayable).plus(penaltyPayable).plus(taxPayable), paymentDetail,
                         foreClosureDate, externalId);
                 payment.updateLoan(loan);
-                ForeclosureTransactionBreakdown.applyIfMissing(loan, payment, foreClosureDate);
+                // Use the reconciled (overpayment-clamped) components, not a fresh raw recompute, so the breakdown
+                // matches the trimmed settlement total.
+                ForeclosureTransactionBreakdown.applyComponents(payment, payPrincipal, interestPayable, feePayable, penaltyPayable,
+                        taxPayable);
                 newTransactions.add(payment);
             }
 
@@ -415,6 +483,32 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         }
         loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
 
+        // Post-condition safety net ("flight check" at execution). Independent of how the settlement amount was
+        // derived, verify the ACTUAL outcome: foreclosure must close the loan with neither overpayment (money
+        // over-withdrawn from the linked savings account) nor a residual balance (an undercharge that leaves the loan
+        // open). If either holds, abort the whole @Transactional - this rolls back the savings withdrawal and every
+        // loan posting atomically, so a miscalculated settlement moves no money and is surfaced for review instead of
+        // being silently committed. This is the guarantee the amount computation alone cannot give.
+        final Money residualOverpaid = loan.getTotalOverpaidAsMoney();
+        if (residualOverpaid != null && residualOverpaid.isGreaterThanZero()) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.would.overpay",
+                    "Foreclosure of loan " + loan.getId() + " as of " + foreClosureDate + " would overpay by "
+                            + residualOverpaid.getAmount() + ": " + describeOutstandingComponents(loan, currency)
+                            + ". Aborting to avoid over-withdrawal; review the loan's outstanding charges/schedule before retrying.",
+                    loan.getId(), residualOverpaid.getAmount());
+        }
+        final Money residualOutstanding = loan.getSummary() == null ? null : loan.getSummary().getTotalOutstanding(currency);
+        if (residualOutstanding != null && residualOutstanding.isGreaterThanZero()) {
+            // Name the component(s) the shortfall sits in. Without it the total alone cannot distinguish an
+            // under-quoted principal from unearned LPI the schedule still carries, and the offending state only
+            // exists inside this about-to-be-rolled-back transaction, so it cannot be inspected afterwards.
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.would.not.close",
+                    "Foreclosure of loan " + loan.getId() + " as of " + foreClosureDate + " would leave " + residualOutstanding.getAmount()
+                            + " outstanding (loan would not close): " + describeOutstandingComponents(loan, currency)
+                            + ". Aborting; review the loan's charges/schedule before retrying.",
+                    loan.getId(), residualOutstanding.getAmount());
+        }
+
         if (StringUtils.isNotBlank(noteText)) {
             changes.put("note", noteText);
             final Note note = Note.loanNote(loan, noteText);
@@ -426,6 +520,182 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         businessEventNotifierService.notifyPostBusinessEvent(new LoanBalanceChangedBusinessEvent(loan));
         businessEventNotifierService.notifyPostBusinessEvent(new LoanForeClosurePostBusinessEvent(payment));
         return payment;
+    }
+
+    /**
+     * Renders the loan's still-outstanding components plus the surviving schedule rows behind them. Used only to enrich
+     * the foreclosure post-condition failure, whose offending state lives inside the transaction being rolled back and
+     * is therefore invisible in the database afterwards.
+     */
+    private String describeOutstandingComponents(final Loan loan, final MonetaryCurrency currency) {
+        final StringBuilder sb = new StringBuilder();
+        final LoanSummary summary = loan.getSummary();
+        if (summary != null) {
+            sb.append("principal=").append(summary.getTotalPrincipalOutstanding()).append(", interest=")
+                    .append(summary.getTotalInterestOutstanding()).append(", fees=").append(summary.getTotalFeeChargesOutstanding())
+                    .append(", penalties=").append(summary.getTotalPenaltyChargesOutstanding());
+        }
+        sb.append("; unsettled installments after foreclosure rewrite: [");
+        boolean first = true;
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (!installment.getTotalOutstanding(currency).isGreaterThanZero()) {
+                continue;
+            }
+            if (!first) {
+                sb.append("; ");
+            }
+            first = false;
+            sb.append('#').append(installment.getInstallmentNumber()).append(' ').append(installment.getFromDate()).append("->")
+                    .append(installment.getDueDate()).append(" principal=")
+                    .append(installment.getPrincipalOutstanding(currency).getAmount()).append(" interest=")
+                    .append(installment.getInterestOutstanding(currency).getAmount()).append(" fees=")
+                    .append(installment.getFeeChargesOutstanding(currency).getAmount()).append(" penalties=")
+                    .append(installment.getPenaltyChargesOutstanding(currency).getAmount());
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * The base rewrite merges every installment due on or after the foreclosure date into one installment whose
+     * principal is the sum of the merged installments' <em>gross</em> principal
+     * ({@code totalPrincipal.plus(installment.getPrincipal(currency))}), and constructs it with nothing marked as paid.
+     * Principal already settled on any of those installments is therefore deleted along with them - and with it, the
+     * schedule's record of money the borrower has genuinely already paid.
+     * <p>
+     * That breaks the invariant "schedule-recorded payments == cash actually received", which shows up twice over. The
+     * orphaned amount has no installment left to sit on, so it is booked as <em>overpayment</em>; and the merged
+     * installment is simultaneously that same amount <em>short</em> of what the settlement quote covers, because
+     * {@link Loan#fetchLoanForeclosureDetail} draws its principal from {@code summary.getTotalPrincipalOutstanding()},
+     * which is net of the already-paid amount. The foreclosure post-condition guard tests overpayment first, so it
+     * reports an overpay even though the settlement is also short by the same figure - and rolls everything back.
+     * <p>
+     * Interest and charges drift the same way. The merged installment's interest/fees/penalties come from
+     * {@link Loan#retrieveIncomeForOverlappingPeriod}, which copies the gross indices of
+     * {@code fetchInterestFeeAndPenaltyTillDate} and never subtracts the accounted (paid/waived) counterparts that the
+     * quote's {@code retrieveIncomeOutstandingTillDate} does subtract. Anything already paid inside the straddling
+     * window is therefore re-charged, and the waterfall diverts settlement money to it - leaving principal short by
+     * that amount instead.
+     * <p>
+     * Loan 14288 hit both. An LPI reversal moved 4.80 + 4.87 of paid penalty onto installment 4's principal; the
+     * rewrite dropped installment 4, leaving 21,180.39 recorded against 21,190.06 received (the 9.67 overpay). With
+     * that corrected, the merged 2026-08-10 -&gt; 2026-08-20 window re-charged the 91.13 of LPI already paid within it,
+     * leaving principal 91.13 short. The full-history reprocess used to mask both by rebuilding every split from
+     * scratch, but it recasts the merged installment's interest down to the last transaction date - the larger error
+     * the single-transaction path was introduced to avoid.
+     * <p>
+     * Carrying every already-settled component forward keeps both sides whole: the schedule still accounts for exactly
+     * the cash received, and the merged installment's outstanding equals what the quote charges for. Loans with nothing
+     * settled inside the merged window are unaffected.
+     */
+    @Override
+    protected void updateInstallmentsPostDate(final Loan loan, final LocalDate transactionDate) {
+        final MonetaryCurrency currency = loan.getCurrency();
+        final Money zero = Money.zero(currency);
+
+        // Principal: the base sums the merged-away installments' gross principal, so recover what they had settled.
+        // Mirrors the base method's own selection of the installments it is about to merge away.
+        Money settledPrincipal = zero;
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (!DateUtils.isAfter(transactionDate, installment.getDueDate())) {
+                settledPrincipal = settledPrincipal.plus(orZero(installment.getPrincipalCompleted(currency), zero));
+            }
+        }
+
+        // Interest and charges: the base takes these from the straddling installment via
+        // Loan#retrieveIncomeForOverlappingPeriod, which copies the gross indices of fetchInterestFeeAndPenaltyTillDate
+        // and never subtracts the "accounted" (paid/waived) counterparts the quote's retrieveIncomeOutstandingTillDate
+        // does. Gather them before the rewrite disposes of that installment and deactivates charges.
+        Money settledInterest = zero;
+        Money waivedInterest = zero;
+        Money settledFee = zero;
+        Money waivedFee = zero;
+        Money settledPenalty = zero;
+        Money waivedPenalty = zero;
+        final LoanRepaymentScheduleInstallment straddling = findStraddlingInstallment(loan, transactionDate);
+        if (straddling != null) {
+            settledInterest = orZero(straddling.getInterestPaid(currency), zero);
+            waivedInterest = orZero(straddling.getInterestWaived(currency), zero);
+            final boolean isFirstNormalInstallment = straddling.getInstallmentNumber().equals(
+                    LoanRepaymentScheduleProcessingWrapper.fetchFirstNormalInstallmentNumber(loan.getRepaymentScheduleInstallments()));
+            for (final LoanCharge charge : loan.getLoanCharges()) {
+                if (charge == null || !charge.isActive() || charge.isDueAtDisbursement()
+                        || !charge.isDueInPeriod(straddling.getFromDate(), transactionDate, isFirstNormalInstallment)) {
+                    continue;
+                }
+                if (charge.isPenaltyCharge()) {
+                    settledPenalty = settledPenalty.plus(orZero(charge.getAmountPaid(currency), zero));
+                    waivedPenalty = waivedPenalty.plus(orZero(charge.getAmountWaived(currency), zero));
+                } else {
+                    settledFee = settledFee.plus(orZero(charge.getAmountPaid(currency), zero));
+                    waivedFee = waivedFee.plus(orZero(charge.getAmountWaived(currency), zero));
+                }
+            }
+        }
+
+        super.updateInstallmentsPostDate(loan, transactionDate);
+
+        // The rewrite is the only thing that leaves an installment due exactly on the foreclosure date; everything
+        // else due on or after it was just removed.
+        LoanRepaymentScheduleInstallment merged = null;
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (DateUtils.isEqual(transactionDate, installment.getDueDate())) {
+                merged = installment;
+            }
+        }
+        if (merged == null) {
+            return;
+        }
+
+        // Waivers first: the pay* helpers cap at outstanding, which is itself net of waived.
+        if (waivedFee.isGreaterThanZero() || waivedPenalty.isGreaterThanZero()) {
+            merged.updateChargePortion(orZero(merged.getFeeChargesCharged(currency), zero), waivedFee, zero,
+                    orZero(merged.getPenaltyChargesCharged(currency), zero), waivedPenalty, zero,
+                    orZero(merged.getTaxChargesCharged(currency), zero), zero, zero);
+        }
+        if (waivedInterest.isGreaterThanZero()) {
+            merged.waiveInterestComponent(transactionDate, waivedInterest);
+        }
+        final Money appliedPrincipal = settledPrincipal.isGreaterThanZero()
+                ? orZero(merged.payPrincipalComponent(transactionDate, settledPrincipal), zero)
+                : zero;
+        final Money appliedInterest = settledInterest.isGreaterThanZero()
+                ? orZero(merged.payInterestComponent(transactionDate, settledInterest), zero)
+                : zero;
+        final Money appliedFee = settledFee.isGreaterThanZero() ? orZero(merged.payFeeChargesComponent(transactionDate, settledFee), zero)
+                : zero;
+        final Money appliedPenalty = settledPenalty.isGreaterThanZero()
+                ? orZero(merged.payPenaltyChargesComponent(transactionDate, settledPenalty), zero)
+                : zero;
+
+        if (appliedPrincipal.isGreaterThanZero() || appliedInterest.isGreaterThanZero() || appliedFee.isGreaterThanZero()
+                || appliedPenalty.isGreaterThanZero()) {
+            org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class)
+                    .info("Foreclosure on loan {} as of {}: carried already-settled amounts onto merged installment {} {}->{} "
+                            + "(principal={} interest={} fees={} penalties={}); it now owes principal={} interest={} fees={} penalties={}",
+                            loan.getId(), transactionDate, merged.getInstallmentNumber(), merged.getFromDate(), merged.getDueDate(),
+                            appliedPrincipal.getAmount(), appliedInterest.getAmount(), appliedFee.getAmount(), appliedPenalty.getAmount(),
+                            orZero(merged.getPrincipalOutstanding(currency), zero).getAmount(),
+                            orZero(merged.getInterestOutstanding(currency), zero).getAmount(),
+                            orZero(merged.getFeeChargesOutstanding(currency), zero).getAmount(),
+                            orZero(merged.getPenaltyChargesOutstanding(currency), zero).getAmount());
+        }
+    }
+
+    private static Money orZero(final Money value, final Money zero) {
+        return value == null ? zero : value;
+    }
+
+    /**
+     * The installment whose period contains the foreclosure date - the one the base rewrite prorates interest and
+     * charges from, and therefore the one whose already-settled amounts the merged installment must inherit.
+     */
+    private LoanRepaymentScheduleInstallment findStraddlingInstallment(final Loan loan, final LocalDate transactionDate) {
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (DateUtils.isDateInRangeFromInclusiveToExclusive(transactionDate, installment.getFromDate(), installment.getDueDate())) {
+                return installment;
+            }
+        }
+        return null;
     }
 
     @Transactional

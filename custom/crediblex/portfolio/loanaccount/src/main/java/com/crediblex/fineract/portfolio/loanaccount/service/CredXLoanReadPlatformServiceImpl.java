@@ -50,6 +50,7 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransact
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.EarlyRepaymentInterestDayCountEnricher;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInterestCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
@@ -3353,8 +3354,19 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // (and over-withdrawing) by exactly the staleness amount.
         Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, transactionDate,
                 currency);
-        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
-                .plus(taxChargesAmount);
+
+        // Quote (settlement card) must equal what foreCloseLoan will actually collect. The raw sum below can exceed the
+        // schedule's allocatable outstanding - Factor Rate fees come from the loan summary, and LPI/penalty from active
+        // charges that may sit on an already-complete installment - and that surplus would be over-withdrawn and land
+        // as overpayment at settlement. Clamp the quote here with the exact same ForeclosureAmountReconciler the
+        // settlement path uses, so the card never over-quotes. No-op when the raw amount already fits.
+        final ForeclosureAmountReconciler.Result quote = ForeclosureAmountReconciler.reconcile(loan, currency, principalOutstanding,
+                interestOutstanding, feeChargesAmount, penaltyChargesOutstanding, taxChargesAmount);
+        interestOutstanding = quote.interest();
+        feeChargesAmount = quote.fee();
+        penaltyChargesOutstanding = quote.penalty();
+        taxChargesAmount = quote.tax();
+        Money totalOutstandingAmount = quote.total();
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
                 earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),

@@ -154,7 +154,22 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
             } else if (loan.isProgressiveSchedule() && loan.hasChargeOffTransaction() && loan.hasAccelerateChargeOffStrategy()) {
                 loanScheduleService.regenerateRepaymentSchedule(loan, scheduleGeneratorDTO);
             }
-            reprocessLoanTransactionsService.reprocessTransactions(loan);
+            // LMS-119: A full-history replay on foreclosure recasts every prior repayment whose stored P/I/penalty
+            // split no longer matches the foreclosure-rewritten schedule - exactly the distortion
+            // ReversePaidChargeReallocator (LMS-118) refuses to cause for LPI reversals. When a mid-period repayment
+            // exists before the foreclosure date, that recast re-recognises the final installment's interest only
+            // through the last transaction date instead of the foreclosure/backdate, leaving the pending to-date
+            // interest unallocated (surfaces as phantom overpayment; see loan 14288). For a foreclosure on a
+            // non-interest-recalculation loan, process ONLY the new foreclosure transaction against the already
+            // rewritten schedule (updateInstallmentsPostDate ran before this) so the historical repayment splits are
+            // preserved and to-date interest is recognised. Interest-recalculation loans and every non-foreclosure
+            // path keep the full reprocess. The post-condition guard in foreCloseLoan still blocks (atomic rollback)
+            // if this leaves any residual/overpayment, so this can never over- or under-withdraw.
+            if (loan.isForeclosure() && !loan.isInterestBearingAndInterestRecalculationEnabled()) {
+                reprocessLoanTransactionsService.processLatestTransaction(loanTransaction, loan);
+            } else {
+                reprocessLoanTransactionsService.reprocessTransactions(loan);
+            }
         }
 
         loan.updateLoanSummaryDerivedFields();

@@ -1356,6 +1356,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
         chargeAdjustmentTransaction.updateComponents(Money.zero(currency), Money.zero(currency), Money.of(currency, feeAmount),
                 Money.of(currency, penaltyAmount));
+        chargeAdjustmentTransaction.updateOutstandingLoanBalance(loan.getSummary().getTotalPrincipalOutstanding());
         final LoanChargePaidBy chargePaidBy = new LoanChargePaidBy(chargeAdjustmentTransaction, loanCharge, totalAmountPaid, null);
         chargeAdjustmentTransaction.getLoanChargesPaid().add(chargePaidBy);
         loanCharge.getLoanChargePaidBySet().add(chargePaidBy);

@@ -16,6 +16,20 @@ public final class ForeclosureTransactionBreakdown {
 
     private ForeclosureTransactionBreakdown() {}
 
+    /**
+     * Sets the transaction's component breakdown from already-reconciled (overpayment-clamped) amounts. Prefer this
+     * over {@link #applyIfMissing} on the foreclosure settlement path, where the amounts have been trimmed by
+     * {@code ForeclosureAmountReconciler} - recomputing here from the raw schedule/summary would undo that clamp and
+     * re-introduce the overpayment.
+     */
+    public static void applyComponents(final LoanTransaction loanTransaction, final Money principal, final Money interest, final Money fees,
+            final Money penalties, final Money taxes) {
+        if (loanTransaction == null || !loanTransaction.isRepayment() || !hasMissingComponentBreakdown(loanTransaction)) {
+            return;
+        }
+        loanTransaction.updateComponentsAndTotal(principal, interest, fees, penalties, taxes);
+    }
+
     public static void applyIfMissing(final Loan loan, final LoanTransaction loanTransaction, final LocalDate foreclosureDate) {
         if (loan == null || loanTransaction == null || !loanTransaction.isRepayment() || !hasMissingComponentBreakdown(loanTransaction)) {
             return;
