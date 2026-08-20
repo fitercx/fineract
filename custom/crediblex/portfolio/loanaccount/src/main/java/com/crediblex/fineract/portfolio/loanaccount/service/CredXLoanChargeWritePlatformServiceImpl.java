@@ -61,6 +61,7 @@ import org.apache.fineract.portfolio.account.data.PortfolioAccountData;
 import org.apache.fineract.portfolio.account.domain.AccountTransferDetailRepository;
 import org.apache.fineract.portfolio.account.service.AccountAssociationsReadPlatformService;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
+import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.charge.domain.ChargeTimeType;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBePayedException;
@@ -1312,6 +1313,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         log.info("BEFORE reversal - Loan {} status: {}, totalOverpaid: {}, charge {} paid amount: {}", loanId, statusBefore, overpaidBefore,
                 loanChargeId, totalAmountPaid);
 
+        // LoanCharge.setActive(false) intentionally clears the overdue-installment relation. Retain the installment
+        // number on the audit transaction so schedule reads can display the reversal against its original EMI without
+        // changing repayment allocation or foreclosure behavior.
+        Integer reversedChargeInstallmentNumber = null;
+        if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getOverdueInstallmentCharge() != null
+                && loanCharge.getOverdueInstallmentCharge().getInstallment() != null) {
+            reversedChargeInstallmentNumber = loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
+        }
+
         // Mark the charge as INACTIVE and reset its paid/outstanding amounts so it drops out of
         // loan.getActiveCharges().
         loanCharge.setActive(false);
@@ -1357,7 +1367,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         chargeAdjustmentTransaction.updateComponents(Money.zero(currency), Money.zero(currency), Money.of(currency, feeAmount),
                 Money.of(currency, penaltyAmount));
         chargeAdjustmentTransaction.updateOutstandingLoanBalance(loan.getSummary().getTotalPrincipalOutstanding());
-        final LoanChargePaidBy chargePaidBy = new LoanChargePaidBy(chargeAdjustmentTransaction, loanCharge, totalAmountPaid, null);
+        final LoanChargePaidBy chargePaidBy = new LoanChargePaidBy(chargeAdjustmentTransaction, loanCharge, totalAmountPaid,
+                reversedChargeInstallmentNumber);
         chargeAdjustmentTransaction.getLoanChargesPaid().add(chargePaidBy);
         loanCharge.getLoanChargePaidBySet().add(chargePaidBy);
         final LoanTransactionRelation chargeAdjustmentRelation = LoanTransactionRelation.linkToCharge(chargeAdjustmentTransaction,
@@ -2567,6 +2578,52 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
      */
     @Override
     protected boolean shouldReprocessTransactionsAfterOverdueChargeApply(final Loan loan) {
+        return false;
+    }
+
+    /**
+     * A paid LPI reversal is final for its original EMI/effective date. The core frequency lookup only sees active
+     * charges, so without this tombstone check rerunning the job recreates the reversed charge at a newly calculated
+     * amount.
+     */
+    @Override
+    protected boolean shouldSkipReversedOverdueChargeDate(final Loan loan, final Charge chargeDefinition, final Integer periodNumber,
+            final LocalDate effectiveDate) {
+        if (loan == null || chargeDefinition == null || periodNumber == null || effectiveDate == null) {
+            return false;
+        }
+
+        for (LoanCharge loanCharge : loan.getLoanCharges()) {
+            if (loanCharge == null || loanCharge.isActive() || !loanCharge.isOverdueInstallmentCharge()
+                    || !chargeDefinition.equals(loanCharge.getCharge()) || !effectiveDate.equals(loanCharge.getDueLocalDate())) {
+                continue;
+            }
+
+            Optional<LoanChargePaidBy> adjustmentPaidBy = loan.getLoanTransactions().stream()
+                    .filter(transaction -> transaction.isNotReversed() && transaction.getTypeOf().isChargeAdjustment())
+                    .flatMap(transaction -> transaction.getLoanChargesPaid().stream())
+                    .filter(paidBy -> paidBy.getLoanCharge() != null && loanCharge.equals(paidBy.getLoanCharge())).findFirst();
+            if (adjustmentPaidBy.isEmpty()) {
+                continue;
+            }
+
+            Integer reversedInstallmentNumber = adjustmentPaidBy.get().getInstallmentNumber();
+            if (reversedInstallmentNumber == null && loanCharge.getOverdueInstallmentCharge() != null
+                    && loanCharge.getOverdueInstallmentCharge().getInstallment() != null) {
+                reversedInstallmentNumber = loanCharge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
+            }
+            if (reversedInstallmentNumber == null) {
+                reversedInstallmentNumber = CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(
+                        loan.getRepaymentScheduleInstallments(), loan.getCurrency(), loanCharge.getDueLocalDate(),
+                        loanCharge.getAmountPercentageAppliedTo());
+            }
+
+            if (periodNumber.equals(reversedInstallmentNumber)) {
+                log.info("Skipping LPI regeneration for loan {}, installment {}, effective date {}: charge {} was reversed", loan.getId(),
+                        periodNumber, effectiveDate, loanCharge.getId());
+                return true;
+            }
+        }
         return false;
     }
 

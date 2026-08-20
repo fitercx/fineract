@@ -18,6 +18,7 @@
  */
 package org.apache.fineract.portfolio.loanaccount.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -58,6 +59,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeApiJson
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRelatedDetail;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -202,6 +204,13 @@ class LoanChargeWritePlatformServiceImplTest {
             verify(loanTransactionRepository, never()).saveAndFlush(any(LoanTransaction.class));
             verify(businessEventNotifierService, never()).notifyPostBusinessEvent(any(LoanAccrualTransactionCreatedBusinessEvent.class));
         }
+    }
+
+    @Test
+    void shouldKeepOverdueChargeEffectiveDateOnTheOverdueDay() {
+        LocalDate postingDate = LocalDate.of(2026, 8, 12);
+
+        assertEquals(LocalDate.of(2026, 8, 11), LoanChargeWritePlatformServiceImpl.resolveOverdueChargeEffectiveDate(postingDate, 0L, 0L));
     }
 
     private static Stream<Arguments> loanChargeAccrualTestCases() {

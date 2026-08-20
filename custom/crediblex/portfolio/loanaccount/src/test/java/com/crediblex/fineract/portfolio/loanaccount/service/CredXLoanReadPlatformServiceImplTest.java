@@ -29,8 +29,11 @@ import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
@@ -148,6 +151,41 @@ public class CredXLoanReadPlatformServiceImplTest {
         assertEquals(BigDecimal.valueOf(500.00), result.getNetDisbursalAmount());
         Assertions.assertFalse(result.isManuallyReversed());
         assertEquals(ExternalId.empty(), result.getExternalId());
+    }
+
+    @Test
+    public void testLegacyOneDayLateChargeResolvesToPrecedingInstallment() {
+        CurrencyData currencyData = new CurrencyData("AED", "UAE Dirham", 3, 0, "AED", "currency.AED");
+        MonetaryCurrency currency = new MonetaryCurrency(currencyData);
+        LocalDate julyDueDate = LocalDate.of(2026, 7, 31);
+        LocalDate augustDueDate = LocalDate.of(2026, 8, 31);
+        LoanRepaymentScheduleInstallment july = installment(1, julyDueDate, currency, "19213.34");
+        LoanRepaymentScheduleInstallment august = installment(2, augustDueDate, currency, "19213.34");
+
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, LocalDate.of(2026, 8, 1), new BigDecimal("19213.34")));
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, julyDueDate, new BigDecimal("19213.34")));
+    }
+
+    @Test
+    public void testLegacyChargeUsesUniqueBaseAmountBeforeNearestDateFallback() {
+        CurrencyData currencyData = new CurrencyData("AED", "UAE Dirham", 3, 0, "AED", "currency.AED");
+        MonetaryCurrency currency = new MonetaryCurrency(currencyData);
+        LoanRepaymentScheduleInstallment july = installment(1, LocalDate.of(2026, 7, 31), currency, "100.00");
+        LoanRepaymentScheduleInstallment august = installment(2, LocalDate.of(2026, 8, 31), currency, "200.00");
+
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, LocalDate.of(2026, 9, 1), new BigDecimal("100.00")));
+    }
+
+    private LoanRepaymentScheduleInstallment installment(int number, LocalDate dueDate, MonetaryCurrency currency, String principal) {
+        LoanRepaymentScheduleInstallment installment = Mockito.mock(LoanRepaymentScheduleInstallment.class);
+        Money principalMoney = Money.of(currency, new BigDecimal(principal));
+        when(installment.getInstallmentNumber()).thenReturn(number);
+        when(installment.getDueDate()).thenReturn(dueDate);
+        Mockito.lenient().when(installment.getPrincipal(currency)).thenReturn(principalMoney);
+        return installment;
     }
 
     @Test

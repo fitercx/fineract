@@ -1213,27 +1213,37 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         final ScheduledDateGenerator scheduledDateGenerator = new DefaultScheduledDateGenerator();
         Map<Integer, LocalDate> scheduleDates = new HashMap<>();
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
+        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
         final LocalDate dueDate = command.localDateValueOfParameterNamed("dueDate");
-        // First LPI is the day after the installment due date (plus wait). Paying on the due date is on-time
-        // and must not attract a charge — do not shift startDate back onto the due date.
-        LocalDate startDate = dueDate.plusDays(penaltyWaitPeriodValue + 1L);
+        final long penaltyWaitDays = penaltyWaitPeriodValue != null ? penaltyWaitPeriodValue : 0L;
+        final long penaltyPostingWaitDays = penaltyPostingWaitPeriodValue != null ? penaltyPostingWaitPeriodValue : 0L;
+        // Posting starts after the due date, so an on-time payment is not charged. The charge effective date remains
+        // the overdue day, preserving Fineract's original Due As Of behavior.
+        LocalDate postingDate = dueDate.plusDays(penaltyWaitDays + 1L);
         int frequencyNumber = 1;
         if (feeFrequency == null) {
-            if (!DateUtils.isDateInTheFuture(startDate)) {
-                scheduleDates.put(frequencyNumber++, startDate);
+            if (!DateUtils.isDateInTheFuture(postingDate)) {
+                scheduleDates.put(frequencyNumber++,
+                        resolveOverdueChargeEffectiveDate(postingDate, penaltyWaitDays, penaltyPostingWaitDays));
             }
         } else {
-            while (!DateUtils.isDateInTheFuture(startDate)) {
-                scheduleDates.put(frequencyNumber++, startDate);
+            while (!DateUtils.isDateInTheFuture(postingDate)) {
+                scheduleDates.put(frequencyNumber++,
+                        resolveOverdueChargeEffectiveDate(postingDate, penaltyWaitDays, penaltyPostingWaitDays));
 
-                startDate = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency),
-                        chargeDefinition.feeInterval(), startDate);
+                postingDate = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency),
+                        chargeDefinition.feeInterval(), postingDate);
             }
         }
 
         for (Integer frequency : frequencyNumbers) {
             scheduleDates.remove(frequency);
         }
+
+        // A reversed overdue charge is a tombstone for that EMI/date. Custom implementations can identify those
+        // records even though reversal makes the charge inactive and removes its overdue-installment link.
+        scheduleDates.entrySet()
+                .removeIf(entry -> shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, periodNumber, entry.getValue()));
 
         LoanRepaymentScheduleInstallment installment = null;
         LocalDate lastChargeAppliedDate = dueDate;
@@ -1273,6 +1283,19 @@ public class LoanChargeWritePlatformServiceImpl implements LoanChargeWritePlatfo
         }
 
         return new LoanOverdueDTO(loan, runInterestRecalculation, recalculateFrom, lastChargeAppliedDate);
+    }
+
+    static LocalDate resolveOverdueChargeEffectiveDate(LocalDate postingDate, long penaltyWaitDays, long penaltyPostingWaitDays) {
+        final long effectiveDateOffset = Math.max(penaltyWaitDays + 1L - penaltyPostingWaitDays, 1L);
+        return postingDate.minusDays(effectiveDateOffset);
+    }
+
+    /**
+     * Hook for deployments that retain reversed overdue charges as audit records. Core behavior remains unchanged.
+     */
+    protected boolean shouldSkipReversedOverdueChargeDate(final Loan loan, final Charge chargeDefinition, final Integer periodNumber,
+            final LocalDate effectiveDate) {
+        return false;
     }
 
     private void addInstallmentIfPenaltyAppliedAfterLastDueDate(Loan loan, LocalDate lastChargeDate) {
