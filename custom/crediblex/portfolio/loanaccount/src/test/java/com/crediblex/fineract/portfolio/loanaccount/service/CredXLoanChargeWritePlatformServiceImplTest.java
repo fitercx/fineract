@@ -672,6 +672,87 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     @Test
+    void reversePaidLoanCharge_recordsOriginalInstallmentNumberOnAdjustment() {
+        givenReversablePaidPenalty();
+        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
+        LoanOverdueInstallmentCharge overdueInstallmentCharge = mock(LoanOverdueInstallmentCharge.class);
+        LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
+        when(loanCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(loanCharge.getOverdueInstallmentCharge()).thenReturn(overdueInstallmentCharge);
+        when(overdueInstallmentCharge.getInstallment()).thenReturn(installment);
+        when(installment.getInstallmentNumber()).thenReturn(3);
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+
+            credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
+
+            ArgumentCaptor<LoanTransaction> adjustmentCaptor = ArgumentCaptor.forClass(LoanTransaction.class);
+            verify(loanTransactionRepository).saveAndFlush(adjustmentCaptor.capture());
+            LoanChargePaidBy paidBy = adjustmentCaptor.getValue().getLoanChargesPaid().iterator().next();
+            assertEquals(3, paidBy.getInstallmentNumber());
+        }
+    }
+
+    @Test
+    void reversedOverdueChargeBlocksRegenerationOnlyForItsOriginalInstallmentAndDate() {
+        Charge chargeDefinition = mock(Charge.class);
+        LoanCharge reversedCharge = mock(LoanCharge.class);
+        LoanTransaction adjustment = mock(LoanTransaction.class);
+        LoanChargePaidBy adjustmentPaidBy = mock(LoanChargePaidBy.class);
+        LocalDate effectiveDate = LocalDate.of(2026, 8, 17);
+
+        when(reversedCharge.isActive()).thenReturn(false);
+        when(reversedCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(reversedCharge.getCharge()).thenReturn(chargeDefinition);
+        when(reversedCharge.getDueLocalDate()).thenReturn(effectiveDate);
+        when(adjustment.isNotReversed()).thenReturn(true);
+        when(adjustment.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_ADJUSTMENT);
+        when(adjustment.getLoanChargesPaid()).thenReturn(Set.of(adjustmentPaidBy));
+        when(adjustmentPaidBy.getLoanCharge()).thenReturn(reversedCharge);
+        when(adjustmentPaidBy.getInstallmentNumber()).thenReturn(1);
+        when(loan.getLoanCharges()).thenReturn(Set.of(reversedCharge));
+        when(loan.getLoanTransactions()).thenReturn(List.of(adjustment));
+
+        assertTrue(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 1, effectiveDate));
+        assertFalse(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 2, effectiveDate));
+        assertFalse(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 1,
+                effectiveDate.plusDays(1)));
+    }
+
+    @Test
+    void legacyReversedOverdueChargeWithoutInstallmentMetadataStillBlocksSameEmiDate() {
+        Charge chargeDefinition = mock(Charge.class);
+        LoanCharge reversedCharge = mock(LoanCharge.class);
+        LoanTransaction adjustment = mock(LoanTransaction.class);
+        LoanChargePaidBy adjustmentPaidBy = mock(LoanChargePaidBy.class);
+        LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
+        Money principal = mock(Money.class);
+        LocalDate effectiveDate = LocalDate.of(2026, 8, 17);
+
+        when(reversedCharge.isActive()).thenReturn(false);
+        when(reversedCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(reversedCharge.getCharge()).thenReturn(chargeDefinition);
+        when(reversedCharge.getDueLocalDate()).thenReturn(effectiveDate);
+        when(reversedCharge.getAmountPercentageAppliedTo()).thenReturn(new BigDecimal("100000.00"));
+        when(adjustment.isNotReversed()).thenReturn(true);
+        when(adjustment.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_ADJUSTMENT);
+        when(adjustment.getLoanChargesPaid()).thenReturn(Set.of(adjustmentPaidBy));
+        when(adjustmentPaidBy.getLoanCharge()).thenReturn(reversedCharge);
+        when(adjustmentPaidBy.getInstallmentNumber()).thenReturn(null);
+        when(installment.getInstallmentNumber()).thenReturn(1);
+        when(installment.getDueDate()).thenReturn(effectiveDate);
+        when(installment.getPrincipal(monetaryCurrency)).thenReturn(principal);
+        when(principal.getAmount()).thenReturn(new BigDecimal("100000.00"));
+        when(loan.getLoanCharges()).thenReturn(Set.of(reversedCharge));
+        when(loan.getLoanTransactions()).thenReturn(List.of(adjustment));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(installment));
+        when(loan.getCurrency()).thenReturn(monetaryCurrency);
+
+        assertTrue(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 1, effectiveDate));
+    }
+
+    @Test
     void reversePaidLoanCharge_refundsOnlyTheGenuinePostReprocessOverpaymentNotTheFullReversedAmount() {
         givenReversablePaidPenalty();
         // Reverse the 483.87 penalty on a loan that ends up only 200.00 overpaid after the reprocess (the other 283.87
