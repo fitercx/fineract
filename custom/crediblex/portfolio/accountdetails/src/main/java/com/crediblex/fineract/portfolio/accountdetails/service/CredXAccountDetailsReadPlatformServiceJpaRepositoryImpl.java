@@ -470,12 +470,15 @@ public class CredXAccountDetailsReadPlatformServiceJpaRepositoryImpl extends Acc
             accountsSummary
                     .append("""
                                     left join (
-                                        select
+                                        select distinct
                                             act.to_savings_account_id,
                                                     act.from_loan_account_id
                                         from
                                             m_account_transfer_details act inner join
                                             m_account_transfer_transaction att on att.account_transfer_details_id  = act.id and att.is_reversed = false
+                                            -- Repayments, LPI refunds and foreclosure refunds can create multiple
+                                            -- active transfer details for the same linked loan/savings pair. Keep
+                                            -- the client account summary at one row per logical association.
                                             where act.transfer_type = 1 and act.from_loan_account_id is not null) as transfer_info
                                             on sa.id = transfer_info.to_savings_account_id
                             """);

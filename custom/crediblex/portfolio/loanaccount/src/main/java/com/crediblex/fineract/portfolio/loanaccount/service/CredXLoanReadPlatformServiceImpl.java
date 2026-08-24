@@ -45,6 +45,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsD
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.CredXTargetedLoanChargeRefundProcessor;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
@@ -946,8 +947,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     /**
-     * Calculates the total amount of reversed penalty charges for a specific repayment schedule period. This includes
-     * only inactive charges that were reversed (have a CHARGE_ADJUSTMENT transaction).
+     * Calculates the total refunded penalty amount for a repayment period. Current refunds use a targeted active-loan
+     * refund transaction; inactive charge adjustments remain supported for legacy data.
      *
      * For overdue/LPI charges, persisted installment metadata is authoritative. Legacy reversals may have lost that
      * metadata when the charge was inactivated, so they fall back to the nearest normal EMI due on or before the stored
@@ -968,16 +969,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return BigDecimal.ZERO;
         }
 
-        // Check all loan charges to find reversed penalty charges linked to this installment
-        // IMPORTANT: Only check inactive charges that have been reversed (have CHARGE_ADJUSTMENT transaction)
+        // Check all loan charges to find refunded penalty charges linked to this installment.
         for (LoanCharge loanCharge : loan.getLoanCharges()) {
-            // Check if this is a reversed penalty charge:
-            // 1. Must be a penalty charge
-            // 2. Must be inactive (marked as reversed)
-            // 3. Must have a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
-            if (loanCharge.isPenaltyCharge() && !loanCharge.isActive()) {
+            if (loanCharge.isPenaltyCharge()) {
                 Optional<LoanChargePaidBy> chargeAdjustmentPaidBy = loan.getLoanTransactions().stream()
-                        .filter(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment())
+                        .filter(tx -> CredXTargetedLoanChargeRefundProcessor.isTargetedChargeRefund(tx)
+                                || (!loanCharge.isActive() && tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment()))
                         .flatMap(tx -> tx.getLoanChargesPaid().stream())
                         .filter(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())).findFirst();
 
@@ -1004,9 +1001,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     }
 
                     if (appliesToPeriod) {
-                        // Get the original paid amount from the CHARGE_ADJUSTMENT transaction
-                        // Note: LoanChargePaidBy stores the positive amount, not negative
-                        BigDecimal originalPaidAmount = chargeAdjustmentPaidBy.get().getAmount();
+                        BigDecimal originalPaidAmount = chargeAdjustmentPaidBy.get().getAmount().abs();
 
                         if (originalPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
                             reversedAmount = reversedAmount.add(originalPaidAmount);
@@ -1014,8 +1009,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                                     loanCharge.getId(), loanCharge.getDueLocalDate(), originalPaidAmount, installmentNumber, periodDueDate,
                                     reversedAmount);
                         } else {
-                            log.warn("Reversed charge {} (due: {}) matched period {} but has zero amount in CHARGE_ADJUSTMENT",
-                                    loanCharge.getId(), loanCharge.getDueLocalDate(), installmentNumber);
+                            log.warn("Refunded charge {} (due: {}) matched period {} but has zero refund amount", loanCharge.getId(),
+                                    loanCharge.getDueLocalDate(), installmentNumber);
                         }
                     }
                 }

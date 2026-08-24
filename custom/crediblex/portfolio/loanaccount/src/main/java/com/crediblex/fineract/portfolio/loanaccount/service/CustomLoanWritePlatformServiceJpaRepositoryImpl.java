@@ -16,6 +16,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDT
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.CredXTargetedLoanChargeRefundProcessor;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
@@ -1750,13 +1751,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 .orElseThrow(() -> new LoanTransactionNotFoundException(transactionId, loanId));
         final BigDecimal requestedTransactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
 
-        // Prevent undo of CHARGE_ADJUSTMENT transactions created by "reverse paid charge".
-        // These are audit trail transactions tied to inactive charges and should remain immutable.
+        // A paid-charge refund has a matching savings credit and must not be undone as a standalone loan transaction.
         if (requestedTransactionAmount != null && requestedTransactionAmount.compareTo(BigDecimal.ZERO) == 0
-                && isChargeAdjustmentForReversedPaidCharge(transactionToAdjust)) {
-            throw new GeneralPlatformDomainRuleException("error.msg.loan.charge.adjustment.undo.not.allowed",
-                    "Undo is not allowed for charge adjustment transaction " + transactionId
-                            + " because it was created by reverse paid charge flow.",
+                && isPaidChargeRefundTransaction(transactionToAdjust)) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.paid.charge.refund.undo.not.allowed",
+                    "Undo is not allowed for paid-charge refund transaction " + transactionId
+                            + " because its linked savings credit must remain synchronized.",
                     transactionId);
         }
 
@@ -1843,16 +1843,19 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         return result;
     }
 
-    private boolean isChargeAdjustmentForReversedPaidCharge(LoanTransaction transaction) {
-        if (transaction == null || !transaction.isChargeAdjustment()) {
+    private boolean isPaidChargeRefundTransaction(LoanTransaction transaction) {
+        if (transaction == null) {
             return false;
         }
         Set<LoanChargePaidBy> chargesPaid = transaction.getLoanChargesPaid();
         if (chargesPaid == null || chargesPaid.isEmpty()) {
             return false;
         }
-        return chargesPaid.stream().map(LoanChargePaidBy::getLoanCharge).filter(java.util.Objects::nonNull)
-                .anyMatch(loanCharge -> !loanCharge.isActive());
+        if (CredXTargetedLoanChargeRefundProcessor.isTargetedChargeRefund(transaction)) {
+            return true;
+        }
+        return transaction.isChargeAdjustment() && chargesPaid.stream().map(LoanChargePaidBy::getLoanCharge)
+                .filter(java.util.Objects::nonNull).anyMatch(loanCharge -> !loanCharge.isActive());
     }
 
     private void updateLocBalance(Long loanId, BigDecimal amount, LocalDate transactionDate, LineOfCreditTransactionType transactionType,
