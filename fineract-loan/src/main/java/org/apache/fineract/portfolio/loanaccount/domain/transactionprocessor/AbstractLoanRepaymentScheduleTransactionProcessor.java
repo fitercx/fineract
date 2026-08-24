@@ -219,8 +219,10 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
                 loanTransaction.resetDerivedComponents();
                 handleWriteOff(loanTransaction, currency, installments);
             } else if (loanTransaction.isRefundForActiveLoan()) {
-                loanTransaction.resetDerivedComponents();
-                handleRefund(loanTransaction, currency, installments, charges);
+                if (!TargetedLoanChargeRefundHookRegistry.applyIfSupported(loanTransaction, currency, installments)) {
+                    loanTransaction.resetDerivedComponents();
+                    handleRefund(loanTransaction, currency, installments, charges);
+                }
             } else if (loanTransaction.isCreditBalanceRefund()) {
                 recalculateCreditTransaction(changedTransactionDetail, loanTransaction, currency, installments, transactionsToBeProcessed,
                         overpaymentHolder);
@@ -286,7 +288,11 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
     public ChangedTransactionDetail processLatestTransaction(final LoanTransaction loanTransaction, final TransactionCtx ctx) {
         switch (loanTransaction.getTypeOf()) {
             case WRITEOFF -> handleWriteOff(loanTransaction, ctx.getCurrency(), ctx.getInstallments());
-            case REFUND_FOR_ACTIVE_LOAN -> handleRefund(loanTransaction, ctx.getCurrency(), ctx.getInstallments(), ctx.getCharges());
+            case REFUND_FOR_ACTIVE_LOAN -> {
+                if (!TargetedLoanChargeRefundHookRegistry.applyIfSupported(loanTransaction, ctx.getCurrency(), ctx.getInstallments())) {
+                    handleRefund(loanTransaction, ctx.getCurrency(), ctx.getInstallments(), ctx.getCharges());
+                }
+            }
             case CHARGEBACK -> handleChargeback(loanTransaction, ctx);
             case CHARGE_OFF -> handleChargeOff(loanTransaction, ctx);
             default -> {

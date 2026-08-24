@@ -133,6 +133,19 @@ class ForeclosureAmountReconcilerTest {
     }
 
     @Test
+    @DisplayName("A refunded LPI restored onto the schedule remains payable at foreclosure")
+    void noOpWhenRefundedLpiIsBackedByScheduleOutstanding() {
+        final Loan loan = loanWithAllocatableOutstanding("1009.67");
+
+        final ForeclosureAmountReconciler.Result result = ForeclosureAmountReconciler.reconcile(loan, currency, money("1000.00"),
+                money("0"), money("0"), money("9.67"), money("0"));
+
+        assertThat(result.wasReduced()).isFalse();
+        assertThat(result.penalty().getAmount()).isEqualByComparingTo("9.67");
+        assertThat(result.total().getAmount()).isEqualByComparingTo("1009.67");
+    }
+
+    @Test
     @DisplayName("Fails open when the schedule reports no allocatable outstanding")
     void noOpWhenNoAllocatableOutstanding() {
         final Loan loan = mock(Loan.class);

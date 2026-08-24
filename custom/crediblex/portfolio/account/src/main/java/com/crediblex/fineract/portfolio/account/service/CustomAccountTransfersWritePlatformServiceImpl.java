@@ -511,6 +511,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             final SavingsAccountTransaction deposit = this.savingsAccountDomainService.handleDeposit(toSavingsAccount,
                     accountTransferDTO.getFmt(), accountTransferDTO.getTransactionDate(), netLoanDisbursementAmount,
                     accountTransferDTO.getPaymentDetail(), isAccountTransfer, isRegularTransaction, backdatedTxnsAllowedTill);
+            markForeclosureRefundDeposit(accountTransferDTO, deposit);
             accountTransferDetails = this.accountTransferAssembler.assembleLoanToSavingsTransfer(accountTransferDTO, fromLoanAccount,
                     toSavingsAccount, deposit, loanTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);
@@ -530,6 +531,18 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         }
 
         return transferTransactionId;
+    }
+
+    /**
+     * Labels only the savings-side credit created by the custom foreclosure prepaid-income refund. The loan refund and
+     * account transfer remain standard Fineract transactions; this marker is display metadata needed to distinguish the
+     * foreclosure undo from ordinary deposits without changing LPI reversal, repayment, reprocessing, or balance logic.
+     */
+    private void markForeclosureRefundDeposit(final AccountTransferDTO accountTransferDTO, final SavingsAccountTransaction savingsDeposit) {
+        if (LoanTransactionType.REFUND.getValue().equals(accountTransferDTO.getFromTransferType())
+                && CredXSavingsTransactionSubTypeService.FORECLOSURE_REFUND_DESCRIPTION.equals(accountTransferDTO.getDescription())) {
+            this.transactionSubTypeService.markForeclosureRefund(savingsDeposit.getId());
+        }
     }
 
     @Override

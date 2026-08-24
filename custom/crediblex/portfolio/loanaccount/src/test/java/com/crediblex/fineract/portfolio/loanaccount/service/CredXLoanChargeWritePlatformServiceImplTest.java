@@ -59,12 +59,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -78,6 +80,56 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     private static final String EXTERNAL_ID_VALUE = "ext-123";
     private static final String LOCALE = "en";
     private static final String NOTE_TEXT = "Test note";
+
+    @Test
+    void laterOverdueOccurrenceUsesEffectiveDateInsteadOfOriginalEmiLink() {
+        final LoanRepaymentScheduleInstallment june = mock(LoanRepaymentScheduleInstallment.class);
+        final LoanRepaymentScheduleInstallment july = mock(LoanRepaymentScheduleInstallment.class);
+        final LoanOverdueInstallmentCharge originalEmiLink = mock(LoanOverdueInstallmentCharge.class);
+        final LoanCharge overdueCharge = mock(LoanCharge.class);
+
+        when(june.getInstallmentNumber()).thenReturn(1);
+        when(june.getFromDate()).thenReturn(LocalDate.of(2026, 5, 21));
+        when(june.getDueDate()).thenReturn(LocalDate.of(2026, 6, 22));
+        when(july.getInstallmentNumber()).thenReturn(2);
+        when(july.getFromDate()).thenReturn(LocalDate.of(2026, 6, 22));
+        when(july.getDueDate()).thenReturn(LocalDate.of(2026, 7, 21));
+        when(overdueCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(overdueCharge.getDueLocalDate()).thenReturn(LocalDate.of(2026, 6, 23));
+        when(overdueCharge.getOverdueInstallmentCharge()).thenReturn(originalEmiLink);
+        when(originalEmiLink.getInstallment()).thenReturn(june);
+        when(originalEmiLink.getFrequencyNumber()).thenReturn(2);
+
+        final Integer resolved = ReflectionTestUtils.invokeMethod(credXLoanChargeWritePlatformService,
+                "resolveInstallmentNumberForOverdueCharge", overdueCharge, List.of(june, july));
+
+        assertEquals(2, resolved);
+    }
+
+    @Test
+    void legacyFirstOverdueOccurrenceStaysOnOriginalEmiWhenEffectiveDateIsOneDayLate() {
+        final LoanRepaymentScheduleInstallment june = mock(LoanRepaymentScheduleInstallment.class);
+        final LoanRepaymentScheduleInstallment july = mock(LoanRepaymentScheduleInstallment.class);
+        final LoanOverdueInstallmentCharge originalEmiLink = mock(LoanOverdueInstallmentCharge.class);
+        final LoanCharge overdueCharge = mock(LoanCharge.class);
+
+        when(june.getInstallmentNumber()).thenReturn(1);
+        when(june.getFromDate()).thenReturn(LocalDate.of(2026, 5, 21));
+        when(june.getDueDate()).thenReturn(LocalDate.of(2026, 6, 22));
+        when(july.getInstallmentNumber()).thenReturn(2);
+        when(july.getFromDate()).thenReturn(LocalDate.of(2026, 6, 22));
+        when(july.getDueDate()).thenReturn(LocalDate.of(2026, 7, 21));
+        when(overdueCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(overdueCharge.getDueLocalDate()).thenReturn(LocalDate.of(2026, 6, 23));
+        when(overdueCharge.getOverdueInstallmentCharge()).thenReturn(originalEmiLink);
+        when(originalEmiLink.getInstallment()).thenReturn(june);
+        when(originalEmiLink.getFrequencyNumber()).thenReturn(1);
+
+        final Integer resolved = ReflectionTestUtils.invokeMethod(credXLoanChargeWritePlatformService,
+                "resolveInstallmentNumberForOverdueCharge", overdueCharge, List.of(june, july));
+
+        assertEquals(1, resolved);
+    }
 
     @Mock
     private JsonCommand jsonCommand;
@@ -627,9 +679,8 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     // ----------------------------------------------------------------------------------------------------------------
-    // reversePaidLoanCharge - regression coverage for the loan-2091 phantom-overpayment fix, plus the
-    // Cloud Fifty One follow-up: do NOT full-history reprocess (that recasts unrelated repayments).
-    // Savings refund stays conditional on a genuine post-reallocation overpayment.
+    // reversePaidLoanCharge - a targeted undo of the paid charge component. It must not reallocate principal/interest
+    // or replay unrelated repayments, and the full refunded amount must be credited to linked savings.
     // ----------------------------------------------------------------------------------------------------------------
 
     private static final BigDecimal REVERSED_PENALTY = new BigDecimal("483.87");
@@ -643,38 +694,63 @@ class CredXLoanChargeWritePlatformServiceImplTest {
         when(loanCharge.isActive()).thenReturn(true);
         when(loanCharge.isPenaltyCharge()).thenReturn(true);
         when(loanCharge.name()).thenReturn("Overdue Interest (LPI)");
-        when(loanCharge.getLoanChargePaidBySet()).thenReturn(new HashSet<>());
-        when(loan.getLoanTransactions()).thenReturn(Collections.emptyList());
-        when(loan.getRepaymentScheduleInstallments()).thenReturn(Collections.emptyList());
+        final LoanTransaction originalRepayment = mock(LoanTransaction.class);
+        final LoanChargePaidBy originalPaidBy = mock(LoanChargePaidBy.class);
+        final LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
+        final Set<LoanChargePaidBy> paidBySet = new HashSet<>();
+        paidBySet.add(originalPaidBy);
+        when(originalPaidBy.getAmount()).thenReturn(REVERSED_PENALTY);
+        when(originalPaidBy.getInstallmentNumber()).thenReturn(3);
+        when(originalPaidBy.getLoanTransaction()).thenReturn(originalRepayment);
+        when(originalRepayment.isNotReversed()).thenReturn(true);
+        when(originalRepayment.isReversed()).thenReturn(false);
+        when(originalRepayment.getTypeOf()).thenReturn(LoanTransactionType.REPAYMENT);
+        when(originalRepayment.getLoanChargesPaid()).thenReturn(Set.of(originalPaidBy));
+        when(loanCharge.getLoanChargePaidBySet()).thenReturn(paidBySet);
+        when(loanCharge.undoPaidOrPartiallyAmountBy(any(Money.class), eq(3), any(Money.class))).thenReturn(paidAmount);
+        when(installment.getInstallmentNumber()).thenReturn(3);
+        when(installment.getPenaltyChargesPaid(any(MonetaryCurrency.class))).thenReturn(paidAmount);
+        when(installment.unpayPenaltyChargesComponent(eq(BUSINESS_DATE), any(Money.class))).thenReturn(paidAmount);
+        when(loan.getLoanTransactions()).thenReturn(List.of(originalRepayment));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(installment));
         when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
         when(loan.getOffice()).thenReturn(mock(Office.class));
         when(loanRepositoryWrapper.findOneWithNotFoundDetection(LOAN_ID)).thenReturn(loan);
         when(externalIdFactory.create()).thenReturn(externalId);
+
+        final PortfolioAccountData linkedSavings = mock(PortfolioAccountData.class);
+        when(linkedSavings.getId()).thenReturn(3393L);
+        when(linkedSavings.getAccountNo()).thenReturn("000003393");
+        when(accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(LOAN_ID)).thenReturn(linkedSavings);
+        final CommandProcessingResult depositResult = mock(CommandProcessingResult.class);
+        when(depositResult.getResourceId()).thenReturn(999L);
+        when(savingsAccountWritePlatformService.deposit(eq(3393L), any(JsonCommand.class))).thenReturn(depositResult);
+        when(paymentTypeReadPlatformService.retrieveAllPaymentTypesWithCode()).thenReturn(Collections.emptyList());
+        when(fromApiJsonHelper.toJson(any(Map.class)))
+                .thenAnswer(invocation -> new com.google.gson.Gson().toJson((Object) invocation.getArgument(0)));
+        when(fromApiJsonHelper.parse(anyString()))
+                .thenAnswer(invocation -> com.google.gson.JsonParser.parseString(invocation.getArgument(0)));
     }
 
     @Test
-    void reversePaidLoanCharge_onPartiallyPaidLoan_doesNotReprocessOrRefundToSavings() {
+    void reversePaidLoanCharge_onPartiallyPaidLoan_refundsFullAmountWithoutReprocessing() {
         givenReversablePaidPenalty();
-        // Partially-paid loan: the reprocess re-applies the freed penalty to principal, so it is never overpaid.
-        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
 
         try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
             mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
 
             credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
 
-            // Must not replay the full history — that is what recast Cloud Fifty One loan 1.
             verify(reprocessLoanTransactionsService, never()).reprocessTransactions(loan);
-            // Nothing became a genuine overpayment, so NO money is credited back to savings (prevents the
-            // double-credit).
-            verify(savingsAccountWritePlatformService, never()).deposit(anyLong(), any(JsonCommand.class));
+            final ArgumentCaptor<JsonCommand> depositCommand = ArgumentCaptor.forClass(JsonCommand.class);
+            verify(savingsAccountWritePlatformService).deposit(eq(3393L), depositCommand.capture());
+            assertTrue(depositCommand.getValue().json().contains("483.87"));
         }
     }
 
     @Test
-    void reversePaidLoanCharge_recordsOriginalInstallmentNumberOnAdjustment() {
+    void reversePaidLoanCharge_createsTargetedRefundOnOriginalInstallment() {
         givenReversablePaidPenalty();
-        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
         LoanOverdueInstallmentCharge overdueInstallmentCharge = mock(LoanOverdueInstallmentCharge.class);
         LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
         when(loanCharge.isOverdueInstallmentCharge()).thenReturn(true);
@@ -687,10 +763,21 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
             credXLoanChargeWritePlatformService.reversePaidLoanCharge(LOAN_ID, LOAN_CHARGE_ID, jsonCommand);
 
-            ArgumentCaptor<LoanTransaction> adjustmentCaptor = ArgumentCaptor.forClass(LoanTransaction.class);
-            verify(loanTransactionRepository).saveAndFlush(adjustmentCaptor.capture());
-            LoanChargePaidBy paidBy = adjustmentCaptor.getValue().getLoanChargesPaid().iterator().next();
+            ArgumentCaptor<LoanTransaction> refundCaptor = ArgumentCaptor.forClass(LoanTransaction.class);
+            verify(loanTransactionRepository).saveAndFlush(refundCaptor.capture());
+            final LoanTransaction refund = refundCaptor.getValue();
+            assertTrue(refund.isRefundForActiveLoan());
+            assertSame(loan, refund.getLoan());
+            assertEquals("P", refund.getChargeRefundChargeType());
+            assertEquals(0, refund.getPrincipalPortion(monetaryCurrency).getAmount().compareTo(BigDecimal.ZERO));
+            assertEquals(0, refund.getInterestPortion(monetaryCurrency).getAmount().compareTo(BigDecimal.ZERO));
+            assertEquals(0, refund.getPenaltyChargesPortion(monetaryCurrency).getAmount().compareTo(REVERSED_PENALTY));
+            LoanChargePaidBy paidBy = refund.getLoanChargesPaid().iterator().next();
             assertEquals(3, paidBy.getInstallmentNumber());
+            assertEquals(0, paidBy.getAmount().compareTo(REVERSED_PENALTY.negate()));
+            InOrder persistenceOrder = inOrder(loanTransactionRepository, loanChargeRepository);
+            persistenceOrder.verify(loanTransactionRepository).saveAndFlush(refund);
+            persistenceOrder.verify(loanChargeRepository).saveAndFlush(loanCharge);
         }
     }
 
@@ -710,7 +797,9 @@ class CredXLoanChargeWritePlatformServiceImplTest {
         when(adjustment.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_ADJUSTMENT);
         when(adjustment.getLoanChargesPaid()).thenReturn(Set.of(adjustmentPaidBy));
         when(adjustmentPaidBy.getLoanCharge()).thenReturn(reversedCharge);
+        when(adjustmentPaidBy.getLoanTransaction()).thenReturn(adjustment);
         when(adjustmentPaidBy.getInstallmentNumber()).thenReturn(1);
+        when(reversedCharge.getLoanChargePaidBySet()).thenReturn(Set.of(adjustmentPaidBy));
         when(loan.getLoanCharges()).thenReturn(Set.of(reversedCharge));
         when(loan.getLoanTransactions()).thenReturn(List.of(adjustment));
 
@@ -739,7 +828,9 @@ class CredXLoanChargeWritePlatformServiceImplTest {
         when(adjustment.getTypeOf()).thenReturn(LoanTransactionType.CHARGE_ADJUSTMENT);
         when(adjustment.getLoanChargesPaid()).thenReturn(Set.of(adjustmentPaidBy));
         when(adjustmentPaidBy.getLoanCharge()).thenReturn(reversedCharge);
+        when(adjustmentPaidBy.getLoanTransaction()).thenReturn(adjustment);
         when(adjustmentPaidBy.getInstallmentNumber()).thenReturn(null);
+        when(reversedCharge.getLoanChargePaidBySet()).thenReturn(Set.of(adjustmentPaidBy));
         when(installment.getInstallmentNumber()).thenReturn(1);
         when(installment.getDueDate()).thenReturn(effectiveDate);
         when(installment.getPrincipal(monetaryCurrency)).thenReturn(principal);
@@ -753,31 +844,42 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     @Test
-    void reversePaidLoanCharge_refundsOnlyTheGenuinePostReprocessOverpaymentNotTheFullReversedAmount() {
+    void refundedActiveOverdueChargeBlocksPenaltyJobRegeneration() {
+        Charge chargeDefinition = mock(Charge.class);
+        LoanCharge refundedCharge = mock(LoanCharge.class);
+        LoanTransaction refund = mock(LoanTransaction.class);
+        LoanChargePaidBy refundPaidBy = mock(LoanChargePaidBy.class);
+        LoanOverdueInstallmentCharge overdueInstallmentCharge = mock(LoanOverdueInstallmentCharge.class);
+        LoanRepaymentScheduleInstallment owningInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        LocalDate effectiveDate = LocalDate.of(2026, 8, 17);
+
+        when(refundedCharge.isActive()).thenReturn(true);
+        when(refundedCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(refundedCharge.getCharge()).thenReturn(chargeDefinition);
+        when(refundedCharge.getDueLocalDate()).thenReturn(effectiveDate);
+        when(refundedCharge.getOverdueInstallmentCharge()).thenReturn(overdueInstallmentCharge);
+        when(overdueInstallmentCharge.getInstallment()).thenReturn(owningInstallment);
+        when(owningInstallment.getInstallmentNumber()).thenReturn(1);
+        when(refund.isNotReversed()).thenReturn(true);
+        when(refund.isRefundForActiveLoan()).thenReturn(true);
+        when(refund.getChargeRefundChargeType()).thenReturn("P");
+        when(refund.getLoanChargesPaid()).thenReturn(Set.of(refundPaidBy));
+        when(refundPaidBy.getLoanTransaction()).thenReturn(refund);
+        when(refundPaidBy.getLoanCharge()).thenReturn(refundedCharge);
+        // A multi-EMI repayment may record a different allocation EMI; it must not override the charge's owner.
+        when(refundPaidBy.getInstallmentNumber()).thenReturn(2);
+        when(refundedCharge.getLoanChargePaidBySet()).thenReturn(Set.of(refundPaidBy));
+        when(loan.getLoanCharges()).thenReturn(Set.of(refundedCharge));
+        when(loan.getLoanTransactions()).thenReturn(List.of(refund));
+
+        assertTrue(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 1, effectiveDate));
+        assertFalse(credXLoanChargeWritePlatformService.shouldSkipReversedOverdueChargeDate(loan, chargeDefinition, 2, effectiveDate));
+    }
+
+    @Test
+    void reversePaidLoanCharge_refundDoesNotDependOnLoanOverpayment() {
         givenReversablePaidPenalty();
-        // Reverse the 483.87 penalty on a loan that ends up only 200.00 overpaid after the reprocess (the other 283.87
-        // was re-applied to principal). The refund to savings must be exactly the 200.00 genuine overpayment - NOT the
-        // full 483.87 reversed amount (that unconditional refund was the historical double-credit bug).
-        // The `getTotalOverpaid() != null ? getTotalOverpaid() : ZERO` ternary calls the getter twice per read, so stub
-        // four sequential values: (before: 0, 0) then (after: 200.00, 200.00).
-        final BigDecimal genuineOverpayment = new BigDecimal("200.00");
-        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO, BigDecimal.ZERO, genuineOverpayment, genuineOverpayment);
-
-        final PortfolioAccountData linkedSavings = mock(PortfolioAccountData.class);
-        when(linkedSavings.getId()).thenReturn(3393L);
-        when(linkedSavings.getAccountNo()).thenReturn("000003393");
-        when(accountAssociationsReadPlatformService.retriveLoanLinkedAssociation(LOAN_ID)).thenReturn(linkedSavings);
-
-        final CommandProcessingResult depositResult = mock(CommandProcessingResult.class);
-        when(depositResult.getResourceId()).thenReturn(999L);
-        when(savingsAccountWritePlatformService.deposit(eq(3393L), any(JsonCommand.class))).thenReturn(depositResult);
-        when(paymentTypeReadPlatformService.retrieveAllPaymentTypesWithCode()).thenReturn(Collections.emptyList());
-        // toJson(Object) - disambiguate from the toJson(JsonElement) overload with a Map matcher - so the built deposit
-        // command carries real JSON we can assert the amount on.
-        when(fromApiJsonHelper.toJson(any(Map.class)))
-                .thenAnswer(invocation -> new com.google.gson.Gson().toJson((Object) invocation.getArgument(0)));
-        when(fromApiJsonHelper.parse(anyString()))
-                .thenAnswer(invocation -> com.google.gson.JsonParser.parseString(invocation.getArgument(0)));
+        when(loan.getTotalOverpaid()).thenReturn(BigDecimal.ZERO);
 
         try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
             mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
@@ -788,8 +890,7 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             final ArgumentCaptor<JsonCommand> depositCommand = ArgumentCaptor.forClass(JsonCommand.class);
             verify(savingsAccountWritePlatformService).deposit(eq(3393L), depositCommand.capture());
             final String depositJson = depositCommand.getValue().json();
-            assertTrue(depositJson.contains("200"), "savings deposit must be for the genuine overpayment amount 200.00");
-            assertFalse(depositJson.contains("483.87"), "savings deposit must NOT refund the full reversed amount 483.87");
+            assertTrue(depositJson.contains("483.87"), "the complete paid LPI must be refunded to linked savings");
         }
     }
 
