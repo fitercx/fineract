@@ -639,7 +639,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             log.debug("Validating {} journal entries for GL account existence in Odoo with detailed results", journalEntries.size());
 
             // Array of GL codes that should be skipped during validation
-            String[] skipValidationGlCodes = { "Liability Transfer" };
+            String[] skipValidationGlCodes = { "Liability Transfer", "Write-off Savings" };
 
             for (JournalEntryOdooSync entrySync : journalEntries) {
                 if (entrySync == null || entrySync.getJournalEntry() == null || entrySync.getJournalEntry().getGlAccount() == null) {
