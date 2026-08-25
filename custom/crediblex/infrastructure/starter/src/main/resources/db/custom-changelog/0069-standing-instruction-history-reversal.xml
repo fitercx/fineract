@@ -90,36 +90,59 @@
         </insert>
     </changeSet>
 
+    <!-- ChangeSet 3: register SavingsToLoanTransferReversedBusinessEvent in external event config -->
+    <changeSet id="0069-3-add-si-reversal-external-event-config" author="crediblex" context="postgresql">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <sqlCheck expectedResult="1">
+                    SELECT COUNT(*) FROM m_external_event_configuration
+                    WHERE type = 'SavingsToLoanTransferReversedBusinessEvent'
+                </sqlCheck>
+            </not>
+        </preConditions>
+        <insert tableName="m_external_event_configuration">
+            <column name="type" value="SavingsToLoanTransferReversedBusinessEvent"/>
+            <column name="enabled" valueBoolean="true"/>
+        </insert>
+        <rollback>
+            <delete tableName="m_external_event_configuration">
+                <where>type = 'SavingsToLoanTransferReversedBusinessEvent'</where>
+            </delete>
+        </rollback>
+    </changeSet>
+
     <!--
-        ChangeSet 3 (optional): best-effort backfill for legacy history rows that predate the schema change.
+        ChangeSet 4 (optional): best-effort backfill for legacy history rows that predate this schema change.
         Matches each history row to its account_transfer_transaction via account_transfer_details_id + date + amount.
         Rows that match 0 or >1 transfer transactions are left NULL and cannot be reversed via the API.
         Safe to run repeatedly (WHERE account_transfer_transaction_id IS NULL guard).
+        PostgreSQL-only syntax — skipped on other DB engines.
     -->
-    <changeSet id="0069-3-backfill-si-history-att-id" author="crediblex" runOnChange="false">
+    <changeSet id="0069-4-backfill-si-history-att-id" author="crediblex" runOnChange="false">
         <preConditions onFail="MARK_RAN">
             <columnExists tableName="m_account_transfer_standing_instructions_history"
                           columnName="account_transfer_transaction_id"/>
         </preConditions>
-        <sql>
+        <sql dbms="postgresql">
             UPDATE m_account_transfer_standing_instructions_history h
-            INNER JOIN (
-                SELECT h2.id AS history_id, att.id AS att_id
+            SET account_transfer_transaction_id = match_map.att_id
+            FROM (
+                SELECT h2.id AS history_id, MIN(att.id) AS att_id
                 FROM m_account_transfer_standing_instructions_history h2
                 INNER JOIN m_account_transfer_standing_instructions si
                     ON h2.standing_instruction_id = si.id
                 INNER JOIN m_account_transfer_transaction att
                     ON att.account_transfer_details_id = si.account_transfer_details_id
-                    AND DATE(att.transaction_date) = DATE(h2.execution_time)
+                    AND att.transaction_date::date = h2.execution_time::date
                     AND att.amount = h2.amount
-                    AND att.is_reversed = 0
+                    AND att.is_reversed = false
                 WHERE h2.account_transfer_transaction_id IS NULL
                   AND h2.status IN ('success', 'partial')
                 GROUP BY h2.id
                 HAVING COUNT(att.id) = 1
-            ) match_map ON h.id = match_map.history_id
-            SET h.account_transfer_transaction_id = match_map.att_id
-            WHERE h.account_transfer_transaction_id IS NULL;
+            ) match_map
+            WHERE h.id = match_map.history_id
+              AND h.account_transfer_transaction_id IS NULL;
         </sql>
     </changeSet>
 
