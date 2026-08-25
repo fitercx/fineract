@@ -18,6 +18,8 @@
  */
 package org.apache.fineract.portfolio.account.domain;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -39,4 +41,8 @@ public interface AccountTransferRepository
 
     @Query("select att from AccountTransferTransaction att where att.fromLoanTransaction.id IN :loanTransactions and att.reversed=false")
     List<AccountTransferTransaction> findByFromLoanTransactions(@Param("loanTransactions") Collection<Long> loanTransactions);
+
+    @Query("select att from AccountTransferTransaction att where att.accountTransferDetails.id = :detailsId and att.date = :date and att.amount = :amount and att.reversed = false")
+    List<AccountTransferTransaction> findByDetailsAndDateAndAmount(@Param("detailsId") Long detailsId, @Param("date") LocalDate date,
+            @Param("amount") BigDecimal amount);
 }

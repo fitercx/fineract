@@ -352,13 +352,15 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
                 accountTransferDTO.isRegularTransaction(), accountTransferDTO.isExceptionForBalanceCheck());
 
         transferCompleted = true;
+        Long attId = null;
         StringBuilder errorLog = new StringBuilder();
         StringBuilder updateQuery = new StringBuilder(
                 "INSERT INTO m_account_transfer_standing_instructions_history (standing_instruction_id, " + sqlGenerator.escape("status")
-                        + ", amount, execution_time, error_log) VALUES (");
+                        + ", amount, execution_time, error_log, account_transfer_transaction_id) VALUES (");
 
         try {
-            accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            Long accountTransferDetailsId = accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            attId = findLatestAccountTransferTransactionId(accountTransferDetailsId);
             if (isPartialPayment) {
                 BigDecimal unpaidAmount = originalAmount.subtract(amount);
                 errorLog.append("Partial payment executed. Paid: ").append(amount).append(", Unpaid: ").append(unpaidAmount);
@@ -423,10 +425,26 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         }
         updateQuery.append(amount.doubleValue());
         updateQuery.append(", now(),");
-        updateQuery.append("'").append(errorLog).append("')");
+        updateQuery.append("'").append(errorLog).append("',");
+        updateQuery.append(attId != null ? attId : "NULL");
+        updateQuery.append(")");
         jdbcTemplate.update(updateQuery.toString());
 
         return transferCompleted;
+    }
+
+    private Long findLatestAccountTransferTransactionId(Long accountTransferDetailsId) {
+        if (accountTransferDetailsId == null) {
+            return null;
+        }
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT id FROM m_account_transfer_transaction WHERE account_transfer_details_id = ? AND is_reversed = 0 ORDER BY id DESC LIMIT 1",
+                    Long.class, accountTransferDetailsId);
+        } catch (Exception e) {
+            log.warn("Could not resolve account_transfer_transaction_id for details_id={}: {}", accountTransferDetailsId, e.getMessage());
+            return null;
+        }
     }
 
     /**
