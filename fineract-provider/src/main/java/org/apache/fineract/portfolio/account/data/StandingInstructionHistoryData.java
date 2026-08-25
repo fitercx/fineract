@@ -50,5 +50,8 @@ public class StandingInstructionHistoryData implements Serializable {
     private final String status;
     private final LocalDate executionTime;
     private final String errorLog;
+    private final Long historyId;
+    private final Boolean isReversed;
+    private final LocalDate reversedAt;
 
 }

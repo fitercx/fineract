@@ -22,10 +22,10 @@ import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer.SavingsToLoanTransferReversedBusinessEvent;
 import com.crediblex.fineract.portfolio.account.exception.StandingInstructionHistoryNotFoundException;
-import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
-import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -142,8 +142,7 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
             @Override
             public void afterCommit() {
                 try {
-                    loanStatusWebhookPublisher.publish(finalLoan,
-                            finalLoan.hasCustomStatus() ? finalLoan.getCustomLoanStatus() : null);
+                    loanStatusWebhookPublisher.publish(finalLoan, finalLoan.hasCustomStatus() ? finalLoan.getCustomLoanStatus() : null);
                 } catch (Exception e) {
                     log.warn("Failed to publish webhook after standing instruction reversal for loan {}: {}", finalLoan.getId(),
                             e.getMessage());
@@ -179,8 +178,8 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
 
     private void validateNoSubsequentTransactions(final Loan loan, final LoanTransaction targetTransaction) {
         boolean hasSubsequent = loan.getLoanTransactions().stream().filter(t -> !t.isReversed())
-                .filter(t -> !t.getId().equals(targetTransaction.getId()))
-                .filter(t -> t.isRepaymentLikeType() || t.isChargePayment()).anyMatch(t -> {
+                .filter(t -> !t.getId().equals(targetTransaction.getId())).filter(t -> t.isRepaymentLikeType() || t.isChargePayment())
+                .anyMatch(t -> {
                     LocalDate tDate = t.getTransactionDate();
                     LocalDate targetDate = targetTransaction.getTransactionDate();
                     return tDate.isAfter(targetDate) || (tDate.isEqual(targetDate) && t.getId() > targetTransaction.getId());
@@ -188,16 +187,14 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
         if (hasSubsequent) {
             throw new GeneralPlatformDomainRuleException("error.msg.standing.instruction.reversal.subsequent.transactions.exist",
                     "Cannot reverse this standing instruction payment: subsequent loan transactions exist after "
-                            + targetTransaction.getTransactionDate()
-                            + ". Please reverse those transactions first, then retry.");
+                            + targetTransaction.getTransactionDate() + ". Please reverse those transactions first, then retry.");
         }
     }
 
     private AccountTransferTransaction resolveAccountTransferTransaction(final HistoryRow history) {
         if (history.accountTransferTransactionId() != null) {
             return accountTransferRepository.findById(history.accountTransferTransactionId())
-                    .orElseThrow(() -> new GeneralPlatformDomainRuleException(
-                            "error.msg.standing.instruction.transfer.not.found",
+                    .orElseThrow(() -> new GeneralPlatformDomainRuleException("error.msg.standing.instruction.transfer.not.found",
                             "Account transfer transaction " + history.accountTransferTransactionId() + " not found."));
         }
         // Fallback: match by standing_instruction details_id + execution date + amount
@@ -205,8 +202,8 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
     }
 
     private AccountTransferTransaction resolveByFallback(final HistoryRow history) {
-        List<AccountTransferTransaction> candidates = accountTransferRepository.findByDetailsAndDateAndAmount(
-                history.accountTransferDetailsId(), history.executionDate(), history.amount());
+        List<AccountTransferTransaction> candidates = accountTransferRepository
+                .findByDetailsAndDateAndAmount(history.accountTransferDetailsId(), history.executionDate(), history.amount());
         if (candidates.isEmpty()) {
             throw new GeneralPlatformDomainRuleException("error.msg.standing.instruction.transfer.not.found",
                     "No account transfer transaction found for standing instruction history " + history.id()
@@ -242,14 +239,12 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
 
     private HistoryRow loadHistoryRow(final Long historyId) {
         try {
-            return jdbcTemplate.queryForObject(
-                    "SELECT h.id, h.standing_instruction_id, h.status, h.amount, DATE(h.execution_time) AS execution_date, "
-                            + "h.account_transfer_transaction_id, h.is_reversed, "
-                            + "si.account_transfer_details_id "
+            return jdbcTemplate
+                    .queryForObject("SELECT h.id, h.standing_instruction_id, h.status, h.amount, DATE(h.execution_time) AS execution_date, "
+                            + "h.account_transfer_transaction_id, h.is_reversed, " + "si.account_transfer_details_id "
                             + "FROM m_account_transfer_standing_instructions_history h "
                             + "INNER JOIN m_account_transfer_standing_instructions si ON h.standing_instruction_id = si.id "
-                            + "WHERE h.id = ?",
-                    (rs, rowNum) -> mapHistoryRow(rs), historyId);
+                            + "WHERE h.id = ?", (rs, rowNum) -> mapHistoryRow(rs), historyId);
         } catch (EmptyResultDataAccessException e) {
             throw new StandingInstructionHistoryNotFoundException(historyId);
         }
