@@ -41,7 +41,7 @@ public final class ForeclosureTransactionBreakdown {
         Money principal = foreclosureDetail.getPrincipal(currency);
         Money interest = foreclosureDetail.getInterestCharged(currency);
         Money fees = foreclosureDetail.getFeeChargesCharged(currency);
-        Money penalties = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, foreclosureDate, currency);
+        Money penalties = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, foreclosureDate, currency);
         Money taxes = foreclosureDetail.getTaxChargesCharged(currency);
 
         if (loan.isFactorRateEnabled()) {

@@ -97,7 +97,7 @@ class ForeclosurePenaltyCalculatorTest {
     }
 
     private BigDecimal penaltyAsOf(final Loan loan, final String settlementDate) {
-        return ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, LocalDate.parse(settlementDate), currency)
+        return ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, LocalDate.parse(settlementDate), currency)
                 .getAmount();
     }
 
@@ -132,7 +132,32 @@ class ForeclosurePenaltyCalculatorTest {
     }
 
     @Test
-    @DisplayName("Waived/zero-outstanding charges never contribute")
+    @DisplayName("computePenaltyPayableFromActiveCharges delegates to the quoted settlement-date calculator")
+    void legacyEntryPointMatchesQuotedCalculator() {
+        final Loan loan = loan16184();
+        assertThat(ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, LocalDate.parse("2026-08-25"), currency))
+                .isEqualByComparingTo(
+                        ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, LocalDate.parse("2026-08-25"), currency));
+    }
+
+    /** Loan 16185: daily 82.19 charges dated 19..27 Aug; ledger shows 739.71 but settlement on 27 Aug collects 657.52. */
+    private Loan loan16185() {
+        final Loan loan = mock(Loan.class);
+        final LinkedHashSet<LoanCharge> charges = new LinkedHashSet<>();
+        for (LocalDate d = LocalDate.parse("2026-08-19"); !d.isAfter(LocalDate.parse("2026-08-27")); d = d.plusDays(1)) {
+            charges.add(linkedLpiCharge(d.toString(), "2026-08-19", "82.19"));
+        }
+        when(loan.getActiveCharges()).thenReturn(charges);
+        return loan;
+    }
+
+    @Test
+    @DisplayName("Loan 16185: settlement on 27 Aug excludes same-day LPI (657.52 collectable vs 739.71 on ledger)")
+    void loan16185SettlementExcludesSameDayLpi() {
+        assertThat(penaltyAsOf(loan16185(), "2026-08-27")).isEqualByComparingTo("657.52"); // 19..26 Aug
+    }
+
+    @Test
     void ignoresNonPenaltyCharges() {
         final LoanCharge fee = mock(LoanCharge.class);
         when(fee.isPenaltyCharge()).thenReturn(false);

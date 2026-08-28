@@ -301,7 +301,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // (LocDueDateRepaymentUtils#overdueChargeWaiverFromDate), so preview == booked amount.
         if (onDate != null) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, onDate, loan.getCurrency())
+            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, onDate, loan.getCurrency())
                     .getAmount();
         }
 
@@ -2016,8 +2016,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
         final CurrencyData currency = this.jdbcTemplate.queryForObject(loanCurrencySql, loanCurrencyDataMapper, loanId);
 
-        // Get loan to calculate reversed charges per period
-        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        // Get loan (with active charges) to calculate reversed charges per period and LPI due
+        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
 
         List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream().map(p -> {
@@ -2033,7 +2033,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 : null;
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
                 penaltyWaitPeriodValue, isDrawdownLoan, paymentsAsOf, businessDate);
-        BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
+        // Same single source of truth as repayment/foreclosure templates: charges strictly before settlement date.
+        BigDecimal penaltySum = ForeclosurePenaltyCalculator
+                .computePenaltyQuotedForSettlementDate(loan, transactionDate, loan.getCurrency()).getAmount();
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
         BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
@@ -3395,7 +3397,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // (CustomLoanAccountDomainServiceJpa#foreCloseLoan) guarantees this quoted amount always matches what is
         // really withdrawn from the linked savings account - previously they could silently diverge, over-quoting
         // (and over-withdrawing) by exactly the staleness amount.
-        Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, transactionDate,
+        Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, transactionDate,
                 currency);
 
         // Quote (settlement card) must equal what foreCloseLoan will actually collect. The raw sum below can exceed the
