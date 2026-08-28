@@ -301,8 +301,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // (LocDueDateRepaymentUtils#overdueChargeWaiverFromDate), so preview == booked amount.
         if (onDate != null) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, onDate, loan.getCurrency())
-                    .getAmount();
+            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, onDate, loan.getCurrency()).getAmount();
         }
 
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);

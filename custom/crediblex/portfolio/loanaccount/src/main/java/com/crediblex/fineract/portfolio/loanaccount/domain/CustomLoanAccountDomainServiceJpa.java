@@ -4,6 +4,7 @@ import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
+import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
@@ -12,7 +13,6 @@ import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncU
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocForeclosureValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
-import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
@@ -284,16 +284,16 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // complement of ForeclosurePenaltyCalculator#computePenaltyQuotedForSettlementDate (charges strictly before the
         // date are collected; the rest are waived here). Repayment uses the same waive-on-or-after rule; foreclosure
         // previously skipped it and relied on over-collecting penalty instead.
-        final Map<String, Object> lpiWaiveSummary = credibleXLoanChargeWritePlatformService
-                .waiveOverdueChargesOnOrAfterDate(loan.getId(), foreClosureDate);
+        final Map<String, Object> lpiWaiveSummary = credibleXLoanChargeWritePlatformService.waiveOverdueChargesOnOrAfterDate(loan.getId(),
+                foreClosureDate);
         if (hasWaivedLpiCharges(lpiWaiveSummary)) {
             loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loan.getId(), true);
             if (InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(loan)) {
                 loan = loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             }
             org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class).info(
-                    "Foreclosure on loan {} as of {}: auto-waived {} LPI charge(s) dated on/after the foreclosure date: {}",
-                    loan.getId(), foreClosureDate, lpiWaiveSummary.get("chargesWaived"), lpiWaiveSummary);
+                    "Foreclosure on loan {} as of {}: auto-waived {} LPI charge(s) dated on/after the foreclosure date: {}", loan.getId(),
+                    foreClosureDate, lpiWaiveSummary.get("chargesWaived"), lpiWaiveSummary);
         }
 
         final LoanRepaymentScheduleInstallment foreCloseDetail = loan.fetchLoanForeclosureDetail(foreClosureDate);

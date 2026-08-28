@@ -67,7 +67,10 @@ class ForeclosurePenaltyCalculatorTest {
         return Money.of(currency, new BigDecimal(amount));
     }
 
-    /** A daily overdue-installment (LPI) charge accrued on {@code accrualDate}, linked to an installment due on {@code owningDueDate}. */
+    /**
+     * A daily overdue-installment (LPI) charge accrued on {@code accrualDate}, linked to an installment due on
+     * {@code owningDueDate}.
+     */
     private LoanCharge linkedLpiCharge(final String accrualDate, final String owningDueDate, final String outstanding) {
         final Money outstandingMoney = money(outstanding);
         final LocalDate accrual = LocalDate.parse(accrualDate);
@@ -140,7 +143,9 @@ class ForeclosurePenaltyCalculatorTest {
                         ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, LocalDate.parse("2026-08-25"), currency));
     }
 
-    /** Loan 16185: daily 82.19 charges dated 19..27 Aug; ledger shows 739.71 but settlement on 27 Aug collects 657.52. */
+    /**
+     * Loan 16185: daily 82.19 charges dated 19..27 Aug; ledger shows 739.71 but settlement on 27 Aug collects 657.52.
+     */
     private Loan loan16185() {
         final Loan loan = mock(Loan.class);
         final LinkedHashSet<LoanCharge> charges = new LinkedHashSet<>();
