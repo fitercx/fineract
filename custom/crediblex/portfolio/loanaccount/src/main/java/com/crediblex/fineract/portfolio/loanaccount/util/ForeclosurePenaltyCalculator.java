@@ -62,6 +62,17 @@ public final class ForeclosurePenaltyCalculator {
             if (!loanCharge.isPenaltyCharge()) {
                 continue;
             }
+            // A daily LPI charge dated ON or AFTER the settlement date is not payable - it is waived when the loan
+            // settles (a client settling on day D is not charged that day's, or any later day's, late fee). This is
+            // evaluated on the charge's OWN accrual date (due-for-collection date) so it holds whether or not the
+            // charge is still linked to its overdue installment: for a linked charge the installment-due-date filter
+            // below alone would keep every day's LPI (the whole arrears period resolves to one past due date), which
+            // made the quoted LPI a flat sum insensitive to the settlement date. The actual settlement waives exactly
+            // this same set via LocDueDateRepaymentUtils#overdueChargeWaiverFromDate, so quote == booked amount.
+            final LocalDate chargeAccrualDate = loanCharge.getDueDate();
+            if (chargeAccrualDate != null && !DateUtils.isBefore(chargeAccrualDate, foreClosureDate)) {
+                continue;
+            }
             final LocalDate effectiveDueDate = resolveEffectiveDueDateForForeclosure(loanCharge);
             if (effectiveDueDate != null && DateUtils.isAfter(effectiveDueDate, foreClosureDate)) {
                 continue;

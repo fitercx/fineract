@@ -285,17 +285,24 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal penaltyDue = result.getPenaltyDue();
         final BigDecimal taxDue = result.getTaxDue();
 
-        // Fix 2: live preview. Settling ON an installment due date is on-time, so LPI posted after midnight
-        // for that EMI (and any later LPI through today) is auto-waived. Quote penalty net of that window
-        // for every product — not only LOC.
-        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0) {
+        // Fix 2: live preview. The Make Repayment LPI must equal the foreclosure quote for the same value date, and
+        // equal what the write path actually collects. Compute it with the SAME single source of truth the foreclosure
+        // template and settlement use - ForeclosurePenaltyCalculator#computePenaltyPayableFromActiveCharges - which
+        // sums the loan's own active penalty charges dated STRICTLY BEFORE the value date (the collectable set),
+        // waiving the charge accrued on the value date and any later day.
+        //
+        // The previous approaches went through result.getPenaltyDue() (schedule window-allocated penalty, which
+        // buckets current-period LPI onto a not-yet-due installment and could collapse to 0) or through
+        // penaltyAmountDue - lpiWaivedOnSettlement. The latter double-counts: penaltyAmountDue sums charges only up to
+        // the value date, but lpiWaivedOnSettlement waives charges all the way to TODAY, so every extra backdated day
+        // subtracts one more charge that was never in the sum - the accumulating over-waive (e.g. 25 Aug showed 51.28
+        // instead of 64.10). Computing the collectable set directly has no subtraction and cannot drift from
+        // foreclosure. Its complement over [value date, today] is exactly what the settlement auto-waives
+        // (LocDueDateRepaymentUtils#overdueChargeWaiverFromDate), so preview == booked amount.
+        if (onDate != null) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-            final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, onDate);
-            if (waiveFrom != null && !waiveFrom.isAfter(DateUtils.getBusinessLocalDate())) {
-                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, DateUtils.getBusinessLocalDate(),
-                        loan.getCurrency());
-                penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
-            }
+            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, onDate, loan.getCurrency())
+                    .getAmount();
         }
 
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
