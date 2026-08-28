@@ -99,15 +99,15 @@ class LocDueDateRepaymentUtilsTest {
     }
 
     @Test
-    void overdueChargeWaiverFromDateIsInclusiveOnInstallmentDueDate() {
-        final LoanRepaymentScheduleInstallment i1 = installment(LocalDate.of(2026, 8, 3));
+    void overdueChargeWaiverFromDateStartsOnTheSettlementDate() {
         final Loan loan = mock(Loan.class);
-        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(i1));
 
+        // The waiver window starts on the settlement date itself for every value date: the client is not charged the
+        // late fee accrued ON the day they settle (nor any later day), whether or not it is an installment due date.
         assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 3)))
                 .isEqualTo(LocalDate.of(2026, 8, 3));
         assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 4)))
-                .isEqualTo(LocalDate.of(2026, 8, 5));
+                .isEqualTo(LocalDate.of(2026, 8, 4));
         assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, null)).isNull();
     }
 

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -111,6 +112,9 @@ class CustomLoanAccountDomainServiceForeclosureTest {
 
     @Mock
     private AccountTransfersWritePlatformService accountTransfersWritePlatformService;
+
+    @Mock
+    private CredXLoanChargeWritePlatformService credibleXLoanChargeWritePlatformService;
 
     @Mock
     private ExternalIdFactory externalIdFactory;
@@ -369,6 +373,22 @@ class CustomLoanAccountDomainServiceForeclosureTest {
         assertThat(merged.getInterestOutstanding(currency).getAmount()).isEqualByComparingTo("0.00");
         assertThat(merged.getPrincipalCompleted(currency).getAmount()).isEqualByComparingTo("38435.41");
         assertThat(merged.getPrincipalOutstanding(currency).getAmount()).isEqualByComparingTo("41564.59");
+    }
+
+    @Test
+    @DisplayName("Foreclosure on an installment due date treats that installment as straddling")
+    void findStraddlingInstallmentIncludesExactDueDate() {
+        final LocalDate fromDate = LocalDate.of(2026, 8, 20);
+        final LocalDate dueDate = LocalDate.of(2026, 8, 25);
+        final LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 2, fromDate, dueDate,
+                new BigDecimal("1000.00"), new BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, null,
+                BigDecimal.ZERO);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(new ArrayList<>(List.of(installment)));
+
+        final LoanRepaymentScheduleInstallment found = ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa,
+                "findStraddlingInstallment", loan, dueDate);
+
+        assertThat(found).isSameAs(installment);
     }
 
     @Test
