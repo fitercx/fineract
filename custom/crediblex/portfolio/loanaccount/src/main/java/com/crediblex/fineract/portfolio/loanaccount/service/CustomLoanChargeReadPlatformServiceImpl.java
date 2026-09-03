@@ -19,6 +19,7 @@
 
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.CredXTargetedLoanChargeRefundProcessor;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -119,13 +120,15 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
             boolean paid = lc.isPaid();
             boolean waived = lc.isWaived();
 
-            if (isReversedCharge) {
-                // Calculate the original paid amount from the CHARGE_ADJUSTMENT transaction
+            if (isReversedCharge && (!lc.isActive() || !lc.isPaid())) {
+                // Keep the refunded amount visible while retaining the real restored outstanding balance.
                 BigDecimal originalAmountPaid = calculateOriginalPaidAmount(lc);
-                // Preserve the reversed paid amount and any remaining waived component for display.
                 amountPaid = originalAmountPaid;
                 amountWrittenOff = BigDecimal.ZERO;
-                amountOutstanding = BigDecimal.ZERO;
+                if (!lc.isActive()) {
+                    // Legacy charge-adjustment reversals were inactivated and have no restorable outstanding state.
+                    amountOutstanding = BigDecimal.ZERO;
+                }
                 paid = false;
                 waived = false;
             }
@@ -156,19 +159,15 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
     }
 
     private static boolean isReversedCharge(final LoanCharge loanCharge) {
-        if (loanCharge.isActive()) {
-            return false;
-        }
         if (loanCharge.getLoanChargePaidBySet() != null) {
             for (LoanChargePaidBy chargePaidBy : loanCharge.getLoanChargePaidBySet()) {
-                if (chargePaidBy.getLoanTransaction() != null && chargePaidBy.getLoanTransaction().isNotReversed()
-                        && chargePaidBy.getLoanTransaction().getTypeOf().isChargeAdjustment()) {
+                if (isPaidChargeRefundTransaction(chargePaidBy.getLoanTransaction(), loanCharge)) {
                     return true;
                 }
             }
         }
         for (LoanTransaction loanTransaction : loanCharge.getLoan().getLoanTransactions()) {
-            if (loanTransaction.isNotReversed() && loanTransaction.getTypeOf().isChargeAdjustment()) {
+            if (isPaidChargeRefundTransaction(loanTransaction, loanCharge)) {
                 if (loanTransaction.getLoanTransactionRelations() != null) {
                     for (LoanTransactionRelation relation : loanTransaction.getLoanTransactionRelations()) {
                         if (relation.getToCharge() != null && loanCharge.equals(relation.getToCharge())) {
@@ -189,31 +188,29 @@ public class CustomLoanChargeReadPlatformServiceImpl extends LoanChargeReadPlatf
     }
 
     /**
-     * Calculates the original paid amount for a reversed charge by finding the CHARGE_ADJUSTMENT transaction and
-     * getting the amount from LoanChargePaidBy.
+     * Calculates the refunded amount from either the dedicated refund transaction or a legacy charge adjustment.
      */
     private static BigDecimal calculateOriginalPaidAmount(final LoanCharge loanCharge) {
-        if (loanCharge.getLoanChargePaidBySet() != null) {
-            for (LoanChargePaidBy chargePaidBy : loanCharge.getLoanChargePaidBySet()) {
-                if (chargePaidBy.getLoanTransaction() != null && chargePaidBy.getLoanTransaction().isNotReversed()
-                        && chargePaidBy.getLoanTransaction().getTypeOf().isChargeAdjustment()) {
-                    return chargePaidBy.getAmount().abs();
-                }
-            }
-        }
+        BigDecimal refundedAmount = BigDecimal.ZERO;
         for (LoanTransaction loanTransaction : loanCharge.getLoan().getLoanTransactions()) {
-            if (loanTransaction.isNotReversed() && loanTransaction.getTypeOf().isChargeAdjustment()) {
+            if (isPaidChargeRefundTransaction(loanTransaction, loanCharge)) {
                 if (loanTransaction.getLoanChargesPaid() != null) {
                     for (LoanChargePaidBy chargePaidBy : loanTransaction.getLoanChargesPaid()) {
                         if (chargePaidBy.getLoanCharge() != null && loanCharge.equals(chargePaidBy.getLoanCharge())) {
-                            // Return the absolute value (the original amount that was reversed)
-                            return chargePaidBy.getAmount().abs();
+                            refundedAmount = refundedAmount.add(chargePaidBy.getAmount().abs());
                         }
                     }
                 }
             }
         }
-        // Fallback: if no CHARGE_ADJUSTMENT found, return zero
-        return BigDecimal.ZERO;
+        return refundedAmount;
+    }
+
+    private static boolean isPaidChargeRefundTransaction(final LoanTransaction transaction, final LoanCharge loanCharge) {
+        if (transaction == null || transaction.isReversed()) {
+            return false;
+        }
+        return CredXTargetedLoanChargeRefundProcessor.isTargetedChargeRefund(transaction)
+                || (!loanCharge.isActive() && transaction.getTypeOf().isChargeAdjustment());
     }
 }

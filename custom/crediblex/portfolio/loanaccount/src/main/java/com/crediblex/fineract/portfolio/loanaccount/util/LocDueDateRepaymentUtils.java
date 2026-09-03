@@ -62,16 +62,15 @@ public final class LocDueDateRepaymentUtils {
     /**
      * First date whose overdue LPI charges should be waived when settling on {@code settlementDate}.
      * <p>
-     * Paying on an installment due date is on-time. LPI for that EMI is not charged until after midnight, so the charge
-     * is dated the next calendar day; the waiver window still starts on the due date so that overnight LPI is waived
-     * when the operator backdates to the due date (e.g. due 14 Aug, LPI posted 15 Aug, value date 14 Aug). Paying on
-     * any other date keeps that day's LPI (window starts the next calendar day).
+     * Settling on a given value date is on-time for that date: the client is not charged the late fee accrued ON the
+     * settlement date (nor any later day's), so the waiver window starts on the settlement date itself. This holds for
+     * an installment due date (overnight LPI dated on/after the due date is waived when the operator backdates to it)
+     * and for any other value date (that day's LPI is waived rather than collected). The foreclosure quote excludes the
+     * same set via {@code ForeclosurePenaltyCalculator#computePenaltyPayableFromActiveCharges}, so the quoted penalty
+     * equals what is actually collected after this auto-waive.
      */
     public static LocalDate overdueChargeWaiverFromDate(final Loan loan, final LocalDate settlementDate) {
-        if (settlementDate == null) {
-            return null;
-        }
-        return isOnInstallmentDueDate(loan, settlementDate) ? settlementDate : settlementDate.plusDays(1);
+        return settlementDate;
     }
 
     /**

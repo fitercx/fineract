@@ -38,8 +38,8 @@ public class CustomReversedChargeCalculationService {
     }
 
     /**
-     * Calculates reversed charges for a specific period. This method queries the database for inactive charges that
-     * fall within the given period.
+     * Calculates refunded charges for a specific period, including current targeted refunds and legacy inactive
+     * charge-adjustment reversals.
      *
      * @param loanId
      *            The loan ID
@@ -55,13 +55,14 @@ public class CustomReversedChargeCalculationService {
      */
     public BigDecimal calculateReversedCharges(Long loanId, Integer installmentNumber, LocalDate fromDate, LocalDate dueDate,
             boolean isPenalty) {
-        final String sql = "SELECT COALESCE(SUM(lcpb.amount), 0) FROM m_loan_charge lc "
+        final String sql = "SELECT COALESCE(SUM(ABS(lcpb.amount)), 0) FROM m_loan_charge lc "
                 + "JOIN m_loan_charge_paid_by lcpb ON lcpb.loan_charge_id = lc.id "
                 + "JOIN m_loan_transaction lt ON lt.id = lcpb.loan_transaction_id "
                 + "LEFT JOIN m_loan_overdue_installment_charge loic ON loic.loan_charge_id = lc.id "
                 + "LEFT JOIN m_loan_repayment_schedule linked_rs ON linked_rs.id = loic.loan_schedule_id "
-                + "WHERE lc.loan_id = ? AND lc.is_active = false AND lc.is_penalty = ? "
-                + "AND lt.is_reversed = false AND lt.transaction_type_enum = 26 "
+                + "WHERE lc.loan_id = ? AND lc.is_penalty = ? AND lt.is_reversed = false "
+                + "AND ((lt.transaction_type_enum = 18 AND lt.charge_refund_charge_type IN ('P', 'F')) "
+                + "OR (lt.transaction_type_enum = 26 AND lc.is_active = false)) "
                 + "AND ((lc.charge_time_enum = 9 AND COALESCE(lcpb.installment_number, linked_rs.installment, "
                 + "(SELECT CASE WHEN COUNT(*) = 1 THEN MIN(base_rs.installment) END FROM m_loan_repayment_schedule base_rs "
                 + "WHERE base_rs.loan_id = lc.loan_id AND base_rs.is_down_payment = false AND base_rs.is_additional = false "

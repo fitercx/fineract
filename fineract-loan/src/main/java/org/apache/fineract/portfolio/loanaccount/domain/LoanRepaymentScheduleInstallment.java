@@ -1015,6 +1015,8 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
 
         checkIfRepaymentPeriodObligationsAreMet(transactionDate, currency);
 
+        reduceAdvanceAndLateTotalsForRepaymentPeriod(transactionDate, currency, penaltyPortionOfTransactionDeducted);
+
         return penaltyPortionOfTransactionDeducted;
     }
 

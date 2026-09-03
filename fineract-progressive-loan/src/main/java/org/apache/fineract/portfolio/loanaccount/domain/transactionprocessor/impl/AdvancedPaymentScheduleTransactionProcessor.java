@@ -88,6 +88,7 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepayme
 import org.apache.fineract.portfolio.loanaccount.domain.reaging.LoanReAgeParameter;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.AbstractLoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.MoneyHolder;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.TargetedLoanChargeRefundHookRegistry;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.TransactionCtx;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleProcessingType;
 import org.apache.fineract.portfolio.loanaccount.service.InterestRefundService;
@@ -324,7 +325,11 @@ public class AdvancedPaymentScheduleTransactionProcessor extends AbstractLoanRep
         switch (loanTransaction.getTypeOf()) {
             case DISBURSEMENT -> handleDisbursement(loanTransaction, ctx);
             case WRITEOFF -> handleWriteOff(loanTransaction, ctx);
-            case REFUND_FOR_ACTIVE_LOAN -> handleRefund(loanTransaction, ctx);
+            case REFUND_FOR_ACTIVE_LOAN -> {
+                if (!TargetedLoanChargeRefundHookRegistry.applyIfSupported(loanTransaction, ctx.getCurrency(), ctx.getInstallments())) {
+                    handleRefund(loanTransaction, ctx);
+                }
+            }
             case CHARGEBACK -> handleChargeback(loanTransaction, ctx);
             case CREDIT_BALANCE_REFUND -> handleCreditBalanceRefund(loanTransaction, ctx);
             case REPAYMENT, MERCHANT_ISSUED_REFUND, PAYOUT_REFUND, GOODWILL_CREDIT, CHARGE_REFUND, CHARGE_ADJUSTMENT, DOWN_PAYMENT,

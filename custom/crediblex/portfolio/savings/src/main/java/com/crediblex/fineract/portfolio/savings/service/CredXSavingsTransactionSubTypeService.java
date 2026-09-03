@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CredXSavingsTransactionSubTypeService {
 
+    private static final int DEPOSIT_TRANSACTION_TYPE = 1;
     private static final int WITHDRAWAL_TRANSACTION_TYPE = 2;
+    public static final String FORECLOSURE_REFUND_DESCRIPTION = "Foreclosure refund of prepaid future-installment income";
     private static final String UPDATE_SUB_TYPE_SQL = """
             UPDATE m_savings_account_transaction
             SET transaction_sub_type = ?
@@ -59,20 +61,38 @@ public class CredXSavingsTransactionSubTypeService {
         markSubType(savingsTransactionId, CredXSavingsTransactionSubType.EMI_TRANSFER);
     }
 
+    /**
+     * Marks the linked-savings deposit created by the foreclosure prepaid-income undo. This semantic marker is kept
+     * separate from normal deposits and LPI refunds so repayment, LPI reprocessing, and foreclosure accounting retain
+     * their existing transaction behavior while the savings UI can identify the source of the credit.
+     */
+    public void markForeclosureRefund(final Long savingsTransactionId) {
+        markSubType(savingsTransactionId, CredXSavingsTransactionSubType.FORECLOSURE_REFUND, DEPOSIT_TRANSACTION_TYPE);
+    }
+
     public void markSubType(final Long savingsTransactionId, final CredXSavingsTransactionSubType subType) {
+        markSubType(savingsTransactionId, subType, WITHDRAWAL_TRANSACTION_TYPE);
+    }
+
+    private void markSubType(final Long savingsTransactionId, final CredXSavingsTransactionSubType subType, final int transactionType) {
         if (savingsTransactionId == null || subType == null) {
             return;
         }
-        this.jdbcTemplate.update(UPDATE_SUB_TYPE_SQL, subType.getValue(), savingsTransactionId, WITHDRAWAL_TRANSACTION_TYPE);
+        this.jdbcTemplate.update(UPDATE_SUB_TYPE_SQL, subType.getValue(), savingsTransactionId, transactionType);
     }
 
     public Map<Long, CredXSavingsTransactionSubTypeData> retrieveSubTypes(final Long savingsAccountId) {
         final String sql = """
-                SELECT id, transaction_sub_type
-                FROM m_savings_account_transaction
-                WHERE savings_account_id = ?
-                  AND transaction_sub_type IS NOT NULL
-                ORDER BY transaction_date DESC, id DESC
+                SELECT tx.id,
+                       COALESCE(tx.transaction_sub_type,
+                                CASE WHEN transfer.description = ? THEN ? END) AS transaction_sub_type
+                FROM m_savings_account_transaction tx
+                LEFT JOIN m_account_transfer_transaction transfer
+                       ON transfer.to_savings_transaction_id = tx.id
+                      AND transfer.is_reversed = false
+                WHERE tx.savings_account_id = ?
+                  AND (tx.transaction_sub_type IS NOT NULL OR transfer.description = ?)
+                ORDER BY tx.transaction_date DESC, tx.id DESC
                 """;
         return this.jdbcTemplate.query(sql, rs -> {
             final Map<Long, CredXSavingsTransactionSubTypeData> subTypes = new LinkedHashMap<>();
@@ -80,22 +100,29 @@ public class CredXSavingsTransactionSubTypeService {
                 addSubType(subTypes, rs);
             }
             return subTypes;
-        }, savingsAccountId);
+        }, FORECLOSURE_REFUND_DESCRIPTION, CredXSavingsTransactionSubType.FORECLOSURE_REFUND.getValue(), savingsAccountId,
+                FORECLOSURE_REFUND_DESCRIPTION);
     }
 
     public Map<Long, CredXSavingsTransactionSubTypeData> retrieveSubType(final Long savingsAccountId, final Long savingsTransactionId) {
         final String sql = """
-                SELECT id, transaction_sub_type
-                FROM m_savings_account_transaction
-                WHERE id = ?
-                  AND savings_account_id = ?
-                  AND transaction_sub_type IS NOT NULL
+                SELECT tx.id,
+                       COALESCE(tx.transaction_sub_type,
+                                CASE WHEN transfer.description = ? THEN ? END) AS transaction_sub_type
+                FROM m_savings_account_transaction tx
+                LEFT JOIN m_account_transfer_transaction transfer
+                       ON transfer.to_savings_transaction_id = tx.id
+                      AND transfer.is_reversed = false
+                WHERE tx.id = ?
+                  AND tx.savings_account_id = ?
+                  AND (tx.transaction_sub_type IS NOT NULL OR transfer.description = ?)
                 """;
         final List<Map.Entry<Long, CredXSavingsTransactionSubTypeData>> entries = this.jdbcTemplate.query(sql, (rs, rowNum) -> {
             final CredXSavingsTransactionSubType subType = CredXSavingsTransactionSubType
                     .fromValue(JdbcSupport.getInteger(rs, "transaction_sub_type"));
             return Map.entry(rs.getLong("id"), new CredXSavingsTransactionSubTypeData(subType));
-        }, savingsTransactionId, savingsAccountId);
+        }, FORECLOSURE_REFUND_DESCRIPTION, CredXSavingsTransactionSubType.FORECLOSURE_REFUND.getValue(), savingsTransactionId,
+                savingsAccountId, FORECLOSURE_REFUND_DESCRIPTION);
         final Map<Long, CredXSavingsTransactionSubTypeData> subTypes = new LinkedHashMap<>();
         entries.stream().filter(entry -> entry.getValue().getValue() != null)
                 .forEach(entry -> subTypes.put(entry.getKey(), entry.getValue()));

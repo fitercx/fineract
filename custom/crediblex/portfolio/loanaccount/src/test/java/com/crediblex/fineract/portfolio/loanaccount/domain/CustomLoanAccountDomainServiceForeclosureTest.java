@@ -3,12 +3,14 @@ package com.crediblex.fineract.portfolio.loanaccount.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -17,12 +19,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
+import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.portfolio.account.PortfolioAccountType;
+import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
+import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
@@ -30,14 +36,17 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeService;
+import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -100,6 +109,15 @@ class CustomLoanAccountDomainServiceForeclosureTest {
 
     @Mock
     private LoanChargeService loanChargeService;
+
+    @Mock
+    private AccountTransfersWritePlatformService accountTransfersWritePlatformService;
+
+    @Mock
+    private CredXLoanChargeWritePlatformService credibleXLoanChargeWritePlatformService;
+
+    @Mock
+    private ExternalIdFactory externalIdFactory;
 
     @InjectMocks
     private CustomLoanAccountDomainServiceJpa customLoanAccountDomainServiceJpa;
@@ -318,6 +336,98 @@ class CustomLoanAccountDomainServiceForeclosureTest {
         verify(loanRepositoryWrapper, never()).saveAndFlush(any());
     }
 
+    @Test
+    @DisplayName("Foreclosure does not convert unearned prepaid interest into synthetic principal paid")
+    void updateInstallmentsPostDatePreservesHistoricalComponentsWithoutSyntheticPrincipal() {
+        final LocalDate fromDate = FORECLOSURE_DATE.minusMonths(1);
+        final LocalDate dueDate = FORECLOSURE_DATE.plusMonths(1);
+        final LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 1, fromDate, dueDate,
+                new BigDecimal("80000.00"), new BigDecimal("1510.48"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, null,
+                BigDecimal.ZERO);
+        installment.payPrincipalComponent(FORECLOSURE_DATE.minusDays(1), Money.of(currency, new BigDecimal("38435.41")));
+        installment.payInterestComponent(FORECLOSURE_DATE.minusDays(1), Money.of(currency, new BigDecimal("1510.48")));
+
+        final List<LoanRepaymentScheduleInstallment> installments = new ArrayList<>(List.of(installment));
+        final Money[] overlappingIncome = { Money.of(currency, new BigDecimal("1132.86")), Money.zero(currency), Money.zero(currency),
+                Money.zero(currency) };
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(installments);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.retrieveIncomeForOverlappingPeriod(FORECLOSURE_DATE)).thenReturn(overlappingIncome);
+        when(loan.getDisbursementDetails()).thenReturn(new ArrayList<>());
+        when(loan.getDisbursementDate()).thenReturn(fromDate);
+        when(loan.getLoanTransactions()).thenReturn(new ArrayList<>());
+        when(loan.getActiveCharges()).thenReturn(new HashSet<>());
+        when(loan.getLoanCharges()).thenReturn(new HashSet<>());
+        doAnswer(invocation -> {
+            final List<LoanRepaymentScheduleInstallment> rewritten = invocation.getArgument(0);
+            installments.clear();
+            installments.addAll(rewritten);
+            return null;
+        }).when(loan).updateLoanScheduleOnForeclosure(any());
+
+        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "updateInstallmentsPostDate", loan, FORECLOSURE_DATE);
+
+        assertThat(installments).hasSize(1);
+        final LoanRepaymentScheduleInstallment merged = installments.get(0);
+        assertThat(merged.getInterestPaid(currency).getAmount()).isEqualByComparingTo("1132.86");
+        assertThat(merged.getInterestOutstanding(currency).getAmount()).isEqualByComparingTo("0.00");
+        assertThat(merged.getPrincipalCompleted(currency).getAmount()).isEqualByComparingTo("38435.41");
+        assertThat(merged.getPrincipalOutstanding(currency).getAmount()).isEqualByComparingTo("41564.59");
+    }
+
+    @Test
+    @DisplayName("Foreclosure on an installment due date treats that installment as straddling")
+    void findStraddlingInstallmentIncludesExactDueDate() {
+        final LocalDate fromDate = LocalDate.of(2026, 8, 20);
+        final LocalDate dueDate = LocalDate.of(2026, 8, 25);
+        final LoanRepaymentScheduleInstallment installment = new LoanRepaymentScheduleInstallment(loan, 2, fromDate, dueDate,
+                new BigDecimal("1000.00"), new BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, false, null,
+                BigDecimal.ZERO);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(new ArrayList<>(List.of(installment)));
+
+        final LoanRepaymentScheduleInstallment found = ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa,
+                "findStraddlingInstallment", loan, dueDate);
+
+        assertThat(found).isSameAs(installment);
+    }
+
+    @Test
+    @DisplayName("Foreclosure identifies the exact prepaid future-installment credit netted from its quote")
+    void calculatePrepaidFutureInstallmentCreditUsesGrossMinusQuotedPrincipal() {
+        when(loan.isFactorRateEnabled()).thenReturn(false);
+        when(loan.isMultiDisburmentLoan()).thenReturn(false);
+        when(loanSummary.getTotalPrincipalOutstanding()).thenReturn(new BigDecimal("68453.83"));
+
+        final Money credit = ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa,
+                "calculatePrepaidFutureInstallmentCredit", loan, Money.of(currency, new BigDecimal("68194.22")), currency);
+
+        assertThat(credit).isNotNull();
+        assertThat(credit.getAmount()).isEqualByComparingTo("259.61");
+    }
+
+    @Test
+    @DisplayName("Foreclosure refunds prepaid credit through a loan-to-linked-savings transfer")
+    void refundPrepaidFutureInstallmentCreditCreatesLoanToSavingsTransfer() {
+        final SavingsAccount linkedSavings = mock(SavingsAccount.class);
+        final Money prepaidCredit = Money.of(currency, new BigDecimal("259.61"));
+        when(linkedSavings.getId()).thenReturn(14998L);
+        when(loan.getTotalOverpaidAsMoney()).thenReturn(prepaidCredit);
+
+        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "refundPrepaidFutureInstallmentCredit", loan, linkedSavings,
+                FORECLOSURE_DATE, prepaidCredit);
+
+        final ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
+        verify(accountTransfersWritePlatformService).transferFunds(transferCaptor.capture());
+        final AccountTransferDTO refundTransfer = transferCaptor.getValue();
+        assertThat(refundTransfer.getFromAccountType()).isEqualTo(PortfolioAccountType.LOAN);
+        assertThat(refundTransfer.getToAccountType()).isEqualTo(PortfolioAccountType.SAVINGS);
+        assertThat(refundTransfer.getFromAccountId()).isEqualTo(1882L);
+        assertThat(refundTransfer.getToAccountId()).isEqualTo(14998L);
+        assertThat(refundTransfer.getTransactionAmount()).isEqualByComparingTo("259.61");
+        assertThat(refundTransfer.getFromTransferType()).isEqualTo(LoanTransactionType.REFUND.getValue());
+        assertThat(refundTransfer.getDescription()).isEqualTo("Foreclosure refund of prepaid future-installment income");
+    }
+
     /**
      * Regression test for BUG_REPORT.md Finding #3: {@code foreCloseDetail.getPenaltyChargesCharged()} sums the
      * repayment schedule's CACHED {@code penaltyChargesOutstanding} field, which can go stale/inflated relative to what
@@ -362,6 +472,24 @@ class CustomLoanAccountDomainServiceForeclosureTest {
         // The real, correct total (134.55) - NOT the inflated/stale schedule-cache figure (231.01) that this same
         // fixture would previously have produced via foreCloseDetail.getPenaltyChargesCharged().
         assertThat(penaltyPayable.getAmount()).isEqualByComparingTo(new BigDecimal("134.55"));
+    }
+
+    @Test
+    @DisplayName("Foreclosure collects a reopened refunded LPI and a later job charge exactly once")
+    void computePenaltyPayableFromActiveCharges_includesRefundedAndLaterLpiOnce() {
+        final MonetaryCurrency realCurrency = new MonetaryCurrency(CURRENCY_CODE, 2, 0);
+        final LoanRepaymentScheduleInstallment owningInstallment = mock(LoanRepaymentScheduleInstallment.class);
+        when(owningInstallment.getDueDate()).thenReturn(FORECLOSURE_DATE.minusDays(3));
+
+        final Set<LoanCharge> activeCharges = new HashSet<>();
+        activeCharges.addAll(buildOverdueLpiCharges(owningInstallment, new BigDecimal("82.19"), 1, realCurrency));
+        activeCharges.addAll(buildOverdueLpiCharges(owningInstallment, new BigDecimal("82.12"), 1, realCurrency));
+        when(loan.getActiveCharges()).thenReturn(activeCharges);
+
+        final Money penaltyPayable = com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator
+                .computePenaltyPayableFromActiveCharges(loan, FORECLOSURE_DATE, realCurrency);
+
+        assertThat(penaltyPayable.getAmount()).isEqualByComparingTo("164.31");
     }
 
     private List<LoanCharge> buildOverdueLpiCharges(final LoanRepaymentScheduleInstallment owningInstallment, final BigDecimal amountEach,

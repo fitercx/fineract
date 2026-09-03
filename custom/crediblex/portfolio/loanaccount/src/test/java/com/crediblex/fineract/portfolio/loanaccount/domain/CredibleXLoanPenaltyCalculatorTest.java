@@ -53,7 +53,7 @@ class CredibleXLoanPenaltyCalculatorTest {
     }
 
     @Test
-    void testGetPrincipalDueForTransaction_ForNonDrawdownLoan_WithEarlyRepayment_ThrowsException() {
+    void testGetPrincipalDueForTransaction_ForNonDrawdownLoan_WithEarlyRepayment_ReturnsFirstInstallmentPrincipal() {
         // Given: A non-drawdown loan with installments and a transaction date before the first installment due date
         LocalDate firstInstallmentDueDate = LocalDate.of(2026, 1, 5);
         LocalDate transactionDate = LocalDate.of(2025, 12, 23); // Before first installment
@@ -65,11 +65,7 @@ class CredibleXLoanPenaltyCalculatorTest {
         CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
                 penaltyWaitPeriodValue, false); // isDrawdownLoan = false
 
-        // When/Then: Should throw exception for early repayment
-        PlatformApiDataValidationException exception = assertThrows(PlatformApiDataValidationException.class,
-                () -> calculator.getPrincipalDueForTransaction(transactionDate));
-
-        assertNotNull(exception);
+        assertEquals(BigDecimal.valueOf(1000.00), calculator.getPrincipalDueForTransaction(transactionDate));
     }
 
     @Test
@@ -94,7 +90,7 @@ class CredibleXLoanPenaltyCalculatorTest {
     }
 
     @Test
-    void testGetInterestDueForTransaction_ForNonDrawdownLoan_WithEarlyRepayment_ThrowsException() {
+    void testGetInterestDueForTransaction_ForNonDrawdownLoan_WithEarlyRepayment_ReturnsFirstInstallmentInterest() {
         // Given: A non-drawdown loan with installments and a transaction date before the first installment due date
         LocalDate firstInstallmentDueDate = LocalDate.of(2026, 1, 5);
         LocalDate transactionDate = LocalDate.of(2025, 12, 23); // Before first installment
@@ -106,11 +102,7 @@ class CredibleXLoanPenaltyCalculatorTest {
         CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
                 penaltyWaitPeriodValue, false); // isDrawdownLoan = false
 
-        // When/Then: Should throw exception for early repayment
-        PlatformApiDataValidationException exception = assertThrows(PlatformApiDataValidationException.class,
-                () -> calculator.getInterestDueForTransaction(transactionDate));
-
-        assertNotNull(exception);
+        assertEquals(BigDecimal.valueOf(100.00), calculator.getInterestDueForTransaction(transactionDate));
     }
 
     @Test
@@ -464,6 +456,25 @@ class CredibleXLoanPenaltyCalculatorTest {
                 penaltyWaitPeriodValue, true);
 
         assertEquals(BigDecimal.valueOf(493.14), calculator.calculatePenaltySum(transactionDate));
+    }
+
+    @Test
+    void refundedLpiAndLaterJobChargeAreBothDueOnceUntilRepaid() {
+        final LocalDate transactionDate = LocalDate.of(2026, 8, 20);
+        loanInstallments.add(createInstallment(1, LocalDate.of(2026, 8, 17), BigDecimal.ZERO, BigDecimal.ZERO,
+                ExtendedLoanSchedulePeriodData.Status.PAID));
+
+        // The 17-Aug charge was paid and refunded, so its current read state is outstanding again. The 18-Aug
+        // charge is a legitimate later LPI job result. A still-paid 19-Aug charge must not be requested again.
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 8, 17), new BigDecimal("82.19")));
+        loanCharges.add(createPenaltyCharge(LocalDate.of(2026, 8, 18), new BigDecimal("82.12")));
+        loanCharges.add(LoanChargeData.builder().penalty(true).waived(false).paid(true).dueDate(LocalDate.of(2026, 8, 19))
+                .amount(new BigDecimal("82.12")).amountPaid(new BigDecimal("82.12")).build());
+
+        final CredibleXLoanPenaltyCalculator calculator = new CredibleXLoanPenaltyCalculator(loanInstallments, loanCharges,
+                penaltyWaitPeriodValue, true);
+
+        assertEquals(0, new BigDecimal("164.31").compareTo(calculator.calculatePenaltySum(transactionDate)));
     }
 
     @Test
