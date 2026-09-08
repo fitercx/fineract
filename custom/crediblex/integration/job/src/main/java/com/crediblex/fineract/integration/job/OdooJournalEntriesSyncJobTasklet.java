@@ -438,7 +438,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, String interestIncomeGlCode,
             String interestReceivableGlCode) {
 
-        // Finance only knows the loan id. The accrual audit id is an internal row key and must not appear in the Odoo ref.
+        // Finance only knows the loan id. The accrual audit id is an internal row key and must not appear in the Odoo
+        // ref.
         String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getLoanId() + "_" + System.currentTimeMillis();
         BigDecimal accrualAmount = accrualAudit.getTotalInterestAccrualDerived();
         LocalDate transactionDate = accrualAudit.getGeneratedOnDate();
