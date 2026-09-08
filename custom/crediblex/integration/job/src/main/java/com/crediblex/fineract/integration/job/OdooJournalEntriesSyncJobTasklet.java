@@ -69,20 +69,20 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
     // Product Short Names
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
-    private static final String LPLL_PRODUCT_SHORT_NAME = "LPLL";
-    private static final String LRL_PRODUCT_SHORT_NAME = "LRL";
+    private static final String PF_PRODUCT_SHORT_NAME = "PF";
+    private static final String RF_PRODUCT_SHORT_NAME = "RF";
 
     // GL Account codes for RBF accrual journal entries (default)
     private static final String RBF_INTEREST_INCOME_GL_CODE = "300000";
     private static final String RBF_INTEREST_RECEIVABLE_GL_CODE = "100034";
 
     // GL Account codes for LPLL (LOC Payable) accrual journal entries
-    private static final String LPLL_INTEREST_INCOME_GL_CODE = "300009";
-    private static final String LPLL_INTEREST_RECEIVABLE_GL_CODE = "100036";
+    private static final String PF_INTEREST_INCOME_GL_CODE = "300009";
+    private static final String PF_INTEREST_RECEIVABLE_GL_CODE = "100036";
 
     // GL Account codes for LRL (LOC Receivable) accrual journal entries
-    private static final String LRL_INTEREST_INCOME_GL_CODE = "300008";
-    private static final String LRL_INTEREST_RECEIVABLE_GL_CODE = "100035";
+    private static final String RF_INTEREST_INCOME_GL_CODE = "300008";
+    private static final String RF_INTEREST_RECEIVABLE_GL_CODE = "100035";
 
     private static final String ODOO_ACCRUAL_JOURNAL_CODE = "ACCR";
     private static final String ODOO_EARLY_CLOSURE_JOURNAL_CODE = "BNK8";
@@ -369,8 +369,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         }
 
         return switch (productShortName) {
-            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_INCOME_GL_CODE;
-            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_INCOME_GL_CODE;
+            case PF_PRODUCT_SHORT_NAME -> PF_INTEREST_INCOME_GL_CODE;
+            case RF_PRODUCT_SHORT_NAME -> RF_INTEREST_INCOME_GL_CODE;
             case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_INCOME_GL_CODE;
             default -> {
                 log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
@@ -393,8 +393,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         }
 
         return switch (productShortName) {
-            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_RECEIVABLE_GL_CODE;
-            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_RECEIVABLE_GL_CODE;
+            case PF_PRODUCT_SHORT_NAME -> PF_INTEREST_RECEIVABLE_GL_CODE;
+            case RF_PRODUCT_SHORT_NAME -> RF_INTEREST_RECEIVABLE_GL_CODE;
             case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_RECEIVABLE_GL_CODE;
             default -> {
                 log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
@@ -438,7 +438,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, String interestIncomeGlCode,
             String interestReceivableGlCode) {
 
-        String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getId() + "_" + System.currentTimeMillis();
+        // Finance only knows the loan id. The accrual audit id is an internal row key and must not appear in the Odoo ref.
+        String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getLoanId() + "_" + System.currentTimeMillis();
         BigDecimal accrualAmount = accrualAudit.getTotalInterestAccrualDerived();
         LocalDate transactionDate = accrualAudit.getGeneratedOnDate();
         String description = "Interest Accrual - Loan ID: " + accrualAudit.getLoanId();
