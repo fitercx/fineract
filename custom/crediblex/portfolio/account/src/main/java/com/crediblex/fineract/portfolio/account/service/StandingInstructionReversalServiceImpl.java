@@ -202,8 +202,17 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
     }
 
     private AccountTransferTransaction resolveByFallback(final HistoryRow history) {
+        // 1) Legacy path: ATT still attached to the SI template details row (rare for job executions).
         List<AccountTransferTransaction> candidates = accountTransferRepository
                 .findByDetailsAndDateAndAmount(history.accountTransferDetailsId(), history.executionDate(), history.amount());
+
+        // 2) Normal SI job path: each execution creates a *new* AccountTransferDetails row, so the SI template
+        // details id does not match the ATT. Match by savings→loan accounts + date + amount instead.
+        if (candidates.isEmpty() && history.fromSavingsAccountId() != null && history.toLoanAccountId() != null) {
+            candidates = accountTransferRepository.findByFromSavingsToLoanAndDateAndAmount(history.fromSavingsAccountId(),
+                    history.toLoanAccountId(), history.executionDate(), history.amount());
+        }
+
         if (candidates.isEmpty()) {
             throw new GeneralPlatformDomainRuleException("error.msg.standing.instruction.transfer.not.found",
                     "No account transfer transaction found for standing instruction history " + history.id()
@@ -239,12 +248,15 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
 
     private HistoryRow loadHistoryRow(final Long historyId) {
         try {
-            return jdbcTemplate
-                    .queryForObject("SELECT h.id, h.standing_instruction_id, h.status, h.amount, DATE(h.execution_time) AS execution_date, "
-                            + "h.account_transfer_transaction_id, h.is_reversed, " + "si.account_transfer_details_id "
+            return jdbcTemplate.queryForObject(
+                    "SELECT h.id, h.standing_instruction_id, h.status, h.amount, DATE(h.execution_time) AS execution_date, "
+                            + "h.account_transfer_transaction_id, h.is_reversed, si.account_transfer_details_id, "
+                            + "atd.from_savings_account_id, atd.to_loan_account_id "
                             + "FROM m_account_transfer_standing_instructions_history h "
                             + "INNER JOIN m_account_transfer_standing_instructions si ON h.standing_instruction_id = si.id "
-                            + "WHERE h.id = ?", (rs, rowNum) -> mapHistoryRow(rs), historyId);
+                            + "INNER JOIN m_account_transfer_details atd ON atd.id = si.account_transfer_details_id "
+                            + "WHERE h.id = ?",
+                    (rs, rowNum) -> mapHistoryRow(rs), historyId);
         } catch (EmptyResultDataAccessException e) {
             throw new StandingInstructionHistoryNotFoundException(historyId);
         }
@@ -259,10 +271,14 @@ public class StandingInstructionReversalServiceImpl implements StandingInstructi
         Long attId = rs.getObject("account_transfer_transaction_id", Long.class);
         boolean isReversed = rs.getBoolean("is_reversed");
         Long detailsId = rs.getLong("account_transfer_details_id");
-        return new HistoryRow(id, standingInstructionId, status, amount, executionDate, attId, isReversed, detailsId);
+        Long fromSavingsAccountId = rs.getObject("from_savings_account_id", Long.class);
+        Long toLoanAccountId = rs.getObject("to_loan_account_id", Long.class);
+        return new HistoryRow(id, standingInstructionId, status, amount, executionDate, attId, isReversed, detailsId, fromSavingsAccountId,
+                toLoanAccountId);
     }
 
     private record HistoryRow(Long id, Long standingInstructionId, String status, BigDecimal amount, LocalDate executionDate,
-            Long accountTransferTransactionId, boolean isReversed, Long accountTransferDetailsId) {
+            Long accountTransferTransactionId, boolean isReversed, Long accountTransferDetailsId, Long fromSavingsAccountId,
+            Long toLoanAccountId) {
     }
 }

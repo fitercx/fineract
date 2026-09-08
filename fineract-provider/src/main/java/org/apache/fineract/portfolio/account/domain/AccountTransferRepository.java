@@ -45,4 +45,14 @@ public interface AccountTransferRepository
     @Query("select att from AccountTransferTransaction att where att.accountTransferDetails.id = :detailsId and att.date = :date and att.amount = :amount and att.reversed = false")
     List<AccountTransferTransaction> findByDetailsAndDateAndAmount(@Param("detailsId") Long detailsId, @Param("date") LocalDate date,
             @Param("amount") BigDecimal amount);
+
+    /**
+     * Standing-instruction executions create a new {@code m_account_transfer_details} row per run, so the SI template
+     * details id often does not match the ATT. Match by the savings→loan accounts instead.
+     */
+    @Query("select att from AccountTransferTransaction att where att.accountTransferDetails.fromSavingsAccount.id = :fromSavingsId "
+            + "and att.accountTransferDetails.toLoanAccount.id = :toLoanId and att.date = :date and att.amount = :amount "
+            + "and att.reversed = false")
+    List<AccountTransferTransaction> findByFromSavingsToLoanAndDateAndAmount(@Param("fromSavingsId") Long fromSavingsId,
+            @Param("toLoanId") Long toLoanId, @Param("date") LocalDate date, @Param("amount") BigDecimal amount);
 }

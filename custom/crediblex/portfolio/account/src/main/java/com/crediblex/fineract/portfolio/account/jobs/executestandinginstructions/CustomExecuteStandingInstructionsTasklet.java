@@ -354,13 +354,16 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         transferCompleted = true;
         Long attId = null;
         StringBuilder errorLog = new StringBuilder();
-        StringBuilder updateQuery = new StringBuilder(
-                "INSERT INTO m_account_transfer_standing_instructions_history (standing_instruction_id, " + sqlGenerator.escape("status")
-                        + ", amount, execution_time, error_log, account_transfer_transaction_id) VALUES (");
 
         try {
             Long accountTransferDetailsId = accountTransfersWritePlatformService.transferFunds(updatedDTO);
+            // transferFunds saveAndFlushes a new details row for this execution; pick its latest ATT.
+            // Do not filter is_reversed = 0 — that breaks on PostgreSQL boolean columns and was causing NULL links.
             attId = findLatestAccountTransferTransactionId(accountTransferDetailsId);
+            if (attId == null) {
+                log.warn("Standing instruction {} transfer succeeded (details_id={}) but ATT id could not be resolved; "
+                        + "history will rely on reverse fallback lookup", instructionId, accountTransferDetailsId);
+            }
             if (isPartialPayment) {
                 BigDecimal unpaidAmount = originalAmount.subtract(amount);
                 errorLog.append("Partial payment executed. Paid: ").append(amount).append(", Unpaid: ").append(unpaidAmount);
@@ -412,35 +415,32 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             errorLog.append("Exception while transferring funds ").append(e.getMessage());
         }
 
-        // Log the transaction in history table
-        updateQuery.append(instructionId).append(",");
+        final String status;
         if (transferCompleted) {
-            if (isPartialPayment) {
-                updateQuery.append("'partial'").append(",");
-            } else {
-                updateQuery.append("'success'").append(",");
-            }
+            status = isPartialPayment ? "partial" : "success";
         } else {
-            updateQuery.append("'failed'").append(",");
+            status = "failed";
         }
-        updateQuery.append(amount.doubleValue());
-        updateQuery.append(", now(),");
-        updateQuery.append("'").append(errorLog).append("',");
-        updateQuery.append(attId != null ? attId : "NULL");
-        updateQuery.append(")");
-        jdbcTemplate.update(updateQuery.toString());
+        // Persist business/transfer date (not DB now()) so reverse fallback can match ATT.transaction_date.
+        // Parameterized insert keeps amount precision and stores ATT id when resolved.
+        jdbcTemplate.update(
+                "INSERT INTO m_account_transfer_standing_instructions_history (standing_instruction_id, "
+                        + sqlGenerator.escape("status") + ", amount, execution_time, error_log, account_transfer_transaction_id) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                instructionId, status, amount, java.sql.Date.valueOf(updatedDTO.getTransactionDate()), errorLog.toString(), attId);
 
         return transferCompleted;
     }
 
     private Long findLatestAccountTransferTransactionId(Long accountTransferDetailsId) {
-        if (accountTransferDetailsId == null) {
+        if (accountTransferDetailsId == null || accountTransferDetailsId <= 0) {
             return null;
         }
         try {
-            return jdbcTemplate.queryForObject(
-                    "SELECT id FROM m_account_transfer_transaction WHERE account_transfer_details_id = ? AND is_reversed = 0 ORDER BY id DESC LIMIT 1",
+            List<Long> ids = jdbcTemplate.queryForList(
+                    "SELECT id FROM m_account_transfer_transaction WHERE account_transfer_details_id = ? ORDER BY id DESC LIMIT 1",
                     Long.class, accountTransferDetailsId);
+            return ids.isEmpty() ? null : ids.get(0);
         } catch (Exception e) {
             log.warn("Could not resolve account_transfer_transaction_id for details_id={}: {}", accountTransferDetailsId, e.getMessage());
             return null;

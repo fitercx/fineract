@@ -134,6 +134,35 @@ class CustomExecuteStandingInstructionsTaskletTest {
     }
 
     @Test
+    void testHistoryInsertCapturesAttIdWithoutIsReversedZeroFilter() throws Exception {
+        StandingInstructionData instruction = realStandingInstructionData(70L, "ATT Link SI", new BigDecimal("100.00"),
+                PortfolioAccountType.SAVINGS, 1L, PortfolioAccountType.LOAN, 2L, StandingInstructionType.FIXED,
+                AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20, LocalDate.of(2025, 5, 20));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(new BigDecimal("1000.00"));
+        when(savingsAccountAssembler.assembleFrom(1L, false)).thenReturn(savingsAccount);
+
+        // transferFunds returns the *execution* details id (new row per SI run)
+        when(accountTransfersWritePlatformService.transferFunds(any(AccountTransferDTO.class))).thenReturn(555L);
+        when(jdbcTemplate.queryForList(
+                eq("SELECT id FROM m_account_transfer_transaction WHERE account_transfer_details_id = ? ORDER BY id DESC LIMIT 1"),
+                eq(Long.class), eq(555L))).thenReturn(Collections.singletonList(777L));
+
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        verify(jdbcTemplate).queryForList(
+                eq("SELECT id FROM m_account_transfer_transaction WHERE account_transfer_details_id = ? ORDER BY id DESC LIMIT 1"),
+                eq(Long.class), eq(555L));
+        verify(jdbcTemplate).update(
+                contains("INSERT INTO m_account_transfer_standing_instructions_history"),
+                eq(70L), eq("success"), eq(new BigDecimal("100.00")), eq(java.sql.Date.valueOf(LocalDate.of(2025, 5, 20))), eq(""),
+                eq(777L));
+    }
+
+    @Test
     void testPartialPaymentIsProcessedWhenInsufficientBalance() throws Exception {
         // Arrange
         Long fromAccountId = 1L;
