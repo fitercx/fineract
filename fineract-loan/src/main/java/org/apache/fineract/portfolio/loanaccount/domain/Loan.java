@@ -1707,6 +1707,10 @@ public class Loan extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.customLoanStatus != null && this.customLoanStatus.isForcedClosure();
     }
 
+    public boolean isCustomRestructured() {
+        return this.customLoanStatus != null && this.customLoanStatus.isRestructured();
+    }
+
     public boolean isAllTranchesNotDisbursed() {
         LoanStatus actualLoanStatus = getStatus();
         boolean isInRightStatus = actualLoanStatus.isActive() || actualLoanStatus.isApproved() || actualLoanStatus.isClosedObligationsMet()
