@@ -316,7 +316,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     private String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType)
-                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041").contains(glCode)) {
+                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041", "200084").contains(glCode)) {
             return "BNK5";
         }
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200041", "100003").contains(glCode)) {
