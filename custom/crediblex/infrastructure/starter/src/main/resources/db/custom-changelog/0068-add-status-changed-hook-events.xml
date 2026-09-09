@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!--
+        LMS-115: subscribe existing active webhooks to STATUS_CHANGED.
+
+        Permissions were seeded in 0046/0049. Hook rows are environment-specific and were never
+        seeded. LOS therefore never received LOAN/LINE_OF_CREDIT STATUS_CHANGED even after the
+        publisher started firing (approve/reject/withdraw, 600/601/602/700).
+
+        This attaches (LOAN, STATUS_CHANGED) to every *active* hook that already listens to a
+        loan lifecycle action (DISBURSE / DISBURSETOSAVINGS / REPAYMENT), and
+        (LINE_OF_CREDIT, STATUS_CHANGED) to every *active* hook that already listens to a LOC
+        lifecycle action (ACTIVATE / DEACTIVATE / REACTIVATE). Idempotent via NOT EXISTS.
+
+        Does not create hooks. Staging currently has only an inactive test hook — an active LOS
+        webhook must exist first; this changeset will then attach STATUS_CHANGED on next deploy.
+    -->
+
+    <changeSet id="0068-1-add-loan-status-changed-hook-events" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_hook"/>
+            <tableExists tableName="m_hook_registered_events"/>
+        </preConditions>
+        <comment>Register LOAN STATUS_CHANGED on active hooks that already receive loan webhooks</comment>
+        <sql><![CDATA[
+            INSERT INTO m_hook_registered_events (hook_id, entity_name, action_name)
+            SELECT DISTINCT h.id, 'LOAN', 'STATUS_CHANGED'
+            FROM m_hook h
+            JOIN m_hook_registered_events re ON re.hook_id = h.id
+            WHERE h.is_active = true
+              AND re.entity_name = 'LOAN'
+              AND re.action_name IN ('DISBURSE', 'DISBURSETOSAVINGS', 'REPAYMENT')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM m_hook_registered_events existing
+                  WHERE existing.hook_id = h.id
+                    AND existing.entity_name = 'LOAN'
+                    AND existing.action_name = 'STATUS_CHANGED'
+              );
+        ]]></sql>
+        <rollback>
+            <sql><![CDATA[
+                DELETE FROM m_hook_registered_events e
+                WHERE e.entity_name = 'LOAN'
+                  AND e.action_name = 'STATUS_CHANGED'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM m_hook h
+                      JOIN m_hook_registered_events re ON re.hook_id = h.id
+                      WHERE h.id = e.hook_id
+                        AND h.is_active = true
+                        AND re.entity_name = 'LOAN'
+                        AND re.action_name IN ('DISBURSE', 'DISBURSETOSAVINGS', 'REPAYMENT')
+                  );
+            ]]></sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="0068-2-add-loc-status-changed-hook-events" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_hook"/>
+            <tableExists tableName="m_hook_registered_events"/>
+        </preConditions>
+        <comment>Register LINE_OF_CREDIT STATUS_CHANGED on active hooks that already receive LOC webhooks</comment>
+        <sql><![CDATA[
+            INSERT INTO m_hook_registered_events (hook_id, entity_name, action_name)
+            SELECT DISTINCT h.id, 'LINE_OF_CREDIT', 'STATUS_CHANGED'
+            FROM m_hook h
+            JOIN m_hook_registered_events re ON re.hook_id = h.id
+            WHERE h.is_active = true
+              AND re.entity_name = 'LINE_OF_CREDIT'
+              AND re.action_name IN ('ACTIVATE', 'DEACTIVATE', 'REACTIVATE')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM m_hook_registered_events existing
+                  WHERE existing.hook_id = h.id
+                    AND existing.entity_name = 'LINE_OF_CREDIT'
+                    AND existing.action_name = 'STATUS_CHANGED'
+              );
+        ]]></sql>
+        <rollback>
+            <sql><![CDATA[
+                DELETE FROM m_hook_registered_events e
+                WHERE e.entity_name = 'LINE_OF_CREDIT'
+                  AND e.action_name = 'STATUS_CHANGED'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM m_hook h
+                      JOIN m_hook_registered_events re ON re.hook_id = h.id
+                      WHERE h.id = e.hook_id
+                        AND h.is_active = true
+                        AND re.entity_name = 'LINE_OF_CREDIT'
+                        AND re.action_name IN ('ACTIVATE', 'DEACTIVATE', 'REACTIVATE')
+                  );
+            ]]></sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

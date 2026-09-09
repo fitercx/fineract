@@ -33,6 +33,7 @@ import com.crediblex.fineract.portfolio.loc.data.LocStatus;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -59,6 +60,7 @@ import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.loanaccount.data.LoanApplicationTimelineData;
 import org.apache.fineract.portfolio.loanaccount.data.LoanStatusEnumData;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanStatus;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -77,6 +79,17 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     private final LineOfCreditChargeReadService chargeReadService;
     private final StaffReadPlatformService staffReadPlatformService;
     private final LineOfCreditRepository lineOfCreditRepository;
+
+    /**
+     * Utilisation as a whole-number percentage of the credit limit. Computed once here so every LOC response carries a
+     * single authoritative figure and no client has to derive it. Returns 0 when the limit is missing/zero.
+     */
+    private static BigDecimal utilizationPercentage(final BigDecimal consumedAmount, final BigDecimal creditLimit) {
+        if (creditLimit == null || creditLimit.signum() <= 0 || consumedAmount == null) {
+            return BigDecimal.ZERO;
+        }
+        return consumedAmount.multiply(BigDecimal.valueOf(100)).divide(creditLimit, 0, RoundingMode.HALF_UP);
+    }
 
     private static final class LineOfCreditExtractor implements ResultSetExtractor<LineOfCreditData> {
 
@@ -236,6 +249,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             return LineOfCreditData.builder().id(id).clientId(clientId).client(null).productType(productType).maximumAmount(maximumAmount)
                     .availableBalance(availableBalance).consumedAmount(consumedAmount).blockedAmount(blockedAmount)
+                    .utilizationPercentage(utilizationPercentage(consumedAmount, maximumAmount))
                     .status(getActivationStatusEnumOptionData(activationStatus)).startDate(startDate).endDate(endDate)
                     .approvedCreditFacilityAmount(approvedCreditFacilityAmount).externalId(externalId).currency(currency)
                     .advancePercentage(advancePercentage).tenorDays(tenorDays).cashMarginType(cashMarginType)
@@ -413,6 +427,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
             LineOfCreditData.LineOfCreditDataBuilder builder = LineOfCreditData.builder().id(id).productType(productType)
                     .maximumAmount(creditLimit).availableBalance(balance).consumedAmount(utilizationAmount).blockedAmount(blockedAmount)
+                    .utilizationPercentage(utilizationPercentage(utilizationAmount, creditLimit))
                     .status(getActivationStatusEnumOptionData(activationStatus)).externalId(externalId).accountNumber(accountNumber)
                     .startDate(startDate).endDate(endDate).currency(currency).cashMarginValue(cashMarginValue).tenorDays(tenorDays)
                     .annualInterestRate(locAnnualInterestRate);
@@ -623,13 +638,14 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     public Integer getTotalOfActiveLoans(Long lineOfCreditId) {
 
         try {
+            // Block LOC deactivate while linked loans are still Active (300) or Overpaid (700).
+            // Closed/Obligations met is 600 — do NOT treat it as blocking (previous bug used 600
+            // with a wrong "Overpaid" comment, which blocked deactivate for settled LOCs).
             final String sql = "SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp " + "JOIN m_loan l ON l.id = mlcp.loan_id "
-                    + "WHERE mlcp.line_of_credit_id = ? AND (l.loan_status_id = 300 or (l.loan_status_id = 600 and l.loan_sub_status_id is null))"; // 300:
-                                                                                                                                                    // Active,
-                                                                                                                                                    // 600:
-            // Overpaid
+                    + "WHERE mlcp.line_of_credit_id = ? AND l.loan_status_id IN (?, ?)";
 
-            return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId);
+            return this.jdbcTemplate.queryForObject(sql, Integer.class, lineOfCreditId, LoanStatus.ACTIVE.getValue(),
+                    LoanStatus.OVERPAID.getValue());
         } catch (final EmptyResultDataAccessException e) {
             return 0;
         }

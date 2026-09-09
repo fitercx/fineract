@@ -39,6 +39,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
+import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureOriginalSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureUnearnedInterestDetailsData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureWaivedSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
@@ -47,17 +48,20 @@ import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsD
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.CredXTargetedLoanChargeRefundProcessor;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
 import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSummaryDAO;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.EarlyRepaymentInterestDayCountEnricher;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInterestCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.OriginalInstallmentRow;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocForeclosureValidator;
 import com.crediblex.fineract.portfolio.loanproduct.data.ExtendedLoanProductData;
 import com.crediblex.fineract.portfolio.loc.charge.data.LineOfCreditApprovedBuyerSupplierData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
@@ -148,8 +152,10 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCal
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanChargePaidBy;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
@@ -285,20 +291,23 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal penaltyDue = result.getPenaltyDue();
         final BigDecimal taxDue = result.getTaxDue();
 
-        // Fix 2: live preview. When settling a LOC (payable/receivable) loan ON an installment due date, the repayment
-        // (CustomLoanWritePlatformServiceJpaRepositoryImpl#makeLoanRepayment) auto-waives the LPI accrued on/after that
-        // date, so quote the penalty net of it here - otherwise the shown/charged amount would overpay. Uses the exact
-        // same window + filter as the waive (via LocDueDateRepaymentUtils), guaranteeing preview == settled amount.
-        // No-op for non-LOC loans, non-due-date dates, or when there is no post-due LPI to waive.
-        if (onDate != null && penaltyDue != null && penaltyDue.signum() > 0
-                && loanLineOfCreditParamsRepository.findByLoanId(loanId).isPresent()) {
+        // Fix 2: live preview. The Make Repayment LPI must equal the foreclosure quote for the same value date, and
+        // equal what the write path actually collects. Compute it with the SAME single source of truth the foreclosure
+        // template and settlement use - ForeclosurePenaltyCalculator#computePenaltyPayableFromActiveCharges - which
+        // sums the loan's own active penalty charges dated STRICTLY BEFORE the value date (the collectable set),
+        // waiving the charge accrued on the value date and any later day.
+        //
+        // The previous approaches went through result.getPenaltyDue() (schedule window-allocated penalty, which
+        // buckets current-period LPI onto a not-yet-due installment and could collapse to 0) or through
+        // penaltyAmountDue - lpiWaivedOnSettlement. The latter double-counts: penaltyAmountDue sums charges only up to
+        // the value date, but lpiWaivedOnSettlement waives charges all the way to TODAY, so every extra backdated day
+        // subtracts one more charge that was never in the sum - the accumulating over-waive (e.g. 25 Aug showed 51.28
+        // instead of 64.10). Computing the collectable set directly has no subtraction and cannot drift from
+        // foreclosure. Its complement over [value date, today] is exactly what the settlement auto-waives
+        // (LocDueDateRepaymentUtils#overdueChargeWaiverFromDate), so preview == booked amount.
+        if (onDate != null) {
             final Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
-            if (LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, onDate)) {
-                // Preview must match waiveOverdueChargesAccruedAfterSettlementDate (strictly AFTER value/due date).
-                final Money waivableLpi = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, onDate.plusDays(1),
-                        DateUtils.getBusinessLocalDate(), loan.getCurrency());
-                penaltyDue = penaltyDue.subtract(waivableLpi.getAmount()).max(BigDecimal.ZERO);
-            }
+            penaltyDue = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, onDate, loan.getCurrency()).getAmount();
         }
 
         final BigDecimal totalDue = principalPortion.add(interestDue).add(feeDue).add(penaltyDue).add(taxDue);
@@ -950,11 +959,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     }
 
     /**
-     * Calculates the total amount of reversed penalty charges for a specific repayment schedule period. This includes
-     * only inactive charges that were reversed (have a CHARGE_ADJUSTMENT transaction).
+     * Calculates the total refunded penalty amount for a repayment period. Current refunds use a targeted active-loan
+     * refund transaction; inactive charge adjustments remain supported for legacy data.
      *
-     * IMPORTANT: A reversed charge should appear ONLY in the period where its due date matches the period's due date.
-     * This prevents a charge due on 26 Jan from appearing in both period 1 (due 26 Jan) and period 2 (due 24 Feb).
+     * For overdue/LPI charges, persisted installment metadata is authoritative. Legacy reversals may have lost that
+     * metadata when the charge was inactivated, so they fall back to the nearest normal EMI due on or before the stored
+     * charge date. This also corrects historical rows whose effective date was persisted one day late.
      */
     private BigDecimal calculateReversedPenaltyChargesForPeriod(Loan loan, LoanSchedulePeriodData period) {
         if (period.getPeriod() == null) {
@@ -971,33 +981,26 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             return BigDecimal.ZERO;
         }
 
-        // Check all loan charges to find reversed penalty charges linked to this installment
-        // IMPORTANT: Only check inactive charges that have been reversed (have CHARGE_ADJUSTMENT transaction)
+        // Check all loan charges to find refunded penalty charges linked to this installment.
         for (LoanCharge loanCharge : loan.getLoanCharges()) {
-            // Check if this is a reversed penalty charge:
-            // 1. Must be a penalty charge
-            // 2. Must be inactive (marked as reversed)
-            // 3. Must have a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
-            if (loanCharge.isPenaltyCharge() && !loanCharge.isActive()) {
-                // Check if this charge has a CHARGE_ADJUSTMENT transaction (indicating it was reversed)
-                boolean hasChargeAdjustment = loan.getLoanTransactions().stream()
-                        .anyMatch(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment() && tx.getLoanChargesPaid().stream()
-                                .anyMatch(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())));
+            if (loanCharge.isPenaltyCharge()) {
+                Optional<LoanChargePaidBy> chargeAdjustmentPaidBy = loan.getLoanTransactions().stream()
+                        .filter(tx -> CredXTargetedLoanChargeRefundProcessor.isTargetedChargeRefund(tx)
+                                || (!loanCharge.isActive() && tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment()))
+                        .flatMap(tx -> tx.getLoanChargesPaid().stream())
+                        .filter(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId())).findFirst();
 
-                if (hasChargeAdjustment) {
+                if (chargeAdjustmentPaidBy.isPresent()) {
                     boolean appliesToPeriod = false;
 
-                    // For overdue charges, match by exact due date match
-                    if (loanCharge.isOverdueInstallmentCharge() && loanCharge.getDueLocalDate() != null) {
-                        LocalDate chargeDueDate = loanCharge.getDueLocalDate();
-                        // CRITICAL: Match ONLY if the charge due date exactly equals the period's due date
-                        // This ensures a charge due on 26 Jan matches ONLY period 1 (due 26 Jan), not period 2 (due 24
-                        // Feb)
-                        appliesToPeriod = chargeDueDate.equals(periodDueDate);
+                    if (loanCharge.isOverdueInstallmentCharge()) {
+                        Integer resolvedInstallmentNumber = resolveReversedOverdueChargeInstallmentNumber(loan, loanCharge,
+                                chargeAdjustmentPaidBy.get());
+                        appliesToPeriod = installmentNumber.equals(resolvedInstallmentNumber);
 
                         if (appliesToPeriod) {
-                            log.debug("Matched reversed overdue charge {} (due: {}) to period {} (due: {})", loanCharge.getId(),
-                                    chargeDueDate, installmentNumber, periodDueDate);
+                            log.debug("Matched reversed overdue charge {} (stored due: {}) to installment {}", loanCharge.getId(),
+                                    loanCharge.getDueLocalDate(), installmentNumber);
                         }
                     } else {
                         // For installment fees, match by installment number via LoanInstallmentCharge
@@ -1010,14 +1013,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                     }
 
                     if (appliesToPeriod) {
-                        // Get the original paid amount from the CHARGE_ADJUSTMENT transaction
-                        // Note: LoanChargePaidBy stores the positive amount, not negative
-                        BigDecimal originalPaidAmount = loan.getLoanTransactions().stream()
-                                .filter(tx -> tx.isNotReversed() && tx.getTypeOf().isChargeAdjustment())
-                                .flatMap(tx -> tx.getLoanChargesPaid().stream())
-                                .filter(cpb -> cpb.getLoanCharge() != null && cpb.getLoanCharge().getId().equals(loanCharge.getId()))
-                                .map(cpb -> cpb.getAmount()) // Amount is already positive in LoanChargePaidBy
-                                .findFirst().orElse(BigDecimal.ZERO);
+                        BigDecimal originalPaidAmount = chargeAdjustmentPaidBy.get().getAmount().abs();
 
                         if (originalPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
                             reversedAmount = reversedAmount.add(originalPaidAmount);
@@ -1025,8 +1021,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                                     loanCharge.getId(), loanCharge.getDueLocalDate(), originalPaidAmount, installmentNumber, periodDueDate,
                                     reversedAmount);
                         } else {
-                            log.warn("Reversed charge {} (due: {}) matched period {} but has zero amount in CHARGE_ADJUSTMENT",
-                                    loanCharge.getId(), loanCharge.getDueLocalDate(), installmentNumber);
+                            log.warn("Refunded charge {} (due: {}) matched period {} but has zero refund amount", loanCharge.getId(),
+                                    loanCharge.getDueLocalDate(), installmentNumber);
                         }
                     }
                 }
@@ -1038,6 +1034,52 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         return reversedAmount;
+    }
+
+    private static Integer resolveReversedOverdueChargeInstallmentNumber(Loan loan, LoanCharge loanCharge,
+            LoanChargePaidBy chargeAdjustmentPaidBy) {
+        if (chargeAdjustmentPaidBy.getInstallmentNumber() != null) {
+            return chargeAdjustmentPaidBy.getInstallmentNumber();
+        }
+
+        LoanOverdueInstallmentCharge overdueInstallmentCharge = loanCharge.getOverdueInstallmentCharge();
+        if (overdueInstallmentCharge != null && overdueInstallmentCharge.getInstallment() != null
+                && overdueInstallmentCharge.getInstallment().getInstallmentNumber() != null) {
+            return overdueInstallmentCharge.getInstallment().getInstallmentNumber();
+        }
+
+        return resolveLegacyReversedOverdueChargeInstallmentNumber(loan.getRepaymentScheduleInstallments(), loan.getCurrency(),
+                loanCharge.getDueLocalDate(), loanCharge.getAmountPercentageAppliedTo());
+    }
+
+    static Integer resolveLegacyReversedOverdueChargeInstallmentNumber(Collection<LoanRepaymentScheduleInstallment> installments,
+            MonetaryCurrency currency, LocalDate storedChargeDate, BigDecimal chargeBaseAmount) {
+        if (installments == null || storedChargeDate == null) {
+            return null;
+        }
+
+        List<LoanRepaymentScheduleInstallment> candidates = installments.stream()
+                .filter(installment -> installment != null && installment.getInstallmentNumber() != null
+                        && installment.getDueDate() != null)
+                .filter(installment -> !installment.isDownPayment() && !installment.isAdditional()
+                        && !installment.isRecalculatedInterestComponent())
+                .filter(installment -> !installment.getDueDate().isAfter(storedChargeDate)).toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        if (chargeBaseAmount != null && chargeBaseAmount.compareTo(BigDecimal.ZERO) > 0 && currency != null) {
+            List<LoanRepaymentScheduleInstallment> baseMatches = candidates.stream().filter(installment -> installment
+                    .getPrincipal(currency).getAmount().subtract(chargeBaseAmount).abs().compareTo(new BigDecimal("0.01")) <= 0).toList();
+            if (baseMatches.size() == 1) {
+                return baseMatches.get(0).getInstallmentNumber();
+            }
+        }
+
+        return candidates.stream().max((left, right) -> {
+            int byDate = left.getDueDate().compareTo(right.getDueDate());
+            return byDate != 0 ? byDate : left.getInstallmentNumber().compareTo(right.getInstallmentNumber());
+        }).map(LoanRepaymentScheduleInstallment::getInstallmentNumber).orElse(null);
     }
 
     ExtendedLoanSchedulePeriodData.Status resolvePeriodStatus(CurrencyData currencyData, LoanSchedulePeriodData period) {
@@ -1980,8 +2022,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Collection<LoanSchedulePeriodData> loanSchedulePeriods = this.loanRepaymentsSummaryDAO.fetchLoanRepaymentsSummary(loanId);
         final CurrencyData currency = this.jdbcTemplate.queryForObject(loanCurrencySql, loanCurrencyDataMapper, loanId);
 
-        // Get loan to calculate reversed charges per period
-        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
+        // Get loan (with active charges) to calculate reversed charges per period and LPI due
+        Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         Collection<LoanChargeData> loanCharges = this.customLoanChargeReadPlatformServiceImpl.retrieveLoanCharges(loanId);
 
         List<ExtendedLoanSchedulePeriodData> loanSchedulePeriodsWithStatus = loanSchedulePeriods.stream().map(p -> {
@@ -1997,13 +2039,26 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 : null;
         CredibleXLoanPenaltyCalculator penaltyCalculator = new CredibleXLoanPenaltyCalculator(loanSchedulePeriodsWithStatus, loanCharges,
                 penaltyWaitPeriodValue, isDrawdownLoan, paymentsAsOf, businessDate);
-        BigDecimal penaltySum = penaltyCalculator.calculatePenaltySum(transactionDate);
+        // Same single source of truth as repayment/foreclosure templates: charges strictly before settlement date.
+        BigDecimal penaltySum = ForeclosurePenaltyCalculator
+                .computePenaltyQuotedForSettlementDate(loan, transactionDate, loan.getCurrency()).getAmount();
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
+        BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
         final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
 
-        return new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue, installmentInterestAmountDue,
-                earliestAllowedTransactionDate);
+        final BackdatedRepaymentPenaltyDTO dto = new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue,
+                installmentInterestAmountDue, remainingPrincipalOutstanding, earliestAllowedTransactionDate);
+        final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
+        dto.setOnInstallmentDueDate(onInstallmentDueDate);
+        if (transactionDate != null && (onInstallmentDueDate || transactionDate.isBefore(businessDate))) {
+            final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, transactionDate);
+            if (waiveFrom != null && !waiveFrom.isAfter(businessDate)) {
+                dto.setLpiWaivedOnSettlement(
+                        LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, businessDate, loan.getCurrency()).getAmount());
+            }
+        }
+        return dto;
     }
 
     /**
@@ -2026,9 +2081,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
 
         final Long penaltyWaitPeriodValue = this.configurationDomainService.retrievePenaltyWaitPeriod();
-        final Long penaltyPostingWaitPeriodValue = this.configurationDomainService.retrieveGraceOnPenaltyPostingPeriod();
-        final long diffRaw = penaltyWaitPeriodValue + 1L - penaltyPostingWaitPeriodValue;
-        final long diff = diffRaw < 1L ? 1L : diffRaw;
 
         // EMI (principal + interest) at the selected future date for UI display.
         final BackdatedRepaymentPenaltyDTO penaltiesTemplate = retrieveLoanPenaltiesTemplate(loanId, futureDate);
@@ -2080,11 +2132,13 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             int frequencyNumber = 1;
 
             if (feeFrequency == null) {
-                scheduleDates.put(frequencyNumber++, firstStartDate.minusDays(diff));
+                if (!firstStartDate.isAfter(futureDate)) {
+                    scheduleDates.put(frequencyNumber++, firstStartDate);
+                }
             } else {
                 LocalDate start = firstStartDate;
                 while (!start.isAfter(futureDate)) {
-                    scheduleDates.put(frequencyNumber++, start.minusDays(diff));
+                    scheduleDates.put(frequencyNumber++, start);
                     start = scheduledDateGenerator.getRepaymentPeriodDate(PeriodFrequencyType.fromInt(feeFrequency), feeInterval, start);
                 }
             }
@@ -3067,9 +3121,9 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
 
                 // Calculate reversed charges for this period
                 BigDecimal feeChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
-                        fromDate, dueDate, false);
+                        period, fromDate, dueDate, false);
                 BigDecimal penaltyChargesReversed = customReversedChargeCalculationService.calculateReversedCharges(rs.getLong("loanId"),
-                        fromDate, dueDate, true);
+                        period, fromDate, dueDate, true);
 
                 final LoanSchedulePeriodData periodData = LoanSchedulePeriodData.periodWithPayments(period, fromDate, dueDate,
                         obligationsMetOnDate, complete, principalDue, principalPaid, principalWrittenOff, principalOutstanding,
@@ -3299,6 +3353,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final Loan loan = this.loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true);
         final Optional<LoanLineOfCreditParams> lineOfCreditOptions = this.loanLineOfCreditParamsRepository.findByLoanId(loan.getId());
         loanForeclosureValidator.validateForForeclosure(loan, transactionDate);
+        LocForeclosureValidator.validateNotDueOrOverdue(loan, transactionDate, lineOfCreditOptions);
         final MonetaryCurrency currency = loan.getCurrency();
         final ApplicationCurrency applicationCurrency = this.applicationCurrencyRepository.findOneWithNotFoundDetection(currency);
 
@@ -3349,10 +3404,21 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // (CustomLoanAccountDomainServiceJpa#foreCloseLoan) guarantees this quoted amount always matches what is
         // really withdrawn from the linked savings account - previously they could silently diverge, over-quoting
         // (and over-withdrawing) by exactly the staleness amount.
-        Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyPayableFromActiveCharges(loan, transactionDate,
+        Money penaltyChargesOutstanding = ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, transactionDate,
                 currency);
-        Money totalOutstandingAmount = principalOutstanding.plus(interestOutstanding).plus(feeChargesAmount).plus(penaltyChargesOutstanding)
-                .plus(taxChargesAmount);
+
+        // Quote (settlement card) must equal what foreCloseLoan will actually collect. The raw sum below can exceed the
+        // schedule's allocatable outstanding - Factor Rate fees come from the loan summary, and LPI/penalty from active
+        // charges that may sit on an already-complete installment - and that surplus would be over-withdrawn and land
+        // as overpayment at settlement. Clamp the quote here with the exact same ForeclosureAmountReconciler the
+        // settlement path uses, so the card never over-quotes. No-op when the raw amount already fits.
+        final ForeclosureAmountReconciler.Result quote = ForeclosureAmountReconciler.reconcile(loan, currency, principalOutstanding,
+                interestOutstanding, feeChargesAmount, penaltyChargesOutstanding, taxChargesAmount);
+        interestOutstanding = quote.interest();
+        feeChargesAmount = quote.fee();
+        penaltyChargesOutstanding = quote.penalty();
+        taxChargesAmount = quote.tax();
+        Money totalOutstandingAmount = quote.total();
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
                 earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
@@ -3369,6 +3435,22 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         // hard backend validation with a clear error message rather than folded into this minDate.
         loanTransactionData.getAdditionalAttributes().put("earliestAllowedTransactionDate",
                 BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan));
+
+        final LocalDate maturityDate = loan.getMaturityDate();
+        if (maturityDate != null) {
+            loanTransactionData.getAdditionalAttributes().put("expectedMaturityDate", maturityDate);
+            final Integer penaltyGraceDays = loan.getLoanProduct().getPenaltyGracePeriod();
+            if (penaltyGraceDays != null) {
+                loanTransactionData.getAdditionalAttributes().put("penaltyGracePeriodDays", penaltyGraceDays);
+            }
+            final boolean postMaturity = !transactionDate.isBefore(maturityDate);
+            loanTransactionData.getAdditionalAttributes().put("postMaturityClosure", postMaturity);
+            if (postMaturity && principalOutstanding.getAmount().compareTo(BigDecimal.ZERO) <= 0
+                    && interestOutstanding.getAmount().compareTo(BigDecimal.ZERO) <= 0 && penaltyChargesOutstanding.isGreaterThanZero()) {
+                loanTransactionData.getAdditionalAttributes().put("postMaturityGracePeriodLpiClosure", true);
+                loanTransactionData.getAdditionalAttributes().put("postMaturityGracePeriodLpiDue", penaltyChargesOutstanding.getAmount());
+            }
+        }
 
         AccountAssociations associations = accountAssociationsRepository.findByLoanIdAndType(loan.getId(),
                 LINKED_ACCOUNT_ASSOCIATION.getValue());
@@ -3447,6 +3529,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             final ForeclosureUnearnedInterestDetailsData details = new ForeclosureUnearnedInterestDetailsData(unearnedInterest,
                     foreclosureDate, originalMaturityDate, remainingDays, removedInstallmentCount, originalScheduleInterest,
                     interestCollected, waivedPeriods, "FORECLOSURE");
+            details.setOriginalSchedulePeriods(loadOriginalSchedulePeriods(loanId));
             return details;
         }, loanId);
     }
@@ -3551,6 +3634,27 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 loanId);
 
         return ForeclosureWaivedPeriodCalculator.computeWaivedPeriods(foreclosureDate, originalInstallments, currentInstallments);
+    }
+
+    private List<ForeclosureOriginalSchedulePeriodData> loadOriginalSchedulePeriods(final Long loanId) {
+        final String originalScheduleSql = """
+                SELECT h.installment, h.fromdate, h.duedate, h.principal_amount, h.interest_amount
+                FROM m_loan_repayment_schedule_history h
+                WHERE h.loan_id = ?
+                  AND h.version = (
+                      SELECT MIN(h2.version)
+                      FROM m_loan_repayment_schedule_history h2
+                      WHERE h2.loan_id = h.loan_id
+                  )
+                  AND h.installment IS NOT NULL
+                ORDER BY h.installment
+                """;
+
+        return jdbcTemplate.query(originalScheduleSql,
+                (rs, rowNum) -> new ForeclosureOriginalSchedulePeriodData(JdbcSupport.getInteger(rs, "installment"),
+                        JdbcSupport.getLocalDate(rs, "fromdate"), JdbcSupport.getLocalDate(rs, "duedate"),
+                        rs.getBigDecimal("principal_amount"), rs.getBigDecimal("interest_amount")),
+                loanId);
     }
 
 }

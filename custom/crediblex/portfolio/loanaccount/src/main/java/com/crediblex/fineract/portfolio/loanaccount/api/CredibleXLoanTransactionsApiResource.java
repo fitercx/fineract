@@ -110,7 +110,7 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
-        return this.penaltyJsonSerializer.serialize(settings, penaltiesData, this.responseDataParameters);
+        return this.penaltyJsonSerializer.serialize(settings, penaltiesData, BackdatedRepaymentPenaltyDTO.RESPONSE_DATA_PARAMETERS);
     }
 
     @GET
@@ -240,12 +240,8 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
         final LocalDate futureDate = transactionDateParam.getDate("transactionDate", dateFormat, locale);
 
-        // Validate that the date is not in the past
-        final LocalDate currentDate = DateUtils.getLocalDateOfTenant();
-        if (futureDate.isBefore(currentDate)) {
-            throw new IllegalArgumentException("Transaction date cannot be in the past");
-        }
-
+        // Past/today dates are valid: service returns totalLPIAmount=0 (no not-yet-posted LPI). Only strictly future
+        // dates add projected daily accrual on top of /template/penalties.
         // Call custom service method to compute future LPI charges
         FutureLPIChargesData futureLPIData = this.credibleXLoanReadPlatformService.calculateFutureLPICharges(loanId, futureDate);
 

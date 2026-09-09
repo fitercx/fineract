@@ -20,6 +20,8 @@ public class ForeclosureUnearnedInterestDetailsData {
     private BigDecimal originalScheduleInterest;
     private BigDecimal interestCollected;
     private List<ForeclosureWaivedSchedulePeriodData> waivedPeriods;
+    /** Original generator schedule (version-1 history) — preserved for UI after foreclosure rewrite. */
+    private List<ForeclosureOriginalSchedulePeriodData> originalSchedulePeriods;
     /** {@code EARLY_REPAYMENT} or {@code FORECLOSURE} */
     private String closureType;
     private LocalDate paymentDate;

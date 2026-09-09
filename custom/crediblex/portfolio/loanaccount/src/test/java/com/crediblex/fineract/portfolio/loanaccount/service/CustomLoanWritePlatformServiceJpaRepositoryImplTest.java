@@ -10,7 +10,9 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,13 +27,17 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
+import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
@@ -42,10 +48,12 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanTransactionVa
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformServiceJpaRepositoryImpl;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -85,6 +93,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     @Mock
     private LoanApplicationValidator loanApplicationValidator;
 
+    @Mock
+    private CredXLoanChargeWritePlatformServiceImpl credibleXLoanChargeWritePlatformService;
+
     @InjectMocks
     private CustomLoanWritePlatformServiceJpaRepositoryImpl customLoanWritePlatformService;
 
@@ -111,9 +122,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         mockLocData.put("tenor_days", 90);
         mockLocData.put("product_type", "RECEIVABLE");
 
-        // Initialize customLoanWritePlatformService with minimal mocks for testing validation logic
-        // We'll use reflection to test private methods or test through public API
-        // For now, we'll create a partial mock that allows us to test the validation
+        final HashMap<BusinessDateType, LocalDate> businessDates = new HashMap<>();
+        businessDates.put(BusinessDateType.BUSINESS_DATE, LocalDate.of(2025, 1, 15));
+        ThreadLocalContextUtil.setBusinessDates(businessDates);
+        ThreadLocalContextUtil.setTenant(new FineractPlatformTenant(1L, "default", "default", "UTC", null));
+    }
+
+    @AfterEach
+    public void tearDown() {
+        ThreadLocalContextUtil.reset();
     }
 
     // NOTE: The following tests are commented out because adjustLocBalanceOnRepayment method doesn't exist
@@ -531,7 +548,85 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         });
     }
 
+    @Test
+    @DisplayName("Non-LOC same-day due-date repayment waives then syncs once (all-product Fix 2)")
+    public void testMakeLoanRepayment_NonLocDueDateValueDate_WaivesThenSyncs() {
+        final Long loanId = 1L;
+        final LocalDate dueDate = LocalDate.of(2025, 1, 15);
+        final Loan loan = createNonLocLoanWithInstallmentDueDate(loanId, dueDate);
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("1000.00"), dueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+        when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, dueDate))
+                .thenReturn(waiveSummary(1));
+
+        invokeUiRepayment(loanId, command);
+
+        final InOrder inOrder = inOrder(credibleXLoanChargeWritePlatformService);
+        inOrder.verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(dueDate));
+        inOrder.verify(credibleXLoanChargeWritePlatformService).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+        verify(credibleXLoanChargeWritePlatformService, times(1)).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(dueDate));
+        verify(credibleXLoanChargeWritePlatformService, times(1)).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+    }
+
+    @Test
+    @DisplayName("Retry of a non-LOC due-date repayment re-invokes waive with an empty second window")
+    public void testMakeLoanRepayment_NonLocDueDateValueDate_RetryDoesNotDoubleWaive() {
+        final Long loanId = 1L;
+        final LocalDate dueDate = LocalDate.of(2025, 1, 15);
+        final Loan loan = createNonLocLoanWithInstallmentDueDate(loanId, dueDate);
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("1000.00"), dueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+        when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, dueDate))
+                .thenReturn(waiveSummary(1)).thenReturn(waiveSummary(0));
+
+        invokeUiRepayment(loanId, command);
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService, times(2)).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(dueDate));
+        verify(credibleXLoanChargeWritePlatformService, times(2)).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+    }
+
+    @Test
+    @DisplayName("Same-day non-due-date repayment skips waive but still syncs schedule LPI")
+    public void testMakeLoanRepayment_SameDayNonDueDate_SkipsWaiveStillSyncs() {
+        final Long loanId = 1L;
+        final LocalDate businessDate = LocalDate.of(2025, 1, 15);
+        final Loan loan = createNonLocLoanWithInstallmentDueDate(loanId, LocalDate.of(2025, 1, 10));
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("1000.00"), businessDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
+        verify(credibleXLoanChargeWritePlatformService, times(1)).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+    }
+
     // Helper methods for repayment tests
+
+    private Loan createNonLocLoanWithInstallmentDueDate(Long loanId, LocalDate dueDate) {
+        final Loan loan = mock(Loan.class);
+        final LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
+        when(loan.getId()).thenReturn(loanId);
+        when(installment.getDueDate()).thenReturn(dueDate);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(installment));
+        return loan;
+    }
+
+    private Map<String, Object> waiveSummary(int chargesWaived) {
+        final Map<String, Object> summary = new HashMap<>();
+        summary.put("chargesWaived", chargesWaived);
+        summary.put("totalAmountWaived", BigDecimal.ZERO);
+        summary.put("daysCovered", 0L);
+        return summary;
+    }
+
+    private void invokeUiRepayment(Long loanId, JsonCommand command) {
+        try {
+            customLoanWritePlatformService.makeLoanRepayment(LoanTransactionType.REPAYMENT, loanId, command, false);
+        } catch (Exception ignored) {
+            // Parent repayment is not mocked; assert waive-then-sync orchestration only.
+        }
+    }
 
     private Loan createSingleTrancheLoanUnderMultiTrancheProduct(Long loanId) {
         Loan loan = mock(Loan.class);

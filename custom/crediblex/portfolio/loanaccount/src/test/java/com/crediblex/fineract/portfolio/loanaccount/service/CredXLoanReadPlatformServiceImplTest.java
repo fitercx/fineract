@@ -29,8 +29,15 @@ import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.organisation.monetary.data.CurrencyData;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
+import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 import org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations;
@@ -68,6 +75,9 @@ public class CredXLoanReadPlatformServiceImplTest {
     @Mock
     private com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentStrategyResolver dpdRepaymentStrategyResolver;
 
+    @Mock
+    private LoanRepositoryWrapper loanRepositoryWrapper;
+
     @InjectMocks
     private CredXLoanReadPlatformServiceImpl credXLoanReadPlatformService;
 
@@ -103,6 +113,8 @@ public class CredXLoanReadPlatformServiceImplTest {
         mockResult.setField("interestDue", BigDecimal.valueOf(10.00));
         mockResult.setField("feeDue", BigDecimal.valueOf(5.00));
         mockResult.setField("penaltyDue", BigDecimal.valueOf(2.00));
+        // The repayment-status SQL coalesces every derived money column to 0; mirror that so totalDue never NPEs.
+        mockResult.setField("taxDue", BigDecimal.ZERO);
         mockResult.setField("netDisbursalAmount", BigDecimal.valueOf(500.00));
 
     }
@@ -151,6 +163,112 @@ public class CredXLoanReadPlatformServiceImplTest {
         assertEquals(BigDecimal.valueOf(500.00), result.getNetDisbursalAmount());
         Assertions.assertFalse(result.isManuallyReversed());
         assertEquals(ExternalId.empty(), result.getExternalId());
+    }
+
+    /**
+     * Make Repayment preview WITH a value date must equal the foreclosure quote and must NOT over-waive as it is
+     * backdated. Reproduces UAT loan 16184 (charges 12.82 dated 20..26 Aug, all linked to installment #1 due 20 Aug):
+     * settling on day D collects the LPI dated STRICTLY BEFORE D. The prior "penaltyAmountDue - lpiWaivedOnSettlement"
+     * subtraction double-counted the charges dated in (D, today], so 25 Aug showed 51.28 instead of 64.10 and each
+     * earlier day dropped one more charge - the accumulating over-waive. Sourcing the penalty straight from
+     * ForeclosurePenaltyCalculator (the same calc the foreclosure quote/settlement use) has no subtraction and stays in
+     * lock-step by construction.
+     */
+    @Test
+    public void repaymentTemplateWithDateMatchesForeclosureAndDoesNotOverWaive() {
+        when(credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId)).thenReturn(mockResult);
+        when(paymentTypeReadPlatformService.retrieveAllPaymentTypes()).thenReturn(new ArrayList<>());
+
+        final MonetaryCurrency currency = new MonetaryCurrency("AED", 2, 0);
+        final Loan loan = loan16184(currency);
+        when(loanRepositoryWrapper.findOneWithNotFoundDetection(loanId, true)).thenReturn(loan);
+
+        // Same figures the foreclosure screen shows for the same dates - no accumulating over-waive.
+        assertEquals(0, new BigDecimal("89.74").compareTo(penaltyPortionOn(LocalDate.of(2026, 8, 27)))); // 20..26
+        assertEquals(0, new BigDecimal("76.92").compareTo(penaltyPortionOn(LocalDate.of(2026, 8, 26)))); // 20..25 (waive 26)
+        assertEquals(0, new BigDecimal("64.10").compareTo(penaltyPortionOn(LocalDate.of(2026, 8, 25)))); // 20..24 (waive 25,26)
+        assertEquals(0, new BigDecimal("51.28").compareTo(penaltyPortionOn(LocalDate.of(2026, 8, 24)))); // 20..23 (waive 24..26)
+    }
+
+    private BigDecimal penaltyPortionOn(final LocalDate onDate) {
+        return credXLoanReadPlatformService.retrieveLoanTransactionTemplate(loanId, onDate).getPenaltyChargesPortion();
+    }
+
+    /** Loan 16184: daily 12.82 penalty charges dated 20..26 Aug, all linked to installment #1 due 20 Aug. */
+    private Loan loan16184(final MonetaryCurrency currency) {
+        final Loan loan = Mockito.mock(Loan.class);
+        Mockito.lenient().when(loan.getCurrency()).thenReturn(currency);
+        final java.util.LinkedHashSet<LoanCharge> charges = new java.util.LinkedHashSet<>();
+        for (LocalDate d = LocalDate.of(2026, 8, 20); !d.isAfter(LocalDate.of(2026, 8, 26)); d = d.plusDays(1)) {
+            charges.add(linkedLpiCharge(d, LocalDate.of(2026, 8, 20), currency));
+        }
+        when(loan.getActiveCharges()).thenReturn(charges);
+        return loan;
+    }
+
+    private LoanCharge linkedLpiCharge(final LocalDate accrualDate, final LocalDate owningDueDate, final MonetaryCurrency currency) {
+        final Money outstanding = Money.of(currency, new BigDecimal("12.82"));
+        final LoanCharge charge = Mockito.mock(LoanCharge.class);
+        when(charge.isPenaltyCharge()).thenReturn(true);
+        when(charge.getDueDate()).thenReturn(accrualDate);
+        Mockito.lenient().when(charge.getAmountOutstanding(currency)).thenReturn(outstanding);
+        Mockito.lenient().when(charge.isOverdueInstallmentCharge()).thenReturn(true);
+        final LoanOverdueInstallmentCharge link = Mockito.mock(LoanOverdueInstallmentCharge.class);
+        final LoanRepaymentScheduleInstallment owning = Mockito.mock(LoanRepaymentScheduleInstallment.class);
+        Mockito.lenient().when(owning.getDueDate()).thenReturn(owningDueDate);
+        Mockito.lenient().when(link.getInstallment()).thenReturn(owning);
+        Mockito.lenient().when(charge.getOverdueInstallmentCharge()).thenReturn(link);
+        return charge;
+    }
+
+    /**
+     * The no-date overload (down payment / non-backdated preview) is unchanged: it keeps the schedule-derived penalty
+     * and never loads the loan for the accrual-date calculation.
+     */
+    @Test
+    public void repaymentTemplateWithoutDateKeepsScheduleDerivedPenalty() {
+        when(credXLoanTransactionRepository.retrieveLoanRepaymentTemplate(loanId)).thenReturn(mockResult);
+        when(paymentTypeReadPlatformService.retrieveAllPaymentTypes()).thenReturn(new ArrayList<>());
+
+        final LoanTransactionData result = credXLoanReadPlatformService.retrieveLoanTransactionTemplate(loanId);
+
+        assertEquals(0, BigDecimal.valueOf(2.00).compareTo(result.getPenaltyChargesPortion()));
+        Mockito.verifyNoInteractions(loanRepositoryWrapper);
+    }
+
+    @Test
+    public void testLegacyOneDayLateChargeResolvesToPrecedingInstallment() {
+        CurrencyData currencyData = new CurrencyData("AED", "UAE Dirham", 3, 0, "AED", "currency.AED");
+        MonetaryCurrency currency = new MonetaryCurrency(currencyData);
+        LocalDate julyDueDate = LocalDate.of(2026, 7, 31);
+        LocalDate augustDueDate = LocalDate.of(2026, 8, 31);
+        LoanRepaymentScheduleInstallment july = installment(1, julyDueDate, currency, "19213.34");
+        LoanRepaymentScheduleInstallment august = installment(2, augustDueDate, currency, "19213.34");
+
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, LocalDate.of(2026, 8, 1), new BigDecimal("19213.34")));
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, julyDueDate, new BigDecimal("19213.34")));
+    }
+
+    @Test
+    public void testLegacyChargeUsesUniqueBaseAmountBeforeNearestDateFallback() {
+        CurrencyData currencyData = new CurrencyData("AED", "UAE Dirham", 3, 0, "AED", "currency.AED");
+        MonetaryCurrency currency = new MonetaryCurrency(currencyData);
+        LoanRepaymentScheduleInstallment july = installment(1, LocalDate.of(2026, 7, 31), currency, "100.00");
+        LoanRepaymentScheduleInstallment august = installment(2, LocalDate.of(2026, 8, 31), currency, "200.00");
+
+        assertEquals(1, CredXLoanReadPlatformServiceImpl.resolveLegacyReversedOverdueChargeInstallmentNumber(List.of(july, august),
+                currency, LocalDate.of(2026, 9, 1), new BigDecimal("100.00")));
+    }
+
+    private LoanRepaymentScheduleInstallment installment(int number, LocalDate dueDate, MonetaryCurrency currency, String principal) {
+        LoanRepaymentScheduleInstallment installment = Mockito.mock(LoanRepaymentScheduleInstallment.class);
+        Money principalMoney = Money.of(currency, new BigDecimal(principal));
+        when(installment.getInstallmentNumber()).thenReturn(number);
+        when(installment.getDueDate()).thenReturn(dueDate);
+        Mockito.lenient().when(installment.getPrincipal(currency)).thenReturn(principalMoney);
+        return installment;
     }
 
     @Test

@@ -40,6 +40,25 @@ public final class LoanChargeSettlementUtils {
         return false;
     }
 
+    /**
+     * Recompute the loan's derived summary/status and then close it as obligations-met if it is fully settled.
+     *
+     * <p>
+     * This is the single "settle then close" entry point every custom charge-settlement path (bulk waive, overdue
+     * deactivate, window waive, reverse-paid) must use instead of a bare {@link Loan#updateLoanSummaryAndStatus()}.
+     * {@code updateLoanSummaryAndStatus()} alone routes to base {@code Loan.handleLoanRepaymentInFull()}, which decides
+     * "all charges paid" from each charge's paid/waived <b>flag</b>. When a settlement path drives a charge to zero
+     * outstanding without flipping that flag, a fully-repaid loan matches neither the "all charges paid" nor the
+     * "overpaid" branch and is silently left ACTIVE. {@link #closeIfFullySettled} additionally treats any
+     * zero-outstanding charge as settled (amount-based), so it closes such a loan correctly. Calling both keeps every
+     * settlement path consistent with the single-charge waive path, which already does this.
+     */
+    public static boolean refreshSummaryStatusAndCloseIfSettled(final Loan loan, final LocalDate transactionDate,
+            final LoanLifecycleStateMachine loanLifecycleStateMachine) {
+        loan.updateLoanSummaryAndStatus();
+        return closeIfFullySettled(loan, transactionDate, loanLifecycleStateMachine);
+    }
+
     public static boolean hasNoPayableChargesRemaining(final Loan loan) {
         return loan.getCharges().stream().allMatch(LoanChargeSettlementUtils::isSettled);
     }

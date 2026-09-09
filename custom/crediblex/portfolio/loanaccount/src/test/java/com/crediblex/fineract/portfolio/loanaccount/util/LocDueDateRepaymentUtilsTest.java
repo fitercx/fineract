@@ -67,7 +67,23 @@ class LocDueDateRepaymentUtilsTest {
     private LoanRepaymentScheduleInstallment installment(final LocalDate dueDate) {
         final LoanRepaymentScheduleInstallment i = mock(LoanRepaymentScheduleInstallment.class);
         when(i.getDueDate()).thenReturn(dueDate);
+        when(i.isDownPayment()).thenReturn(false);
+        when(i.isAdditional()).thenReturn(false);
+        when(i.isRecalculatedInterestComponent()).thenReturn(false);
         return i;
+    }
+
+    @Test
+    void dummyGraceInstallmentDueDateIsIgnoredForOnTimeSettlement() {
+        final LoanRepaymentScheduleInstallment emi = installment(LocalDate.of(2026, 8, 2));
+        final LoanRepaymentScheduleInstallment dummyGrace = installment(LocalDate.of(2026, 8, 18));
+        when(dummyGrace.isRecalculatedInterestComponent()).thenReturn(true);
+
+        final Loan loan = mock(Loan.class);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(emi, dummyGrace));
+
+        assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 8, 2))).isTrue();
+        assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 8, 18))).isFalse();
     }
 
     @Test
@@ -80,6 +96,35 @@ class LocDueDateRepaymentUtilsTest {
         assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 7, 25))).isTrue();
         assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, LocalDate.of(2026, 7, 24))).isFalse();
         assertThat(LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, null)).isFalse();
+    }
+
+    @Test
+    void overdueChargeWaiverFromDateStartsOnTheSettlementDate() {
+        final Loan loan = mock(Loan.class);
+
+        // The waiver window starts on the settlement date itself for every value date: the client is not charged the
+        // late fee accrued ON the day they settle (nor any later day), whether or not it is an installment due date.
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 3)))
+                .isEqualTo(LocalDate.of(2026, 8, 3));
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, LocalDate.of(2026, 8, 4)))
+                .isEqualTo(LocalDate.of(2026, 8, 4));
+        assertThat(LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, null)).isNull();
+    }
+
+    @Test
+    void backdatingToDueDateWaivesOvernightLpiPostedTheNextMorning() {
+        final LocalDate dueDate = LocalDate.of(2026, 8, 14);
+        final LocalDate overnightLpiDate = LocalDate.of(2026, 8, 15);
+        final LoanRepaymentScheduleInstallment emi = installment(dueDate);
+        final LoanCharge overnightLpi = overdueLpi(overnightLpiDate, "93.20", false, false);
+        final Loan loan = mock(Loan.class);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(emi));
+        when(loan.getActiveCharges()).thenReturn(Set.of(overnightLpi));
+
+        final LocalDate waiveFrom = LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, dueDate);
+        assertThat(waiveFrom).isEqualTo(dueDate);
+        final Money waived = LocDueDateRepaymentUtils.sumWaivableOverdueLpi(loan, waiveFrom, overnightLpiDate, currency);
+        assertThat(waived.getAmount()).isEqualByComparingTo("93.20");
     }
 
     private LoanCharge overdueLpi(final LocalDate ownDueDate, final String outstanding, final boolean waived, final boolean paid) {

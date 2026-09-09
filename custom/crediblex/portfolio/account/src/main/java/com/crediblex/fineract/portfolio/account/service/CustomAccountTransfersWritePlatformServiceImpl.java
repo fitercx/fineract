@@ -12,6 +12,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDT
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
+import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -215,6 +216,19 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             validateBackdatedTransferAllowed(toLoanAccount, transactionDate);
 
+            // Backdated settlement: waive post-value-date LPI BEFORE the repayment posts. Waiving first ensures:
+            // (1) the allocation cannot consume those charges as "paid" before the waive can touch them, and
+            // (2) with waive transactions capped at the settlement value date (see
+            // CredXLoanChargeWritePlatformServiceImpl),
+            // isChronologicallyLatestRepaymentOrWaiver returns true for the repayment, so processLatestTransaction
+            // runs (not reprocessTransactions) and the kept LPI charges remain visible to allocation.
+            backdatedLpiWaiveSummary = waiveBackdatedSettlementLpi(toLoanAccountId, transactionDate);
+            if (backdatedLpiWaiveSummary != null) {
+                // waiveBackdatedSettlementLpi assembles its own Loan instance and flushes to DB; reload so that
+                // the persisted waive transactions and updated penalty state are visible to makeRepayment below.
+                toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
+            }
+
             ExternalId externalId = externalIdFactory.create();
             final LoanTransaction loanRepaymentTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT,
                     toLoanAccount, transactionDate, transactionAmount, paymentDetail, null, externalId, isRecoveryRepayment,
@@ -227,9 +241,6 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             this.businessEventNotifierService
                     .notifyPostBusinessEvent(new SavingsToLoanAccountTransferBusinessEvent(accountTransferDetails));
-
-            // Backdated settlement: waive the LPI accrued for the days between the actual payment date and today.
-            backdatedLpiWaiveSummary = waiveBackdatedSettlementLpi(toLoanAccountId, transactionDate);
 
         } else if (isLoanToSavingsAccountTransfer(fromAccountType, toAccountType)) {
             // FIXME - kw - ADD overpaid loan to savings account transfer
@@ -338,6 +349,10 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                         isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
                 toLoanAccount = loanTransaction.getLoan();
             } else if (AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
+                // Map unpaid charge LPI onto the schedule before allocation so post-maturity grace-period rows
+                // receive the payment instead of booking it as an overpayment (loan 14441 class of bug).
+                InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccount);
+
                 loanTransaction = LoanTransaction.repayment(toLoanAccount.getOffice(),
                         Money.of(toLoanAccount.getCurrency(), accountTransferDTO.getTransactionAmount()),
                         accountTransferDTO.getPaymentDetail(), accountTransferDTO.getTransactionDate(), externalId);
@@ -350,12 +365,14 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(toLoanAccount,
                         recalculateFrom, null);
 
+                // Component breakdown must be set before allocation so penalty-only grace-period closures pay LPI,
+                // not credit the loan overpaid.
+                ForeclosureTransactionBreakdown.applyIfMissing(toLoanAccount, loanTransaction, accountTransferDTO.getTransactionDate());
+
                 toLoanAccount.setLoanSubStatus(LoanSubStatus.FORECLOSED);
 
                 loanDownPaymentHandlerService.handleRepaymentOrRecoveryOrWaiverTransaction(toLoanAccount, loanTransaction,
                         defaultLoanLifecycleStateMachine, null, scheduleGeneratorDTO);
-
-                ForeclosureTransactionBreakdown.applyIfMissing(toLoanAccount, loanTransaction, accountTransferDTO.getTransactionDate());
                 toLoanAccount = loanTransaction.getLoan();
             } else {
                 final boolean isRecoveryRepayment = false;
@@ -363,6 +380,22 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 final HolidayDetailDTO holidayDetailDto = null;
                 final String chargeRefundChargeType = null;
                 validateBackdatedTransferAllowed(toLoanAccount, accountTransferDTO.getTransactionDate());
+
+                // Backdated settlement: waive post-value-date LPI BEFORE the repayment posts (same ordering fix as
+                // the create path and the direct-repayment path). Waiving first prevents post-value-date charges
+                // from being consumed by the allocation, and — with waive transactions capped at the settlement
+                // value date — keeps isChronologicallyLatestRepaymentOrWaiver true so processLatestTransaction
+                // runs instead of the full reprocessTransactions that would wipe kept LPI from the penalty cache.
+                final AccountTransferType transferType = AccountTransferType.fromInt(accountTransferDTO.getTransferType());
+                if (!transferType.isLoanForeclosure() && !transferType.isChargePayment() && !transferType.isLoanDownPayment()) {
+                    final Map<String, Object> waiveSummary = waiveBackdatedSettlementLpi(toLoanAccount.getId(),
+                            accountTransferDTO.getTransactionDate());
+                    if (waiveSummary != null) {
+                        // Reload: waiveBackdatedSettlementLpi uses its own Loan instance; flush is already done.
+                        toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
+                    }
+                }
+
                 loanTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanAccount,
                         accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
                         accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,
@@ -378,12 +411,6 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             if (!AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
                 this.businessEventNotifierService
                         .notifyPostBusinessEvent(new SavingsToLoanAccountTransferBusinessEvent(accountTransferDetails));
-            }
-
-            // Backdated settlement (plain repayment transfers only): waive LPI accrued for the in-between days.
-            final AccountTransferType transferType = AccountTransferType.fromInt(accountTransferDTO.getTransferType());
-            if (!transferType.isLoanForeclosure() && !transferType.isChargePayment() && !transferType.isLoanDownPayment()) {
-                waiveBackdatedSettlementLpi(toLoanAccount.getId(), accountTransferDTO.getTransactionDate());
             }
 
         } else if (isSavingsToSavingsAccountTransfer(accountTransferDTO.getFromAccountType(), accountTransferDTO.getToAccountType())) {
@@ -484,6 +511,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             final SavingsAccountTransaction deposit = this.savingsAccountDomainService.handleDeposit(toSavingsAccount,
                     accountTransferDTO.getFmt(), accountTransferDTO.getTransactionDate(), netLoanDisbursementAmount,
                     accountTransferDTO.getPaymentDetail(), isAccountTransfer, isRegularTransaction, backdatedTxnsAllowedTill);
+            markForeclosureRefundDeposit(accountTransferDTO, deposit);
             accountTransferDetails = this.accountTransferAssembler.assembleLoanToSavingsTransfer(accountTransferDTO, fromLoanAccount,
                     toSavingsAccount, deposit, loanTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);
@@ -503,6 +531,18 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         }
 
         return transferTransactionId;
+    }
+
+    /**
+     * Labels only the savings-side credit created by the custom foreclosure prepaid-income refund. The loan refund and
+     * account transfer remain standard Fineract transactions; this marker is display metadata needed to distinguish the
+     * foreclosure undo from ordinary deposits without changing LPI reversal, repayment, reprocessing, or balance logic.
+     */
+    private void markForeclosureRefundDeposit(final AccountTransferDTO accountTransferDTO, final SavingsAccountTransaction savingsDeposit) {
+        if (LoanTransactionType.REFUND.getValue().equals(accountTransferDTO.getFromTransferType())
+                && CredXSavingsTransactionSubTypeService.FORECLOSURE_REFUND_DESCRIPTION.equals(accountTransferDTO.getDescription())) {
+            this.transactionSubTypeService.markForeclosureRefund(savingsDeposit.getId());
+        }
     }
 
     @Override

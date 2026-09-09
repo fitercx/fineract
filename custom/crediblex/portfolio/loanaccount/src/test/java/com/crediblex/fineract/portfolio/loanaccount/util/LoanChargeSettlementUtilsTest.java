@@ -125,4 +125,64 @@ class LoanChargeSettlementUtilsTest {
         verify(loan, never()).setActualMaturityDate(transactionDate);
         verify(loanLifecycleStateMachine, never()).transition(LoanEvent.REPAID_IN_FULL, loan);
     }
+
+    @Test
+    void refreshSummaryStatusAndCloseIfSettledRefreshesStatusThenClosesFullySettledLoan() {
+        final Loan loan = mock(Loan.class);
+        final LoanSummary loanSummary = mock(LoanSummary.class);
+        final MonetaryCurrency currency = mock(MonetaryCurrency.class);
+        final LoanLifecycleStateMachine loanLifecycleStateMachine = mock(LoanLifecycleStateMachine.class);
+        final LoanCharge charge = mock(LoanCharge.class);
+        final LocalDate transactionDate = LocalDate.of(2026, 6, 19);
+
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loan.getSummary()).thenReturn(loanSummary);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loanSummary.isRepaidInFull(currency)).thenReturn(true);
+        when(loan.getCharges()).thenReturn(Set.of(charge));
+        // Zero-outstanding LPI charge whose paid/waived flag was never set - the exact stuck-active state.
+        when(charge.isActive()).thenReturn(true);
+        when(charge.amount()).thenReturn(new BigDecimal("218.84"));
+        when(charge.isPaid()).thenReturn(false);
+        when(charge.isWaived()).thenReturn(false);
+        when(charge.amountOutstanding()).thenReturn(BigDecimal.ZERO);
+        when(charge.getTaxAmountOutstanding()).thenReturn(BigDecimal.ZERO);
+
+        assertThat(LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, transactionDate, loanLifecycleStateMachine))
+                .isTrue();
+
+        verify(loan).updateLoanSummaryAndStatus();
+        verify(loan).setClosedOnDate(transactionDate);
+        verify(loanLifecycleStateMachine).transition(LoanEvent.REPAID_IN_FULL, loan);
+    }
+
+    @Test
+    void refreshSummaryStatusAndCloseIfSettledDoesNotCloseLoanWithPayableCharge() {
+        final Loan loan = mock(Loan.class);
+        final LoanSummary loanSummary = mock(LoanSummary.class);
+        final MonetaryCurrency currency = mock(MonetaryCurrency.class);
+        final LoanLifecycleStateMachine loanLifecycleStateMachine = mock(LoanLifecycleStateMachine.class);
+        final LoanCharge charge = mock(LoanCharge.class);
+        final LocalDate transactionDate = LocalDate.of(2026, 6, 19);
+
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loan.getSummary()).thenReturn(loanSummary);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loanSummary.isRepaidInFull(currency)).thenReturn(true);
+        when(loan.getCharges()).thenReturn(Set.of(charge));
+        when(charge.isActive()).thenReturn(true);
+        when(charge.amount()).thenReturn(new BigDecimal("100.00"));
+        when(charge.isPaid()).thenReturn(false);
+        when(charge.isWaived()).thenReturn(false);
+        when(charge.amountOutstanding()).thenReturn(new BigDecimal("10.00"));
+        when(charge.getTaxAmountOutstanding()).thenReturn(BigDecimal.ZERO);
+
+        assertThat(LoanChargeSettlementUtils.refreshSummaryStatusAndCloseIfSettled(loan, transactionDate, loanLifecycleStateMachine))
+                .isFalse();
+
+        // Status is still refreshed, but the loan is not closed while a charge remains payable.
+        verify(loan).updateLoanSummaryAndStatus();
+        verify(loan, never()).setClosedOnDate(transactionDate);
+        verify(loanLifecycleStateMachine, never()).transition(LoanEvent.REPAID_IN_FULL, loan);
+    }
 }

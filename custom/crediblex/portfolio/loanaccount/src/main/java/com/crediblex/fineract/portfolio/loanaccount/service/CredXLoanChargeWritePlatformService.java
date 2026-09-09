@@ -13,10 +13,10 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanChargeWritePlatform
 public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlatformService {
 
     /**
-     * Reverses a paid loan charge by: 1. Creating a CHARGE_ADJUSTMENT transaction for audit trail (no journal entries)
-     * 2. Marking the charge as inactive and resetting paid amounts 3. Updating the loan schedule and summary 4.
-     * Creating GL entries when savings deposit is credited (Debit 100062, Credit 210003) 5. Crediting the reversed
-     * amount to the linked savings account 6. Creating audit trail
+     * Refunds a paid loan charge by restoring its exact fee or penalty allocation to outstanding, reducing the paid
+     * schedule totals on the original installment, and crediting the full amount to the linked savings account.
+     * Principal and interest allocations are unchanged. The operation uses a targeted active-loan refund transaction,
+     * not a charge adjustment or transaction-history replay.
      *
      * @param loanId
      *            The loan account ID
@@ -24,7 +24,7 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      *            The charge ID to reverse
      * @param command
      *            The JSON command containing optional parameters
-     * @return CommandProcessingResult with the reversal details
+     * @return CommandProcessingResult with the refund details
      */
     CommandProcessingResult reversePaidLoanCharge(Long loanId, Long loanChargeId, JsonCommand command);
 
@@ -39,8 +39,9 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      * @param loanId
      *            the loan being settled
      * @param settlementDate
-     *            the (backdated) transaction date of the settlement; only LPI with due date strictly after this and up
-     *            to the current business date is waived
+     *            the (backdated) transaction date of the settlement. Paying on an installment due date waives LPI dated
+     *            that day as well (on-time). Paying on any other date keeps that day's LPI (window starts the next
+     *            calendar day) and waives later charges up to the current business date.
      * @return summary map: {@code chargesWaived}, {@code totalAmountWaived}, {@code daysCovered}, {@code fromDate},
      *         {@code toDate}. Empty counts when the settlement is not backdated or there is nothing to waive.
      */
@@ -64,4 +65,11 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      *         {@code toDate}. Empty counts when the repayment is not backdated or there is nothing to waive.
      */
     Map<String, Object> waiveOverdueChargesOnOrAfterDate(Long loanId, LocalDate valueDate);
+
+    /**
+     * Copies unpaid overdue/LPI charge outstanding that is missing from the repayment schedule onto the last
+     * installment, then flushes. Must run immediately before a repayment for every product so the strategy collects
+     * that LPI instead of treating the same amount as an overpayment.
+     */
+    void syncOutstandingOverduePenaltyOntoSchedule(Long loanId);
 }
