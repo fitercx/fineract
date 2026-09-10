@@ -26,7 +26,7 @@ public enum CustomLoanStatus {
     // Note: 0 is reserved for INVALID to represent null/unmapped values from the DB or client input.
     // Custom loan statuses are assigned codes in the 9000+ range to avoid clashing with core loan
     // status codes defined elsewhere in the system and persisted in the database.
-    INVALID(0), PAST_DUE(9000), PAST_MATURITY(9001), EARLY_CLOSURE(9002), FORCED_CLOSURE(9003);
+    INVALID(0), PAST_DUE(9000), PAST_MATURITY(9001), EARLY_CLOSURE(9002), FORCED_CLOSURE(9003), RESTRUCTURED(9004);
 
     private final int value;
 
@@ -50,6 +50,24 @@ public enum CustomLoanStatus {
         return this == FORCED_CLOSURE;
     }
 
+    public boolean isRestructured() {
+        return this == RESTRUCTURED;
+    }
+
+    /**
+     * Resolves the custom overlay for a foreclosure. Forced closure wins over restructure when both are set (callers
+     * should treat them as mutually exclusive).
+     */
+    public static CustomLoanStatus forForeclosure(final Boolean isForcedClosure, final Boolean isRestructured) {
+        if (Boolean.TRUE.equals(isForcedClosure)) {
+            return FORCED_CLOSURE;
+        }
+        if (Boolean.TRUE.equals(isRestructured)) {
+            return RESTRUCTURED;
+        }
+        return EARLY_CLOSURE;
+    }
+
     public static CustomLoanStatus fromInt(Integer value) {
         if (value == null) {
             return CustomLoanStatus.INVALID; // allow nulls from DB without failing
@@ -60,6 +78,7 @@ public enum CustomLoanStatus {
             case 9001 -> CustomLoanStatus.PAST_MATURITY;
             case 9002 -> CustomLoanStatus.EARLY_CLOSURE;
             case 9003 -> CustomLoanStatus.FORCED_CLOSURE;
+            case 9004 -> CustomLoanStatus.RESTRUCTURED;
             default -> CustomLoanStatus.INVALID;
         };
     }
