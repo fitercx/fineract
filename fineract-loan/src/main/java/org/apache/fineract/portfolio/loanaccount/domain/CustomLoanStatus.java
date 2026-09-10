@@ -55,8 +55,8 @@ public enum CustomLoanStatus {
     }
 
     /**
-     * Resolves the custom overlay for a foreclosure. Forced closure wins over restructure when both are set
-     * (callers should treat them as mutually exclusive).
+     * Resolves the custom overlay for a foreclosure. Forced closure wins over restructure when both are set (callers
+     * should treat them as mutually exclusive).
      */
     public static CustomLoanStatus forForeclosure(final Boolean isForcedClosure, final Boolean isRestructured) {
         if (Boolean.TRUE.equals(isForcedClosure)) {
