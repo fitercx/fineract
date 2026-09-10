@@ -188,4 +188,7 @@ public interface LoanProductConstants {
     // Penalty Grace Period
     String PENALTY_GRACE_PERIOD_PARAM_NAME = "penaltyGracePeriod";
     Integer DEFAULT_PENALTY_GRACE_PERIOD = 15;
+
+    // DPD principal-only repayment (runtime strategy switch, see custom dpdrepayment module)
+    String ENABLE_DPD_PRINCIPAL_ONLY_REPAYMENT_PARAM_NAME = "enableDpdPrincipalOnlyRepayment";
 }
