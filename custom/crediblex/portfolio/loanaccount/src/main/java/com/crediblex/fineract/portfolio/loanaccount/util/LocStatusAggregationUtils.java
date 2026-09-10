@@ -72,8 +72,8 @@ public class LocStatusAggregationUtils {
 
     /**
      * Only an open (core-active) drawdown can make the line past due or past maturity. Closed obligations-met,
-     * written-off, overpaid, and not-yet-disbursed drawdowns keep a stale delinquency overlay after payoff and must
-     * not be rolled into the line status.
+     * written-off, overpaid, and not-yet-disbursed drawdowns keep a stale delinquency overlay after payoff and must not
+     * be rolled into the line status.
      */
     static boolean contributesToLocDelinquency(final Loan drawdown) {
         return drawdown != null && drawdown.getStatus() != null && drawdown.getStatus().isActive();
