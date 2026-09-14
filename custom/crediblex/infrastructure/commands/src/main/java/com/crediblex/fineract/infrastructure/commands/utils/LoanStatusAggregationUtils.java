@@ -76,6 +76,11 @@ public final class LoanStatusAggregationUtils {
         if (loan == null || loan.getRepaymentScheduleInstallments() == null) {
             return CustomLoanStatus.INVALID;
         }
+        // A closed or overpaid loan is no longer delinquent. Leaving PAST_DUE / PAST_MATURITY on it makes the
+        // parent line stay delinquent after settlement, so LOS never receives an active line-status webhook.
+        if (loan.getStatus() != null && (loan.isClosed() || loan.isOverPaid())) {
+            return CustomLoanStatus.INVALID;
+        }
         LocalDate today = DateUtils.getLocalDateOfTenant();
         boolean hasOverdue = false;
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
