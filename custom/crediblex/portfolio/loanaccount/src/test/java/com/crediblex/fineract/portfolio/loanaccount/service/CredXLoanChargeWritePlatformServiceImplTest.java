@@ -675,6 +675,9 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             assertEquals(penaltyChargesPortion, sumOfLoanChargesPaid,
                     "sum(loanChargesPaid.amount) must equal transaction.penaltyChargesPortion, or accounting throws "
                             + "'Meltdown in advanced accounting...'");
+            assertNull(waiveTransaction.getTaxChargesPortion(),
+                    "unaccrued LPI leftover must not be stored as tax after CRED VAT reused the waive 3rd argument");
+            assertEquals(0, new BigDecimal("60.00").compareTo(waiveTransaction.getUnrecognizedIncomePortion()));
         }
     }
 
