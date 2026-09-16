@@ -691,11 +691,11 @@ class CredXLoanChargeWritePlatformServiceImplTest {
     }
 
     /**
-     * LMS-128 Super King special case: historical processing-fee txn with extra VAT paid_by (prod loan 67 txn 537:
-     * fee 12300 vs paid_by 12915). Auto-waive must snapshot existingTransactionIds before creating LPI waive txns.
-     * An empty snapshot re-journals that fee txn and AccountingProcessorHelper throws Meltdown. After the first
-     * findExistingTransactionIds() call the loan also contains the new waive (id 999); that id must NOT be treated
-     * as "existing" or the waive itself would skip journaling.
+     * LMS-128 Super King special case: historical processing-fee txn with extra VAT paid_by (prod loan 67 txn 537: fee
+     * 12300 vs paid_by 12915). Auto-waive must snapshot existingTransactionIds before creating LPI waive txns. An empty
+     * snapshot re-journals that fee txn and AccountingProcessorHelper throws Meltdown. After the first
+     * findExistingTransactionIds() call the loan also contains the new waive (id 999); that id must NOT be treated as
+     * "existing" or the waive itself would skip journaling.
      */
     @Test
     void autoWaiveDoesNotRejournalHistoricalFeeWithVatPaidByMismatch() {

@@ -5,9 +5,9 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 
 /**
- * LMS-128: CRED VAT reused the waive factory's 3rd argument as tax. For penalty/LPI only, keep that
- * argument at zero and store leftover as unrecognized income (Apache behaviour). Fee and VAT waives
- * are unchanged so repayment/tax flows are not distorted.
+ * LMS-128: CRED VAT reused the waive factory's 3rd argument as tax. For penalty/LPI only, keep that argument at zero
+ * and store leftover as unrecognized income (Apache behaviour). Fee and VAT waives are unchanged so repayment/tax flows
+ * are not distorted.
  */
 public final class PenaltyWaiveUnrecognizedIncome {
 
