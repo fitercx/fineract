@@ -35,3 +35,6 @@ gradleExp/
 .java-version
 allure-results
 WARP.md
+
+.claude
+.agents
