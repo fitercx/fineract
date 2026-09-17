@@ -13,6 +13,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PenaltyWaiveUnrecognizedIncome;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -632,7 +633,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
 
         final LoanTransaction waiveLoanChargeTransaction = LoanTransaction.waiveLoanCharge(loan, loan.getOffice(), amountWaived,
-                transactionDate, feeChargesWaived, penaltyChargesWaived, unrecognizedIncome, externalId);
+                transactionDate, feeChargesWaived, penaltyChargesWaived,
+                PenaltyWaiveUnrecognizedIncome.thirdArgumentForWaiveFactory(loanCharge, unrecognizedIncome), externalId);
+        PenaltyWaiveUnrecognizedIncome.recordOnPenaltyWaive(waiveLoanChargeTransaction, loanCharge, unrecognizedIncome);
         // IMPORTANT: use chargeComponent (== feeChargesWaived/penaltyChargesWaived), not the full amountWaived, here.
         // The transaction's feeChargesPortion/penaltyChargesPortion only reflect the "recognized" component
         // (amountWaived minus unrecognizedIncome, see updateChargesComponents above); if the charge is waived before
@@ -1192,6 +1195,15 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         final MonetaryCurrency currency = loan.getCurrency();
         final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
 
+        // Snapshot IDs before any waive is created. postJournalEntries journals every loan transaction whose id is
+        // NOT in this list. Passing an empty list (LMS-86 bulk-waive optimisation) re-journals historical
+        // disbursement fee txns. Super King prod loan 67 type-5 fee 12300 has paid_by 12915 (VAT 615 on the same
+        // txn); that re-journal throws Meltdown 12915 vs 12300. Charges-tab waive already snapshots first, which is
+        // why it survived that loan. Keep the per-charge lists below empty so customWaiveLoanCharge cannot add the
+        // newly saved waive ids mid-loop (that would skip journaling those waives).
+        final List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
+        final List<Long> existingReversedTransactionIds = new ArrayList<>(loan.findExistingReversedTransactionIds());
+
         int chargesWaived = 0;
         BigDecimal totalAmountWaived = BigDecimal.ZERO;
         final Set<LocalDate> daysWaived = new HashSet<>();
@@ -1238,8 +1250,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             // Post the journal entries for all waive transactions in a single pass instead of once per charge. The
             // resulting accounting state is identical, but the operation stays linear (avoids re-posting the whole
             // loan's journal entries N times) when a backdated settlement waives many daily LPI charges.
-            final List<Long> existingTransactionIds = new ArrayList<>();
-            postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
+            postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
             // Always rebuild installment penalty portions from the surviving active charges. Relying on the mismatch
             // heuristic alone is not enough after a multi-day LPI waive window: wrapper.reprocess may leave the
