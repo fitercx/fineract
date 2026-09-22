@@ -438,7 +438,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
      * @param interestIncomeGlCode
      *            The GL code for interest income (credit account)
      * @param accrualDebitGlCode
-     *            The product-specific debit GL code (Interest Receivable for RBF/PF; Deferred Interest Income for RF/ID)
+     *            The product-specific debit GL code (Interest Receivable for RBF/PF; Deferred Interest Income for
+     *            RF/ID)
      */
     private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, String interestIncomeGlCode,
             String accrualDebitGlCode) {
