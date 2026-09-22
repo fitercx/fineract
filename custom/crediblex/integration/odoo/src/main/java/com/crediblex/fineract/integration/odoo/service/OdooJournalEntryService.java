@@ -734,12 +734,12 @@ public class OdooJournalEntryService {
         creditLine.put("credit", accrualAmount);
         creditLine.put("name", description + " - Interest Income");
 
-        // Debit line (Interest Receivable)
+        // Debit line (Interest Receivable for RBF/PF; Deferred Interest Income for RF/ID)
         Map<String, Object> debitLine = new HashMap<>();
         debitLine.put("account_id", debitAccountId);
         debitLine.put("debit", accrualAmount);
         debitLine.put("credit", BigDecimal.ZERO);
-        debitLine.put("name", description + " - Interest Receivable");
+        debitLine.put("name", description + " - Accrual Debit");
 
         // Add lines using Odoo's line creation format: (0, 0, values)
         lines.add(Arrays.asList(0, 0, creditLine));
