@@ -30,8 +30,10 @@ import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.data.LocReviewPeriods;
 import com.crediblex.fineract.portfolio.loc.data.LocStatus;
+import com.crediblex.fineract.portfolio.loc.data.VendorExposureResponse;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
+import com.crediblex.fineract.portfolio.loc.exception.VendorNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -44,13 +46,17 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.organisation.staff.data.StaffData;
@@ -780,5 +786,101 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
 
         return this.jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new VendorResponse(rs.getLong("id"), rs.getString("name"),
                 rs.getBigDecimal("credit_limit"), rs.getString("los_external_id"), rs.getLong("line_of_credit_id")), losExternalId);
+    }
+
+    /**
+     * LMS-142: batch vendor exposure for LOS.
+     *
+     * <p>
+     * <b>Assumption:</b> product links at most one counterparty per drawdown (one row in
+     * {@code m_loan_approver_buyers_suppliers} per loan). Multi-buyer/supplier on a single loan is out of scope; if that
+     * ever changes, attribution of principal outstanding across counterparties must be revisited. A vendor may still
+     * have many drawdowns — this method sums across all of them.
+     * </p>
+     *
+     * <p>
+     * Utilization per linked loan (receivable and payable share this rule):
+     * </p>
+     * <ul>
+     * <li>disbursed with principal still owing → {@code principal_outstanding_derived}</li>
+     * <li>submitted (100) / approved (200) not yet disbursed → proposed/approved principal</li>
+     * <li>otherwise (closed / rejected / withdrawn / fully repaid) → 0</li>
+     * </ul>
+     */
+    @Override
+    public Collection<VendorExposureResponse> retrieveVendorsExposure(String idsParam) {
+        final List<Long> vendorIds = parseAndValidateVendorIds(idsParam);
+
+        final String placeholders = String.join(",", Collections.nCopies(vendorIds.size(), "?"));
+        // Assumption (see method javadoc): one counterparty per drawdown — full loan exposure is attributed to the
+        // single linked vendor id.
+        final String sql = """
+                SELECT ab.id AS id, ab.name AS name,
+                       COALESCE(SUM(
+                           CASE
+                               WHEN COALESCE(l.principal_outstanding_derived, 0) > 0 THEN l.principal_outstanding_derived
+                               WHEN l.loan_status_id IN (100, 200)
+                                   THEN COALESCE(l.principal_amount_proposed, l.principal_amount, 0)
+                               ELSE 0
+                           END), 0) AS utilization
+                FROM m_line_of_credit_approved_buyers ab
+                LEFT JOIN m_loan_approver_buyers_suppliers labs ON labs.buyer_supplier_id = ab.id
+                LEFT JOIN m_loan l ON l.id = labs.loan_id
+                WHERE ab.id IN (%s)
+                GROUP BY ab.id, ab.name
+                """.formatted(placeholders);
+
+        @SuppressWarnings("deprecation")
+        final List<VendorExposureResponse> rows = this.jdbcTemplate.query(sql, vendorIds.toArray(),
+                (rs, rowNum) -> new VendorExposureResponse(rs.getLong("id"), rs.getString("name"),
+                        rs.getBigDecimal("utilization") == null ? BigDecimal.ZERO : rs.getBigDecimal("utilization")));
+
+        if (rows.size() < vendorIds.size()) {
+            final Set<Long> foundIds = rows.stream().map(VendorExposureResponse::getId).collect(Collectors.toSet());
+            final List<Long> missingIds = vendorIds.stream().filter(id -> !foundIds.contains(id)).toList();
+            throw new VendorNotFoundException(missingIds);
+        }
+
+        final Map<Long, VendorExposureResponse> byId = rows.stream()
+                .collect(Collectors.toMap(VendorExposureResponse::getId, r -> r, (a, b) -> a, LinkedHashMap::new));
+
+        final List<VendorExposureResponse> ordered = new ArrayList<>(vendorIds.size());
+        for (final Long id : vendorIds) {
+            ordered.add(byId.get(id));
+        }
+        return ordered;
+    }
+
+    static List<Long> parseAndValidateVendorIds(final String idsParam) {
+        final List<ApiParameterError> errors = new ArrayList<>();
+        if (idsParam == null || idsParam.isBlank()) {
+            errors.add(ApiParameterError.parameterError("error.msg.vendor.exposure.ids.required",
+                    "Query parameter 'ids' is required and must contain at least one vendor id", "ids"));
+            throw new PlatformApiDataValidationException(errors);
+        }
+
+        final String[] tokens = idsParam.split(",");
+        final LinkedHashSet<Long> deduped = new LinkedHashSet<>();
+        for (String raw : tokens) {
+            final String token = raw == null ? "" : raw.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            try {
+                deduped.add(Long.valueOf(token));
+            } catch (final NumberFormatException ex) {
+                errors.add(ApiParameterError.parameterError("error.msg.vendor.exposure.ids.invalid",
+                        "Query parameter 'ids' contains a non-numeric value: " + token, "ids", token));
+                throw new PlatformApiDataValidationException(errors);
+            }
+        }
+
+        if (deduped.isEmpty()) {
+            errors.add(ApiParameterError.parameterError("error.msg.vendor.exposure.ids.required",
+                    "Query parameter 'ids' is required and must contain at least one vendor id", "ids"));
+            throw new PlatformApiDataValidationException(errors);
+        }
+
+        return new ArrayList<>(deduped);
     }
 }

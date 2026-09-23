@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditSummary;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import com.crediblex.fineract.portfolio.loc.data.VendorExposureResponse;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import java.util.Collection;
 import java.util.List;
@@ -46,4 +47,12 @@ public interface LineOfCreditReadPlatformService {
     Collection<VendorResponse> retrieveAllVendors(Long lineOfCreditId);
 
     VendorResponse retrieveVendorByLosExternalId(String losExternalId);
+
+    /**
+     * Batch vendor exposure (utilization) for the given comma-separated vendor ids.
+     *
+     * @param idsParam comma-separated Fineract vendor ids ({@code m_line_of_credit_approved_buyers.id})
+     * @return exposure rows in the same order as the (deduped) requested ids
+     */
+    Collection<VendorExposureResponse> retrieveVendorsExposure(String idsParam);
 }
