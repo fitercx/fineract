@@ -793,9 +793,9 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
      *
      * <p>
      * <b>Assumption:</b> product links at most one counterparty per drawdown (one row in
-     * {@code m_loan_approver_buyers_suppliers} per loan). Multi-buyer/supplier on a single loan is out of scope; if that
-     * ever changes, attribution of principal outstanding across counterparties must be revisited. A vendor may still
-     * have many drawdowns — this method sums across all of them.
+     * {@code m_loan_approver_buyers_suppliers} per loan). Multi-buyer/supplier on a single loan is out of scope; if
+     * that ever changes, attribution of principal outstanding across counterparties must be revisited. A vendor may
+     * still have many drawdowns — this method sums across all of them.
      * </p>
      *
      * <p>

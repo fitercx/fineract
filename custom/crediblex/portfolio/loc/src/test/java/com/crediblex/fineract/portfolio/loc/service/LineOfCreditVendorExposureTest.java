@@ -75,7 +75,8 @@ class LineOfCreditVendorExposureTest {
     void parseRejectsEmptyIds() {
         assertThrows(PlatformApiDataValidationException.class, () -> LineOfCreditReadPlatformServiceImpl.parseAndValidateVendorIds(null));
         assertThrows(PlatformApiDataValidationException.class, () -> LineOfCreditReadPlatformServiceImpl.parseAndValidateVendorIds(""));
-        assertThrows(PlatformApiDataValidationException.class, () -> LineOfCreditReadPlatformServiceImpl.parseAndValidateVendorIds("  , , "));
+        assertThrows(PlatformApiDataValidationException.class,
+                () -> LineOfCreditReadPlatformServiceImpl.parseAndValidateVendorIds("  , , "));
     }
 
     @Test

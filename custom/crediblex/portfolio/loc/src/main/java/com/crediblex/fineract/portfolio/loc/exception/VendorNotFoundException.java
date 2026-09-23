@@ -7,9 +7,7 @@ import org.apache.fineract.infrastructure.core.exception.AbstractPlatformResourc
 public class VendorNotFoundException extends AbstractPlatformResourceNotFoundException {
 
     public VendorNotFoundException(final Collection<Long> missingIds) {
-        super("error.msg.vendor.id.invalid",
-                "Vendor(s) with identifier(s) " + missingIds.stream().map(String::valueOf).collect(Collectors.joining(", "))
-                        + " do not exist",
-                missingIds.toArray());
+        super("error.msg.vendor.id.invalid", "Vendor(s) with identifier(s) "
+                + missingIds.stream().map(String::valueOf).collect(Collectors.joining(", ")) + " do not exist", missingIds.toArray());
     }
 }

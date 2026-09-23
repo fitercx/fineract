@@ -51,7 +51,8 @@ public interface LineOfCreditReadPlatformService {
     /**
      * Batch vendor exposure (utilization) for the given comma-separated vendor ids.
      *
-     * @param idsParam comma-separated Fineract vendor ids ({@code m_line_of_credit_approved_buyers.id})
+     * @param idsParam
+     *            comma-separated Fineract vendor ids ({@code m_line_of_credit_approved_buyers.id})
      * @return exposure rows in the same order as the (deduped) requested ids
      */
     Collection<VendorExposureResponse> retrieveVendorsExposure(String idsParam);
