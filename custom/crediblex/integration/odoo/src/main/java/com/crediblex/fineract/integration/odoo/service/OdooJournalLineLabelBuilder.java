@@ -27,9 +27,8 @@ import java.util.Set;
 /**
  * Builds Odoo account.move.line {@code name} labels for loan-related journal posts.
  * <p>
- * Format: {@code [Client Name] - [Event] [Date] - [Product type] - Loan ID [id]}
- * Missing segments are omitted. Returns {@code null} for unsupported business events so callers
- * can keep their existing label behavior.
+ * Format: {@code [Client Name] - [Event] [Date] - [Product type] - Loan ID [id]} Missing segments are omitted. Returns
+ * {@code null} for unsupported business events so callers can keep their existing label behavior.
  */
 public final class OdooJournalLineLabelBuilder {
 

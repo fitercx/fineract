@@ -222,7 +222,8 @@ public class JournalEntryOdooTrackingService {
             if (!transactionTypes.isEmpty()) {
                 Integer transactionTypeEnum = transactionTypes.get(0);
 
-                // True foreclosure transfer only (transfer_type = 6). Normal closing repayments fall through to REPAYMENT.
+                // True foreclosure transfer only (transfer_type = 6). Normal closing repayments fall through to
+                // REPAYMENT.
                 String earlyClosureCheck = checkForEarlyClosureTransaction(loanTransactionId);
                 if (earlyClosureCheck != null) {
                     return earlyClosureCheck;
@@ -264,9 +265,9 @@ public class JournalEntryOdooTrackingService {
      * Returns {@code EARLY_CLOSURE} only for true loan foreclosure transfers
      * ({@code AccountTransferType.LOAN_FORECLOSURE} = transfer_type 6).
      * <p>
-     * Closing-day repayments that close a matured/overdue loan must NOT be treated as early closure — those are
-     * normal {@code REPAYMENT} events (including LPI). The previous rule that flagged any repayment on
-     * {@code closedon_date} misclassified normal closures.
+     * Closing-day repayments that close a matured/overdue loan must NOT be treated as early closure — those are normal
+     * {@code REPAYMENT} events (including LPI). The previous rule that flagged any repayment on {@code closedon_date}
+     * misclassified normal closures.
      */
     private String checkForEarlyClosureTransaction(Long loanTransactionId) {
         try {
