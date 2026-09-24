@@ -16,18 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package com.crediblex.fineract.infrastructure.events.business.domain.accounttransfer;
 
-dependencies {
-    implementation(project(':fineract-provider'))
-    implementation(project(':fineract-loan'))
-    implementation(project(':fineract-savings'))
-    implementation(project(':fineract-core'))
-    implementation(project(":custom:crediblex:infrastructure:commands"))
-    implementation(project(":custom:crediblex:portfolio:savings"))
-    implementation(project(":custom:crediblex:portfolio:loc"));
-    implementation(project(":custom:crediblex:portfolio:loanaccount"));
-    implementation('jakarta.ws.rs:jakarta.ws.rs-api')
-    implementation('org.springframework.batch:spring-batch-integration')
-    implementation('org.springframework.boot:spring-boot-starter-security')
-    implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement
+import org.apache.fineract.portfolio.account.domain.AccountTransferDetails;
+
+public class SavingsToLoanTransferReversedBusinessEvent extends AccountTransferBusinessEvent {
+
+    private static final String TYPE = "SavingsToLoanTransferReversedBusinessEvent";
+
+    public SavingsToLoanTransferReversedBusinessEvent(AccountTransferDetails value) {
+        super(value);
+    }
+
+    @Override
+    public String getType() {
+        return TYPE;
+    }
 }
