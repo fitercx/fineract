@@ -188,4 +188,7 @@ public interface LoanProductConstants {
     // Penalty Grace Period
     String PENALTY_GRACE_PERIOD_PARAM_NAME = "penaltyGracePeriod";
     Integer DEFAULT_PENALTY_GRACE_PERIOD = 15;
+
+    // DPD-based repayment strategy auto-switch (LMS-139)
+    String ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME = "enableDpdStrategySwitch";
 }
