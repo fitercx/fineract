@@ -28,6 +28,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
@@ -114,7 +117,7 @@ public class OdooJournalEntryService {
      * Build the account move values for Odoo - unified method for single and multiple journal entries
      */
     private Map<String, Object> buildAccountMoveValues(List<JournalEntry> journalEntries, Integer journalId, Long loanId,
-            boolean consolidateLines) {
+            boolean consolidateLines, String businessEventType) {
         Map<String, Object> moveValues = new HashMap<>();
 
         if (journalEntries.isEmpty()) {
@@ -164,7 +167,7 @@ public class OdooJournalEntryService {
         // Build line items based on consolidation preference
         List<Object> lines;
         if (consolidateLines && journalEntries.size() > 1) {
-            lines = buildConsolidatedMoveLines(journalEntries);
+            lines = buildConsolidatedMoveLines(journalEntries, effectiveLoanId, businessEventType);
         } else if (journalEntries.size() == 1) {
             // For single entries, we need to get the account ID
             String accountCode = firstEntry.getGlAccount().getGlCode();
@@ -172,10 +175,10 @@ public class OdooJournalEntryService {
             if (accountId == null) {
                 throw new RuntimeException(String.format("Could not map Fineract GL account '%s' to Odoo account", accountCode));
             }
-            lines = buildMoveLines(firstEntry, accountId);
+            lines = buildMoveLines(firstEntry, accountId, effectiveLoanId, businessEventType);
         } else {
             // Multiple entries but no consolidation - treat each separately
-            lines = buildConsolidatedMoveLines(journalEntries);
+            lines = buildConsolidatedMoveLines(journalEntries, effectiveLoanId, businessEventType);
         }
 
         moveValues.put("line_ids", lines);
@@ -186,28 +189,28 @@ public class OdooJournalEntryService {
      * Build account move values for a single journal entry
      */
     private Map<String, Object> buildAccountMoveValues(JournalEntry fineractEntry, Integer journalId, Integer accountId) {
-        return buildAccountMoveValues(List.of(fineractEntry), journalId, null, false);
+        return buildAccountMoveValues(List.of(fineractEntry), journalId, null, false, null);
     }
 
     /**
      * Build account move values for multiple journal entries of a loan
      */
-    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId) {
-        return buildAccountMoveValues(journalEntries, journalId, loanId, true);
+    private Map<String, Object> buildAccountMoveValuesForLoan(Long loanId, List<JournalEntry> journalEntries, Integer journalId,
+            String businessEventType) {
+        return buildAccountMoveValues(journalEntries, journalId, loanId, true, businessEventType);
     }
 
     /**
      * Build move lines for the journal entry This creates balanced debit and credit entries
      */
-    private List<Object> buildMoveLines(JournalEntry fineractEntry, Integer accountId) {
+    private List<Object> buildMoveLines(JournalEntry fineractEntry, Integer accountId, Long loanId, String businessEventType) {
         List<Object> lines = new ArrayList<>();
         BigDecimal amount = fineractEntry.getAmount();
 
         // Determine if this is a debit or credit entry
         boolean isDebit = fineractEntry.isDebitEntry();
 
-        // Line label based on the client name and loan ID (falls back to the entry description when available)
-        String entryLabel = buildEntryLabel(fineractEntry);
+        String entryLabel = resolveLineLabel(loanId, businessEventType, fineractEntry.getTransactionDate(), buildEntryLabel(fineractEntry));
 
         if (isDebit) {
             // Debit line
@@ -222,7 +225,7 @@ public class OdooJournalEntryService {
             creditLine.put("account_id", getBalancingAccountId(fineractEntry));
             creditLine.put("debit", BigDecimal.ZERO);
             creditLine.put("credit", amount);
-            creditLine.put("name", "Balancing entry for " + entryLabel);
+            creditLine.put("name", entryLabel);
 
             // Add lines using Odoo's line creation format: (0, 0, values)
             lines.add(Arrays.asList(0, 0, debitLine));
@@ -241,7 +244,7 @@ public class OdooJournalEntryService {
             debitLine.put("account_id", getBalancingAccountId(fineractEntry));
             debitLine.put("debit", amount);
             debitLine.put("credit", BigDecimal.ZERO);
-            debitLine.put("name", "Balancing entry for " + entryLabel);
+            debitLine.put("name", entryLabel);
 
             // Add lines using Odoo's line creation format: (0, 0, values)
             lines.add(Arrays.asList(0, 0, creditLine));
@@ -361,9 +364,10 @@ public class OdooJournalEntryService {
             for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
                 Integer journalId = journalGroup.getKey();
                 List<JournalEntry> entries = journalGroup.getValue();
+                String businessEventType = resolveBusinessEventType(journalEntryOdooSyncs, entries);
 
                 // Create the account move with multiple lines for this journal
-                Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
+                Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId, businessEventType);
 
                 Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
                 if (odooMoveId == null) {
@@ -439,13 +443,14 @@ public class OdooJournalEntryService {
     /**
      * Build consolidated move lines from multiple journal entries
      */
-    private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries) {
+    private List<Object> buildConsolidatedMoveLines(List<JournalEntry> journalEntries, Long loanId, String businessEventType) {
         List<Object> lines = new ArrayList<>();
 
-        // Derive a client/loan label for the consolidated line names
-        Long consolidatedLoanId = journalEntries.isEmpty() ? null
-                : getLoanIdFromTransactionId(journalEntries.get(0).getLoanTransactionId());
-        String consolidatedLabel = buildClientLoanLabel(consolidatedLoanId);
+        Long consolidatedLoanId = loanId != null ? loanId
+                : (journalEntries.isEmpty() ? null : getLoanIdFromTransactionId(journalEntries.get(0).getLoanTransactionId()));
+        LocalDate transactionDate = journalEntries.isEmpty() ? null : journalEntries.get(0).getTransactionDate();
+        String consolidatedLabel = resolveLineLabel(consolidatedLoanId, businessEventType, transactionDate,
+                buildClientLoanLabel(consolidatedLoanId));
 
         // Group by account and type to consolidate amounts
         Map<String, Map<String, BigDecimal>> accountAmounts = new HashMap<>();
@@ -518,7 +523,7 @@ public class OdooJournalEntryService {
                     line.put("credit", netAmount.abs());
                 }
 
-                line.put("name", consolidatedLabel + " - account " + accountId);
+                line.put("name", consolidatedLabel);
 
                 // Add line using Odoo's line creation format: (0, 0, values)
                 lines.add(Arrays.asList(0, 0, line));
@@ -536,7 +541,7 @@ public class OdooJournalEntryService {
                 debitLine.put("account_id", overdueReceivableAccountId);
                 debitLine.put("debit", totalOverdueAmount);
                 debitLine.put("credit", BigDecimal.ZERO);
-                debitLine.put("name", "Over Due Interest Charge Receivable");
+                debitLine.put("name", consolidatedLabel);
                 lines.add(Arrays.asList(0, 0, debitLine));
             } else {
                 log.warn("Could not find Odoo account mapping for GL code 100030 (Over Due Interest Charge Receivable)");
@@ -549,7 +554,7 @@ public class OdooJournalEntryService {
                 creditLine.put("account_id", lpiRevenueAccountId);
                 creditLine.put("debit", BigDecimal.ZERO);
                 creditLine.put("credit", totalOverdueAmount);
-                creditLine.put("name", "Over Due Interest - LPI - RBF");
+                creditLine.put("name", consolidatedLabel);
                 lines.add(Arrays.asList(0, 0, creditLine));
             } else {
                 log.warn("Could not find Odoo account mapping for GL code 300015 (Over Due Interest - LPI - RBF)");
@@ -609,6 +614,38 @@ public class OdooJournalEntryService {
             return "Loan " + loanId;
         }
         return "Journal Entry";
+    }
+
+    /**
+     * Prefer finance-structured line label for supported loan events; otherwise keep the provided fallback.
+     */
+    private String resolveLineLabel(Long loanId, String businessEventType, LocalDate transactionDate, String fallbackLabel) {
+        String structured = OdooJournalLineLabelBuilder.build(getClientNameFromLoanId(loanId), businessEventType, transactionDate,
+                getLoanProductShortName(loanId), loanId);
+        return structured != null ? structured : fallbackLabel;
+    }
+
+    private String resolveBusinessEventType(List<JournalEntryOdooSync> syncs, List<JournalEntry> entries) {
+        if (syncs == null || entries == null || entries.isEmpty()) {
+            return null;
+        }
+        Set<Long> entryIds = entries.stream().map(JournalEntry::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+        return syncs.stream().filter(sync -> sync.getJournalEntry() != null && entryIds.contains(sync.getJournalEntry().getId()))
+                .map(JournalEntryOdooSync::getBusinessEventType).filter(Objects::nonNull).findFirst().orElse(null);
+    }
+
+    private String getLoanProductShortName(Long loanId) {
+        if (loanId == null) {
+            return null;
+        }
+        try {
+            String sql = "SELECT lp.short_name FROM m_loan l JOIN m_product_loan lp ON l.product_id = lp.id WHERE l.id = ?";
+            List<String> shortNames = jdbcTemplate.queryForList(sql, String.class, loanId);
+            return shortNames.isEmpty() ? null : shortNames.get(0);
+        } catch (Exception e) {
+            log.warn("Failed to get loan product short name for loan ID: {}", loanId, e);
+            return null;
+        }
     }
 
     /**
@@ -726,20 +763,21 @@ public class OdooJournalEntryService {
 
         // Create journal lines
         List<Object> lines = new ArrayList<>();
+        String lineLabel = resolveLineLabel(loanId, "ACCRUAL", transactionDate, description);
 
         // Credit line (Interest Income)
         Map<String, Object> creditLine = new HashMap<>();
         creditLine.put("account_id", creditAccountId);
         creditLine.put("debit", BigDecimal.ZERO);
         creditLine.put("credit", accrualAmount);
-        creditLine.put("name", description + " - Interest Income");
+        creditLine.put("name", lineLabel);
 
-        // Debit line (Interest Receivable)
+        // Debit line (Interest Receivable for RBF/PF; Deferred Interest Income for RF/ID)
         Map<String, Object> debitLine = new HashMap<>();
         debitLine.put("account_id", debitAccountId);
         debitLine.put("debit", accrualAmount);
         debitLine.put("credit", BigDecimal.ZERO);
-        debitLine.put("name", description + " - Interest Receivable");
+        debitLine.put("name", lineLabel);
 
         // Add lines using Odoo's line creation format: (0, 0, values)
         lines.add(Arrays.asList(0, 0, creditLine));
@@ -845,6 +883,7 @@ public class OdooJournalEntryService {
 
         // Use the first entry for common values like date
         JournalEntry firstEntry = entries.get(0);
+        Long loanId = getLoanIdFromTransactionId(firstEntry.getLoanTransactionId());
 
         Map<String, Object> moveValues = new HashMap<>();
         moveValues.put("journal_id", journalId);
@@ -853,7 +892,7 @@ public class OdooJournalEntryService {
         moveValues.put("narration", buildNarrationForBusinessEvent(businessEventType, entries));
 
         // Build move lines from all entries
-        List<Object> moveLines = buildConsolidatedMoveLines(entries);
+        List<Object> moveLines = buildConsolidatedMoveLines(entries, loanId, businessEventType);
         moveValues.put("line_ids", moveLines.toArray());
 
         return moveValues;
@@ -956,6 +995,7 @@ public class OdooJournalEntryService {
 
         // Convert transformed journal lines to Odoo move line format
         List<Object> moveLines = new ArrayList<>();
+        String lineLabel = resolveLineLabel(loanId, "EARLY_CLOSURE", transactionDate, "Early closure journal entries for loan " + loanId);
 
         for (Map<String, Object> journalLine : transformedJournalLines) {
             Map<String, Object> moveLine = new HashMap<>();
@@ -966,7 +1006,7 @@ public class OdooJournalEntryService {
 
             if (accountId != null) {
                 moveLine.put("account_id", accountId);
-                moveLine.put("name", journalLine.get("account_name"));
+                moveLine.put("name", lineLabel);
 
                 BigDecimal amount = (BigDecimal) journalLine.get("amount");
                 String debitCredit = (String) journalLine.get("debit_credit");
@@ -1127,9 +1167,10 @@ public class OdooJournalEntryService {
 
                 try {
                     List<JournalEntry> entries = groupEntries.stream().map(JournalEntryOdooSync::getJournalEntry).toList();
+                    String businessEventType = resolveBusinessEventType(groupEntries, entries);
 
                     // Create the account move for this journal
-                    Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId);
+                    Map<String, Object> moveValues = buildAccountMoveValuesForLoan(loanId, entries, journalId, businessEventType);
                     Long odooMoveId = odooApiClient.create(uid, "account.move", moveValues);
 
                     if (odooMoveId == null) {
