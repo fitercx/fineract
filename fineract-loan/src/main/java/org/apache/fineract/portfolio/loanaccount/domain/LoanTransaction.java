@@ -516,7 +516,11 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         this.taxChargesPortion = MathUtil.zeroToNull(MathUtil.add(getTaxChargesPortion(), MathUtil.toBigDecimal(taxCharges)));
     }
 
-    private void updateUnrecognizedChargesComponents(final Money feeCharges, final Money penaltyCharges, final Money unrecognizedCharges) {
+    /**
+     * Apache path for unaccrued waive leftover. CRED VAT made the 3-arg {@link #updateChargesComponents} write tax
+     * instead; custom penalty waive calls this so unrecognized income is not stored as tax.
+     */
+    public void updateUnrecognizedChargesComponents(final Money feeCharges, final Money penaltyCharges, final Money unrecognizedCharges) {
         this.feeChargesPortion = MathUtil.zeroToNull(MathUtil.add(getFeeChargesPortion(), MathUtil.toBigDecimal(feeCharges)));
         this.penaltyChargesPortion = MathUtil.zeroToNull(MathUtil.add(getPenaltyChargesPortion(), MathUtil.toBigDecimal(penaltyCharges)));
         this.unrecognizedIncomePortion = MathUtil
