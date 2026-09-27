@@ -156,4 +156,55 @@ public class DpdStrategySwitchService {
                 record.getOriginalStrategyCode());
         return record.getOriginalStrategyCode();
     }
+
+    /** True when the global switch is on and this loan's product opted in. */
+    public boolean isOptedIn(final Loan loan) {
+        if (loan == null || !configService.isGloballyEnabled()) {
+            return false;
+        }
+        final LoanProduct product = loan.loanProduct();
+        return product != null && product.isEnableDpdStrategySwitch();
+    }
+
+    /**
+     * Strategy a repayment should be allocated with on {@code asOfDate}, without writing the switch.
+     *
+     * <p>
+     * Backdated repayments pass {@code historicalBalances = true} so later payments are added back and the value date
+     * is not judged on today's cleared balances. The loan's stored strategy is left untouched; the caller stamps the
+     * returned code on the transaction.
+     */
+    public String peekAllocationStrategyCode(final Loan loan, final LocalDate asOfDate, final boolean historicalBalances) {
+        if (loan == null) {
+            return null;
+        }
+        if (!isOptedIn(loan)) {
+            return loan.getTransactionProcessingStrategyCode();
+        }
+        final int maxDpd = historicalBalances ? maxDaysPastDueService.calculateMaxDpdAsOf(loan, asOfDate)
+                : maxDaysPastDueService.calculateMaxDpd(loan, asOfDate);
+        if (maxDpd > configService.getThresholdDays()) {
+            return SWITCHED_STRATEGY_CODE;
+        }
+        final Optional<LoanDpdStrategySwitch> state = findSwitchState(loan.getId());
+        if (state.isPresent() && state.get().isSwitched() && state.get().getOriginalStrategyCode() != null) {
+            return state.get().getOriginalStrategyCode();
+        }
+        return loan.getTransactionProcessingStrategyCode();
+    }
+
+    /**
+     * Strategy to replay already-posted transactions that were never stamped. Those were allocated before the switch,
+     * so replaying them under the switched strategy would reverse their journals.
+     */
+    public String replayStrategyCode(final Loan loan) {
+        if (loan == null) {
+            return null;
+        }
+        final Optional<LoanDpdStrategySwitch> state = findSwitchState(loan.getId());
+        if (state.isPresent() && state.get().getOriginalStrategyCode() != null) {
+            return state.get().getOriginalStrategyCode();
+        }
+        return loan.getTransactionProcessingStrategyCode();
+    }
 }

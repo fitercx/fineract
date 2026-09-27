@@ -180,9 +180,18 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             }
 
             if (loanTransaction.isRepaymentLikeType() || loanTransaction.isInterestWaiver() || loanTransaction.isRecoveryRepayment()) {
-                // pass through for new transactions
-                if (loanTransaction.getId() == null) {
-                    processLatestTransaction(loanTransaction, new TransactionCtx(currency, installments, charges, overpaymentHolder, null));
+                // A stamped repayment or foreclosure keeps the portions its journals were posted with. Recalculating
+                // it under the loan's current strategy would reverse those journals.
+                if (loanTransaction.isDpdAllocationLocked()) {
+                    reapplyManuallyAdjustedTransaction(loanTransaction, currency, installments, charges);
+                } else if (loanTransaction.getId() == null) {
+                    final LoanRepaymentScheduleTransactionProcessor allocationProcessor = loanTransaction.getDpdAllocationProcessor();
+                    final TransactionCtx transactionCtx = new TransactionCtx(currency, installments, charges, overpaymentHolder, null);
+                    if (allocationProcessor != null) {
+                        allocationProcessor.processLatestTransaction(loanTransaction, transactionCtx);
+                    } else {
+                        processLatestTransaction(loanTransaction, transactionCtx);
+                    }
                     loanTransaction.adjustInterestComponent();
                 } else if (loanTransaction.isManuallyAdjustedOrReversed()) {
                     // SQL/manual repayment corrections set this flag so reprocess (e.g. LPI job) must not reverse
@@ -601,6 +610,18 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         final Money penaltyChargesPortion = loanTransaction.getPenaltyChargesPortion(currency);
         if (penaltyChargesPortion.isGreaterThanZero()) {
             updateChargesPaidAmountBy(loanTransaction, penaltyChargesPortion, loanPenalties, null);
+        }
+
+        Money taxRemaining = loanTransaction.getTaxChargesPortion(currency);
+        if (taxRemaining.isGreaterThanZero()) {
+            for (final LoanTransactionToRepaymentScheduleMapping mapping : loanTransaction
+                    .getLoanTransactionToRepaymentScheduleMappings()) {
+                if (!taxRemaining.isGreaterThanZero()) {
+                    break;
+                }
+                final Money taxPaid = mapping.getLoanRepaymentScheduleInstallment().payTaxChargesComponent(transactionDate, taxRemaining);
+                taxRemaining = taxRemaining.minus(taxPaid);
+            }
         }
     }
 

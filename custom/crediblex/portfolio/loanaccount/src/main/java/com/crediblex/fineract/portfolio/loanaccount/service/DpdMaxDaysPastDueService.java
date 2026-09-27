@@ -22,8 +22,11 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionToRepaymentScheduleMapping;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -51,7 +54,10 @@ public class DpdMaxDaysPastDueService {
                     + COALESCE(ls.fee_charges_amount, 0) - COALESCE(ls.fee_charges_completed_derived, 0)
                         - COALESCE(ls.fee_charges_waived_derived, 0) - COALESCE(ls.fee_charges_writtenoff_derived, 0)
                     + COALESCE(ls.penalty_charges_amount, 0) - COALESCE(ls.penalty_charges_completed_derived, 0)
-                        - COALESCE(ls.penalty_charges_waived_derived, 0) - COALESCE(ls.penalty_charges_writtenoff_derived, 0)) > 0
+                        - COALESCE(ls.penalty_charges_waived_derived, 0) - COALESCE(ls.penalty_charges_writtenoff_derived, 0)
+                    + COALESCE(ls.tax_charges_amount, 0) - COALESCE(ls.tax_charges_completed_derived, 0)
+                        - COALESCE(ls.tax_charges_waived_derived, 0) - COALESCE(ls.tax_charges_writtenoff_derived, 0)) > 0
+               AND COALESCE(ls.is_down_payment, false) = false
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -94,6 +100,61 @@ public class DpdMaxDaysPastDueService {
             }
         }
         return daysPastDue(earliestOverdueDueDate, asOfDate);
+    }
+
+    /**
+     * Days past due as of {@code asOfDate}, putting back amounts paid by transactions dated after that day.
+     *
+     * <p>
+     * {@link #calculateMaxDpd(Loan, LocalDate)} reads the schedule as it stands now. A backdated repayment or
+     * foreclosure has to be judged on the arrears that existed on its own value date, not on balances that later
+     * payments have already cleared.
+     */
+    public int calculateMaxDpdAsOf(final Loan loan, final LocalDate asOfDate) {
+        if (loan == null || asOfDate == null) {
+            return 0;
+        }
+        final MonetaryCurrency currency = loan.getCurrency();
+        LocalDate earliestOverdueDueDate = null;
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            final LocalDate dueDate = installment.getDueDate();
+            if (installment.isDownPayment() || dueDate == null || !dueDate.isBefore(asOfDate)) {
+                continue;
+            }
+            if (!outstandingAsOf(installment, loan, asOfDate, currency).isGreaterThanZero()) {
+                continue;
+            }
+            if (earliestOverdueDueDate == null || dueDate.isBefore(earliestOverdueDueDate)) {
+                earliestOverdueDueDate = dueDate;
+            }
+        }
+        return daysPastDue(earliestOverdueDueDate, asOfDate);
+    }
+
+    private Money outstandingAsOf(final LoanRepaymentScheduleInstallment installment, final Loan loan, final LocalDate asOfDate,
+            final MonetaryCurrency currency) {
+        Money outstanding = installment.getTotalOutstanding(currency);
+        if (loan.getLoanTransactions() == null) {
+            return outstanding;
+        }
+        for (final LoanTransaction transaction : loan.getLoanTransactions()) {
+            if (transaction.isReversed() || transaction.getTransactionDate() == null
+                    || !transaction.getTransactionDate().isAfter(asOfDate)) {
+                continue;
+            }
+            if (transaction.getLoanTransactionToRepaymentScheduleMappings() == null) {
+                continue;
+            }
+            for (final LoanTransactionToRepaymentScheduleMapping mapping : transaction.getLoanTransactionToRepaymentScheduleMappings()) {
+                if (mapping.getLoanRepaymentScheduleInstallment() != installment && (installment.getId() == null
+                        || !installment.getId().equals(mapping.getLoanRepaymentScheduleInstallment().getId()))) {
+                    continue;
+                }
+                outstanding = outstanding.plus(mapping.getPrincipalPortion(currency)).plus(mapping.getInterestPortion(currency))
+                        .plus(mapping.getFeeChargesPortion(currency)).plus(mapping.getPenaltyChargesPortion(currency));
+            }
+        }
+        return outstanding;
     }
 
     private int daysPastDue(final LocalDate earliestOverdueDueDate, final LocalDate asOfDate) {

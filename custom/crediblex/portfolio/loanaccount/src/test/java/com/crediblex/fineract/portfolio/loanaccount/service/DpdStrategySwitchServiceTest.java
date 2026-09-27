@@ -242,4 +242,30 @@ class DpdStrategySwitchServiceTest {
         verify(repository, never()).save(any());
         verify(loan, never()).updateTransactionProcessingStrategy(any(), any());
     }
+
+    @Test
+    void peekDoesNotWriteTheSwitchAndUsesTheOriginalStrategyWhenTheValueDateIsUnderTheThreshold() {
+        final LoanDpdStrategySwitch existing = LoanDpdStrategySwitch.newSwitch(LOAN_ID, ORIGINAL_CODE, ORIGINAL_NAME, SWITCHED_CODE, 90,
+                AS_OF.minusDays(10));
+        when(repository.findByLoanId(LOAN_ID)).thenReturn(Optional.of(existing));
+        when(loan.getTransactionProcessingStrategyCode()).thenReturn(SWITCHED_CODE);
+        when(maxDpdService.calculateMaxDpdAsOf(loan, AS_OF)).thenReturn(20);
+
+        final String strategy = underTest.peekAllocationStrategyCode(loan, AS_OF, true);
+
+        assertThat(strategy).isEqualTo(ORIGINAL_CODE);
+        assertThat(existing.isSwitched()).isTrue();
+        verify(repository, never()).save(any());
+        verify(loan, never()).updateTransactionProcessingStrategy(any(), any());
+    }
+
+    @Test
+    void replayUsesThePreSwitchStrategySoPostedJournalsAreNotRecast() {
+        final LoanDpdStrategySwitch existing = LoanDpdStrategySwitch.newSwitch(LOAN_ID, ORIGINAL_CODE, ORIGINAL_NAME, SWITCHED_CODE, 90,
+                AS_OF.minusDays(10));
+        when(repository.findByLoanId(LOAN_ID)).thenReturn(Optional.of(existing));
+        when(loan.getTransactionProcessingStrategyCode()).thenReturn(SWITCHED_CODE);
+
+        assertThat(underTest.replayStrategyCode(loan)).isEqualTo(ORIGINAL_CODE);
+    }
 }
