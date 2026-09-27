@@ -82,6 +82,18 @@ public class LoanAccountSummaryData {
     /** Nominal annual interest % (loan terms); falls back from product when absent on loan. */
     @Setter
     private BigDecimal annualInterestRate;
+    @Setter
+    private BigDecimal totalOverdue;
+    @Setter
+    private BigDecimal totalRepayment;
+    @Setter
+    private BigDecimal lateFee;
+    @Setter
+    private Integer overdueDays;
+    @Setter
+    private LocalDate nextInstallmentDate;
+    @Setter
+    private BigDecimal nextInstallmentAmount;
 
     protected final Map<String, Object> additionalProperties = new HashMap<>();
 

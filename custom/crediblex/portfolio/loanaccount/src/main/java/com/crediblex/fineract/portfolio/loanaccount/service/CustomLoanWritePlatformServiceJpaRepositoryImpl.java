@@ -1459,11 +1459,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         CustomLoanStatus oldCustomLoanStatus = loan.hasCustomStatus() ? loan.getCustomLoanStatus() : null;
 
         // Update custom loan status based on closure type
-        if (Boolean.TRUE.equals(isForcedClosure)) {
-            loan.setCustomLoanStatus(CustomLoanStatus.FORCED_CLOSURE);
-        } else {
-            loan.setCustomLoanStatus(CustomLoanStatus.EARLY_CLOSURE);
-        }
+        loan.setCustomLoanStatus(CustomLoanStatus.forForeclosure(isForcedClosure, isRestructured));
 
         // Precompute drawdown flags and LOC aggregation before commit
         Optional<LoanLineOfCreditParams> locParamsOpt = loanLineOfCreditParamsRepository.findByLoanId(loan.getId());

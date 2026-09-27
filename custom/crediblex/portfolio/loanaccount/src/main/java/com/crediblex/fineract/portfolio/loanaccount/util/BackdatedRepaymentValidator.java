@@ -19,9 +19,11 @@
 package com.crediblex.fineract.portfolio.loanaccount.util;
 
 import java.time.LocalDate;
+import java.util.List;
 import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 
 /**
  * Single source of truth for whether a BACKDATED (value date in the past) loan repayment may be recorded, regardless of
@@ -44,16 +46,14 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
  */
 public final class BackdatedRepaymentValidator {
 
-    /**
-     * How many days before the business date an operator may backdate a repayment, transfer, or foreclosure. Chosen as
-     * a static, hardcoded business-policy cap (not admin-configurable) - see BUG_REPORT.md "Backdate limit" finding.
-     * Investigation confirmed core Fineract's own "cannot be before the last transaction date" guard
-     * (`LoanTransactionValidator#validateActivityNotBeforeLastTransactionDate`) is gated behind interest-recalculation
-     * being enabled and is therefore a no-op for every real prod product, so - unlike foreclosure, which core Fineract
-     * already unconditionally blocks before the loan's last non-waiver transaction date via
-     * {@code LoanForeclosureValidator} - repayments/transfers had NO floor at all before this change.
+    /*
+     * How many days before the business date an operator may backdate is administrator-configurable per tenant - see
+     * BackdateWindowSettings. Investigation confirmed core Fineract's own "cannot be before the last transaction date"
+     * guard (`LoanTransactionValidator#validateActivityNotBeforeLastTransactionDate`) is gated behind
+     * interest-recalculation being enabled and is therefore a no-op for every real prod product, so - unlike
+     * foreclosure, which core Fineract already unconditionally blocks before the loan's last non-waiver transaction
+     * date via {@code LoanForeclosureValidator} - repayments/transfers had NO floor at all before this guard existed.
      */
-    public static final int MAX_BACKDATE_DAYS = 30;
 
     private BackdatedRepaymentValidator() {}
 
@@ -77,29 +77,71 @@ public final class BackdatedRepaymentValidator {
      * human operator to reason about and audit.
      */
     public static void validateWithinBackdateLimit(final Loan loan, final LocalDate transactionDate, final String actionLabel) {
-        final LocalDate earliestAllowed = computeEarliestAllowedTransactionDate(loan);
+        final Integer maxBackdateDays = BackdateWindowSettings.maxBackdateDays();
+        final LocalDate earliestAllowed = computeEarliestAllowedTransactionDate(loan, maxBackdateDays);
         if (transactionDate != null && DateUtils.isBefore(transactionDate, earliestAllowed)) {
+            final String limitRule = maxBackdateDays == null
+                    ? "Backdating is only allowed back to the start of the loan's first instalment period"
+                    : "Backdating is only allowed up to " + maxBackdateDays
+                            + " days before today (or the loan's disbursement date, whichever is later)";
             throw new GeneralPlatformDomainRuleException("error.msg.loan.backdate.limit.exceeded", "The " + actionLabel + " date ("
-                    + transactionDate + ") for loan " + loan.getId() + " is too far in the past. " + "Backdating is only allowed up to "
-                    + MAX_BACKDATE_DAYS
-                    + " days before today (or the loan's disbursement date, whichever is later) - the earliest allowed date "
-                    + "for this loan right now is " + earliestAllowed
+                    + transactionDate + ") for loan " + loan.getId() + " is too far in the past. " + limitRule
+                    + " - the earliest allowed date for this loan right now is " + earliestAllowed
                     + ". This limit protects the repayment schedule and balances from being distorted by very old backdated entries.",
                     loan.getId(), transactionDate, earliestAllowed);
         }
     }
 
     /**
-     * The earliest transaction date this loan may currently be backdated to: {@link #MAX_BACKDATE_DAYS} days before the
-     * business date, or the loan's disbursement date if that is later (a loan can never have a transaction before it
-     * was disbursed - enforced independently elsewhere, but folded in here too so the UI's calendar minDate is always
-     * at least as tight as every other backend rule). Recomputed fresh on every call so it always reflects the current
-     * business date - callers should not cache the result across requests.
+     * The earliest transaction date this loan may currently be backdated to. Recomputed fresh on every call so it
+     * always reflects both the current business date and the current {@link BackdateWindowSettings} configuration -
+     * callers should not cache the result across requests.
+     * <p>
+     * With a configured day limit this is that many days before the business date, or the loan's disbursement date if
+     * that is later. With the limit switched off it is the start of the loan's first instalment period, so long-lived
+     * loans remain settleable - still never earlier than disbursement, since a loan can have no transaction before it
+     * was disbursed.
      */
     public static LocalDate computeEarliestAllowedTransactionDate(final Loan loan) {
+        return computeEarliestAllowedTransactionDate(loan, BackdateWindowSettings.maxBackdateDays());
+    }
+
+    /**
+     * @param maxBackdateDays
+     *            days before the business date the transaction may be dated, or {@code null} to allow backdating to the
+     *            start of the loan's first instalment period. Visible for testing so both windows can be asserted
+     *            without a database.
+     */
+    static LocalDate computeEarliestAllowedTransactionDate(final Loan loan, final Integer maxBackdateDays) {
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        final LocalDate staticFloor = businessDate.minusDays(MAX_BACKDATE_DAYS);
         final LocalDate disbursementDate = loan.getDisbursementDate();
-        return disbursementDate != null && DateUtils.isAfter(disbursementDate, staticFloor) ? disbursementDate : staticFloor;
+        if (maxBackdateDays == null) {
+            final LocalDate loanStartDate = computeLoanStartDate(loan, disbursementDate);
+            // A loan with neither a schedule nor a disbursement date cannot be repaid at all; fall back to the default
+            // window rather than returning null, which every caller would have to guard against.
+            return loanStartDate != null ? loanStartDate : businessDate.minusDays(BackdateWindowSettings.DEFAULT_MAX_BACKDATE_DAYS);
+        }
+        final LocalDate dayLimitFloor = businessDate.minusDays(maxBackdateDays);
+        return disbursementDate != null && DateUtils.isAfter(disbursementDate, dayLimitFloor) ? disbursementDate : dayLimitFloor;
+    }
+
+    /**
+     * Start of the loan's first instalment period - the "start of EMI" date an operator sees on the repayment schedule.
+     * Falls back to the disbursement date when the schedule has not been generated, and is clamped to never precede
+     * disbursement.
+     */
+    private static LocalDate computeLoanStartDate(final Loan loan, final LocalDate disbursementDate) {
+        final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        LocalDate loanStartDate = disbursementDate;
+        if (installments != null && !installments.isEmpty()) {
+            final LocalDate firstPeriodStart = installments.get(0).getFromDate();
+            if (firstPeriodStart != null) {
+                loanStartDate = firstPeriodStart;
+            }
+        }
+        if (loanStartDate != null && disbursementDate != null && DateUtils.isBefore(loanStartDate, disbursementDate)) {
+            return disbursementDate;
+        }
+        return loanStartDate;
     }
 }
