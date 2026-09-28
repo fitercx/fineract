@@ -151,7 +151,8 @@ public class DpdMaxDaysPastDueService {
                     continue;
                 }
                 outstanding = outstanding.plus(mapping.getPrincipalPortion(currency)).plus(mapping.getInterestPortion(currency))
-                        .plus(mapping.getFeeChargesPortion(currency)).plus(mapping.getPenaltyChargesPortion(currency));
+                        .plus(mapping.getFeeChargesPortion(currency)).plus(mapping.getPenaltyChargesPortion(currency))
+                        .plus(mapping.getTaxChargesPortion(currency));
             }
         }
         return outstanding;

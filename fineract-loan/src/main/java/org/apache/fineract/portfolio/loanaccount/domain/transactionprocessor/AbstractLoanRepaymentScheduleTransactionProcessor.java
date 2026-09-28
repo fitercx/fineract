@@ -599,6 +599,13 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             if (penaltyPortion.isGreaterThanZero()) {
                 installment.payPenaltyChargesComponent(transactionDate, penaltyPortion);
             }
+            // Tax is replayed from this mapping's own persisted per-installment amount (LMS-139 fix), the same way
+            // as the four components above - not re-derived greedily from the transaction-level total, which could
+            // land the replayed tax on a different installment than the one it was originally posted against.
+            final Money taxPortion = mapping.getTaxChargesPortion(currency);
+            if (taxPortion.isGreaterThanZero()) {
+                installment.payTaxChargesComponent(transactionDate, taxPortion);
+            }
         }
 
         final Set<LoanCharge> loanFees = extractFeeCharges(charges);
@@ -612,15 +619,15 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             updateChargesPaidAmountBy(loanTransaction, penaltyChargesPortion, loanPenalties, null);
         }
 
-        Money taxRemaining = loanTransaction.getTaxChargesPortion(currency);
-        if (taxRemaining.isGreaterThanZero()) {
-            for (final LoanTransactionToRepaymentScheduleMapping mapping : loanTransaction
-                    .getLoanTransactionToRepaymentScheduleMappings()) {
-                if (!taxRemaining.isGreaterThanZero()) {
-                    break;
-                }
-                final Money taxPaid = mapping.getLoanRepaymentScheduleInstallment().payTaxChargesComponent(transactionDate, taxRemaining);
-                taxRemaining = taxRemaining.minus(taxPaid);
+        final Money taxChargesPortion = loanTransaction.getTaxChargesPortion(currency);
+        if (taxChargesPortion.isGreaterThanZero()) {
+            final Set<LoanCharge> loanFeeTaxCharges = extractFeeTaxCharges(charges);
+            if (!loanFeeTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxChargesPortion, loanFeeTaxCharges, null);
+            }
+            final Set<LoanCharge> loanPenaltyTaxCharges = extractPenaltyTaxCharges(charges);
+            if (!loanPenaltyTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxChargesPortion, loanPenaltyTaxCharges, null);
             }
         }
     }

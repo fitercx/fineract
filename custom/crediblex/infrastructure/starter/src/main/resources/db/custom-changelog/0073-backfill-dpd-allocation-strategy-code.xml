@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!--
+      Bug fix (LMS-139): m_loan_transaction.dpd_allocation_strategy_code (added in 0071) is used by
+      DpdStrategySwitchLoanTransactionProcessingService#reprocessLoanTransactions to decide whether an
+      already-posted transaction gets replayed with its exact original portions (stamped) or gets swept up
+      into the batch-wide "replayStrategyCode" (a loan's original, pre-switch strategy).
+
+      Any loan that had ALREADY switched to the principal-first strategy under the code that predates 0071
+      (this feature re-evaluated the switch dynamically on every transaction, before this stamping column
+      existed) has a set of already-posted, already-switched transactions with dpd_allocation_strategy_code
+      = NULL simply because the column did not exist when they were created. Without this backfill, the
+      FIRST reprocess on such a loan after this deploy would treat those transactions as "unstamped" and
+      recast them under replayStrategyCode (the loan's ORIGINAL strategy) - silently rewriting principal/
+      interest/penalty/fee/tax allocations that were legitimately posted under the switched strategy. That
+      is exactly the failure this stamping mechanism exists to prevent; this migration closes the gap for
+      history that predates it.
+
+      Approach: for every loan with an m_loan_dpd_strategy_switch row, stamp its unstamped, non-reversed,
+      schedule-allocated transactions with switched_strategy_code if they fall inside the recorded
+      [switched_on_date, reverted_on_date) window, else with original_strategy_code. "Schedule-allocated" is
+      determined by the existence of at least one m_loan_transaction_repayment_schedule_mapping row, rather
+      than enumerating repayment-like transaction-type codes in SQL, so this does not need to be kept in
+      sync with LoanTransaction#isRepaymentLikeType()/#isRecoveryRepayment().
+
+      KNOWN LIMITATION: m_loan_dpd_strategy_switch keeps only the most recent switch/revert window per loan
+      (a re-switch overwrites switched_on_date/reverted_on_date - see LoanDpdStrategySwitch#markSwitched).
+      A loan that has been through MORE than one switch/revert cycle will only have its most recent cycle's
+      window backfilled correctly; transactions from an earlier, already-overwritten cycle cannot be
+      reconstructed from this table alone. This is a pre-existing limitation of the switch-state table, not
+      introduced by this migration - flagged here so it is not mistaken for backfill coverage.
+    -->
+    <changeSet id="0073-1-backfill-dpd-allocation-strategy-switched-window" author="crediblex">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <columnExists tableName="m_loan_transaction" columnName="dpd_allocation_strategy_code"/>
+        </preConditions>
+        <comment>Stamp already-posted, unstamped transactions dated inside a loan's recorded switched window</comment>
+        <sql>
+            UPDATE m_loan_transaction mlt
+            SET dpd_allocation_strategy_code = (
+                SELECT s.switched_strategy_code FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id
+            )
+            WHERE mlt.dpd_allocation_strategy_code IS NULL
+              AND mlt.is_reversed = false
+              AND EXISTS (SELECT 1 FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id)
+              AND EXISTS (
+                  SELECT 1 FROM m_loan_transaction_repayment_schedule_mapping m WHERE m.loan_transaction_id = mlt.id
+              )
+              AND mlt.transaction_date >= (
+                  SELECT s.switched_on_date FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id
+              )
+              AND (
+                  (SELECT s.reverted_on_date FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id) IS NULL
+                  OR mlt.transaction_date &lt; (SELECT s.reverted_on_date FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id)
+              );
+        </sql>
+    </changeSet>
+
+    <changeSet id="0073-2-backfill-dpd-allocation-strategy-original" author="crediblex">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <columnExists tableName="m_loan_transaction" columnName="dpd_allocation_strategy_code"/>
+        </preConditions>
+        <comment>Stamp every other unstamped, schedule-allocated transaction on a switch-tracked loan with its original (pre-switch) strategy</comment>
+        <sql>
+            UPDATE m_loan_transaction mlt
+            SET dpd_allocation_strategy_code = (
+                SELECT s.original_strategy_code FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id
+            )
+            WHERE mlt.dpd_allocation_strategy_code IS NULL
+              AND mlt.is_reversed = false
+              AND EXISTS (SELECT 1 FROM m_loan_dpd_strategy_switch s WHERE s.loan_id = mlt.loan_id)
+              AND EXISTS (
+                  SELECT 1 FROM m_loan_transaction_repayment_schedule_mapping m WHERE m.loan_transaction_id = mlt.id
+              );
+        </sql>
+    </changeSet>
+</databaseChangeLog>
