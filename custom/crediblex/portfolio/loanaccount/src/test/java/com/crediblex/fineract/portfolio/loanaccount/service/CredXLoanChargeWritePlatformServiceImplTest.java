@@ -4,11 +4,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.crediblex.fineract.portfolio.loanaccount.mapper.CustomLoanAccountingBridgeMapper;
+import com.crediblex.fineract.portfolio.loanaccount.repository.CustomLoanChargeRepository;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -30,6 +33,8 @@ import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatfo
 import org.apache.fineract.portfolio.charge.domain.Charge;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
 import org.apache.fineract.portfolio.charge.exception.LoanChargeCannotBeWaivedException;
+import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeDataDTO;
+import org.apache.fineract.portfolio.loanaccount.data.AccountingBridgeLoanTransactionDTO;
 import org.apache.fineract.portfolio.loanaccount.data.LoanChargePaidByData;
 import org.apache.fineract.portfolio.loanaccount.data.ScheduleGeneratorDTO;
 import org.apache.fineract.portfolio.loanaccount.domain.*;
@@ -42,6 +47,7 @@ import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidat
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualTransactionBusinessEventService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
+import org.apache.fineract.portfolio.loanaccount.service.LoanArrearsAgingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeAssembler;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeReadPlatformService;
@@ -50,6 +56,7 @@ import org.apache.fineract.portfolio.loanaccount.service.LoanUtilService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.service.ReprocessLoanTransactionsService;
 import org.apache.fineract.portfolio.loanaccount.service.adjustment.LoanAdjustmentService;
+import org.apache.fineract.portfolio.loanproduct.domain.LoanProduct;
 import org.apache.fineract.portfolio.note.domain.NoteRepository;
 import org.apache.fineract.portfolio.paymentdetail.service.PaymentDetailWritePlatformService;
 import org.apache.fineract.portfolio.paymenttype.service.PaymentTypeReadPlatformService;
@@ -245,6 +252,12 @@ class CredXLoanChargeWritePlatformServiceImplTest {
 
     @Mock
     private LoanAccountingBridgeMapper loanAccountingBridgeMapper;
+
+    @Mock
+    private CustomLoanChargeRepository customLoanChargeRepository;
+
+    @Mock
+    private LoanArrearsAgingService loanArrearsAgingService;
 
     // Additional dependencies from parent class
     @Mock
@@ -892,6 +905,135 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             final String depositJson = depositCommand.getValue().json();
             assertTrue(depositJson.contains("483.87"), "the complete paid LPI must be refunded to linked savings");
         }
+    }
+
+    /**
+     * LMS-145: a backdated savings-to-loan settlement auto-waives LPI through
+     * {@code waiveOverdueChargesAccruedAfterSettlementDate}. Journal posting must include only the new waive
+     * transactions, plus a repayment that was reversed and replayed during the waive. Disbursement, accruals, older
+     * repayments and already-reversed transactions keep their original journal entries.
+     */
+    @Test
+    void backdatedSettlementLpiWaiveJournalsOnlyNewWaivesAndReversalReplay() {
+        final LocalDate settlementDate = LocalDate.of(2024, 1, 10);
+        final long disbursementId = 8425L;
+        final long accrualId = 9001L;
+        final long olderRepaymentId = 9100L;
+        final long alreadyReversedId = 8000L;
+        final long replayId = 9101L;
+        final long firstWaiveId = 53535L;
+        final long secondWaiveId = 53536L;
+
+        final LoanTransaction disbursement = historicalTransaction(disbursementId, false);
+        final LoanTransaction accrual = historicalTransaction(accrualId, false);
+        final LoanTransaction olderRepayment = historicalTransaction(olderRepaymentId, false);
+        final LoanTransaction alreadyReversed = historicalTransaction(alreadyReversedId, true);
+        final List<LoanTransaction> transactions = new ArrayList<>(List.of(disbursement, accrual, olderRepayment, alreadyReversed));
+
+        when(loan.getLoanTransactions()).thenReturn(transactions);
+        when(loan.findExistingTransactionIds()).thenAnswer(invocation -> transactions.stream().map(LoanTransaction::getId)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toList()));
+        when(loan.findExistingReversedTransactionIds()).thenAnswer(invocation -> transactions.stream().filter(LoanTransaction::isReversed)
+                .map(LoanTransaction::getId).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toList()));
+        doAnswer(invocation -> {
+            transactions.add(invocation.getArgument(0));
+            return null;
+        }).when(loan).addLoanTransaction(any(LoanTransaction.class));
+
+        when(loan.getOffice()).thenReturn(mock(Office.class));
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()).thenReturn(false);
+        when(loan.getLoanProduct()).thenReturn(mock(LoanProduct.class));
+        when(loan.productId()).thenReturn(10L);
+        when(loan.getOfficeId()).thenReturn(1L);
+        when(loan.getApprovedPrincipal()).thenReturn(new BigDecimal("244564.20"));
+        when(loan.getNetDisbursalAmount()).thenReturn(new BigDecimal("244564.20"));
+        when(loan.isCashBasedAccountingEnabledOnLoanProduct()).thenReturn(false);
+        when(loan.isUpfrontAccrualAccountingEnabledOnLoanProduct()).thenReturn(false);
+        when(loan.isChargedOff()).thenReturn(false);
+        when(loan.isFraud()).thenReturn(false);
+        when(loan.getSummary().getTotalInterestCharged()).thenReturn(BigDecimal.ZERO);
+        when(externalIdFactory.create()).thenReturn(externalId);
+
+        final LoanCharge firstLpi = overdueLpiCharge(11L, LocalDate.of(2024, 1, 12));
+        final LoanCharge secondLpi = overdueLpiCharge(12L, LocalDate.of(2024, 1, 13));
+        when(loan.getLoanCharges()).thenReturn(Set.of(firstLpi, secondLpi));
+        when(loanChargeRepository.findById(11L)).thenReturn(Optional.of(firstLpi));
+        when(loanChargeRepository.findById(12L)).thenReturn(Optional.of(secondLpi));
+        when(customLoanChargeRepository.findByLoanIdAndDueDateRange(eq(LOAN_ID), eq(settlementDate), eq(BUSINESS_DATE), any()))
+                .thenReturn(List.of(firstLpi, secondLpi));
+
+        final AtomicInteger nextWaiveId = new AtomicInteger((int) firstWaiveId);
+        final boolean[] replayed = { false };
+        when(loanTransactionRepository.saveAndFlush(any(LoanTransaction.class))).thenAnswer(invocation -> {
+            final LoanTransaction saved = invocation.getArgument(0);
+            saved.setId((long) nextWaiveId.getAndIncrement());
+            if (!replayed[0]) {
+                replayed[0] = true;
+                when(olderRepayment.isReversed()).thenReturn(true);
+                final LoanTransaction replay = historicalTransaction(replayId, false);
+                transactions.add(replay);
+            }
+            return saved;
+        });
+
+        final CustomLoanAccountingBridgeMapper accountingBridge = spy(new CustomLoanAccountingBridgeMapper());
+        doAnswer(invocation -> {
+            final AccountingBridgeLoanTransactionDTO dto = new AccountingBridgeLoanTransactionDTO();
+            dto.setId(invocation.getArgument(0, LoanTransaction.class).getId());
+            return dto;
+        }).when(accountingBridge).mapToLoanTransactionData(any(LoanTransaction.class), anyString());
+        ReflectionTestUtils.setField(credXLoanChargeWritePlatformService, "loanAccountingBridgeMapper", accountingBridge);
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+
+            final Map<String, Object> summary = credXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(LOAN_ID,
+                    settlementDate);
+
+            assertEquals(2, summary.get("chargesWaived"));
+            final ArgumentCaptor<AccountingBridgeDataDTO> bridgeData = ArgumentCaptor.forClass(AccountingBridgeDataDTO.class);
+            verify(journalEntryWritePlatformService, times(1)).createJournalEntriesForLoan(bridgeData.capture());
+            final List<Long> journaledIds = bridgeData.getValue().getNewLoanTransactions().stream()
+                    .map(AccountingBridgeLoanTransactionDTO::getId).toList();
+            assertEquals(Set.of(olderRepaymentId, replayId, firstWaiveId, secondWaiveId), new HashSet<>(journaledIds));
+            assertEquals(4, journaledIds.size(), "each new waive, the reversal and the replay is posted exactly once");
+            assertFalse(journaledIds.contains(disbursementId));
+            assertFalse(journaledIds.contains(accrualId));
+            assertFalse(journaledIds.contains(alreadyReversedId));
+
+            verify(loanAccrualTransactionBusinessEventService).raiseBusinessEventForAccrualTransactions(eq(loan),
+                    argThat(ids -> ids.containsAll(List.of(disbursementId, accrualId, olderRepaymentId, alreadyReversedId))
+                            && !ids.contains(firstWaiveId) && !ids.contains(replayId)));
+        }
+    }
+
+    private static LoanTransaction historicalTransaction(final Long id, final boolean reversed) {
+        final LoanTransaction transaction = mock(LoanTransaction.class);
+        when(transaction.getId()).thenReturn(id);
+        when(transaction.isReversed()).thenReturn(reversed);
+        return transaction;
+    }
+
+    private LoanCharge overdueLpiCharge(final Long chargeId, final LocalDate dueDate) {
+        final LoanCharge charge = mock(LoanCharge.class);
+        final Money outstanding = Money.of(monetaryCurrency.toData(), new BigDecimal("201.01"));
+        final Money zero = Money.zero(monetaryCurrency);
+        when(charge.getId()).thenReturn(chargeId);
+        when(charge.isActive()).thenReturn(true);
+        when(charge.isWaived()).thenReturn(false);
+        when(charge.isPaid()).thenReturn(false);
+        when(charge.isInstalmentFee()).thenReturn(false);
+        when(charge.isPenaltyCharge()).thenReturn(true);
+        when(charge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(charge.isDueDateCharge()).thenReturn(true);
+        when(charge.getDueLocalDate()).thenReturn(dueDate);
+        when(charge.getAmountOutstanding(any(MonetaryCurrency.class))).thenReturn(outstanding);
+        when(charge.getAmount(any(MonetaryCurrency.class))).thenReturn(outstanding);
+        when(charge.getAmountPaid(any(MonetaryCurrency.class))).thenReturn(zero);
+        when(charge.getAmountWaived(any(MonetaryCurrency.class))).thenReturn(zero);
+        when(charge.getAmountWrittenOff(any(MonetaryCurrency.class))).thenReturn(zero);
+        return charge;
     }
 
 }
