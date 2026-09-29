@@ -62,7 +62,7 @@ public class LOCAccountingHelper {
                                                                               // debit
     public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Over Due Interest - LPI - Payable Financing
     public static final String LOC_RECEIVABLE_LPI_INCOME_GL_CODE = "300014"; // Over Due Interest - LPI - Invoice
-                                                                              // Discounting
+                                                                             // Discounting
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
     public static final String RBF_GL_CODE = "200040";
     public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
