@@ -27,13 +27,17 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
@@ -60,6 +64,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Unit tests for CustomLoanWritePlatformServiceJpaRepositoryImpl focusing on: - LOC balance computation during loan
@@ -587,6 +592,96 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     }
 
     @Test
+    @DisplayName("Backdated partial repayment collects pre-date LPI and does not waive later LPI")
+    public void testMakeLoanRepayment_BackdatedPartial_DoesNotWaiveLaterLpi() {
+        initMoneyHelper();
+        final Long loanId = 1L;
+        final LocalDate valueDate = LocalDate.of(2025, 1, 10);
+        final Loan loan = createLoanWithOutstanding(loanId, valueDate, "100000.00", "3287.67");
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("15000.00"), valueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
+        verify(credibleXLoanChargeWritePlatformService, never()).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+    }
+
+    @Test
+    @DisplayName("Backdated full close still waives LPI on or after the value date")
+    public void testMakeLoanRepayment_BackdatedFullClose_StillWaives() {
+        initMoneyHelper();
+        final Long loanId = 1L;
+        final LocalDate valueDate = LocalDate.of(2025, 1, 10);
+        final Loan loan = createLoanWithOutstanding(loanId, valueDate, "1000.00", "0.00");
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("1000.00"), valueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+        when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, valueDate))
+                .thenReturn(waiveSummary(1));
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).alignSchedulePenaltyForPartialBackdatedRepayment(any(), any());
+        verify(credibleXLoanChargeWritePlatformService).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
+    }
+
+    @Test
+    @DisplayName("One cent under the close amount still waives later LPI")
+    public void testMakeLoanRepayment_OneCentShortOfClose_StillWaives() {
+        initMoneyHelper();
+        final Long loanId = 1L;
+        final LocalDate valueDate = LocalDate.of(2025, 1, 10);
+        final Loan loan = createLoanWithOutstanding(loanId, valueDate, "1000.00", "0.00");
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("999.99"), valueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+        when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, valueDate))
+                .thenReturn(waiveSummary(0));
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).alignSchedulePenaltyForPartialBackdatedRepayment(any(), any());
+    }
+
+    @Test
+    @DisplayName("Two cents under the close amount is a partial and does not waive")
+    public void testMakeLoanRepayment_TwoCentsShortOfClose_DoesNotWaive() {
+        initMoneyHelper();
+        final Long loanId = 1L;
+        final LocalDate valueDate = LocalDate.of(2025, 1, 10);
+        final Loan loan = createLoanWithOutstanding(loanId, valueDate, "1000.00", "0.00");
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("999.98"), valueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
+    }
+
+    @Test
+    @DisplayName("A backdated repayment with no loan summary keeps the waive path")
+    public void testMakeLoanRepayment_MissingSummary_KeepsWaive() {
+        final Long loanId = 1L;
+        final LocalDate valueDate = LocalDate.of(2025, 1, 10);
+        final Loan loan = createNonLocLoanWithInstallmentDueDate(loanId, valueDate);
+        when(loan.getCurrency()).thenReturn(new MonetaryCurrency("AED", 2, 0));
+        when(loan.getSummary()).thenReturn(null);
+        when(loan.isInterestBearingAndInterestRecalculationEnabled()).thenReturn(false);
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("15.00"), valueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+        when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, valueDate))
+                .thenReturn(waiveSummary(0));
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).alignSchedulePenaltyForPartialBackdatedRepayment(any(), any());
+    }
+
+    @Test
     @DisplayName("Same-day non-due-date repayment skips waive but still syncs schedule LPI")
     public void testMakeLoanRepayment_SameDayNonDueDate_SkipsWaiveStillSyncs() {
         final Long loanId = 1L;
@@ -602,6 +697,28 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     }
 
     // Helper methods for repayment tests
+
+    private void initMoneyHelper() {
+        final ConfigurationDomainService cfg = mock(ConfigurationDomainService.class);
+        when(cfg.getRoundingMode()).thenReturn(BigDecimal.ROUND_HALF_UP);
+        final MoneyHelper moneyHelper = new MoneyHelper();
+        ReflectionTestUtils.setField(moneyHelper, "configurationDomainService", cfg);
+        moneyHelper.initialize();
+    }
+
+    private Loan createLoanWithOutstanding(Long loanId, LocalDate dueDate, String principal, String interest) {
+        final Loan loan = createNonLocLoanWithInstallmentDueDate(loanId, dueDate);
+        final LoanSummary summary = mock(LoanSummary.class);
+        when(loan.getCurrency()).thenReturn(new MonetaryCurrency("AED", 2, 0));
+        when(loan.getSummary()).thenReturn(summary);
+        when(loan.getActiveCharges()).thenReturn(Set.of());
+        when(loan.isInterestBearingAndInterestRecalculationEnabled()).thenReturn(false);
+        when(summary.getTotalPrincipalOutstanding()).thenReturn(new BigDecimal(principal));
+        when(summary.getTotalInterestOutstanding()).thenReturn(new BigDecimal(interest));
+        when(summary.getTotalFeeChargesOutstanding()).thenReturn(BigDecimal.ZERO);
+        when(summary.getTotalTaxChargesOutstanding()).thenReturn(BigDecimal.ZERO);
+        return loan;
+    }
 
     private Loan createNonLocLoanWithInstallmentDueDate(Long loanId, LocalDate dueDate) {
         final Loan loan = mock(Loan.class);

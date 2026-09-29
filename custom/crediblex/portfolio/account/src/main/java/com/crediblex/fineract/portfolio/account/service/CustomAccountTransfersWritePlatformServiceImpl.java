@@ -11,6 +11,7 @@ import com.crediblex.fineract.infrastructure.events.business.domain.accounttrans
 import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDTO;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
@@ -216,16 +217,29 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             validateBackdatedTransferAllowed(toLoanAccount, transactionDate);
 
-            // Backdated settlement: waive post-value-date LPI BEFORE the repayment posts. Waiving first ensures:
-            // (1) the allocation cannot consume those charges as "paid" before the waive can touch them, and
-            // (2) with waive transactions capped at the settlement value date (see
-            // CredXLoanChargeWritePlatformServiceImpl),
-            // isChronologicallyLatestRepaymentOrWaiver returns true for the repayment, so processLatestTransaction
-            // runs (not reprocessTransactions) and the kept LPI charges remain visible to allocation.
-            backdatedLpiWaiveSummary = waiveBackdatedSettlementLpi(toLoanAccountId, transactionDate);
-            if (backdatedLpiWaiveSummary != null) {
-                // waiveBackdatedSettlementLpi assembles its own Loan instance and flushes to DB; reload so that
-                // the persisted waive transactions and updated penalty state are visible to makeRepayment below.
+            // Partial backdated settlement leaves the loan active: collect LPI strictly before the value date and
+            // do not waive later days. A full close still waives LPI on/after the value date before allocation.
+            final boolean partialBackdated = BackdatedSettlementLpiPolicy.isPartialBackdatedRepayment(toLoanAccount, transactionDate,
+                    transactionAmount);
+            if (partialBackdated) {
+                this.credXLoanChargeWritePlatformService.alignSchedulePenaltyForPartialBackdatedRepayment(toLoanAccountId, transactionDate);
+                toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
+            } else {
+                // Backdated settlement: waive post-value-date LPI BEFORE the repayment posts. Waiving first ensures:
+                // (1) the allocation cannot consume those charges as "paid" before the waive can touch them, and
+                // (2) with waive transactions capped at the settlement value date (see
+                // CredXLoanChargeWritePlatformServiceImpl),
+                // isChronologicallyLatestRepaymentOrWaiver returns true for the repayment, so processLatestTransaction
+                // runs (not reprocessTransactions) and the kept LPI charges remain visible to allocation.
+                backdatedLpiWaiveSummary = waiveBackdatedSettlementLpi(toLoanAccountId, transactionDate);
+                if (backdatedLpiWaiveSummary != null) {
+                    // waiveBackdatedSettlementLpi assembles its own Loan instance and flushes to DB; reload so that
+                    // the persisted waive transactions and updated penalty state are visible to makeRepayment below.
+                    toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
+                }
+                // Map every remaining (pre-value-date) LPI charge onto the schedule. Without this, a repayment only
+                // pays the single day already sitting on the installment and leaves the other overdue days outstanding.
+                this.credXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccountId);
                 toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
             }
 
@@ -234,6 +248,9 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     toLoanAccount, transactionDate, transactionAmount, paymentDetail, null, externalId, isRecoveryRepayment,
                     chargeRefundChargeType, isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
             toLoanAccount = loanRepaymentTransaction.getLoan();
+            if (partialBackdated) {
+                this.credXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(toLoanAccountId, transactionDate);
+            }
             final AccountTransferDetails accountTransferDetails = this.accountTransferAssembler.assembleSavingsToLoanTransfer(command,
                     fromSavingsAccount, toLoanAccount, withdrawal, loanRepaymentTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);

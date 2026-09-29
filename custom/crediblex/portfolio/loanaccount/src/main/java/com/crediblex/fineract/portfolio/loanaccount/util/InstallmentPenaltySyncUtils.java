@@ -68,6 +68,106 @@ public final class InstallmentPenaltySyncUtils {
     }
 
     /**
+     * Sets schedule penalty outstanding to unpaid overdue/LPI charges dated strictly before {@code settlementDate}.
+     * <p>
+     * A partial backdated repayment must collect those earlier days and must not pay (or waive) LPI dated on or after
+     * the value date. Charges on/after that date stay active; this only parks their amount off the payable schedule for
+     * the repayment that follows. {@link #syncOutstandingOverduePenaltyOntoSchedule} puts them back afterwards.
+     *
+     * @return {@code true} when an installment penalty portion changed
+     */
+    public static boolean alignSchedulePenaltyToChargesBefore(final Loan loan, final LocalDate settlementDate) {
+        if (loan == null || settlementDate == null || loan.getLoanCharges() == null || loan.getCurrency() == null) {
+            return false;
+        }
+        final MonetaryCurrency currency = loan.getCurrency();
+        Money payable = Money.zero(currency);
+        LocalDate latestPayableChargeDate = null;
+        for (final LoanCharge charge : loan.getLoanCharges()) {
+            if (!isUnpaidOverdueCharge(charge)) {
+                continue;
+            }
+            final LocalDate due = charge.getDueLocalDate();
+            if (due != null && !due.isBefore(settlementDate)) {
+                continue;
+            }
+            final Money outstanding = charge.getAmountOutstanding(currency);
+            if (outstanding == null || !outstanding.isGreaterThanZero()) {
+                continue;
+            }
+            payable = payable.plus(outstanding);
+            if (due != null && (latestPayableChargeDate == null || due.isAfter(latestPayableChargeDate))) {
+                latestPayableChargeDate = due;
+            }
+        }
+
+        Money scheduleOutstanding = Money.zero(currency);
+        if (loan.getRepaymentScheduleInstallments() != null) {
+            for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+                if (installment == null) {
+                    continue;
+                }
+                scheduleOutstanding = scheduleOutstanding.plus(installment.getPenaltyChargesOutstanding(currency));
+            }
+        }
+        final Money delta = payable.minus(scheduleOutstanding);
+        if (delta.isZero()) {
+            return false;
+        }
+        final Money zero = Money.zero(currency);
+        if (delta.isGreaterThanZero()) {
+            final LoanRepaymentScheduleInstallment target = resolvePenaltyInstallment(loan,
+                    latestPayableChargeDate != null ? latestPayableChargeDate : settlementDate);
+            if (target == null) {
+                return false;
+            }
+            target.addToChargePortion(zero, zero, zero, zero, zero, zero, delta, zero, zero);
+            return true;
+        }
+
+        Money toRemove = delta.negated();
+        final List<LoanRepaymentScheduleInstallment> holders = penaltyHoldersDescending(loan, currency);
+        boolean changed = false;
+        for (final LoanRepaymentScheduleInstallment holder : holders) {
+            if (!toRemove.isGreaterThanZero()) {
+                break;
+            }
+            final Money outstanding = holder.getPenaltyChargesOutstanding(currency);
+            if (outstanding == null || !outstanding.isGreaterThanZero()) {
+                continue;
+            }
+            final Money slice = outstanding.isGreaterThan(toRemove) ? toRemove : outstanding;
+            holder.addToChargePortion(zero, zero, zero, zero, zero, zero, slice.negated(), zero, zero);
+            toRemove = toRemove.minus(slice);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean isUnpaidOverdueCharge(final LoanCharge charge) {
+        return charge != null && charge.isActive() && charge.isOverdueInstallmentCharge() && !charge.isWaived();
+    }
+
+    private static List<LoanRepaymentScheduleInstallment> penaltyHoldersDescending(final Loan loan, final MonetaryCurrency currency) {
+        final List<LoanRepaymentScheduleInstallment> holders = new java.util.ArrayList<>();
+        if (loan.getRepaymentScheduleInstallments() == null) {
+            return holders;
+        }
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (installment == null || installment.isDownPayment()) {
+                continue;
+            }
+            final Money outstanding = installment.getPenaltyChargesOutstanding(currency);
+            if (outstanding != null && outstanding.isGreaterThanZero()) {
+                holders.add(installment);
+            }
+        }
+        holders.sort((left, right) -> right.getPenaltyChargesOutstanding(currency).getAmount()
+                .compareTo(left.getPenaltyChargesOutstanding(currency).getAmount()));
+        return holders;
+    }
+
+    /**
      * Puts unmapped LPI on the overdue EMI it belongs to (due date strictly before the charge), not on the dummy
      * post-maturity {@code GRACE_PERIOD_APPLIED} row. That dummy used to hold a placeholder {@code 1.00} and is not
      * included in arrears when its due date is today.
