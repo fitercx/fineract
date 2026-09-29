@@ -72,4 +72,16 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      * that LPI instead of treating the same amount as an overpayment.
      */
     void syncOutstandingOverduePenaltyOntoSchedule(Long loanId);
+
+    /**
+     * Partial backdated repayment: put only LPI dated strictly before {@code settlementDate} on the payable schedule,
+     * and park later LPI off it so this payment collects the earlier days without paying or waiving the rest.
+     */
+    void alignSchedulePenaltyForPartialBackdatedRepayment(Long loanId, LocalDate settlementDate);
+
+    /**
+     * After a partial backdated repayment: reprice unpaid LPI dated on or after the value date from the reduced
+     * principal, then copy that outstanding back onto the schedule so accrual continues.
+     */
+    void restoreLpiAfterPartialBackdatedRepayment(Long loanId, LocalDate settlementDate);
 }
