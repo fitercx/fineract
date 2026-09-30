@@ -14,6 +14,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValid
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -128,6 +129,11 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         }
     }
 
+    private static boolean keepsLaterLpi(final Loan loan, final LocalDate settlementDate, final BigDecimal transactionAmount) {
+        return BackdatedSettlementLpiPolicy.keepsLaterLpi(loan, settlementDate, transactionAmount,
+                LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, settlementDate));
+    }
+
     private Map<String, Object> waiveBackdatedSettlementLpi(final Long loanId, final LocalDate settlementDate) {
         final Map<String, Object> summary = this.credXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
                 settlementDate);
@@ -217,11 +223,10 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             validateBackdatedTransferAllowed(toLoanAccount, transactionDate);
 
-            // Partial backdated settlement leaves the loan active: collect LPI strictly before the value date and
-            // do not waive later days. A full close still waives LPI on/after the value date before allocation.
-            final boolean partialBackdated = BackdatedSettlementLpiPolicy.isPartialBackdatedRepayment(toLoanAccount, transactionDate,
-                    transactionAmount);
-            if (partialBackdated) {
+            // Partial settlement (backdated, or on the installment due date) leaves the loan active: collect LPI
+            // strictly before the value date and keep later rows outstanding. A full close still waives.
+            final boolean keepLaterLpi = keepsLaterLpi(toLoanAccount, transactionDate, transactionAmount);
+            if (keepLaterLpi) {
                 this.credXLoanChargeWritePlatformService.alignSchedulePenaltyForPartialBackdatedRepayment(toLoanAccountId, transactionDate);
                 toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
             } else {
@@ -248,7 +253,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     toLoanAccount, transactionDate, transactionAmount, paymentDetail, null, externalId, isRecoveryRepayment,
                     chargeRefundChargeType, isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
             toLoanAccount = loanRepaymentTransaction.getLoan();
-            if (partialBackdated) {
+            if (keepLaterLpi) {
                 this.credXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(toLoanAccountId, transactionDate);
             }
             final AccountTransferDetails accountTransferDetails = this.accountTransferAssembler.assembleSavingsToLoanTransfer(command,
@@ -404,11 +409,22 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 // value date — keeps isChronologicallyLatestRepaymentOrWaiver true so processLatestTransaction
                 // runs instead of the full reprocessTransactions that would wipe kept LPI from the penalty cache.
                 final AccountTransferType transferType = AccountTransferType.fromInt(accountTransferDTO.getTransferType());
+                final boolean keepLaterLpi = !transferType.isLoanForeclosure() && !transferType.isChargePayment()
+                        && !transferType.isLoanDownPayment()
+                        && keepsLaterLpi(toLoanAccount, accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount());
                 if (!transferType.isLoanForeclosure() && !transferType.isChargePayment() && !transferType.isLoanDownPayment()) {
-                    final Map<String, Object> waiveSummary = waiveBackdatedSettlementLpi(toLoanAccount.getId(),
-                            accountTransferDTO.getTransactionDate());
-                    if (waiveSummary != null) {
-                        // Reload: waiveBackdatedSettlementLpi uses its own Loan instance; flush is already done.
+                    if (keepLaterLpi) {
+                        this.credXLoanChargeWritePlatformService.alignSchedulePenaltyForPartialBackdatedRepayment(toLoanAccount.getId(),
+                                accountTransferDTO.getTransactionDate());
+                        toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
+                    } else {
+                        final Map<String, Object> waiveSummary = waiveBackdatedSettlementLpi(toLoanAccount.getId(),
+                                accountTransferDTO.getTransactionDate());
+                        if (waiveSummary != null) {
+                            // Reload: waiveBackdatedSettlementLpi uses its own Loan instance; flush is already done.
+                            toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
+                        }
+                        this.credXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccount.getId());
                         toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
                     }
                 }
@@ -418,6 +434,10 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                         accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,
                         isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
                 toLoanAccount = loanTransaction.getLoan();
+                if (keepLaterLpi) {
+                    this.credXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(toLoanAccount.getId(),
+                            accountTransferDTO.getTransactionDate());
+                }
             }
 
             accountTransferDetails = this.accountTransferAssembler.assembleSavingsToLoanTransfer(accountTransferDTO, fromSavingsAccount,

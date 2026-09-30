@@ -175,6 +175,16 @@ class BackdatedSettlementLpiPolicyTest {
     }
 
     @Test
+    void sameDayPartialOnTheDueDateKeepsLaterLpiAndAFullCloseStillWaives() {
+        final Loan loan = loanOutstanding("100000.00", "3287.67");
+        final LocalDate dueDate = LocalDate.of(2026, 9, 28);
+
+        assertThat(BackdatedSettlementLpiPolicy.keepsLaterLpi(loan, dueDate, new BigDecimal("15000.00"), true)).isTrue();
+        assertThat(BackdatedSettlementLpiPolicy.keepsLaterLpi(loan, dueDate, new BigDecimal("103287.67"), true)).isFalse();
+        assertThat(BackdatedSettlementLpiPolicy.isPartialBackdatedRepayment(loan, dueDate, new BigDecimal("15000.00"))).isFalse();
+    }
+
+    @Test
     void sameDayPaymentIsNotAPartialBackdatedSettlement() {
         final Loan loan = loanOutstanding("100000.00", "3287.67");
 

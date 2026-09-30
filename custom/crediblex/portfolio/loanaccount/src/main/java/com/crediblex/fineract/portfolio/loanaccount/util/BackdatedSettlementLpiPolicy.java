@@ -27,12 +27,12 @@ import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 
 /**
- * Decides whether a backdated repayment closes the loan as of the value date.
+ * Decides whether a repayment that would otherwise waive LPI should leave those charges alive instead.
  * <p>
- * A full close still waives LPI dated on or after the value date (LMS-125). A partial payment leaves the loan active,
- * so later LPI must stay outstanding and keep accruing on the reduced principal (LMS-150). When the close amount cannot
- * be computed, this returns false and the caller keeps the existing waive — empty test loans and loans with no summary
- * are not treated as partial.
+ * A full close still waives LPI dated on or after the value date (LMS-125). A partial payment, backdated or on the
+ * installment due date, leaves the loan active. Later LPI stays on the same charge rows, outstanding, at the reduced
+ * principal. Those rows are not fully waived, and the penalty job is not asked to create replacements. When the close
+ * amount cannot be computed, this returns false and the caller keeps the existing waive.
  */
 public final class BackdatedSettlementLpiPolicy {
 
@@ -41,11 +41,24 @@ public final class BackdatedSettlementLpiPolicy {
     private BackdatedSettlementLpiPolicy() {}
 
     public static boolean isPartialBackdatedRepayment(final Loan loan, final LocalDate settlementDate, final BigDecimal transactionAmount) {
+        return keepsLaterLpi(loan, settlementDate, transactionAmount, false);
+    }
+
+    /**
+     * @param onInstallmentDueDate
+     *            true when the value date is an installment due date, including a payment recorded today
+     */
+    public static boolean keepsLaterLpi(final Loan loan, final LocalDate settlementDate, final BigDecimal transactionAmount,
+            final boolean onInstallmentDueDate) {
         if (loan == null || settlementDate == null || transactionAmount == null || loan.getCurrency() == null) {
             return false;
         }
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        if (businessDate == null || !settlementDate.isBefore(businessDate)) {
+        if (businessDate == null) {
+            return false;
+        }
+        final boolean waiveWouldApply = settlementDate.isBefore(businessDate) || onInstallmentDueDate;
+        if (!waiveWouldApply) {
             return false;
         }
         final Money required = amountRequiredToClose(loan, settlementDate);
