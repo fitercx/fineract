@@ -609,6 +609,22 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
     }
 
     @Test
+    @DisplayName("Same-day partial on the installment due date keeps later LPI instead of waiving it")
+    public void testMakeLoanRepayment_SameDayDueDatePartial_DoesNotWaiveLaterLpi() {
+        initMoneyHelper();
+        final Long loanId = 1L;
+        final LocalDate dueDate = LocalDate.of(2025, 1, 15);
+        final Loan loan = createLoanWithOutstanding(loanId, dueDate, "100000.00", "3287.67");
+        final JsonCommand command = createRepaymentCommand(new BigDecimal("15000.00"), dueDate);
+        when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
+
+        invokeUiRepayment(loanId, command);
+
+        verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(dueDate));
+        verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
+    }
+
+    @Test
     @DisplayName("Backdated full close still waives LPI on or after the value date")
     public void testMakeLoanRepayment_BackdatedFullClose_StillWaives() {
         initMoneyHelper();
