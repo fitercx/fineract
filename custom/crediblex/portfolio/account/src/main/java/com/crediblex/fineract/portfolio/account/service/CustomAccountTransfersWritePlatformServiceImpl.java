@@ -228,6 +228,11 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 // the persisted waive transactions and updated penalty state are visible to makeRepayment below.
                 toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
             }
+            // Days after the due date and before the value date are not on the installment. Direct repayment
+            // already copies them onto the schedule; a savings transfer did not, so that day was left outstanding
+            // (Fero 000003276) or booked as an overpayment (Furniture 000002887).
+            this.credXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccountId);
+            toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccountId);
 
             ExternalId externalId = externalIdFactory.create();
             final LoanTransaction loanRepaymentTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT,
@@ -394,6 +399,9 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                         // Reload: waiveBackdatedSettlementLpi uses its own Loan instance; flush is already done.
                         toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
                     }
+                    // Same schedule sync as create(): the unpaid day before the value date must be payable.
+                    this.credXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(toLoanAccount.getId());
+                    toLoanAccount = this.loanAccountAssembler.assembleFrom(toLoanAccount.getId());
                 }
 
                 loanTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanAccount,
