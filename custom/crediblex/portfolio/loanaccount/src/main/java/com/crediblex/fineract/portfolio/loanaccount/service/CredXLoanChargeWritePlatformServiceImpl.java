@@ -13,7 +13,6 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
-import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReprice;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -2568,32 +2567,5 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
         }
-    }
-
-    @Override
-    @Transactional
-    public void alignSchedulePenaltyForPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
-        if (loanId == null || settlementDate == null) {
-            return;
-        }
-        final Loan loan = this.loanAssembler.assembleFrom(loanId);
-        if (InstallmentPenaltySyncUtils.alignSchedulePenaltyToChargesBefore(loan, settlementDate)) {
-            loan.updateLoanSummaryDerivedFields();
-            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-        }
-    }
-
-    @Override
-    @Transactional
-    public void restoreLpiAfterPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
-        if (loanId == null || settlementDate == null) {
-            return;
-        }
-        final Loan loan = this.loanAssembler.assembleFrom(loanId);
-        if (PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, settlementDate)) {
-            loan.updateLoanSummaryDerivedFields();
-            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
-        }
-        syncOutstandingOverduePenaltyOntoSchedule(loanId);
     }
 }
