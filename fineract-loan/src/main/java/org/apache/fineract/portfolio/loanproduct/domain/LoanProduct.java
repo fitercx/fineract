@@ -236,6 +236,10 @@ public class LoanProduct extends AbstractPersistableCustom<Long> {
     @Column(name = "repayment_start_date_type_enum", nullable = false)
     private RepaymentStartDateType repaymentStartDateType;
 
+    /** Opt-in for the DPD-based repayment strategy auto-switch (LMS-139). */
+    @Column(name = "enable_dpd_strategy_switch", nullable = false)
+    private boolean enableDpdStrategySwitch = false;
+
     @Column(name = "is_factor_rate_product")
     private boolean factorRateProductEnabled;
 

@@ -27,6 +27,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -46,6 +47,7 @@ import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.loanaccount.domain.reaging.LoanReAgeParameter;
+import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
 
@@ -126,6 +128,22 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
 
     @Column(name = "manually_adjusted_or_reversed", nullable = false)
     private boolean manuallyAdjustedOrReversed;
+
+    /**
+     * Strategy this transaction was allocated with (LMS-139). Stamped for repayments and foreclosures, including
+     * backdated ones, so a later replay reapplies these portions instead of recasting them under a new strategy and
+     * posting reversing journals.
+     */
+    @Column(name = "dpd_allocation_strategy_code", length = 100)
+    private String dpdAllocationStrategyCode;
+
+    /** In-memory only. Set for the duration of a replay so posted portions are reapplied, not recalculated. */
+    @Transient
+    private boolean dpdAllocationLocked;
+
+    /** In-memory only. Processor to use when this not-yet-persisted transaction is allocated inside a replay. */
+    @Transient
+    private LoanRepaymentScheduleTransactionProcessor dpdAllocationProcessor;
 
     @Column(name = "charge_refund_charge_type", length = 1, unique = true)
     private String chargeRefundChargeType;
@@ -317,7 +335,32 @@ public class LoanTransaction extends AbstractAuditableWithUTCDateTimeCustom<Long
         if (LoanTransactionType.REAGE.equals(loanTransaction.getTypeOf())) {
             newTransaction.setLoanReAgeParameter(loanTransaction.getLoanReAgeParameter().getCopy(newTransaction));
         }
+        newTransaction.dpdAllocationStrategyCode = loanTransaction.dpdAllocationStrategyCode;
         return newTransaction;
+    }
+
+    public String getDpdAllocationStrategyCode() {
+        return this.dpdAllocationStrategyCode;
+    }
+
+    public void setDpdAllocationStrategyCode(final String dpdAllocationStrategyCode) {
+        this.dpdAllocationStrategyCode = dpdAllocationStrategyCode;
+    }
+
+    public boolean isDpdAllocationLocked() {
+        return this.dpdAllocationLocked;
+    }
+
+    public void lockDpdAllocation() {
+        this.dpdAllocationLocked = true;
+    }
+
+    public LoanRepaymentScheduleTransactionProcessor getDpdAllocationProcessor() {
+        return this.dpdAllocationProcessor;
+    }
+
+    public void setDpdAllocationProcessor(final LoanRepaymentScheduleTransactionProcessor dpdAllocationProcessor) {
+        this.dpdAllocationProcessor = dpdAllocationProcessor;
     }
 
     public LoanTransaction copyTransactionPropertiesAndMappings() {
