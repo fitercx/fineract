@@ -48,9 +48,13 @@ class BackdateWindowSettingsTest {
     }
 
     @Test
+    void zeroMeansNoBackdating() {
+        assertThat(BackdateWindowSettings.resolveMaxBackdateDays(true, 0L)).isEqualTo(0);
+    }
+
+    @Test
     void enabledWithoutAUsableValueFallsBackToTheDefaultWindow() {
         assertThat(BackdateWindowSettings.resolveMaxBackdateDays(true, null)).isEqualTo(BackdateWindowSettings.DEFAULT_MAX_BACKDATE_DAYS);
-        assertThat(BackdateWindowSettings.resolveMaxBackdateDays(true, 0L)).isEqualTo(BackdateWindowSettings.DEFAULT_MAX_BACKDATE_DAYS);
         assertThat(BackdateWindowSettings.resolveMaxBackdateDays(true, -5L)).isEqualTo(BackdateWindowSettings.DEFAULT_MAX_BACKDATE_DAYS);
     }
 

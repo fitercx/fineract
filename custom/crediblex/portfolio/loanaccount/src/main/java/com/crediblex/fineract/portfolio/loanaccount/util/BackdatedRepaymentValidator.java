@@ -82,8 +82,9 @@ public final class BackdatedRepaymentValidator {
         if (transactionDate != null && DateUtils.isBefore(transactionDate, earliestAllowed)) {
             final String limitRule = maxBackdateDays == null
                     ? "Backdating is only allowed back to the start of the loan's first instalment period"
-                    : "Backdating is only allowed up to " + maxBackdateDays
-                            + " days before today (or the loan's disbursement date, whichever is later)";
+                    : maxBackdateDays == 0 ? "Backdating is not allowed (the configured day count is 0)"
+                            : "Backdating is only allowed up to " + maxBackdateDays
+                                    + " days before today (or the loan's disbursement date, whichever is later)";
             throw new GeneralPlatformDomainRuleException("error.msg.loan.backdate.limit.exceeded", "The " + actionLabel + " date ("
                     + transactionDate + ") for loan " + loan.getId() + " is too far in the past. " + limitRule
                     + " - the earliest allowed date for this loan right now is " + earliestAllowed
