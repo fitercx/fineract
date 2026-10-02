@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisb
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
@@ -1719,8 +1720,9 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             this.credibleXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(loanId);
         }
 
-        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
-                isRecoveryRepayment, chargeRefundChargeType);
+        final CommandProcessingResult result = PartialBackdatedLpiReplay.aligningFrom(keepLaterLpi ? transactionDate : null,
+                () -> delegateRepaymentWithChargeRefund(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                        chargeRefundChargeType));
 
         if (keepLaterLpi) {
             this.credibleXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(loanId, transactionDate);
@@ -1750,6 +1752,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      */
     private void validateBackdatedRepaymentAllowed(final Loan loan, final LocalDate transactionDate) {
         BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, transactionDate);
+    }
+
+    /**
+     * Separated so a unit test can complete the parent repayment and still assert the LPI restore that follows it.
+     */
+    protected CommandProcessingResult delegateRepaymentWithChargeRefund(final LoanTransactionType repaymentTransactionType,
+            final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+        return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                chargeRefundChargeType);
     }
 
     /**

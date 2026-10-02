@@ -26,6 +26,9 @@ import org.apache.fineract.portfolio.charge.domain.ChargeCalculationType;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Recomputes unpaid percentage LPI dated on or after a partial backdated repayment from the principal (and interest,
@@ -36,6 +39,8 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
  * they must follow the reduced balance (LMS-150).
  */
 public final class PartialBackdatedLpiReprice {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PartialBackdatedLpiReprice.class);
 
     private PartialBackdatedLpiReprice() {}
 
@@ -104,12 +109,28 @@ public final class PartialBackdatedLpiReprice {
             }
             return base.getAmount();
         }
-        if (loan.getSummary() == null || loan.getSummary().getTotalPrincipalOutstanding() == null) {
+        final LoanSummary summary = loan.getSummary();
+        if (summary == null) {
+            logMissingBase(charge, calculation);
             return null;
         }
-        if (calculation == ChargeCalculationType.PERCENT_OF_AMOUNT) {
-            return loan.getSummary().getTotalPrincipalOutstanding();
+        if (calculation == ChargeCalculationType.PERCENT_OF_AMOUNT && summary.getTotalPrincipalOutstanding() != null) {
+            return summary.getTotalPrincipalOutstanding();
         }
+        if (calculation == ChargeCalculationType.PERCENT_OF_INTEREST && summary.getTotalInterestOutstanding() != null) {
+            return summary.getTotalInterestOutstanding();
+        }
+        if (calculation == ChargeCalculationType.PERCENT_OF_AMOUNT_AND_INTEREST && summary.getTotalPrincipalOutstanding() != null
+                && summary.getTotalInterestOutstanding() != null) {
+            return summary.getTotalPrincipalOutstanding().add(summary.getTotalInterestOutstanding());
+        }
+        logMissingBase(charge, calculation);
         return null;
+    }
+
+    private static void logMissingBase(final LoanCharge charge, final ChargeCalculationType calculation) {
+        LOG.warn(
+                "Skipping LPI reprice for charge {} ({}) because it has no installment link and no loan-summary base; it keeps the pre-payment amount",
+                charge == null ? null : charge.getId(), calculation);
     }
 }

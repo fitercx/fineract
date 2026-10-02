@@ -85,7 +85,8 @@ public final class BackdatedSettlementLpiPolicy {
         required = required.plus(zero(summary.getTotalFeeChargesOutstanding()));
         required = required.plus(zero(summary.getTotalTaxChargesOutstanding()));
         if (loan.getActiveCharges() != null && settlementDate != null) {
-            required = required.plus(ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, settlementDate, currency));
+            required = required.plus(
+                    ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, settlementDate, currency, false));
         }
         return required;
     }

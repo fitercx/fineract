@@ -117,6 +117,32 @@ class PartialBackdatedLpiRepriceTest {
     }
 
     @Test
+    void repricesPercentOfInterestFromSummaryWhenTheChargeHasNoInstallmentLink() {
+        final LoanCharge later = percentCharge(valueDate, "82.19", "0.08219");
+        when(later.getChargeCalculation()).thenReturn(ChargeCalculationType.PERCENT_OF_INTEREST);
+        when(later.getOverdueInstallmentCharge()).thenReturn(null);
+        final Loan loan = loanWithSummary(later, "85000.00", "3000.00");
+
+        org.assertj.core.api.Assertions.assertThat(PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, valueDate)).isTrue();
+        verify(later).update(eq(new BigDecimal("0.08219")), eq(valueDate),
+                org.mockito.ArgumentMatchers.argThat(base -> base != null && base.compareTo(new BigDecimal("3000.00")) == 0), isNull(),
+                eq(BigDecimal.ZERO));
+    }
+
+    @Test
+    void repricesPercentOfPrincipalAndInterestFromSummaryWhenTheChargeHasNoInstallmentLink() {
+        final LoanCharge later = percentCharge(valueDate, "82.19", "0.08219");
+        when(later.getChargeCalculation()).thenReturn(ChargeCalculationType.PERCENT_OF_AMOUNT_AND_INTEREST);
+        when(later.getOverdueInstallmentCharge()).thenReturn(null);
+        final Loan loan = loanWithSummary(later, "85000.00", "3000.00");
+
+        org.assertj.core.api.Assertions.assertThat(PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, valueDate)).isTrue();
+        verify(later).update(eq(new BigDecimal("0.08219")), eq(valueDate),
+                org.mockito.ArgumentMatchers.argThat(base -> base != null && base.compareTo(new BigDecimal("88000.00")) == 0), isNull(),
+                eq(BigDecimal.ZERO));
+    }
+
+    @Test
     void skipsAZeroPrincipalBaseAndMissingInputs() {
         final LoanCharge later = percentCharge(valueDate, "82.19", "0.08219");
         final Loan loan = loanWithPrincipal(later, "0.00");
@@ -179,6 +205,17 @@ class PartialBackdatedLpiRepriceTest {
         org.assertj.core.api.Assertions.assertThat(PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, valueDate)).isFalse();
         verify(earlier, never()).update(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    private Loan loanWithSummary(final LoanCharge charge, final String principal, final String interest) {
+        final Loan loan = mock(Loan.class);
+        final LoanSummary summary = mock(LoanSummary.class);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.getLoanCharges()).thenReturn(Set.of(charge));
+        when(loan.getSummary()).thenReturn(summary);
+        when(summary.getTotalPrincipalOutstanding()).thenReturn(new BigDecimal(principal));
+        when(summary.getTotalInterestOutstanding()).thenReturn(new BigDecimal(interest));
+        return loan;
     }
 
     private Loan loanWithPrincipal(final LoanCharge charge, final String principal) {

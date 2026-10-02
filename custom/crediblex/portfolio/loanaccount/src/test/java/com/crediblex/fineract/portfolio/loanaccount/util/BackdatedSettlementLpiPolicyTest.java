@@ -175,6 +175,19 @@ class BackdatedSettlementLpiPolicyTest {
     }
 
     @Test
+    void closeAmountIncludesLpiDatedBeforeSettlementEvenWhenItsInstallmentIsDueLater() {
+        final Loan loan = loanOutstanding("100.00", "0.00");
+        final LoanCharge charge = penaltyCharge(LocalDate.of(2026, 8, 5), "82.19");
+        when(charge.getOverdueInstallmentCharge().getInstallment().getDueDate()).thenReturn(LocalDate.of(2026, 9, 30));
+        when(loan.getActiveCharges()).thenReturn(Set.of(charge));
+
+        assertThat(BackdatedSettlementLpiPolicy.amountRequiredToClose(loan, LocalDate.of(2026, 8, 10)).getAmount())
+                .isEqualByComparingTo("182.19");
+        assertThat(BackdatedSettlementLpiPolicy.isPartialBackdatedRepayment(loan, LocalDate.of(2026, 8, 10), new BigDecimal("100.00")))
+                .isTrue();
+    }
+
+    @Test
     void sameDayPartialOnTheDueDateKeepsLaterLpiAndAFullCloseStillWaives() {
         final Loan loan = loanOutstanding("100000.00", "3287.67");
         final LocalDate dueDate = LocalDate.of(2026, 9, 28);

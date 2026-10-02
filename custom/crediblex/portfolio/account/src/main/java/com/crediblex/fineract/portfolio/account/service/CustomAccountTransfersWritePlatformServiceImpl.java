@@ -12,6 +12,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDT
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
@@ -249,9 +250,11 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             }
 
             ExternalId externalId = externalIdFactory.create();
-            final LoanTransaction loanRepaymentTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT,
-                    toLoanAccount, transactionDate, transactionAmount, paymentDetail, null, externalId, isRecoveryRepayment,
-                    chargeRefundChargeType, isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
+            final Loan toLoanForRepayment = toLoanAccount;
+            final LoanTransaction loanRepaymentTransaction = PartialBackdatedLpiReplay.aligningFrom(keepLaterLpi ? transactionDate : null,
+                    () -> this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanForRepayment, transactionDate,
+                            transactionAmount, paymentDetail, null, externalId, isRecoveryRepayment, chargeRefundChargeType,
+                            isAccountTransfer, holidayDetailDto, isHolidayValidationDone));
             toLoanAccount = loanRepaymentTransaction.getLoan();
             if (keepLaterLpi) {
                 this.credXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(toLoanAccountId, transactionDate);
@@ -429,10 +432,12 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     }
                 }
 
-                loanTransaction = this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanAccount,
-                        accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
-                        accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,
-                        isAccountTransfer, holidayDetailDto, isHolidayValidationDone);
+                final Loan toLoanForRepayment = toLoanAccount;
+                loanTransaction = PartialBackdatedLpiReplay.aligningFrom(keepLaterLpi ? accountTransferDTO.getTransactionDate() : null,
+                        () -> this.loanAccountDomainService.makeRepayment(LoanTransactionType.REPAYMENT, toLoanForRepayment,
+                                accountTransferDTO.getTransactionDate(), accountTransferDTO.getTransactionAmount(),
+                                accountTransferDTO.getPaymentDetail(), null, externalId, isRecoveryRepayment, chargeRefundChargeType,
+                                isAccountTransfer, holidayDetailDto, isHolidayValidationDone));
                 toLoanAccount = loanTransaction.getLoan();
                 if (keepLaterLpi) {
                     this.credXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(toLoanAccount.getId(),

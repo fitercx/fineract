@@ -9,10 +9,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -601,9 +603,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         final JsonCommand command = createRepaymentCommand(new BigDecimal("15000.00"), valueDate);
         when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
 
-        invokeUiRepayment(loanId, command);
+        invokeCompletedUiRepayment(loanId, command);
 
-        verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(valueDate));
+        final InOrder inOrder = inOrder(credibleXLoanChargeWritePlatformService);
+        inOrder.verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(valueDate));
+        inOrder.verify(credibleXLoanChargeWritePlatformService).restoreLpiAfterPartialBackdatedRepayment(eq(loanId), eq(valueDate));
         verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
         verify(credibleXLoanChargeWritePlatformService, never()).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
     }
@@ -618,9 +622,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         final JsonCommand command = createRepaymentCommand(new BigDecimal("15000.00"), dueDate);
         when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
 
-        invokeUiRepayment(loanId, command);
+        invokeCompletedUiRepayment(loanId, command);
 
-        verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(dueDate));
+        final InOrder inOrder = inOrder(credibleXLoanChargeWritePlatformService);
+        inOrder.verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(dueDate));
+        inOrder.verify(credibleXLoanChargeWritePlatformService).restoreLpiAfterPartialBackdatedRepayment(eq(loanId), eq(dueDate));
         verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
     }
 
@@ -636,10 +642,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, valueDate))
                 .thenReturn(waiveSummary(1));
 
-        invokeUiRepayment(loanId, command);
+        invokeCompletedUiRepayment(loanId, command);
 
         verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(valueDate));
         verify(credibleXLoanChargeWritePlatformService, never()).alignSchedulePenaltyForPartialBackdatedRepayment(any(), any());
+        verify(credibleXLoanChargeWritePlatformService, never()).restoreLpiAfterPartialBackdatedRepayment(any(), any());
         verify(credibleXLoanChargeWritePlatformService).syncOutstandingOverduePenaltyOntoSchedule(eq(loanId));
     }
 
@@ -655,10 +662,11 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         when(credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId, valueDate))
                 .thenReturn(waiveSummary(0));
 
-        invokeUiRepayment(loanId, command);
+        invokeCompletedUiRepayment(loanId, command);
 
         verify(credibleXLoanChargeWritePlatformService).waiveOverdueChargesAccruedAfterSettlementDate(eq(loanId), eq(valueDate));
         verify(credibleXLoanChargeWritePlatformService, never()).alignSchedulePenaltyForPartialBackdatedRepayment(any(), any());
+        verify(credibleXLoanChargeWritePlatformService, never()).restoreLpiAfterPartialBackdatedRepayment(any(), any());
     }
 
     @Test
@@ -671,9 +679,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         final JsonCommand command = createRepaymentCommand(new BigDecimal("999.98"), valueDate);
         when(loanAssembler.assembleFrom(loanId)).thenReturn(loan);
 
-        invokeUiRepayment(loanId, command);
+        invokeCompletedUiRepayment(loanId, command);
 
         verify(credibleXLoanChargeWritePlatformService).alignSchedulePenaltyForPartialBackdatedRepayment(eq(loanId), eq(valueDate));
+        verify(credibleXLoanChargeWritePlatformService).restoreLpiAfterPartialBackdatedRepayment(eq(loanId), eq(valueDate));
         verify(credibleXLoanChargeWritePlatformService, never()).waiveOverdueChargesAccruedAfterSettlementDate(any(), any());
     }
 
@@ -759,6 +768,17 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImplTest {
         } catch (Exception ignored) {
             // Parent repayment is not mocked; assert waive-then-sync orchestration only.
         }
+    }
+
+    /**
+     * Completes the parent repayment so calls after it, including
+     * {@code restoreLpiAfterPartialBackdatedRepayment}, are actually reached.
+     */
+    private void invokeCompletedUiRepayment(Long loanId, JsonCommand command) {
+        final CustomLoanWritePlatformServiceJpaRepositoryImpl service = spy(customLoanWritePlatformService);
+        doReturn(new CommandProcessingResultBuilder().withLoanId(loanId).build()).when(service).delegateRepaymentWithChargeRefund(any(),
+                eq(loanId), any(), anyBoolean(), any());
+        service.makeLoanRepayment(LoanTransactionType.REPAYMENT, loanId, command, false);
     }
 
     private Loan createSingleTrancheLoanUnderMultiTrancheProduct(Long loanId) {
