@@ -49,13 +49,19 @@ public final class InstallmentPenaltySyncUtils {
             return false;
         }
 
+        // Single EMI, or a payment against the last EMI: LPI posted after that due date lives on a later
+        // schedule row. The strategy pays penalty, then interest, then principal per EMI, so it never
+        // reaches that row while the EMI still has interest or principal. Move the unpaid amount onto
+        // the EMI so this repayment collects it. Totals stay the same; only the row changes.
+        final boolean folded = foldSpillPenaltyOntoLastEmi(loan, currency);
+
         Money scheduleOutstanding = Money.zero(currency);
         for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
             scheduleOutstanding = scheduleOutstanding.plus(installment.getPenaltyChargesOutstanding(currency));
         }
         final Money gap = chargeOutstanding.minus(scheduleOutstanding);
         if (!gap.isGreaterThanZero()) {
-            return false;
+            return folded;
         }
 
         final LoanRepaymentScheduleInstallment target = resolvePenaltyInstallment(loan, latestUnpaidChargeDate);
@@ -196,5 +202,134 @@ public final class InstallmentPenaltySyncUtils {
             }
         }
         return owningOverdueEmi != null ? owningOverdueEmi : (lastNormal != null ? lastNormal : lastAny);
+    }
+
+    /**
+     * Moves penalty outstanding that sits on a non-EMI row (no principal and no interest) onto the last contractual
+     * EMI, when that EMI is the only one or every earlier EMI is already paid.
+     *
+     * @return {@code true} when an amount was moved
+     */
+    public static boolean foldSpillPenaltyOntoLastEmi(final Loan loan, final MonetaryCurrency currency) {
+        final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        if (installments == null || installments.isEmpty() || currency == null) {
+            return false;
+        }
+        final List<LoanRepaymentScheduleInstallment> contractual = new java.util.ArrayList<>();
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (isContractualEmi(installment, currency)) {
+                contractual.add(installment);
+            }
+        }
+        if (contractual.isEmpty()) {
+            return false;
+        }
+        final LoanRepaymentScheduleInstallment lastEmi = contractual.get(contractual.size() - 1);
+        for (final LoanRepaymentScheduleInstallment installment : contractual) {
+            if (installment != lastEmi && !installment.isObligationsMet()) {
+                return false;
+            }
+        }
+
+        final Money zero = Money.zero(currency);
+        boolean moved = false;
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (installment == null || installment == lastEmi || installment.isDownPayment() || isContractualEmi(installment, currency)) {
+                continue;
+            }
+            final Money outstanding = installment.getPenaltyChargesOutstanding(currency);
+            if (outstanding == null || !outstanding.isGreaterThanZero()) {
+                continue;
+            }
+            lastEmi.addToChargePortion(zero, zero, zero, zero, zero, zero, outstanding, zero, zero);
+            installment.addToChargePortion(zero, zero, zero, zero, zero, zero, outstanding.negated(), zero, zero);
+            moved = true;
+        }
+        return moved;
+    }
+
+    /**
+     * Daily LPI dated strictly before {@code transactionDate} can be stored on an installment that is not due yet.
+     * Moves that still-outstanding amount onto the latest contractual EMI due on or before the value date, so the
+     * repayment takes it before that EMI's interest. Later days stay where they are. Foreclosure does not call this.
+     *
+     * @return {@code true} when an amount was moved
+     */
+    public static boolean foldPreValueDatePenaltyOntoDueEmi(final Loan loan, final LocalDate transactionDate) {
+        if (loan == null || transactionDate == null || loan.getCurrency() == null || loan.getRepaymentScheduleInstallments() == null) {
+            return false;
+        }
+        final MonetaryCurrency currency = loan.getCurrency();
+        final List<LoanRepaymentScheduleInstallment> installments = loan.getRepaymentScheduleInstallments();
+        LoanRepaymentScheduleInstallment target = null;
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (!isContractualEmi(installment, currency) || installment.getDueDate() == null
+                    || installment.getDueDate().isAfter(transactionDate)) {
+                continue;
+            }
+            if (target == null || installment.getDueDate().isAfter(target.getDueDate())) {
+                target = installment;
+            }
+        }
+        if (target == null || target.getInstallmentNumber() == null) {
+            return false;
+        }
+
+        final java.util.Map<Integer, Money> preDatePenaltyByInstallment = new java.util.HashMap<>();
+        if (loan.getLoanCharges() != null) {
+            for (final LoanCharge charge : loan.getLoanCharges()) {
+                if (charge == null || !charge.isActive() || !charge.isOverdueInstallmentCharge() || charge.isWaived()) {
+                    continue;
+                }
+                final LocalDate chargeDate = charge.getDueLocalDate();
+                if (chargeDate == null || !chargeDate.isBefore(transactionDate)) {
+                    continue;
+                }
+                final Money outstanding = charge.getAmountOutstanding(currency);
+                if (outstanding == null || !outstanding.isGreaterThanZero()) {
+                    continue;
+                }
+                final Integer installmentNumber = OverdueChargeScheduleAllocationUtils.resolveInstallmentNumber(chargeDate, installments);
+                if (installmentNumber == null || installmentNumber.equals(target.getInstallmentNumber())) {
+                    continue;
+                }
+                preDatePenaltyByInstallment.merge(installmentNumber, outstanding, (left, right) -> left.plus(right));
+            }
+        }
+        if (preDatePenaltyByInstallment.isEmpty()) {
+            return false;
+        }
+
+        final Money zero = Money.zero(currency);
+        boolean moved = false;
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (installment == null || installment == target || installment.getDueDate() == null
+                    || !installment.getDueDate().isAfter(transactionDate) || installment.getInstallmentNumber() == null) {
+                continue;
+            }
+            final Money fromCharges = preDatePenaltyByInstallment.get(installment.getInstallmentNumber());
+            if (fromCharges == null || !fromCharges.isGreaterThanZero()) {
+                continue;
+            }
+            final Money onSchedule = installment.getPenaltyChargesOutstanding(currency);
+            if (onSchedule == null || !onSchedule.isGreaterThanZero()) {
+                continue;
+            }
+            final Money amount = onSchedule.isGreaterThan(fromCharges) ? fromCharges : onSchedule;
+            target.addToChargePortion(zero, zero, zero, zero, zero, zero, amount, zero, zero);
+            installment.addToChargePortion(zero, zero, zero, zero, zero, zero, amount.negated(), zero, zero);
+            moved = true;
+        }
+        return moved;
+    }
+
+    private static boolean isContractualEmi(final LoanRepaymentScheduleInstallment installment, final MonetaryCurrency currency) {
+        if (installment == null || installment.isDownPayment() || installment.isAdditional()
+                || installment.isRecalculatedInterestComponent()) {
+            return false;
+        }
+        final Money principal = installment.getPrincipal(currency);
+        final Money interest = installment.getInterestCharged(currency);
+        return (principal != null && principal.isGreaterThanZero()) || (interest != null && interest.isGreaterThanZero());
     }
 }

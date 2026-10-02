@@ -1953,7 +1953,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         // receivableLocCreditReleaseAmount)
                         amount = receivableLocCreditReleaseAmount(loanTransaction);
                     } else {
+                        // PAYABLE consumes principal only. A payment of LPI and interest leaves principal null,
+                        // and a null amount cannot be inserted on m_line_of_credit_transactions.
                         amount = loanTransaction.getPrincipalPortion();
+                    }
+                    if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                        return;
                     }
 
                     // Pass loan transaction ID for better traceability
