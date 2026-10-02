@@ -193,6 +193,21 @@ class SavingsToLoanTransferBusinessEventListenerTest {
     }
 
     @Test
+    @DisplayName("Should skip LOC update when a payable repayment does not reduce principal")
+    void testPayableLoc_SkipsWhenPrincipalPortionIsNull() throws Exception {
+        when(lineOfCredit.getProductType()).thenReturn(LocProductType.PAYABLE);
+        when(loanLineOfCreditParamsRepository.findByLoanId(100L)).thenReturn(Optional.of(locParams));
+        when(loanTransaction.getPrincipalPortion()).thenReturn(null);
+        when(loanTransaction.getInterestPortion()).thenReturn(new BigDecimal("16.65"));
+        when(loanTransaction.getPenaltyChargesPortion()).thenReturn(new BigDecimal("583.35"));
+
+        invokeOnBusinessEvent();
+
+        verify(lineOfCreditBalanceUpdateService, never()).computeLocBalance(anyLong(), anyLong(), any(BigDecimal.class),
+                any(LineOfCredit.class), any(LocalDate.class), any(LineOfCreditTransactionType.class));
+    }
+
+    @Test
     @DisplayName("Should throw exception when account transfer transaction is missing")
     void testMissingAccountTransferTransaction_ThrowsException() throws Exception {
         // Given: No account transfer transaction
