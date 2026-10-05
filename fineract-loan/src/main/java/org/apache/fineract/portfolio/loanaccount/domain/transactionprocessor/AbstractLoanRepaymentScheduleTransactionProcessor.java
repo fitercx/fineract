@@ -739,6 +739,12 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             final List<LoanRepaymentScheduleInstallment> installments, final Set<LoanCharge> charges, Money amountToProcess) {
         int installmentIndex = 0;
 
+        // Last/single EMI: LPI after the due date sits on a later row. Fold it onto the EMI before this
+        // repayment is split, so penalty is taken before interest. Foreclosure does not use this hook.
+        if (loanTransaction.isRepayment() && loanTransaction.getLoan() != null && !loanTransaction.getLoan().isForeclosure()) {
+            LastEmiSpillPenaltyHookRegistry.foldOntoLastEmi(loanTransaction.getLoan(), loanTransaction.getTransactionDate());
+        }
+
         final LocalDate transactionDate = loanTransaction.getTransactionDate();
         Money transactionAmountUnprocessed = loanTransaction.getAmount(currency);
         if (amountToProcess != null) {
