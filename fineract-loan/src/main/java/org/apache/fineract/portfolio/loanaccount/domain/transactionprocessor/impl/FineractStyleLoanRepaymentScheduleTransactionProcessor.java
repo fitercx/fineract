@@ -157,9 +157,10 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion,
                     taxChargesPortion);
         }
-        if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {
+        if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).plus(taxChargesPortion)
+                .isGreaterThanZero()) {
             transactionMappings.add(LoanTransactionToRepaymentScheduleMapping.createFrom(loanTransaction, currentInstallment,
-                    principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion));
+                    principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion));
         }
         return transactionAmountRemaining;
     }
@@ -201,9 +202,10 @@ public class FineractStyleLoanRepaymentScheduleTransactionProcessor extends Abst
             transactionAmountRemaining = transactionAmountRemaining.minus(penaltyChargesPortion);
         }
         loanTransaction.updateComponents(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion);
-        if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).isGreaterThanZero()) {
+        if (principalPortion.plus(interestPortion).plus(feeChargesPortion).plus(penaltyChargesPortion).plus(taxChargesPortion)
+                .isGreaterThanZero()) {
             transactionMappings.add(LoanTransactionToRepaymentScheduleMapping.createFrom(loanTransaction, currentInstallment,
-                    principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion));
+                    principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion));
         }
         return transactionAmountRemaining;
     }

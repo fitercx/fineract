@@ -11,6 +11,7 @@ import org.apache.fineract.infrastructure.security.service.PlatformSecurityConte
 import org.apache.fineract.portfolio.charge.data.ChargeData;
 import org.apache.fineract.portfolio.delinquency.data.DelinquencyBucketData;
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyReadPlatformService;
+import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.loanproduct.data.AdvancedPaymentData;
 import org.apache.fineract.portfolio.loanproduct.data.CreditAllocationData;
 import org.apache.fineract.portfolio.loanproduct.data.LoanProductBorrowerCycleVariationData;
@@ -52,7 +53,7 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
                     .retrieveAllDelinquencyBuckets();
             final CustomLoanProductMapper rm = new CustomLoanProductMapper(charges, borrowerCycleVariationDatas, rates,
                     delinquencyBucketOptions, advancedPaymentData, creditAllocationData);
-            final String sql = "SELECT lp.enable_loc_payable as enableLocPayable,lp.enable_loc_receivable as enableLocReceivable, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.penalty_grace_period AS penaltyGracePeriod, lp.enable_loc_receivable as enableLocReceivable, "
+            final String sql = "SELECT lp.enable_loc_payable as enableLocPayable,lp.enable_loc_receivable as enableLocReceivable, lp.is_factor_rate_product AS factorRateProductEnabled, lp.factor_rate AS factorRate, lp.penalty_grace_period AS penaltyGracePeriod, lp.enable_loc_receivable as enableLocReceivable, lp.enable_dpd_strategy_switch AS enableDpdStrategySwitch, "
                     + rm.getSchema() + " where lp.id = ?";
 
             return this.jdbcTemplate.queryForObject(sql, rm, loanProductId); // NOSONAR
@@ -90,6 +91,10 @@ public class CustomLoanProductReadPlatformServiceImpl extends LoanProductReadPla
             extendedData.setPenaltyGracePeriod(rs.getInt("penaltyGracePeriod"));
             extendedData.setEnableLineOfCreditReceivable(rs.getBoolean("enableLocReceivable"));
             extendedData.setEnableLineOfCreditPayable(rs.getBoolean("enableLocPayable"));
+            // Surfaced under additionalProperties so the product UI can render the DPD auto-switch toggle without a
+            // change to the core LoanProductData contract.
+            extendedData.getAdditionalProperties().put(LoanProductConstants.ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME,
+                    rs.getBoolean("enableDpdStrategySwitch"));
             return extendedData;
         }
     }
