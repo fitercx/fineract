@@ -831,9 +831,11 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 """.formatted(placeholders);
 
         @SuppressWarnings("deprecation")
-        final List<VendorExposureResponse> rows = this.jdbcTemplate.query(sql, vendorIds.toArray(),
-                (rs, rowNum) -> new VendorExposureResponse(rs.getLong("id"), rs.getString("name"),
-                        rs.getBigDecimal("utilization") == null ? BigDecimal.ZERO : rs.getBigDecimal("utilization")));
+        final List<VendorExposureResponse> rows = this.jdbcTemplate.query(sql, vendorIds.toArray(), (rs, rowNum) -> {
+            final BigDecimal utilization = rs.getBigDecimal("utilization");
+            return new VendorExposureResponse(rs.getLong("id"), rs.getString("name"),
+                    utilization == null ? BigDecimal.ZERO : utilization);
+        });
 
         if (rows.size() < vendorIds.size()) {
             final Set<Long> foundIds = rows.stream().map(VendorExposureResponse::getId).collect(Collectors.toSet());
@@ -871,7 +873,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             } catch (final NumberFormatException ex) {
                 errors.add(ApiParameterError.parameterError("error.msg.vendor.exposure.ids.invalid",
                         "Query parameter 'ids' contains a non-numeric value: " + token, "ids", token));
-                throw new PlatformApiDataValidationException(errors);
+                throw new PlatformApiDataValidationException(errors, ex);
             }
         }
 
