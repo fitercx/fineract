@@ -688,6 +688,69 @@ class CredXLoanChargeWritePlatformServiceImplTest {
             assertEquals(penaltyChargesPortion, sumOfLoanChargesPaid,
                     "sum(loanChargesPaid.amount) must equal transaction.penaltyChargesPortion, or accounting throws "
                             + "'Meltdown in advanced accounting...'");
+            assertNull(waiveTransaction.getTaxChargesPortion(),
+                    "unaccrued LPI leftover must not be stored as tax after CRED VAT reused the waive 3rd argument");
+            assertEquals(0, new BigDecimal("60.00").compareTo(waiveTransaction.getUnrecognizedIncomePortion()));
+        }
+    }
+
+    /**
+     * LMS-128 Super King special case: historical processing-fee txn with extra VAT paid_by (prod loan 67 txn 537: fee
+     * 12300 vs paid_by 12915). Auto-waive must snapshot existingTransactionIds before creating LPI waive txns. An empty
+     * snapshot re-journals that fee txn and AccountingProcessorHelper throws Meltdown. After the first
+     * findExistingTransactionIds() call the loan also contains the new waive (id 999); that id must NOT be treated as
+     * "existing" or the waive itself would skip journaling.
+     */
+    @Test
+    void autoWaiveDoesNotRejournalHistoricalFeeWithVatPaidByMismatch() {
+        final Long historicalFeeTxnId = 537L;
+        final Long newWaiveTxnId = 999L;
+        final LocalDate settlementDate = BUSINESS_DATE.minusDays(1);
+        final Office office = mock(Office.class);
+        when(office.getId()).thenReturn(1L);
+
+        when(loan.getStatus()).thenReturn(LoanStatus.ACTIVE);
+        when(loan.getOffice()).thenReturn(office);
+        when(loan.getDisbursementDate()).thenReturn(LocalDate.of(2023, 11, 14));
+        when(loan.isPeriodicAccrualAccountingEnabledOnLoanProduct()).thenReturn(false);
+        when(loan.isInterestBearingAndInterestRecalculationEnabled()).thenReturn(false);
+        when(loan.findExistingTransactionIds()).thenReturn(List.of(historicalFeeTxnId), List.of(historicalFeeTxnId, newWaiveTxnId));
+        when(loan.findExistingReversedTransactionIds()).thenReturn(Collections.emptyList());
+        when(loan.getLoanCharges()).thenReturn(Collections.emptySet());
+        when(loan.getCharges()).thenReturn(Collections.emptySet());
+        when(loan.getActiveCharges()).thenReturn(Collections.emptySet());
+        when(loanCharge.isActive()).thenReturn(true);
+        when(loanCharge.isWaived()).thenReturn(false);
+        when(loanCharge.isPaid()).thenReturn(false);
+        when(loanCharge.isPenaltyCharge()).thenReturn(true);
+        when(loanCharge.isOverdueInstallmentCharge()).thenReturn(true);
+        when(loanCharge.isDueDateCharge()).thenReturn(true);
+        when(loanCharge.isInstalmentFee()).thenReturn(false);
+        when(loanCharge.getDueLocalDate()).thenReturn(settlementDate);
+        when(loanCharge.getDueDate()).thenReturn(settlementDate);
+        when(externalIdFactory.create()).thenReturn(externalId);
+        when(customLoanChargeRepository.findByLoanIdAndDueDateRange(eq(LOAN_ID), eq(settlementDate), eq(BUSINESS_DATE), anyInt()))
+                .thenReturn(List.of(loanCharge));
+        when(loanAccountingBridgeMapper.deriveAccountingBridgeData(anyString(), anyList(), anyList(), anyBoolean(), eq(loan)))
+                .thenReturn(mock(AccountingBridgeDataDTO.class));
+        when(loanTransactionRepository.saveAndFlush(any(LoanTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(loanRepositoryWrapper.saveAndFlush(loan)).thenReturn(loan);
+
+        try (MockedStatic<DateUtils> mockedDateUtils = mockStatic(DateUtils.class)) {
+            mockedDateUtils.when(DateUtils::getBusinessLocalDate).thenReturn(BUSINESS_DATE);
+            mockedDateUtils.when(() -> DateUtils.isAfter(any(LocalDate.class), any(LocalDate.class))).thenCallRealMethod();
+
+            Map<String, Object> summary = credXLoanChargeWritePlatformService.waiveOverdueChargesOnOrAfterDate(LOAN_ID, settlementDate);
+
+            assertEquals(1, summary.get("chargesWaived"));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<Long>> existingIds = ArgumentCaptor.forClass(List.class);
+            verify(loanAccountingBridgeMapper).deriveAccountingBridgeData(eq(CURRENCY_CODE), existingIds.capture(), anyList(), eq(false),
+                    eq(loan));
+            assertTrue(existingIds.getValue().contains(historicalFeeTxnId),
+                    "historical type-5 fee+VAT txn must be skipped so Super King Meltdown cannot recur");
+            assertFalse(existingIds.getValue().contains(newWaiveTxnId),
+                    "new LPI waive must still be journaled; capturing ids after save would skip it");
         }
     }
 
