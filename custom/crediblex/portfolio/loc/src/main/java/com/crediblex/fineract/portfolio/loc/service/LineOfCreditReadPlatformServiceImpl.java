@@ -833,8 +833,7 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
         @SuppressWarnings("deprecation")
         final List<VendorExposureResponse> rows = this.jdbcTemplate.query(sql, vendorIds.toArray(), (rs, rowNum) -> {
             final BigDecimal utilization = rs.getBigDecimal("utilization");
-            return new VendorExposureResponse(rs.getLong("id"), rs.getString("name"),
-                    utilization == null ? BigDecimal.ZERO : utilization);
+            return new VendorExposureResponse(rs.getLong("id"), rs.getString("name"), utilization == null ? BigDecimal.ZERO : utilization);
         });
 
         if (rows.size() < vendorIds.size()) {
