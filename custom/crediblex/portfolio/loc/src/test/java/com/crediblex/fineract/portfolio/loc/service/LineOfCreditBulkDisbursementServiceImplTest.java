@@ -33,6 +33,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
+import org.apache.fineract.infrastructure.core.domain.FineractRequestContextHolder;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.portfolio.client.domain.Client;
@@ -57,6 +58,9 @@ class LineOfCreditBulkDisbursementServiceImplTest {
     private JdbcTemplate jdbcTemplate;
 
     @Mock
+    private FineractRequestContextHolder fineractRequestContextHolder;
+
+    @Mock
     private PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
 
     private LineOfCreditBulkDisbursementServiceImpl service;
@@ -64,7 +68,7 @@ class LineOfCreditBulkDisbursementServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new LineOfCreditBulkDisbursementServiceImpl(securityContext, lineOfCreditRepositoryWrapper, jdbcTemplate,
-                commandsSourceWritePlatformService);
+                fineractRequestContextHolder, commandsSourceWritePlatformService);
     }
 
     @Test

@@ -369,7 +369,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     accountMap.put(account, penaltiesAmount);
                 }
             } else if (loanTransactionDTO.getTransactionType().isRepayment()) {
-                // For repayments: Use INCOME_FROM_RECOVERY, but for RBF use GL 300015, for LOC products use GL 300017
+                // For repayments: RBF uses GL 300015, Payable Financing uses GL 300017,
+                // Invoice Discounting uses GL 300014. Other products use INCOME_FROM_RECOVERY.
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income on repayments
@@ -385,19 +386,30 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income on repayment, amount: {}",
                                 penaltiesAmount);
                     }
-                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
-                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
-                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
                     account = locAccountingHelper.getLOCLPIIncomeGLAccount();
                     if (account == null) {
                         log.warn(
-                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Over Due Interest - LPI - Payable Financing) not found for product {}. Falling back to default INCOME_FROM_RECOVERY.",
                                 loanProductId);
                         account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                                 AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
                     } else {
                         log.info(
-                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income on repayment, amount: {}",
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Over Due Interest - LPI - Payable Financing) for penalty income on repayment, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    account = locAccountingHelper.getReceivableLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300014 (Over Due Interest - LPI - Invoice Discounting) not found for product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300014 (Over Due Interest - LPI - Invoice Discounting) for penalty income on repayment, amount: {}",
                                 penaltiesAmount);
                     }
                 } else {
@@ -412,10 +424,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     accountMap.put(account, penaltiesAmount);
                 }
             } else if (isIncomeFromFee) {
-                // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
-                // For LOC Payable (LPLL) and LOC Receivable (LRL) products, use GL 300017 (Overdue Interest - LPI -
-                // LOC)
-                // instead of the default INCOME_FROM_PENALTIES account
+                // RBF uses GL 300015. Payable Financing uses GL 300017. Invoice Discounting uses GL 300014.
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income
@@ -431,19 +440,30 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
                                 penaltiesAmount);
                     }
-                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
-                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
-                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
                     account = locAccountingHelper.getLOCLPIIncomeGLAccount();
                     if (account == null) {
                         log.warn(
-                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Over Due Interest - LPI - Payable Financing) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
                                 loanProductId);
                         account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                                 AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
                     } else {
                         log.info(
-                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income, amount: {}",
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Over Due Interest - LPI - Payable Financing) for penalty income, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    account = locAccountingHelper.getReceivableLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300014 (Over Due Interest - LPI - Invoice Discounting) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300014 (Over Due Interest - LPI - Invoice Discounting) for penalty income, amount: {}",
                                 penaltiesAmount);
                     }
                 } else {

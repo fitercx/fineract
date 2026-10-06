@@ -60,8 +60,9 @@ public class LOCAccountingHelper {
                                                                              // used for early/foreclosure closure debit
     public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200080"; // Used for normal closure (regular EMI)
                                                                               // debit
-    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
-                                                                  // Receivable)
+    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Over Due Interest - LPI - Payable Financing
+    public static final String LOC_RECEIVABLE_LPI_INCOME_GL_CODE = "300014"; // Over Due Interest - LPI - Invoice
+                                                                             // Discounting
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
     public static final String RBF_GL_CODE = "200040";
     public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
@@ -248,16 +249,28 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 300017 account (Overdue Interest - LPI - LOC) for LOC penalty income. Used for both Payable LOC and
-     * Receivable LOC products instead of the default INCOME_FROM_PENALTIES account.
+     * Get GL 300017 (Over Due Interest - LPI - Payable Financing) for Payable LOC penalty income.
      *
-     * @return The GLAccount for LOC LPI Income, or null if not found
+     * @return The GLAccount for Payable Financing LPI income, or null if not found
      */
     public GLAccount getLOCLPIIncomeGLAccount() {
+        return findGlAccountByCode(LOC_LPI_INCOME_GL_CODE);
+    }
+
+    /**
+     * Get GL 300014 (Over Due Interest - LPI - Invoice Discounting) for Receivable LOC penalty income.
+     *
+     * @return The GLAccount for Invoice Discounting LPI income, or null if not found
+     */
+    public GLAccount getReceivableLOCLPIIncomeGLAccount() {
+        return findGlAccountByCode(LOC_RECEIVABLE_LPI_INCOME_GL_CODE);
+    }
+
+    private GLAccount findGlAccountByCode(String glCode) {
         try {
-            return glAccountRepository.findOneByGlCode(LOC_LPI_INCOME_GL_CODE).orElse(null);
+            return glAccountRepository.findOneByGlCode(glCode).orElse(null);
         } catch (Exception e) {
-            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_LPI_INCOME_GL_CODE, e.getMessage());
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", glCode, e.getMessage());
             return null;
         }
     }
