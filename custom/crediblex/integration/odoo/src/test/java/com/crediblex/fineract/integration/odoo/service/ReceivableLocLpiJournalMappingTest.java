@@ -39,6 +39,28 @@ class ReceivableLocLpiJournalMappingTest {
     }
 
     @Test
+    void invoiceDiscountingClosureRefundGroupPostsOnBnk8() {
+        assertEquals("BNK8", service.findReceivableLOCJournalCodeForGlCode("200080", "EARLY_CLOSURE_REFUND", true));
+        assertEquals("BNK8", service.findReceivableLOCJournalCodeForGlCode("100001", "EARLY_CLOSURE_REFUND", false));
+        assertEquals("BNK8", service.findReceivableLOCJournalCodeForGlCode("200084", "EARLY_CLOSURE_REFUND", true));
+        assertEquals("BNK8", service.findReceivableLOCJournalCodeForGlCode("100035", "EARLY_CLOSURE_REFUND", false));
+        assertNull(service.findReceivableLOCJournalCodeForGlCode("100032", "EARLY_CLOSURE_REFUND", false));
+    }
+
+    @Test
+    void invoiceDiscountingClosureSettlementGroupDoesNotMapRefundOnlyAccounts() {
+        assertEquals("BNK8", service.findReceivableLOCJournalCodeForGlCode("100032", "EARLY_CLOSURE", false));
+        assertNull(service.findReceivableLOCJournalCodeForGlCode("200084", "EARLY_CLOSURE", true));
+        assertNull(service.findReceivableLOCJournalCodeForGlCode("100001", "EARLY_CLOSURE", false));
+    }
+
+    @Test
+    void invoiceDiscountingRepaymentDoesNotMapUnearnedInterestRefundAccounts() {
+        assertNull(service.findReceivableLOCJournalCodeForGlCode("200084", "REPAYMENT", true));
+        assertNull(service.findReceivableLOCJournalCodeForGlCode("100001", "REPAYMENT", false));
+    }
+
+    @Test
     void payableFinancingRepaymentKeepsLpiOn300017() {
         assertEquals("BNK2", service.findPayableLOCJournalCodeForGlCode("300017", "REPAYMENT", false));
         assertNull(service.findPayableLOCJournalCodeForGlCode("300014", "REPAYMENT", false));
