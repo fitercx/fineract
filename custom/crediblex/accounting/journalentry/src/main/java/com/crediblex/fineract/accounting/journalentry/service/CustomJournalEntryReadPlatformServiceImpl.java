@@ -8,6 +8,7 @@ import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.journalentry.data.JournalEntryAssociationParametersData;
 import org.apache.fineract.accounting.journalentry.data.JournalEntryData;
+import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryReadPlatformService;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryReadPlatformServiceImpl;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
@@ -193,9 +194,12 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
                 }
                 Long transaction = null;
                 if (entityType != null && transactionId != null) {
-                    String numericPart = transactionId.replaceAll("[^\\d]", "");
-                    if (!numericPart.isEmpty()) {
-                        transaction = Long.parseLong(numericPart);
+                    transaction = extractLoanTransactionId(transactionId);
+                    if (transaction == null) {
+                        String numericPart = transactionId.replaceAll("[^\\d]", "");
+                        if (!numericPart.isEmpty()) {
+                            transaction = Long.parseLong(numericPart);
+                        }
                     }
                 }
 
@@ -239,8 +243,16 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
         String whereClose = " where ";
 
         if (org.apache.commons.lang3.StringUtils.isNotBlank(transactionId)) {
-            sqlBuilder.append(whereClose).append(" journalEntry.transaction_id = ?");
-            objectArray[arrayPos] = transactionId;
+            // Loan foreclosure refund entries are stored under L<txn>-R but share loan_transaction_id with L<txn>.
+            // Looking up either id must return both groups so the journal entry UI shows a complete picture.
+            final Long loanTransactionId = extractLoanTransactionId(transactionId);
+            if (loanTransactionId != null) {
+                sqlBuilder.append(whereClose).append(" journalEntry.loan_transaction_id = ?");
+                objectArray[arrayPos] = loanTransactionId;
+            } else {
+                sqlBuilder.append(whereClose).append(" journalEntry.transaction_id = ?");
+                objectArray[arrayPos] = transactionId;
+            }
             arrayPos = arrayPos + 1;
 
             whereClose = " and ";
@@ -327,6 +339,24 @@ public class CustomJournalEntryReadPlatformServiceImpl extends JournalEntryReadP
         System.arraycopy(objectArray, 0, finalObjectArray, 0, arrayPos);
 
         return paginationHelper.fetchPage(this.jdbcTemplate, sqlBuilder.toString(), finalObjectArray, rm);
+    }
+
+    /**
+     * Parses a loan journal transaction id ({@code L123} or {@code L123-R}) into the underlying loan transaction id.
+     * Returns null for savings / manual / other transaction ids so those keep an exact transaction_id match.
+     */
+    static Long extractLoanTransactionId(final String transactionId) {
+        if (transactionId == null || !transactionId.startsWith(AccountingProcessorHelper.LOAN_TRANSACTION_IDENTIFIER)) {
+            return null;
+        }
+        String remainder = transactionId.substring(AccountingProcessorHelper.LOAN_TRANSACTION_IDENTIFIER.length());
+        if (remainder.endsWith(LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX)) {
+            remainder = remainder.substring(0, remainder.length() - LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX.length());
+        }
+        if (remainder.isEmpty() || !remainder.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        return Long.valueOf(remainder);
     }
 
     @Override
