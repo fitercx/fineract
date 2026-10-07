@@ -32,7 +32,8 @@ import java.util.Set;
  */
 public final class OdooJournalLineLabelBuilder {
 
-    private static final Set<String> SUPPORTED_EVENTS = Set.of("DISBURSEMENT", "REPAYMENT", "ACCRUAL", "EARLY_CLOSURE");
+    private static final Set<String> SUPPORTED_EVENTS = Set.of("DISBURSEMENT", "REPAYMENT", "ACCRUAL", "EARLY_CLOSURE",
+            "EARLY_CLOSURE_REFUND");
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private OdooJournalLineLabelBuilder() {}
@@ -77,6 +78,7 @@ public final class OdooJournalLineLabelBuilder {
             case "REPAYMENT" -> "Repayment";
             case "ACCRUAL" -> "Accrual";
             case "EARLY_CLOSURE" -> "Early Closure";
+            case "EARLY_CLOSURE_REFUND" -> "Early Closure Refund";
             default -> businessEventType;
         };
     }

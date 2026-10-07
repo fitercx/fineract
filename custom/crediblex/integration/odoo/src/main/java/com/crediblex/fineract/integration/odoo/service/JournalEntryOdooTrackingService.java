@@ -45,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 @ConditionalOnProperty(name = "odoo.enabled", havingValue = "true")
 public class JournalEntryOdooTrackingService {
 
+    static final String EARLY_CLOSURE_EVENT = "EARLY_CLOSURE";
+    static final String EARLY_CLOSURE_REFUND_EVENT = "EARLY_CLOSURE_REFUND";
+
     private final BusinessEventNotifierService businessEventNotifierService;
     private final JournalEntryOdooSyncRepository journalEntryOdooSyncRepository;
     private final LoanTransactionRepository loanTransactionRepository;
@@ -101,7 +104,8 @@ public class JournalEntryOdooTrackingService {
 
             if (journalEntry.getLoanTransactionId() != null) {
                 loanId = getLoanIdFromTransactionId(journalEntry.getLoanTransactionId());
-                businessEventType = getBusinessEventTypeFromLoanTransaction(journalEntry.getLoanTransactionId());
+                businessEventType = resolveForeclosureRefundEvent(
+                        getBusinessEventTypeFromLoanTransaction(journalEntry.getLoanTransactionId()), journalEntry.getTransactionId());
             } else if (journalEntry.getSavingsTransactionId() != null) {
                 // For savings transactions, try to get linked loan ID from savings account
                 loanId = getLoanIdFromSavingsTransactionId(journalEntry.getSavingsTransactionId());
@@ -130,6 +134,18 @@ public class JournalEntryOdooTrackingService {
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
         }
+    }
+
+    /**
+     * Foreclosure refund entries ({@code L<txn>-R}) share the foreclosure loan transaction but are posted to Odoo as
+     * their own move.
+     */
+    static String resolveForeclosureRefundEvent(String businessEventType, String journalTransactionId) {
+        if (EARLY_CLOSURE_EVENT.equals(businessEventType) && journalTransactionId != null
+                && journalTransactionId.endsWith(LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX)) {
+            return EARLY_CLOSURE_REFUND_EVENT;
+        }
+        return businessEventType;
     }
 
     /**
@@ -281,7 +297,7 @@ public class JournalEntryOdooTrackingService {
                 if (isForeclosure == 1) {
                     log.debug("Loan transaction {} with type {} identified as EARLY_CLOSURE business event", loanTransactionId,
                             transactionTypeEnum);
-                    return "EARLY_CLOSURE";
+                    return EARLY_CLOSURE_EVENT;
                 }
             }
         } catch (Exception e) {

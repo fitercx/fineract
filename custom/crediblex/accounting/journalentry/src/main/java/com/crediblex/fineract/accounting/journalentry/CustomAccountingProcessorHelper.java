@@ -21,6 +21,7 @@ import org.apache.fineract.accounting.journalentry.data.LoanDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntry;
 import org.apache.fineract.accounting.journalentry.domain.JournalEntryRepository;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntryType;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
 import org.apache.fineract.infrastructure.core.exception.PlatformDataIntegrityException;
@@ -28,6 +29,7 @@ import org.apache.fineract.infrastructure.event.business.domain.journalentry.Loa
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.office.domain.OfficeRepository;
+import org.apache.fineract.portfolio.PortfolioProductType;
 import org.apache.fineract.portfolio.account.PortfolioAccountType;
 import org.apache.fineract.portfolio.account.service.AccountTransfersReadPlatformService;
 import org.apache.fineract.portfolio.charge.domain.ChargeRepositoryWrapper;
@@ -237,6 +239,20 @@ public class CustomAccountingProcessorHelper extends AccountingProcessorHelper {
                     totalCreditedAmount, totalAmount);
         }
 
+    }
+
+    /**
+     * Creates a loan journal entry under its own transaction id ({@code L<loanTransactionId><suffix>}) while still
+     * linking it to the loan transaction, so it shows as a separate journal entry group but syncs and reverses with
+     * that transaction. The base helpers only link the loan transaction for numeric transaction ids.
+     */
+    public void createLoanJournalEntryUnderSuffixedId(final Office office, final String currencyCode, final GLAccount account,
+            final Long loanId, final Long loanTransactionId, final String suffix, final LocalDate transactionDate, final BigDecimal amount,
+            final JournalEntryType type) {
+        final String transactionId = LOAN_TRANSACTION_IDENTIFIER + loanTransactionId + suffix;
+        final JournalEntry journalEntry = JournalEntry.createNew(office, null, account, currencyCode, transactionId, false, transactionDate,
+                type, amount, null, PortfolioProductType.LOAN.getValue(), loanId, null, loanTransactionId, null, null, null);
+        persistJournalEntry(journalEntry);
     }
 
     @Override

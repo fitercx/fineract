@@ -335,6 +335,11 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK8";
         }
 
+        // Foreclosure refund group (L<txn>-R): invoice refund and unearned interest, posted as its own BNK8 move
+        if ("EARLY_CLOSURE_REFUND".equals(businessEventType) && Set.of("200080", "100001", "200084", "100035").contains(glCode)) {
+            return "BNK8";
+        }
+
         // BNK2 journal for REPAYMENT business events with specific GL codes.
         // 300014 is Invoice Discounting LPI. Payable Financing LPI (300017) stays on the payable map.
         if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100032", "100035", "300014").contains(glCode)) {
