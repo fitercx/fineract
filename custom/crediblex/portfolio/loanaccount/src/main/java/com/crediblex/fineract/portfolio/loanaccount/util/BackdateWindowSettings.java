@@ -32,12 +32,14 @@ import org.springframework.stereotype.Component;
  * <p>
  * Config {@value #CONFIG_NAME}:
  * <ul>
- * <li>{@code enabled = true, value = N} - backdating allowed up to N days before the business date. Seeded as
- * {@value #DEFAULT_MAX_BACKDATE_DAYS} days.</li>
+ * <li>{@code enabled = true, value = N} where N is greater than 0 - backdating allowed up to N days before the business
+ * date. Seeded as {@value #DEFAULT_MAX_BACKDATE_DAYS} days.</li>
+ * <li>{@code enabled = true, value = 0} - no backdating. The transaction date must be the business date, or the
+ * disbursement date if that is later. The global-configuration screen allows 0, so 0 has to mean what it says.</li>
  * <li>{@code enabled = false} - no day limit; backdating allowed to the start of the loan's first instalment period
  * (still never before disbursement). This is what UAT/STG use to settle long-lived test loans.</li>
  * </ul>
- * Anything unexpected (row missing, unreadable, or {@code value} absent/not positive while enabled) falls back to
+ * A missing row, an unreadable row, or an enabled row whose {@code value} is absent or negative falls back to
  * {@value #DEFAULT_MAX_BACKDATE_DAYS} days, so a misconfiguration can never silently remove the guard.
  * <p>
  * The static accessor exists because {@link BackdatedRepaymentValidator} is a static utility called from four write and
@@ -108,10 +110,13 @@ public class BackdateWindowSettings implements InitializingBean {
         if (!enabled) {
             return null;
         }
-        if (value == null || value <= 0) {
-            log.warn("Configuration '{}' is enabled without a positive day count (value={}), falling back to {} days", CONFIG_NAME, value,
+        if (value == null || value < 0) {
+            log.warn("Configuration '{}' is enabled without a usable day count (value={}), falling back to {} days", CONFIG_NAME, value,
                     DEFAULT_MAX_BACKDATE_DAYS);
             return DEFAULT_MAX_BACKDATE_DAYS;
+        }
+        if (value == 0L) {
+            return 0;
         }
         return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : value.intValue();
     }

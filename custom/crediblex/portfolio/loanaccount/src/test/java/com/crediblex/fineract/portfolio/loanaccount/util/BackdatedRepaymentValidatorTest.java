@@ -84,6 +84,13 @@ class BackdatedRepaymentValidatorTest {
     }
 
     @Test
+    void zeroDayCountStopsAtTheBusinessDate() {
+        final Loan oldLoan = loan(BUSINESS_DATE.minusMonths(8), BUSINESS_DATE.minusMonths(8));
+
+        assertThat(BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(oldLoan, 0)).isEqualTo(BUSINESS_DATE);
+    }
+
+    @Test
     void dayLimitStopsAtDisbursementForARecentlyDisbursedLoan() {
         final LocalDate disbursedTenDaysAgo = BUSINESS_DATE.minusDays(10);
         final Loan recentLoan = loan(disbursedTenDaysAgo, disbursedTenDaysAgo);

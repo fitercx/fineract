@@ -353,7 +353,7 @@ public class OdooJournalEntryService {
             }
 
             // Group entries by journal using business event type from tracking records
-            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, loanId);
+            Map<MoveGroupKey, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, loanId);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for loan {} - all entries skipped", loanId);
@@ -361,8 +361,8 @@ public class OdooJournalEntryService {
             }
 
             // Create separate account moves for each journal
-            for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
-                Integer journalId = journalGroup.getKey();
+            for (Map.Entry<MoveGroupKey, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey().journalId();
                 List<JournalEntry> entries = journalGroup.getValue();
                 String businessEventType = resolveBusinessEventType(journalEntryOdooSyncs, entries);
 
@@ -411,10 +411,21 @@ public class OdooJournalEntryService {
     }
 
     /**
-     * Group journal entries by their target journal based on GL codes, business event type, debit flag and loan ID
+     * Odoo move a journal entry belongs to: one move per target journal, except foreclosure refund entries which get
+     * their own move on the same journal so each move balances on its own.
      */
-    private Map<Integer, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs, Long loanId) {
-        Map<Integer, List<JournalEntry>> groupedEntries = new HashMap<>();
+    record MoveGroupKey(Integer journalId, boolean foreclosureRefund) {
+
+        static MoveGroupKey of(Integer journalId, String businessEventType) {
+            return new MoveGroupKey(journalId, JournalEntryOdooTrackingService.EARLY_CLOSURE_REFUND_EVENT.equals(businessEventType));
+        }
+    }
+
+    /**
+     * Group journal entries by their target move based on GL codes, business event type, debit flag and loan ID
+     */
+    private Map<MoveGroupKey, List<JournalEntry>> groupEntriesByJournal(List<JournalEntryOdooSync> journalEntryOdooSyncs, Long loanId) {
+        Map<MoveGroupKey, List<JournalEntry>> groupedEntries = new HashMap<>();
 
         for (JournalEntryOdooSync sync : journalEntryOdooSyncs) {
             JournalEntry entry = sync.getJournalEntry();
@@ -427,7 +438,7 @@ public class OdooJournalEntryService {
             Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit, loanId);
 
             if (journalId != null) {
-                groupedEntries.computeIfAbsent(journalId, k -> new ArrayList<>()).add(entry);
+                groupedEntries.computeIfAbsent(MoveGroupKey.of(journalId, businessEventType), k -> new ArrayList<>()).add(entry);
                 log.debug("Assigned journal entry {} (GL: {}, business event type: {}, isDebit: {}, loanId: {}) to journal {}",
                         entry.getId(), glCode, businessEventType, isDebit, loanId, journalId);
             } else {
@@ -816,7 +827,7 @@ public class OdooJournalEntryService {
             }
 
             // Group entries by journal using business event type from tracking records
-            Map<Integer, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, null);
+            Map<MoveGroupKey, List<JournalEntry>> entriesByJournal = groupEntriesByJournal(journalEntryOdooSyncs, null);
 
             if (entriesByJournal.isEmpty()) {
                 log.info("No journal entries with valid mappings found for business event {} - all entries skipped", businessEventType);
@@ -824,8 +835,8 @@ public class OdooJournalEntryService {
             }
 
             // Create separate account moves for each journal
-            for (Map.Entry<Integer, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
-                Integer journalId = journalGroup.getKey();
+            for (Map.Entry<MoveGroupKey, List<JournalEntry>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey().journalId();
                 List<JournalEntry> entries = journalGroup.getValue();
 
                 // Create the account move with multiple lines for this journal
@@ -1109,6 +1120,7 @@ public class OdooJournalEntryService {
         List<Long> successfulEntryIds = new ArrayList<>();
         Map<Long, String> failedEntryIds = new HashMap<>();
         Map<Integer, Long> journalToMoveMap = new HashMap<>();
+        int movesCreated = 0;
 
         try {
             // Authenticate with Odoo
@@ -1143,7 +1155,7 @@ public class OdooJournalEntryService {
             }
 
             // Group valid entries by journal
-            Map<Integer, List<JournalEntryOdooSync>> entriesByJournal = new HashMap<>();
+            Map<MoveGroupKey, List<JournalEntryOdooSync>> entriesByJournal = new HashMap<>();
             for (JournalEntryOdooSync sync : validEntries) {
                 JournalEntry entry = sync.getJournalEntry();
                 String glCode = entry.getGlAccount().getGlCode();
@@ -1152,7 +1164,7 @@ public class OdooJournalEntryService {
 
                 Integer journalId = odooIntegrationService.getJournalIdForGlCode(glCode, businessEventType, isDebit, loanId);
                 if (journalId != null) {
-                    entriesByJournal.computeIfAbsent(journalId, k -> new ArrayList<>()).add(sync);
+                    entriesByJournal.computeIfAbsent(MoveGroupKey.of(journalId, businessEventType), k -> new ArrayList<>()).add(sync);
                 } else {
                     String error = String.format("No journal mapping found for GL code %s, business event %s, debit: %s, loanId: %d",
                             glCode, businessEventType, isDebit, loanId);
@@ -1161,8 +1173,8 @@ public class OdooJournalEntryService {
             }
 
             // Process each journal group separately
-            for (Map.Entry<Integer, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
-                Integer journalId = journalGroup.getKey();
+            for (Map.Entry<MoveGroupKey, List<JournalEntryOdooSync>> journalGroup : entriesByJournal.entrySet()) {
+                Integer journalId = journalGroup.getKey().journalId();
                 List<JournalEntryOdooSync> groupEntries = journalGroup.getValue();
 
                 try {
@@ -1189,6 +1201,7 @@ public class OdooJournalEntryService {
 
                     // If we get here, the journal group was successful
                     journalToMoveMap.put(journalId, odooMoveId);
+                    movesCreated++;
                     for (JournalEntryOdooSync sync : groupEntries) {
                         successfulEntryIds.add(sync.getJournalEntry().getId());
                     }
@@ -1222,7 +1235,7 @@ public class OdooJournalEntryService {
             }
         }
 
-        return new EntryProcessingResult(successfulEntryIds, failedEntryIds, journalToMoveMap.size(), journalToMoveMap);
+        return new EntryProcessingResult(successfulEntryIds, failedEntryIds, movesCreated, journalToMoveMap);
     }
 
     /**
