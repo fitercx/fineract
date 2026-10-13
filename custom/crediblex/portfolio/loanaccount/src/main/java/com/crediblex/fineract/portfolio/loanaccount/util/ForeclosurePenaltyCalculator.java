@@ -46,6 +46,18 @@ public final class ForeclosurePenaltyCalculator {
      */
     public static Money computePenaltyQuotedForSettlementDate(final Loan loan, final LocalDate settlementDate,
             final MonetaryCurrency currency) {
+        return computePenaltyQuotedForSettlementDate(loan, settlementDate, currency, true);
+    }
+
+    /**
+     * @param excludeInstallmentDueAfterSettlement
+     *            foreclosure drops a charge whose owning installment is due after the settlement date, because that
+     *            installment is removed. A partial-repayment close amount must not: LPI dated before the value date is
+     *            payable even when its installment link points at a later EMI. Using the foreclosure filter there
+     *            understates the close amount and takes the waive path for a payment that is still partial.
+     */
+    static Money computePenaltyQuotedForSettlementDate(final Loan loan, final LocalDate settlementDate, final MonetaryCurrency currency,
+            final boolean excludeInstallmentDueAfterSettlement) {
         Money totalPenaltyPayable = Money.zero(currency);
         for (final LoanCharge loanCharge : loan.getActiveCharges()) {
             if (!loanCharge.isPenaltyCharge()) {
@@ -55,9 +67,11 @@ public final class ForeclosurePenaltyCalculator {
             if (chargeAccrualDate != null && !DateUtils.isBefore(chargeAccrualDate, settlementDate)) {
                 continue;
             }
-            final LocalDate effectiveDueDate = resolveEffectiveDueDateForForeclosure(loanCharge);
-            if (effectiveDueDate != null && DateUtils.isAfter(effectiveDueDate, settlementDate)) {
-                continue;
+            if (excludeInstallmentDueAfterSettlement) {
+                final LocalDate effectiveDueDate = resolveEffectiveDueDateForForeclosure(loanCharge);
+                if (effectiveDueDate != null && DateUtils.isAfter(effectiveDueDate, settlementDate)) {
+                    continue;
+                }
             }
             totalPenaltyPayable = totalPenaltyPayable.plus(loanCharge.getAmountOutstanding(currency));
         }

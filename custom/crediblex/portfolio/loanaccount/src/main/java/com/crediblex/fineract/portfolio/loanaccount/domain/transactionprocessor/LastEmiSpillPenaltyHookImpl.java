@@ -20,6 +20,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor;
 
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import jakarta.annotation.PostConstruct;
 import java.time.LocalDate;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -44,6 +45,9 @@ public class LastEmiSpillPenaltyHookImpl implements LastEmiSpillPenaltyHook {
         if (loan == null || loan.getCurrency() == null) {
             return;
         }
+        // reprocessTransactions rebuilds penalty with isDueInPeriod and drops the align done before makeRepayment.
+        // Put pre-date LPI back immediately before this repayment, and before any later repayment in that replay.
+        PartialBackdatedLpiReplay.realignIfReplaying(loan, transactionDate);
         InstallmentPenaltySyncUtils.foldSpillPenaltyOntoLastEmi(loan, loan.getCurrency());
         InstallmentPenaltySyncUtils.foldPreValueDatePenaltyOntoDueEmi(loan, transactionDate);
     }
