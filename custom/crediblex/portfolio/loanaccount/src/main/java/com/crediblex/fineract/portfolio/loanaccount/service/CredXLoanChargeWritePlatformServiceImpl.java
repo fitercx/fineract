@@ -13,6 +13,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PenaltyWaiveUnrecognizedIncome;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -632,7 +633,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         existingReversedTransactionIds.addAll(loan.findExistingReversedTransactionIds());
 
         final LoanTransaction waiveLoanChargeTransaction = LoanTransaction.waiveLoanCharge(loan, loan.getOffice(), amountWaived,
-                transactionDate, feeChargesWaived, penaltyChargesWaived, unrecognizedIncome, externalId);
+                transactionDate, feeChargesWaived, penaltyChargesWaived,
+                PenaltyWaiveUnrecognizedIncome.thirdArgumentForWaiveFactory(loanCharge, unrecognizedIncome), externalId);
+        PenaltyWaiveUnrecognizedIncome.recordOnPenaltyWaive(waiveLoanChargeTransaction, loanCharge, unrecognizedIncome);
         // IMPORTANT: use chargeComponent (== feeChargesWaived/penaltyChargesWaived), not the full amountWaived, here.
         // The transaction's feeChargesPortion/penaltyChargesPortion only reflect the "recognized" component
         // (amountWaived minus unrecognizedIncome, see updateChargesComponents above); if the charge is waived before
@@ -1193,10 +1196,11 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
 
         // Snapshot before the waive loop. postJournalEntries journals every transaction whose id is missing from
-        // these lists, so an empty list re-posts disbursement, accruals, repayments and older waivers. The new waive
-        // (and any reversal or replay created inside the loop) is absent from this snapshot and is journaled once.
-        // customWaiveLoanCharge still receives fresh empty lists: passing this snapshot in would record earlier
-        // waives in the same loop as already journaled and skip them.
+        // these lists, so an empty list re-posts disbursement, accruals, repayments and older waivers. Super King
+        // prod loan 67 type-5 fee 12300 has paid_by 12915 (VAT 615 on the same txn); that re-journal throws Meltdown
+        // 12915 vs 12300. The new waive (and any reversal or replay created inside the loop) is absent from this
+        // snapshot and is journaled once. customWaiveLoanCharge still receives fresh empty lists: passing this
+        // snapshot in would record earlier waives in the same loop as already journaled and skip them.
         final List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
         final List<Long> existingReversedTransactionIds = new ArrayList<>(loan.findExistingReversedTransactionIds());
 
