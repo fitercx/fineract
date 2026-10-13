@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
@@ -272,6 +273,38 @@ class InstallmentPenaltySyncUtilsTest {
     }
 
     @Test
+    void lms150_negativePenaltyBalanceDoesNotDropTheLastPreDateDays() {
+        // 000014570: EMI 1 holds only the due-date day but a prior partial already paid two later days against it,
+        // so its penalty outstanding is -30.76. The next partial must still collect every unpaid day before 23 Sep.
+        final LoanRepaymentScheduleInstallment first = contractual(LocalDate.of(2026, 9, 14), "0");
+        final AtomicReference<BigDecimal> firstOutstanding = new AtomicReference<>(new BigDecimal("-30.76"));
+        trackPenalty(first, firstOutstanding);
+        org.mockito.Mockito.doReturn(1).when(first).getInstallmentNumber();
+        org.mockito.Mockito.doReturn(LocalDate.of(2026, 8, 12)).when(first).getFromDate();
+
+        final LoanRepaymentScheduleInstallment second = contractual(LocalDate.of(2026, 10, 12), "0");
+        final AtomicReference<BigDecimal> secondOutstanding = new AtomicReference<>(new BigDecimal("123.04"));
+        trackPenalty(second, secondOutstanding);
+        org.mockito.Mockito.doReturn(2).when(second).getInstallmentNumber();
+        org.mockito.Mockito.doReturn(LocalDate.of(2026, 9, 14)).when(second).getFromDate();
+
+        final LoanCharge sep17 = overdueOn(LocalDate.of(2026, 9, 17), "15.38");
+        final LoanCharge sep18 = overdueOn(LocalDate.of(2026, 9, 18), "15.38");
+        final LoanCharge sep19 = overdueOn(LocalDate.of(2026, 9, 19), "15.38");
+        final LoanCharge sep20 = overdueOn(LocalDate.of(2026, 9, 20), "15.38");
+        final LoanCharge sep21 = overdueOn(LocalDate.of(2026, 9, 21), "15.38");
+        final LoanCharge sep22 = overdueOn(LocalDate.of(2026, 9, 22), "15.38");
+        final Loan loan = mock(Loan.class);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.getLoanCharges()).thenReturn(Set.of(sep17, sep18, sep19, sep20, sep21, sep22));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(first, second));
+
+        assertThat(InstallmentPenaltySyncUtils.foldPreValueDatePenaltyOntoDueEmi(loan, LocalDate.of(2026, 9, 23))).isTrue();
+        assertThat(firstOutstanding.get()).isEqualByComparingTo("92.28");
+        assertThat(secondOutstanding.get()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
     void absorbsUnpaidDummyPenaltyByPuttingTheGapOnTheOverdueEmi() {
         final LoanRepaymentScheduleInstallment overdueEmi = installment(LocalDate.of(2026, 8, 10), "0", "0");
         final LoanRepaymentScheduleInstallment dummy = installment(LocalDate.of(2026, 8, 14), "1.00", "0");
@@ -285,6 +318,16 @@ class InstallmentPenaltySyncUtilsTest {
         assertThat(InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(loan)).isTrue();
         org.mockito.Mockito.verify(overdueEmi).addToChargePortion(any(), any(), any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.argThat(m -> m != null && m.getAmount().compareTo(new BigDecimal("5.56")) == 0), any(), any());
+    }
+
+    private void trackPenalty(final LoanRepaymentScheduleInstallment installment, final AtomicReference<BigDecimal> outstanding) {
+        org.mockito.Mockito.doAnswer(invocation -> Money.of(currency, outstanding.get())).when(installment)
+                .getPenaltyChargesOutstanding(currency);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            final Money delta = invocation.getArgument(6);
+            outstanding.set(outstanding.get().add(delta.getAmount()));
+            return null;
+        }).when(installment).addToChargePortion(any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     private LoanRepaymentScheduleInstallment contractual(final LocalDate dueDate, final String penaltyOutstanding) {

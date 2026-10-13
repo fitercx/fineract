@@ -252,6 +252,11 @@ public final class InstallmentPenaltySyncUtils {
      * Daily LPI dated strictly before {@code transactionDate} can be stored on an installment that is not due yet.
      * Moves that still-outstanding amount onto the latest contractual EMI due on or before the value date, so the
      * repayment takes it before that EMI's interest. Later days stay where they are. Foreclosure does not call this.
+     * <p>
+     * A previous partial can leave this EMI's penalty outstanding negative: the schedule keeps only the due-date day
+     * on the EMI, while the payment already collected later days against it. Adding the pre-date LPI on top of that
+     * deficit would drop the same number of days off the end (LMS-150, loan 000014570: 21–22 Sep left unpaid). The
+     * deficit is added back so the EMI's payable penalty equals every unpaid LPI day strictly before the value date.
      *
      * @return {@code true} when an amount was moved
      */
@@ -275,6 +280,8 @@ public final class InstallmentPenaltySyncUtils {
             return false;
         }
 
+        final Money zero = Money.zero(currency);
+        Money unpaidBefore = zero;
         final java.util.Map<Integer, Money> preDatePenaltyByInstallment = new java.util.HashMap<>();
         if (loan.getLoanCharges() != null) {
             for (final LoanCharge charge : loan.getLoanCharges()) {
@@ -289,6 +296,7 @@ public final class InstallmentPenaltySyncUtils {
                 if (outstanding == null || !outstanding.isGreaterThanZero()) {
                     continue;
                 }
+                unpaidBefore = unpaidBefore.plus(outstanding);
                 final Integer installmentNumber = OverdueChargeScheduleAllocationUtils.resolveInstallmentNumber(chargeDate, installments);
                 if (installmentNumber == null || installmentNumber.equals(target.getInstallmentNumber())) {
                     continue;
@@ -296,12 +304,12 @@ public final class InstallmentPenaltySyncUtils {
                 preDatePenaltyByInstallment.merge(installmentNumber, outstanding, (left, right) -> left.plus(right));
             }
         }
-        if (preDatePenaltyByInstallment.isEmpty()) {
-            return false;
-        }
 
-        final Money zero = Money.zero(currency);
+        final Money targetOutstandingAtStart = target.getPenaltyChargesOutstanding(currency) == null ? zero
+                : target.getPenaltyChargesOutstanding(currency);
+        Money movedTotal = zero;
         boolean moved = false;
+        final List<LoanRepaymentScheduleInstallment> sources = new java.util.ArrayList<>();
         for (final LoanRepaymentScheduleInstallment installment : installments) {
             if (installment == null || installment == target || installment.getDueDate() == null
                     || !installment.getDueDate().isAfter(transactionDate) || installment.getInstallmentNumber() == null) {
@@ -318,9 +326,49 @@ public final class InstallmentPenaltySyncUtils {
             final Money amount = onSchedule.isGreaterThan(fromCharges) ? fromCharges : onSchedule;
             target.addToChargePortion(zero, zero, zero, zero, zero, zero, amount, zero, zero);
             installment.addToChargePortion(zero, zero, zero, zero, zero, zero, amount.negated(), zero, zero);
+            movedTotal = movedTotal.plus(amount);
+            sources.add(installment);
+            moved = true;
+        }
+
+        // Payable on the due EMI must be the full pre-date unpaid LPI. A negative starting balance would otherwise
+        // cancel the tail of that amount (already-paid days the schedule no longer charges on this EMI).
+        final Money projected = targetOutstandingAtStart.plus(movedTotal);
+        if (unpaidBefore.isGreaterThan(projected)) {
+            Money extra = unpaidBefore.minus(projected);
+            target.addToChargePortion(zero, zero, zero, zero, zero, zero, extra, zero, zero);
+            for (final LoanRepaymentScheduleInstallment source : sources) {
+                extra = peelPenaltyOutstanding(source, extra, zero, currency);
+            }
+            if (extra.isGreaterThanZero()) {
+                for (final LoanRepaymentScheduleInstallment installment : installments) {
+                    if (installment == null || installment == target || sources.contains(installment) || installment.getDueDate() == null
+                            || !installment.getDueDate().isAfter(transactionDate)) {
+                        continue;
+                    }
+                    extra = peelPenaltyOutstanding(installment, extra, zero, currency);
+                    if (!extra.isGreaterThanZero()) {
+                        break;
+                    }
+                }
+            }
             moved = true;
         }
         return moved;
+    }
+
+    private static Money peelPenaltyOutstanding(final LoanRepaymentScheduleInstallment installment, final Money remaining,
+            final Money zero, final MonetaryCurrency currency) {
+        if (installment == null || remaining == null || !remaining.isGreaterThanZero()) {
+            return remaining == null ? zero : remaining;
+        }
+        final Money onSchedule = installment.getPenaltyChargesOutstanding(currency);
+        if (onSchedule == null || !onSchedule.isGreaterThanZero()) {
+            return remaining;
+        }
+        final Money slice = onSchedule.isGreaterThan(remaining) ? remaining : onSchedule;
+        installment.addToChargePortion(zero, zero, zero, zero, zero, zero, slice.negated(), zero, zero);
+        return remaining.minus(slice);
     }
 
     private static boolean isContractualEmi(final LoanRepaymentScheduleInstallment installment, final MonetaryCurrency currency) {
