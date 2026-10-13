@@ -55,6 +55,13 @@ class OdooJournalLineLabelBuilderTest {
     }
 
     @Test
+    void buildsLabelForEarlyClosureRefund() {
+        String label = OdooJournalLineLabelBuilder.build("Acme LLC", "EARLY_CLOSURE_REFUND", LocalDate.of(2026, 9, 10), "RF", 3064L);
+
+        assertEquals("Acme LLC - Early Closure Refund 2026-09-10 - Invoice discounting - Loan ID 3064", label);
+    }
+
+    @Test
     void omitsClientNameWhenMissing() {
         String label = OdooJournalLineLabelBuilder.build(null, "DISBURSEMENT", LocalDate.of(2026, 7, 15), "RF", 3064L);
 
