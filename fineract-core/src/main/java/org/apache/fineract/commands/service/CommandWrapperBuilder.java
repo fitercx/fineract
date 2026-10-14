@@ -1556,6 +1556,14 @@ public class CommandWrapperBuilder {
         return this;
     }
 
+    public CommandWrapperBuilder reverseStandingInstructionExecution(final Long historyId) {
+        this.actionName = "REVERSE";
+        this.entityName = "STANDING_INSTRUCTION_HISTORY";
+        this.entityId = historyId;
+        this.href = "/standinginstructionrunhistory/" + historyId;
+        return this;
+    }
+
     public CommandWrapperBuilder savingsAccountDeposit(final Long accountId) {
         this.actionName = "DEPOSIT";
         this.entityName = "SAVINGSACCOUNT";
