@@ -1,10 +1,9 @@
 package com.crediblex.fineract.portfolio.savings.service;
 
-import java.math.BigDecimal;
+import com.crediblex.fineract.portfolio.savings.domain.CredXSavingsEndingBalanceValidator;
 import java.math.MathContext;
 import java.time.LocalDate;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -32,7 +31,6 @@ import org.apache.fineract.portfolio.savings.SavingsApiConstants;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountChargeDataValidator;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountDataValidator;
 import org.apache.fineract.portfolio.savings.data.SavingsAccountTransactionDataValidator;
-import org.apache.fineract.portfolio.savings.domain.DepositAccountOnHoldTransaction;
 import org.apache.fineract.portfolio.savings.domain.DepositAccountOnHoldTransactionRepository;
 import org.apache.fineract.portfolio.savings.domain.GSIMRepositoy;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
@@ -54,6 +52,7 @@ import org.springframework.stereotype.Service;
 public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends SavingsAccountWritePlatformServiceJpaRepositoryImpl {
 
     private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
+    private final CredXSavingsEndingBalanceValidator endingBalanceValidator;
 
     public CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             SavingsAccountDataValidator fromApiJsonDeserializer, SavingsAccountRepositoryWrapper savingAccountRepositoryWrapper,
@@ -70,7 +69,8 @@ public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends Sa
             EntityDatatableChecksWritePlatformService entityDatatableChecksWritePlatformService, AppUserRepositoryWrapper appuserRepository,
             StandingInstructionRepository standingInstructionRepository, BusinessEventNotifierService businessEventNotifierService,
             GSIMRepositoy gsimRepository, SavingsAccountInterestPostingService savingsAccountInterestPostingService,
-            ErrorHandler errorHandler, CredXSavingsTransactionSubTypeService transactionSubTypeService) {
+            ErrorHandler errorHandler, CredXSavingsTransactionSubTypeService transactionSubTypeService,
+            CredXSavingsEndingBalanceValidator endingBalanceValidator) {
         super(context, fromApiJsonDeserializer, savingAccountRepositoryWrapper, staffRepository, savingsAccountTransactionRepository,
                 savingAccountAssembler, savingsAccountTransactionDataValidator, savingsAccountChargeDataValidator,
                 paymentDetailWritePlatformService, journalEntryWritePlatformService, savingsAccountDomainService, noteRepository,
@@ -80,6 +80,7 @@ public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends Sa
                 standingInstructionRepository, businessEventNotifierService, gsimRepository, savingsAccountInterestPostingService,
                 errorHandler);
         this.transactionSubTypeService = transactionSubTypeService;
+        this.endingBalanceValidator = endingBalanceValidator;
     }
 
     @Override
@@ -151,13 +152,7 @@ public class CredXSavingsAccountWritePlatformServiceJpaRepositoryImpl extends Sa
             account.calculateInterestUsing(mc, today, isInterestTransfer, isSavingsInterestPostingAtCurrentPeriodEnd,
                     financialYearBeginningMonth, postInterestOnDate, false, postReversals);
         }
-        List<DepositAccountOnHoldTransaction> depositAccountOnHoldTransactions = null;
-        if (account.getOnHoldFunds().compareTo(BigDecimal.ZERO) > 0) {
-            depositAccountOnHoldTransactions = this.depositAccountOnHoldTransactionRepository
-                    .findBySavingsAccountAndReversedFalseOrderByCreatedDateAsc(account);
-        }
-        account.validateAccountBalanceDoesNotBecomeNegative(SavingsApiConstants.undoTransactionAction, depositAccountOnHoldTransactions,
-                false);
+        this.endingBalanceValidator.validate(account, savingsAccountTransaction.getAmount(), false, false);
         account.activateAccountBasedOnBalance();
         this.savingAccountRepositoryWrapper.saveAndFlush(account);
         postJournalEntries(account, existingTransactionIds, existingReversedTransactionIds, false);

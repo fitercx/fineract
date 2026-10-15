@@ -8,7 +8,8 @@ public enum CredXSavingsTransactionSubType {
 
     DISBURSAL(1, "savingsAccountTransactionSubType.disbursal", "Disbursal"), REFUND(2, "savingsAccountTransactionSubType.refund",
             "Refund"), EMI_TRANSFER(3, "savingsAccountTransactionSubType.emiTransfer",
-                    "EMI Transfer"), FORECLOSURE_REFUND(4, "savingsAccountTransactionSubType.foreclosureRefund", "Foreclosure Refund");
+                    "EMI Transfer"), FORECLOSURE_REFUND(4, "savingsAccountTransactionSubType.foreclosureRefund",
+                            "Foreclosure Refund"), DISBURSEMENT(5, "savingsAccountTransactionSubType.disbursement", "Disbursement");
 
     private static final Map<Integer, CredXSavingsTransactionSubType> BY_VALUE = Arrays.stream(values())
             .collect(Collectors.toMap(CredXSavingsTransactionSubType::getValue, value -> value));
