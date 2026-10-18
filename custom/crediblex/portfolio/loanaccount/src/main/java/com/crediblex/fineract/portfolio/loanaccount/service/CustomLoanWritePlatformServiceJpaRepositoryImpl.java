@@ -23,11 +23,11 @@ import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisb
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
-import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
@@ -1687,9 +1687,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         // Same-day due-date pays are on-time (not backdated) and still auto-waive overnight/legacy due-date LPI.
         final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
         final boolean waiveLpiForValueDate = isBackdatedSettlement || onInstallmentDueDate;
-        // Partial, whether backdated or paid on the due date, leaves the loan active. Collect LPI strictly before
-        // the value date and keep later rows outstanding at the reduced principal. Do not fully waive them and do
-        // not ask the penalty job to create replacements. A full close still waives.
+        // A partial leaves the loan active. LPI strictly before the value date is collected. LPI on or after the value
+        // date is waived only for an installment this amount finishes; the remainder then pays the next installment
+        // as LPI, interest, then principal. LPI on an installment that stays open is repriced, not waived. A full
+        // close still waives every later LPI charge.
         final boolean keepLaterLpi = BackdatedSettlementLpiPolicy.keepsLaterLpi(loan, transactionDate, transactionAmount,
                 onInstallmentDueDate);
 
@@ -1700,8 +1701,12 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             validateBackdatedRepaymentAllowed(loan, transactionDate);
         }
         if (keepLaterLpi) {
+            // An installment this partial finishes has its LPI on or after the value date waived before allocation.
+            // The remainder then pays the next installment: LPI strictly before the value date, then interest, then
+            // principal. LPI on an installment that stays open is left outstanding.
+            backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService
+                    .waivePostValueDateLpiOnInstallmentsClearedByPartial(loanId, transactionDate, transactionAmount);
             this.credibleXLoanChargeWritePlatformService.alignSchedulePenaltyForPartialBackdatedRepayment(loanId, transactionDate);
-            backdatedLpiWaiveSummary = null;
         } else if (waiveLpiForValueDate) {
             // On a due date the payment is on-time: LPI for that EMI is posted after midnight (dated the next
             // day) and is waived when the value date is the due date. On any other date that day's LPI stays

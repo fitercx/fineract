@@ -896,6 +896,12 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
     }
 
     protected LoanCharge findEarliestUnpaidChargeFromUnOrderedSet(final Set<LoanCharge> charges, final MonetaryCurrency currency) {
+        // More than one overdue installment: pay the oldest installment's LPI charges before the next installment's.
+        // No-op unless the custom module registers an order. Fees and single-installment penalties stay date-ordered.
+        final LoanCharge orderedPenalty = OverduePenaltyChargeOrderRegistry.nextUnpaid(charges, currency);
+        if (orderedPenalty != null) {
+            return orderedPenalty;
+        }
         LoanCharge earliestUnpaidCharge = null;
         LoanCharge installemntCharge = null;
         LoanInstallmentCharge chargePerInstallment = null;

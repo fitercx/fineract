@@ -20,6 +20,7 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanOverdueInstallmentCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -305,6 +306,33 @@ class InstallmentPenaltySyncUtilsTest {
     }
 
     @Test
+    void severalOverdueInstallmentsKeepEachInstallmentsOwnLpiOnThatInstallment() {
+        // Three EMIs are already due. Only the due-date day sits on its EMI; later days of that EMI are stored on the
+        // next overdue EMI. A partial must still take installment 1's full LPI before installment 1's interest.
+        final LoanRepaymentScheduleInstallment first = dueEmi(1, LocalDate.of(2026, 7, 14), LocalDate.of(2026, 8, 14), "12.82");
+        final LoanRepaymentScheduleInstallment second = dueEmi(2, LocalDate.of(2026, 8, 14), LocalDate.of(2026, 9, 14), "38.46");
+        final LoanRepaymentScheduleInstallment third = dueEmi(3, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 10, 14), "38.46");
+
+        final LoanCharge aug14 = linkedOverdue(first, LocalDate.of(2026, 8, 14), "12.82");
+        final LoanCharge aug15 = linkedOverdue(first, LocalDate.of(2026, 8, 15), "12.82");
+        final LoanCharge sep10 = linkedOverdue(first, LocalDate.of(2026, 9, 10), "12.82");
+        final LoanCharge sep14 = linkedOverdue(second, LocalDate.of(2026, 9, 14), "12.82");
+        final LoanCharge sep15 = linkedOverdue(second, LocalDate.of(2026, 9, 15), "12.82");
+        final LoanCharge oct1 = linkedOverdue(second, LocalDate.of(2026, 10, 1), "12.82");
+        final LoanCharge oct14 = linkedOverdue(third, LocalDate.of(2026, 10, 14), "12.82");
+
+        final Loan loan = mock(Loan.class);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.getLoanCharges()).thenReturn(Set.of(aug14, aug15, sep10, sep14, sep15, oct1, oct14));
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(first, second, third));
+
+        assertThat(InstallmentPenaltySyncUtils.foldPreValueDatePenaltyOntoDueEmi(loan, LocalDate.of(2026, 10, 15))).isTrue();
+        assertThat(penaltyOutstanding(first)).isEqualByComparingTo("38.46");
+        assertThat(penaltyOutstanding(second)).isEqualByComparingTo("38.46");
+        assertThat(penaltyOutstanding(third)).isEqualByComparingTo("12.82");
+    }
+
+    @Test
     void absorbsUnpaidDummyPenaltyByPuttingTheGapOnTheOverdueEmi() {
         final LoanRepaymentScheduleInstallment overdueEmi = installment(LocalDate.of(2026, 8, 10), "0", "0");
         final LoanRepaymentScheduleInstallment dummy = installment(LocalDate.of(2026, 8, 14), "1.00", "0");
@@ -318,6 +346,58 @@ class InstallmentPenaltySyncUtilsTest {
         assertThat(InstallmentPenaltySyncUtils.syncOutstandingOverduePenaltyOntoSchedule(loan)).isTrue();
         org.mockito.Mockito.verify(overdueEmi).addToChargePortion(any(), any(), any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.argThat(m -> m != null && m.getAmount().compareTo(new BigDecimal("5.56")) == 0), any(), any());
+    }
+
+    @Test
+    void secondPartialDoesNotPostNegativeLpiAfterTheDueDateDayIsAllTheScheduleRowKeeps() {
+        // Loan 000014627: EMI 1's 59 LPI days were paid (756.38) but the schedule row keeps only 20 Aug (12.82).
+        // The other 743.56 sits on later rows. The next repayment must not post that gap as negative LPI.
+        final LoanRepaymentScheduleInstallment emi1 = scheduleRow(1, LocalDate.of(2026, 7, 20), LocalDate.of(2026, 8, 20), "12.82");
+        final LoanRepaymentScheduleInstallment emi2 = scheduleRow(2, LocalDate.of(2026, 8, 20), LocalDate.of(2026, 9, 21), "423.40");
+        final LoanRepaymentScheduleInstallment emi3 = scheduleRow(3, LocalDate.of(2026, 9, 21), LocalDate.of(2026, 10, 20), "675.48");
+        ReflectionTestUtils.setField(emi1, "penaltyChargesPaid", new BigDecimal("756.38"));
+        final Loan loan = mock(Loan.class);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(emi1, emi2, emi3));
+
+        assertThat(InstallmentPenaltySyncUtils.coverPenaltyPaidAboveCharged(loan)).isTrue();
+        assertThat(emi1.getPenaltyChargesOutstanding(currency).getAmount()).isEqualByComparingTo("0.00");
+        assertThat(emi1.getPenaltyChargesCharged(currency).getAmount()).isEqualByComparingTo("756.38");
+        assertThat(emi2.getPenaltyChargesOutstanding(currency).getAmount()).isEqualByComparingTo("355.32");
+        assertThat(emi3.getPenaltyChargesOutstanding(currency).getAmount()).isEqualByComparingTo("0.00");
+
+        final Money penaltyPortion = emi1.payPenaltyChargesComponent(LocalDate.of(2026, 10, 18),
+                Money.of(currency, new BigDecimal("8000.00")));
+        assertThat(penaltyPortion.getAmount()).isEqualByComparingTo("0.00");
+        assertThat(emi1.getPenaltyChargesPaid(currency).getAmount()).isEqualByComparingTo("756.38");
+    }
+
+    private LoanRepaymentScheduleInstallment scheduleRow(final int number, final LocalDate fromDate, final LocalDate dueDate,
+            final String penaltyCharged) {
+        return new LoanRepaymentScheduleInstallment(null, number, fromDate, dueDate, new BigDecimal("1000.00"), new BigDecimal("100.00"),
+                BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(penaltyCharged), false, null, BigDecimal.ZERO);
+    }
+
+    private LoanRepaymentScheduleInstallment dueEmi(final int number, final LocalDate fromDate, final LocalDate dueDate,
+            final String penaltyOutstanding) {
+        final LoanRepaymentScheduleInstallment installment = contractual(dueDate, penaltyOutstanding);
+        org.mockito.Mockito.doReturn(false).when(installment).isObligationsMet();
+        org.mockito.Mockito.doReturn(number).when(installment).getInstallmentNumber();
+        org.mockito.Mockito.doReturn(fromDate).when(installment).getFromDate();
+        trackPenalty(installment, new AtomicReference<>(new BigDecimal(penaltyOutstanding)));
+        return installment;
+    }
+
+    private LoanCharge linkedOverdue(final LoanRepaymentScheduleInstallment owner, final LocalDate dueDate, final String outstanding) {
+        final LoanCharge charge = overdueOn(dueDate, outstanding);
+        final LoanOverdueInstallmentCharge link = mock(LoanOverdueInstallmentCharge.class);
+        when(link.getInstallment()).thenReturn(owner);
+        when(charge.getOverdueInstallmentCharge()).thenReturn(link);
+        return charge;
+    }
+
+    private BigDecimal penaltyOutstanding(final LoanRepaymentScheduleInstallment installment) {
+        return installment.getPenaltyChargesOutstanding(currency).getAmount();
     }
 
     private void trackPenalty(final LoanRepaymentScheduleInstallment installment, final AtomicReference<BigDecimal> outstanding) {

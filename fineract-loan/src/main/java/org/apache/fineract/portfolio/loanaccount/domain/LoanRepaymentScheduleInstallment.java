@@ -560,6 +560,13 @@ public class LoanRepaymentScheduleInstallment extends AbstractAuditableWithUTCDa
         }
 
         final Money penaltyChargesDue = getPenaltyChargesOutstanding(currency);
+        // Outstanding is negative when this row's charged LPI was rebuilt down to the due-date day after an earlier
+        // repayment already collected the later days. Paying that deficit posts negative overdue interest and inflates
+        // principal. Leave the paid amount unchanged; coverPenaltyPaidAboveCharged clears the deficit before
+        // allocation.
+        if (!penaltyChargesDue.isGreaterThanZero()) {
+            return penaltyPortionOfTransaction;
+        }
         if (transactionAmountRemaining.isGreaterThanOrEqualTo(penaltyChargesDue)) {
             this.penaltyChargesPaid = getPenaltyChargesPaid(currency).plus(penaltyChargesDue).getAmount();
             penaltyPortionOfTransaction = penaltyPortionOfTransaction.plus(penaltyChargesDue);

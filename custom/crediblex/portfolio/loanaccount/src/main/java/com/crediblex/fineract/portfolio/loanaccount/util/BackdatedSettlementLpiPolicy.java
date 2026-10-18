@@ -29,10 +29,10 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 /**
  * Decides whether a repayment that would otherwise waive LPI should leave those charges alive instead.
  * <p>
- * A full close still waives LPI dated on or after the value date (LMS-125). A partial payment, backdated or on the
- * installment due date, leaves the loan active. Later LPI stays on the same charge rows, outstanding, at the reduced
- * principal. Those rows are not fully waived, and the penalty job is not asked to create replacements. When the close
- * amount cannot be computed, this returns false and the caller keeps the existing waive.
+ * A full close still waives LPI dated on or after the value date (LMS-125). A partial payment leaves the loan active.
+ * LPI on an installment this payment does not finish stays outstanding and is repriced. LPI on or after the value date
+ * for an installment the partial does finish is waived separately, before the remainder is applied to the next
+ * installment. When the close amount cannot be computed, this returns false and the caller keeps the existing waive.
  */
 public final class BackdatedSettlementLpiPolicy {
 
@@ -85,8 +85,8 @@ public final class BackdatedSettlementLpiPolicy {
         required = required.plus(zero(summary.getTotalFeeChargesOutstanding()));
         required = required.plus(zero(summary.getTotalTaxChargesOutstanding()));
         if (loan.getActiveCharges() != null && settlementDate != null) {
-            required = required.plus(
-                    ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, settlementDate, currency, false));
+            required = required
+                    .plus(ForeclosurePenaltyCalculator.computePenaltyQuotedForSettlementDate(loan, settlementDate, currency, false));
         }
         return required;
     }

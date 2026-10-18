@@ -146,17 +146,26 @@ public class LoanArrearsAgingServiceImpl implements LoanArrearsAgingService {
         BigDecimal feeOverdue = BigDecimal.ZERO;
         BigDecimal penaltyOverdue = BigDecimal.ZERO;
         LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final BigDecimal chargePenaltyOverdue = OverduePenaltyArrears.unpaidBefore(loan, businessDate);
         LocalDate overDueSince = businessDate;
         for (LoanRepaymentScheduleInstallment installment : installments) {
             if (DateUtils.isBefore(installment.getDueDate(), businessDate)) {
                 principalOverdue = principalOverdue.add(installment.getPrincipalOutstanding(loan.getCurrency()).getAmount());
                 interestOverdue = interestOverdue.add(installment.getInterestOutstanding(loan.getCurrency()).getAmount());
                 feeOverdue = feeOverdue.add(installment.getFeeChargesOutstanding(loan.getCurrency()).getAmount());
-                penaltyOverdue = penaltyOverdue.add(installment.getPenaltyChargesOutstanding(loan.getCurrency()).getAmount());
+                if (chargePenaltyOverdue == null) {
+                    final BigDecimal schedulePenalty = installment.getPenaltyChargesOutstanding(loan.getCurrency()).getAmount();
+                    if (schedulePenalty != null && schedulePenalty.signum() > 0) {
+                        penaltyOverdue = penaltyOverdue.add(schedulePenalty);
+                    }
+                }
                 if (installment.isNotFullyPaidOff() && DateUtils.isAfter(overDueSince, installment.getDueDate())) {
                     overDueSince = installment.getDueDate();
                 }
             }
+        }
+        if (chargePenaltyOverdue != null) {
+            penaltyOverdue = chargePenaltyOverdue;
         }
 
         BigDecimal totalOverDue = principalOverdue.add(interestOverdue).add(feeOverdue).add(penaltyOverdue);

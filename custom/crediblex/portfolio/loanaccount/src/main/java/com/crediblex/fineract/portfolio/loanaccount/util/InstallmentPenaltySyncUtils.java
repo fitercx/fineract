@@ -249,14 +249,76 @@ public final class InstallmentPenaltySyncUtils {
     }
 
     /**
-     * Daily LPI dated strictly before {@code transactionDate} can be stored on an installment that is not due yet.
-     * Moves that still-outstanding amount onto the latest contractual EMI due on or before the value date, so the
-     * repayment takes it before that EMI's interest. Later days stay where they are. Foreclosure does not call this.
+     * Stops a later repayment from posting negative LPI.
      * <p>
-     * A previous partial can leave this EMI's penalty outstanding negative: the schedule keeps only the due-date day
-     * on the EMI, while the payment already collected later days against it. Adding the pre-date LPI on top of that
-     * deficit would drop the same number of days off the end (LMS-150, loan 000014570: 21–22 Sep left unpaid). The
-     * deficit is added back so the EMI's payable penalty equals every unpaid LPI day strictly before the value date.
+     * After a partial, the schedule row keeps only the due-date day while {@code penaltyChargesPaid} still includes the
+     * later days that repayment collected. Outstanding is then negative, and the next repayment books that deficit as
+     * negative overdue interest and the same amount of extra principal. Charged penalty is raised to the amount already
+     * paid, and that increase is taken off later rows so the loan total stays the same.
+     *
+     * @return {@code true} when an installment penalty portion changed
+     */
+    public static boolean coverPenaltyPaidAboveCharged(final Loan loan) {
+        if (loan == null || loan.getCurrency() == null || loan.getRepaymentScheduleInstallments() == null) {
+            return false;
+        }
+        final MonetaryCurrency currency = loan.getCurrency();
+        final Money zero = Money.zero(currency);
+        final List<LoanRepaymentScheduleInstallment> installments = new java.util.ArrayList<>();
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (installment != null && installment.getDueDate() != null) {
+                installments.add(installment);
+            }
+        }
+        installments.sort((left, right) -> left.getDueDate().compareTo(right.getDueDate()));
+
+        boolean changed = false;
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            final Money outstanding = installment.getPenaltyChargesOutstanding(currency);
+            if (outstanding == null || !outstanding.isLessThanZero()) {
+                continue;
+            }
+            Money shortfall = outstanding.negated();
+            installment.addToChargePortion(zero, zero, zero, zero, zero, zero, shortfall, zero, zero);
+            changed = true;
+            final List<LoanRepaymentScheduleInstallment> laterFirst = new java.util.ArrayList<>();
+            for (final LoanRepaymentScheduleInstallment other : installments) {
+                if (other != installment && other.getDueDate().isAfter(installment.getDueDate())) {
+                    laterFirst.add(other);
+                }
+            }
+            laterFirst.sort((left, right) -> right.getDueDate().compareTo(left.getDueDate()));
+            for (final LoanRepaymentScheduleInstallment holder : laterFirst) {
+                if (!shortfall.isGreaterThanZero()) {
+                    break;
+                }
+                final Money holderOutstanding = holder.getPenaltyChargesOutstanding(currency);
+                if (holderOutstanding == null || !holderOutstanding.isGreaterThanZero()) {
+                    continue;
+                }
+                final Money slice = holderOutstanding.isGreaterThan(shortfall) ? shortfall : holderOutstanding;
+                holder.addToChargePortion(zero, zero, zero, zero, zero, zero, slice.negated(), zero, zero);
+                shortfall = shortfall.minus(slice);
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Puts unpaid LPI dated strictly before {@code transactionDate} on the installment the repayment strategy will pay,
+     * immediately before allocation. Later days stay where they are. Foreclosure does not call this.
+     * <p>
+     * The schedule shows each daily charge in the period that contains its effective date, so only the first day stays
+     * on the EMI that caused it. With one overdue EMI, the later days sit on a row that is not due yet and are folded
+     * onto that EMI. With several overdue EMIs those later days sit on the next overdue EMI, which is already due, so
+     * the oldest EMI keeps a single day. The strategy then pays that day, then the EMI's interest and principal, and
+     * never reaches the rest of its LPI. Charges linked to an EMI due on or before the value date are moved back onto
+     * that EMI. Anything without a link still folds onto the latest EMI due on or before the value date.
+     * <p>
+     * A previous partial can leave an EMI's penalty outstanding negative: the schedule keeps only the due-date day,
+     * while the payment already collected later days against it. Adding the pre-date LPI on top of that deficit would
+     * drop the same number of days off the end (LMS-150, loan 000014570: 21–22 Sep left unpaid). The deficit is added
+     * back so each EMI's payable penalty equals its own unpaid LPI days strictly before the value date.
      *
      * @return {@code true} when an amount was moved
      */
@@ -281,11 +343,13 @@ public final class InstallmentPenaltySyncUtils {
         }
 
         final Money zero = Money.zero(currency);
-        Money unpaidBefore = zero;
-        final java.util.Map<Integer, Money> preDatePenaltyByInstallment = new java.util.HashMap<>();
+        Money unpaidUnlinked = zero;
+        final java.util.Map<Integer, Money> unlinkedByInstallment = new java.util.HashMap<>();
+        final java.util.Map<Integer, Money> ownedByInstallment = new java.util.HashMap<>();
+        final List<PenaltyShift> ownerShifts = new java.util.ArrayList<>();
         if (loan.getLoanCharges() != null) {
             for (final LoanCharge charge : loan.getLoanCharges()) {
-                if (charge == null || !charge.isActive() || !charge.isOverdueInstallmentCharge() || charge.isWaived()) {
+                if (!isUnpaidOverdueCharge(charge)) {
                     continue;
                 }
                 final LocalDate chargeDate = charge.getDueLocalDate();
@@ -296,26 +360,55 @@ public final class InstallmentPenaltySyncUtils {
                 if (outstanding == null || !outstanding.isGreaterThanZero()) {
                     continue;
                 }
-                unpaidBefore = unpaidBefore.plus(outstanding);
-                final Integer installmentNumber = OverdueChargeScheduleAllocationUtils.resolveInstallmentNumber(chargeDate, installments);
-                if (installmentNumber == null || installmentNumber.equals(target.getInstallmentNumber())) {
+                final LoanRepaymentScheduleInstallment owner = owningInstallmentDueOnOrBefore(charge, installments, transactionDate,
+                        currency);
+                final Integer displayNumber = OverdueChargeScheduleAllocationUtils.resolveInstallmentNumber(chargeDate, installments);
+                if (owner != null && owner.getInstallmentNumber() != null) {
+                    ownedByInstallment.merge(owner.getInstallmentNumber(), outstanding, (left, right) -> left.plus(right));
+                    if (displayNumber != null && !displayNumber.equals(owner.getInstallmentNumber())) {
+                        ownerShifts.add(new PenaltyShift(displayNumber, owner.getInstallmentNumber(), outstanding));
+                    }
                     continue;
                 }
-                preDatePenaltyByInstallment.merge(installmentNumber, outstanding, (left, right) -> left.plus(right));
+                unpaidUnlinked = unpaidUnlinked.plus(outstanding);
+                if (displayNumber == null || displayNumber.equals(target.getInstallmentNumber())) {
+                    continue;
+                }
+                unlinkedByInstallment.merge(displayNumber, outstanding, (left, right) -> left.plus(right));
             }
+        }
+
+        boolean moved = false;
+        for (final PenaltyShift shift : ownerShifts) {
+            moved |= movePenalty(installmentByNumber(installments, shift.fromNumber), installmentByNumber(installments, shift.toNumber),
+                    shift.amount, zero, currency);
+        }
+        for (final java.util.Map.Entry<Integer, Money> owned : ownedByInstallment.entrySet()) {
+            final LoanRepaymentScheduleInstallment owner = installmentByNumber(installments, owned.getKey());
+            if (owner == null || owned.getValue() == null) {
+                continue;
+            }
+            final Money projected = owner.getPenaltyChargesOutstanding(currency) == null ? zero
+                    : owner.getPenaltyChargesOutstanding(currency);
+            if (!owned.getValue().isGreaterThan(projected)) {
+                continue;
+            }
+            Money extra = owned.getValue().minus(projected);
+            owner.addToChargePortion(zero, zero, zero, zero, zero, zero, extra, zero, zero);
+            extra = peelSurplusAboveOwned(installments, owner, extra, ownedByInstallment, zero, currency);
+            moved = true;
         }
 
         final Money targetOutstandingAtStart = target.getPenaltyChargesOutstanding(currency) == null ? zero
                 : target.getPenaltyChargesOutstanding(currency);
         Money movedTotal = zero;
-        boolean moved = false;
         final List<LoanRepaymentScheduleInstallment> sources = new java.util.ArrayList<>();
         for (final LoanRepaymentScheduleInstallment installment : installments) {
             if (installment == null || installment == target || installment.getDueDate() == null
                     || !installment.getDueDate().isAfter(transactionDate) || installment.getInstallmentNumber() == null) {
                 continue;
             }
-            final Money fromCharges = preDatePenaltyByInstallment.get(installment.getInstallmentNumber());
+            final Money fromCharges = unlinkedByInstallment.get(installment.getInstallmentNumber());
             if (fromCharges == null || !fromCharges.isGreaterThanZero()) {
                 continue;
             }
@@ -331,11 +424,11 @@ public final class InstallmentPenaltySyncUtils {
             moved = true;
         }
 
-        // Payable on the due EMI must be the full pre-date unpaid LPI. A negative starting balance would otherwise
-        // cancel the tail of that amount (already-paid days the schedule no longer charges on this EMI).
+        // Payable unlinked LPI must land on the latest due EMI. A negative starting balance would otherwise cancel the
+        // tail of that amount (already-paid days the schedule no longer charges on this EMI).
         final Money projected = targetOutstandingAtStart.plus(movedTotal);
-        if (unpaidBefore.isGreaterThan(projected)) {
-            Money extra = unpaidBefore.minus(projected);
+        if (unpaidUnlinked.isGreaterThanZero() && unpaidUnlinked.isGreaterThan(projected)) {
+            Money extra = unpaidUnlinked.minus(projected);
             target.addToChargePortion(zero, zero, zero, zero, zero, zero, extra, zero, zero);
             for (final LoanRepaymentScheduleInstallment source : sources) {
                 extra = peelPenaltyOutstanding(source, extra, zero, currency);
@@ -357,8 +450,107 @@ public final class InstallmentPenaltySyncUtils {
         return moved;
     }
 
-    private static Money peelPenaltyOutstanding(final LoanRepaymentScheduleInstallment installment, final Money remaining,
+    /**
+     * The EMI a daily LPI charge was raised for, when that EMI is already due on the value date. Later days are linked
+     * to this EMI even though the schedule shows them on a later period.
+     */
+    private static LoanRepaymentScheduleInstallment owningInstallmentDueOnOrBefore(final LoanCharge charge,
+            final List<LoanRepaymentScheduleInstallment> installments, final LocalDate transactionDate, final MonetaryCurrency currency) {
+        if (charge.getOverdueInstallmentCharge() == null || charge.getOverdueInstallmentCharge().getInstallment() == null
+                || charge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber() == null) {
+            return null;
+        }
+        final Integer number = charge.getOverdueInstallmentCharge().getInstallment().getInstallmentNumber();
+        final LoanRepaymentScheduleInstallment owner = installmentByNumber(installments, number);
+        if (owner == null || !isContractualEmi(owner, currency) || owner.getDueDate() == null
+                || owner.getDueDate().isAfter(transactionDate)) {
+            return null;
+        }
+        return owner;
+    }
+
+    private static LoanRepaymentScheduleInstallment installmentByNumber(final List<LoanRepaymentScheduleInstallment> installments,
+            final Integer number) {
+        if (number == null || installments == null) {
+            return null;
+        }
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (installment != null && number.equals(installment.getInstallmentNumber())) {
+                return installment;
+            }
+        }
+        return null;
+    }
+
+    private static boolean movePenalty(final LoanRepaymentScheduleInstallment from, final LoanRepaymentScheduleInstallment to,
+            final Money amount, final Money zero, final MonetaryCurrency currency) {
+        if (from == null || to == null || from == to || amount == null || !amount.isGreaterThanZero()) {
+            return false;
+        }
+        final Money onSchedule = from.getPenaltyChargesOutstanding(currency);
+        if (onSchedule == null || !onSchedule.isGreaterThanZero()) {
+            return false;
+        }
+        final Money slice = onSchedule.isGreaterThan(amount) ? amount : onSchedule;
+        to.addToChargePortion(zero, zero, zero, zero, zero, zero, slice, zero, zero);
+        from.addToChargePortion(zero, zero, zero, zero, zero, zero, slice.negated(), zero, zero);
+        return true;
+    }
+
+    /**
+     * Removes {@code extra} from later rows without taking LPI that those rows own themselves.
+     */
+    private static Money peelSurplusAboveOwned(final List<LoanRepaymentScheduleInstallment> installments,
+            final LoanRepaymentScheduleInstallment owner, Money extra, final java.util.Map<Integer, Money> ownedByInstallment,
             final Money zero, final MonetaryCurrency currency) {
+        final List<LoanRepaymentScheduleInstallment> laterFirst = new java.util.ArrayList<>();
+        for (final LoanRepaymentScheduleInstallment installment : installments) {
+            if (installment != null && installment != owner) {
+                laterFirst.add(installment);
+            }
+        }
+        laterFirst.sort((left, right) -> {
+            if (left.getDueDate() == null) {
+                return 1;
+            }
+            if (right.getDueDate() == null) {
+                return -1;
+            }
+            return right.getDueDate().compareTo(left.getDueDate());
+        });
+        for (final LoanRepaymentScheduleInstallment installment : laterFirst) {
+            if (extra == null || !extra.isGreaterThanZero()) {
+                break;
+            }
+            final Money floor = installment.getInstallmentNumber() == null ? zero
+                    : ownedByInstallment.getOrDefault(installment.getInstallmentNumber(), zero);
+            final Money onSchedule = installment.getPenaltyChargesOutstanding(currency);
+            if (onSchedule == null || !onSchedule.isGreaterThan(floor)) {
+                continue;
+            }
+            final Money surplus = onSchedule.minus(floor);
+            final Money slice = surplus.isGreaterThan(extra) ? extra : surplus;
+            installment.addToChargePortion(zero, zero, zero, zero, zero, zero, slice.negated(), zero, zero);
+            extra = extra.minus(slice);
+        }
+        return extra == null ? zero : extra;
+    }
+
+    private static final class PenaltyShift {
+
+        private final Integer fromNumber;
+        private final Integer toNumber;
+        private final Money amount;
+
+        private PenaltyShift(final Integer fromNumber, final Integer toNumber, final Money amount) {
+            this.fromNumber = fromNumber;
+            this.toNumber = toNumber;
+            this.amount = amount;
+        }
+    }
+
+    private static Money peelPenaltyOutstanding(final LoanRepaymentScheduleInstallment installment, final Money remaining, final Money zero,
+            final MonetaryCurrency currency) {
         if (installment == null || remaining == null || !remaining.isGreaterThanZero()) {
             return remaining == null ? zero : remaining;
         }

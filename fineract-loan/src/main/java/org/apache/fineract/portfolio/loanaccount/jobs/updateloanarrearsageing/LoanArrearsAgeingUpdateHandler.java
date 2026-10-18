@@ -116,8 +116,13 @@ public class LoanArrearsAgeingUpdateHandler {
                 + "coalesce(mr.interest_completed_derived, 0))";
         final String feeChargesOverdueCalculationSql = "SUM(COALESCE(mr.fee_charges_amount, 0) - coalesce(mr.fee_charges_writtenoff_derived, 0) - "
                 + "coalesce(mr.fee_charges_waived_derived, 0) - coalesce(mr.fee_charges_completed_derived, 0))";
-        final String penaltyChargesOverdueCalculationSql = "SUM(COALESCE(mr.penalty_charges_amount, 0) - coalesce(mr.penalty_charges_writtenoff_derived, 0) - "
-                + "coalesce(mr.penalty_charges_waived_derived, 0) - coalesce(mr.penalty_charges_completed_derived, 0))";
+        final String schedulePenaltyOverdueSql = "GREATEST(SUM(COALESCE(mr.penalty_charges_amount, 0) - coalesce(mr.penalty_charges_writtenoff_derived, 0) - "
+                + "coalesce(mr.penalty_charges_waived_derived, 0) - coalesce(mr.penalty_charges_completed_derived, 0)), 0)";
+        final String penaltyChargesOverdueCalculationSql = "COALESCE((SELECT SUM(lc.amount_outstanding_derived) FROM m_loan_charge lc "
+                + "WHERE lc.loan_id = ml.id AND lc.charge_time_enum = 9 AND lc.is_active = true AND lc.waived = false "
+                + "AND lc.due_for_collection_as_of_date < "
+                + sqlGenerator.subDate(sqlGenerator.currentBusinessDate(), "COALESCE(ml.grace_on_arrears_ageing, 0)", "day") + "), "
+                + schedulePenaltyOverdueSql + ")";
 
         insertSqlStatementBuilder.append(
                 "INSERT INTO m_loan_arrears_aging(loan_id,principal_overdue_derived,interest_overdue_derived,fee_charges_overdue_derived,penalty_charges_overdue_derived,total_overdue_derived,overdue_since_date_derived)");
