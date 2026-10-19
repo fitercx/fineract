@@ -55,7 +55,7 @@ public class LOCAccountingHelper {
     public static final String LOC_ACTIVATION_FEE_INCOME_GL_CODE = "300004";
     public static final String LOC_ACTIVATION_VAT_GL_CODE = "200065";
     public static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062";
-    public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086";
+    public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_DEBIT_GL_CODE = "100062";
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
@@ -195,8 +195,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200086 account (Invoice Discounting - Clearing - Current Liability) for LOC Receivable deposits. Looks up
-     * by GL code to avoid hardcoding account ID.
+     * Get GL 200080 account (LOC - Clearing Account - Current Liability) for LOC Receivable deposits. Looks up by GL
+     * code to avoid hardcoding account ID.
      *
      * @return The GLAccount for LOC Receivable Credit, or null if not found
      */

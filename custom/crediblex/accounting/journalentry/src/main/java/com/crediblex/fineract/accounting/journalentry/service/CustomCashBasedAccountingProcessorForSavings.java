@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * savings.
  *
  * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
- * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200080).
  */
 @Slf4j
 @Primary
@@ -160,9 +160,9 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                 }
 
                 if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
-                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200086
-                    // (Invoice Discounting Clearing)
-                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200086");
+                    // LOC Receivable Normal Deposit (Repayment): DR 100062 (Client Receivable Clearing), CR 200080
+                    // (LOC - Clearing Account)
+                    log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable normal deposit - DR 100062, CR 200080");
                     GLAccount debitAccount = locAccountingHelper.getLOCReceivableDebitGLAccount();
                     GLAccount creditAccount = locAccountingHelper.getLOCReceivableCreditGLAccount();
                     if (debitAccount != null && creditAccount != null) {
@@ -172,7 +172,7 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
                                 transactionDate, amount);
                         processedTransactionIndices.add(i);
                     } else {
-                        log.error("LOC Receivable GL Accounts (100062 or 200086) not found, using default logic for this transaction");
+                        log.error("LOC Receivable GL Accounts (100062 or 200080) not found, using default logic for this transaction");
                         // Do NOT mark as processed - let parent handle it
                     }
                     continue;
@@ -448,8 +448,8 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
 
     /**
      * Handles LOC Receivable withdrawal journal entries. - Payment type DISBURSEMENT_OF_INVOICE: DR 200041 (Loan
-     * Payable - Invoice Discounting), CR Bank - Other payment types (refund): DR 200086 (Invoice Discounting Clearing),
-     * CR 100062 (Client Receivable Clearing)
+     * Payable - Invoice Discounting), CR Bank - Other payment types (refund): DR 200080 (LOC - Clearing Account), CR
+     * 100062 (Client Receivable Clearing)
      */
     private boolean handleLOCReceivableWithdrawal(Office office, String currencyCode, Long savingsProductId, Long savingsId,
             String transactionId, LocalDate transactionDate, BigDecimal amount, Long paymentTypeId) {
@@ -474,20 +474,20 @@ public class CustomCashBasedAccountingProcessorForSavings extends CashBasedAccou
             this.helper.createCreditJournalEntryForSavings(office, currencyCode, bankAccount, savingsId, transactionId, transactionDate,
                     amount);
         } else {
-            // Refund withdrawal: Opposite of deposit (DR 200086, CR 100062)
-            // Deposit was: DR 100062 (Client Receivable Clearing), CR 200086 (Invoice Discounting Clearing)
-            // Refund is: DR 200086 (Invoice Discounting Clearing), CR 100062 (Client Receivable Clearing)
-            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable refund withdrawal - DR 200086, CR 100062");
+            // Refund withdrawal: Opposite of deposit (DR 200080, CR 100062)
+            // Deposit was: DR 100062 (Client Receivable Clearing), CR 200080 (LOC - Clearing Account)
+            // Refund is: DR 200080 (LOC - Clearing Account), CR 100062 (Client Receivable Clearing)
+            log.info("CustomCashBasedAccountingProcessorForSavings: LOC Receivable refund withdrawal - DR 200080, CR 100062");
 
-            GLAccount invoiceDiscountingClearingAccount = locAccountingHelper.getLOCReceivableCreditGLAccount(); // 200086
+            GLAccount locClearingAccount = locAccountingHelper.getLOCReceivableCreditGLAccount(); // 200080
             GLAccount clientReceivableAccount = locAccountingHelper.getLOCReceivableDebitGLAccount(); // 100062
 
-            if (invoiceDiscountingClearingAccount == null || clientReceivableAccount == null) {
-                log.error("LOC Receivable GL Accounts (200086 or 100062) not found, using default logic for this transaction");
+            if (locClearingAccount == null || clientReceivableAccount == null) {
+                log.error("LOC Receivable GL Accounts (200080 or 100062) not found, using default logic for this transaction");
                 return false;
             }
 
-            this.helper.createDebitJournalEntryForSavings(office, currencyCode, invoiceDiscountingClearingAccount, savingsId, transactionId,
+            this.helper.createDebitJournalEntryForSavings(office, currencyCode, locClearingAccount, savingsId, transactionId,
                     transactionDate, amount);
             this.helper.createCreditJournalEntryForSavings(office, currencyCode, clientReceivableAccount, savingsId, transactionId,
                     transactionDate, amount);
