@@ -22,10 +22,12 @@ import com.crediblex.fineract.portfolio.loanaccount.repository.LoanRepaymentsSum
 import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisbursementDateValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
+import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueInstallmentChargeLinkHelper;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
@@ -1684,11 +1686,18 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
+        final BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
         final boolean isBackdatedSettlement = transactionDate != null && transactionDate.isBefore(businessDate);
         // Same-day due-date pays are on-time (not backdated) and still auto-waive overnight/legacy due-date LPI.
-        final boolean waiveLpiForValueDate = isBackdatedSettlement
-                || LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
+        final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
+        final boolean waiveLpiForValueDate = isBackdatedSettlement || onInstallmentDueDate;
+        // A partial leaves the loan active. LPI strictly before the value date is collected. LPI on or after the value
+        // date is waived only for an installment this amount finishes; the remainder then pays the next installment
+        // as LPI, interest, then principal. LPI on an installment that stays open is repriced, not waived. A full
+        // close still waives every later LPI charge.
+        final boolean keepLaterLpi = BackdatedSettlementLpiPolicy.keepsLaterLpi(loan, transactionDate, transactionAmount,
+                onInstallmentDueDate);
 
         final Map<String, Object> backdatedLpiWaiveSummary;
         if (isBackdatedSettlement) {
@@ -1696,23 +1705,38 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             // the UI instead of silently producing an inconsistent financial state.
             validateBackdatedRepaymentAllowed(loan, transactionDate);
         }
-        if (waiveLpiForValueDate) {
+        if (keepLaterLpi) {
+            // An installment this partial finishes has its LPI on or after the value date waived before allocation.
+            // The remainder then pays the next installment: LPI strictly before the value date, then interest, then
+            // principal. LPI on an installment that stays open is left outstanding.
+            backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService
+                    .waivePostValueDateLpiOnInstallmentsClearedByPartial(loanId, transactionDate, transactionAmount);
+            this.credibleXLoanChargeWritePlatformService.alignSchedulePenaltyForPartialBackdatedRepayment(loanId, transactionDate);
+        } else if (waiveLpiForValueDate) {
             // On a due date the payment is on-time: LPI for that EMI is posted after midnight (dated the next
             // day) and is waived when the value date is the due date. On any other date that day's LPI stays
             // payable and later charges up to today are waived. Same rule for every product (Short Term, RBF,
-            // Payables, Receivables) - not LOC-only.
+            // Payables, Receivables) - not LOC-only. Partial backdated payments skip this (loan stays active).
             backdatedLpiWaiveSummary = this.credibleXLoanChargeWritePlatformService.waiveOverdueChargesAccruedAfterSettlementDate(loanId,
                     transactionDate);
         } else {
             backdatedLpiWaiveSummary = null;
         }
 
-        // Always invoke: GET is read-only, so same-day non-due-date pays still need to heal schedule/charge
-        // gaps (loan 14299). Inner method skips flush/arrears when mismatch/gap is 0.
-        this.credibleXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(loanId);
+        // Full close and same-day pays still heal schedule/charge gaps before allocation. A partial backdated
+        // payment already aligned the schedule to pre-value-date LPI; a full sync here would pull later LPI
+        // back onto the payable schedule and the repayment would collect it.
+        if (!keepLaterLpi) {
+            this.credibleXLoanChargeWritePlatformService.syncOutstandingOverduePenaltyOntoSchedule(loanId);
+        }
 
-        CommandProcessingResult result = super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command,
-                isRecoveryRepayment, chargeRefundChargeType);
+        final CommandProcessingResult result = PartialBackdatedLpiReplay.aligningFrom(keepLaterLpi ? transactionDate : null,
+                () -> delegateRepaymentWithChargeRefund(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                        chargeRefundChargeType));
+
+        if (keepLaterLpi) {
+            this.credibleXLoanChargeWritePlatformService.restoreLpiAfterPartialBackdatedRepayment(loanId, transactionDate);
+        }
 
         // Surface the waive summary in the response so the UI can notify the operator about auto-waived charges.
         if (backdatedLpiWaiveSummary != null && result != null && result.hasChanges()
@@ -1738,6 +1762,15 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      */
     private void validateBackdatedRepaymentAllowed(final Loan loan, final LocalDate transactionDate) {
         BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, transactionDate);
+    }
+
+    /**
+     * Separated so a unit test can complete the parent repayment and still assert the LPI restore that follows it.
+     */
+    protected CommandProcessingResult delegateRepaymentWithChargeRefund(final LoanTransactionType repaymentTransactionType,
+            final Long loanId, final JsonCommand command, final boolean isRecoveryRepayment, final String chargeRefundChargeType) {
+        return super.makeLoanRepaymentWithChargeRefundChargeType(repaymentTransactionType, loanId, command, isRecoveryRepayment,
+                chargeRefundChargeType);
     }
 
     /**

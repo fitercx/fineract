@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
  * savings.
  *
  * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
- * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200080).
  */
 @Slf4j
 @Primary

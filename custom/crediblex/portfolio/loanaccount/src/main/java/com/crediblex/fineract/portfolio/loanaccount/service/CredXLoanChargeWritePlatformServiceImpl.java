@@ -13,6 +13,8 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedClearedInstallments;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReprice;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -1146,7 +1148,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // On an installment due date the payment is on-time. LPI for that EMI is posted after midnight
         // (charge dated the next day); the waiver window starts on the due date so that overnight LPI is
         // waived when the operator backdates to the due date.
-        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan);
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan, null);
     }
 
     @Override
@@ -1157,7 +1159,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
         // Window inclusive of the value date so a backdated repayment settles exactly: paid LPI = charges strictly
         // before the value date (penalties preview), waived LPI = charges on/after the value date up to today.
-        return waiveOverdueChargesInWindow(loanId, valueDate, null);
+        return waiveOverdueChargesInWindow(loanId, valueDate, null, null);
     }
 
     private Map<String, Object> emptyWaiveSummary() {
@@ -1168,7 +1170,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         return summary;
     }
 
-    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate, final Loan assembledLoan) {
+    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate, final Loan assembledLoan,
+            final Set<Integer> onlyInstallments) {
         final Map<String, Object> summary = emptyWaiveSummary();
 
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
@@ -1208,6 +1211,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null) : null;
             if (loanCharge == null || !loanCharge.isActive() || loanCharge.isWaived() || loanCharge.isPaid()
                     || !loanCharge.getAmountOutstanding(currency).isGreaterThanZero()) {
+                continue;
+            }
+            if (onlyInstallments != null && !onlyInstallments.contains(owningInstallmentNumber(loanCharge))) {
                 continue;
             }
 
@@ -2567,5 +2573,60 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
         }
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> waivePostValueDateLpiOnInstallmentsClearedByPartial(final Long loanId, final LocalDate settlementDate,
+            final BigDecimal transactionAmount) {
+        if (loanId == null || settlementDate == null || transactionAmount == null) {
+            return emptyWaiveSummary();
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final Set<Integer> cleared = PartialBackdatedClearedInstallments.installmentNumbersClearedBy(loan, settlementDate,
+                transactionAmount);
+        if (cleared.isEmpty()) {
+            return emptyWaiveSummary();
+        }
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan,
+                cleared);
+    }
+
+    private static Integer owningInstallmentNumber(final LoanCharge loanCharge) {
+        if (loanCharge == null) {
+            return null;
+        }
+        final LoanOverdueInstallmentCharge link = loanCharge.getOverdueInstallmentCharge();
+        if (link == null || link.getInstallment() == null) {
+            return null;
+        }
+        return link.getInstallment().getInstallmentNumber();
+    }
+
+    @Override
+    @Transactional
+    public void alignSchedulePenaltyForPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
+        if (loanId == null || settlementDate == null) {
+            return;
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        if (InstallmentPenaltySyncUtils.alignSchedulePenaltyToChargesBefore(loan, settlementDate)) {
+            loan.updateLoanSummaryDerivedFields();
+            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void restoreLpiAfterPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
+        if (loanId == null || settlementDate == null) {
+            return;
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        if (PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, settlementDate)) {
+            loan.updateLoanSummaryDerivedFields();
+            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
+        syncOutstandingOverduePenaltyOntoSchedule(loanId);
     }
 }
