@@ -214,7 +214,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Find journal code for RBF product GL codes
      */
-    private String findRbfJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    String findRbfJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
@@ -268,8 +268,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK2";
         }
 
-        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
-        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
+        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes.
+        // 300015 is the LPI collected when an overdue loan is foreclosed.
+        if ("EARLY_CLOSURE".equals(businessEventType)
+                && Set.of("200065", "300002", "100034", "100031", "210003", "300015").contains(glCode)) {
             return "BNK8";
         }
 
