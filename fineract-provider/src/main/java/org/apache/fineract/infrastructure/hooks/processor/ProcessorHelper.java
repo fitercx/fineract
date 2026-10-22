@@ -23,6 +23,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -30,6 +31,7 @@ import javax.net.ssl.X509TrustManager;
 import okhttp3.OkHttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -66,19 +68,30 @@ public final class ProcessorHelper {
      */
     private final boolean insecureHttpClient = Boolean.getBoolean("fineract.insecureHttpClient");
     private final SSLContext insecureSSLContext;
+    private final WebHookSigningInterceptor signingInterceptor;
 
-    public ProcessorHelper() throws KeyManagementException, NoSuchAlgorithmException {
+    public ProcessorHelper(@Value("${fineract.hooks.signing-secret:}") final String signingSecret)
+            throws KeyManagementException, NoSuchAlgorithmException {
         if (insecureHttpClient) {
             insecureSSLContext = createInsecureSSLContext();
         } else {
             insecureSSLContext = null;
         }
+        if (signingSecret == null || signingSecret.isBlank()) {
+            LOG.warn("fineract.hooks.signing-secret is not set; outgoing web hooks will be sent unsigned");
+            signingInterceptor = null;
+        } else {
+            signingInterceptor = new WebHookSigningInterceptor(signingSecret.trim(), Clock.systemUTC());
+        }
     }
 
-    private OkHttpClient createClient() {
+    private OkHttpClient createClient(final boolean signed) {
         var okBuilder = new OkHttpClient.Builder();
         if (insecureHttpClient) {
             configureInsecureClient(okBuilder);
+        }
+        if (signed && signingInterceptor != null) {
+            okBuilder.addInterceptor(signingInterceptor);
         }
         return okBuilder.build();
     }
@@ -113,7 +126,19 @@ public final class ProcessorHelper {
     }
 
     public WebHookService createWebHookService(final String url) {
-        final OkHttpClient client = createClient();
+        return createWebHookService(url, false);
+    }
+
+    /**
+     * Same as {@link #createWebHookService(String)}, but every request carries the {@link WebHookSigningInterceptor}
+     * signature headers when {@code fineract.hooks.signing-secret} is configured.
+     */
+    public WebHookService createSignedWebHookService(final String url) {
+        return createWebHookService(url, true);
+    }
+
+    private WebHookService createWebHookService(final String url, final boolean signed) {
+        final OkHttpClient client = createClient(signed);
         final Retrofit.Builder retrofitBuilder = new Retrofit.Builder();
         retrofitBuilder.baseUrl(url);
         retrofitBuilder.client(client);
