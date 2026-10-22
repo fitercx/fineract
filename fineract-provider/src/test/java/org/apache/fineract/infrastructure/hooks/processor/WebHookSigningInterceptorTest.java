@@ -62,7 +62,8 @@ class WebHookSigningInterceptorTest {
 
         final String encoded = bodyOf(sent);
         assertEquals("entityName=LOAN&actionName=STATUS_CHANGED", encoded);
-        final String expected = "v1=" + new WebHookSigningInterceptor(SECRET, CLOCK).sign("1700000000", encoded.getBytes(StandardCharsets.UTF_8));
+        final String expected = "v1="
+                + new WebHookSigningInterceptor(SECRET, CLOCK).sign("1700000000", encoded.getBytes(StandardCharsets.UTF_8));
         assertEquals(expected, sent.header(WebHookSigningInterceptor.SIGNATURE_HEADER));
     }
 
