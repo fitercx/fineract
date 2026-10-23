@@ -2038,10 +2038,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
         BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
-        final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
+        final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan);
 
         final BackdatedRepaymentPenaltyDTO dto = new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue,
                 installmentInterestAmountDue, remainingPrincipalOutstanding, earliestAllowedTransactionDate);
+        dto.setLatestNonAccrualTransactionDate(BackdatedRepaymentValidator.latestNonAccrualValueDate(loan));
         final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
         dto.setOnInstallmentDueDate(onInstallmentDueDate);
         if (transactionDate != null && (onInstallmentDueDate || transactionDate.isBefore(businessDate))) {
