@@ -59,6 +59,9 @@ public class LoanTransactionToRepaymentScheduleMapping extends AbstractPersistab
     @Column(name = "penalty_charges_portion_derived", scale = 6, precision = 19, nullable = true)
     private BigDecimal penaltyChargesPortion;
 
+    @Column(name = "tax_charges_portion_derived", scale = 6, precision = 19, nullable = true)
+    private BigDecimal taxChargesPortion;
+
     @Column(name = "amount", scale = 6, precision = 19)
     private BigDecimal amount;
 
@@ -68,22 +71,38 @@ public class LoanTransactionToRepaymentScheduleMapping extends AbstractPersistab
 
     private LoanTransactionToRepaymentScheduleMapping(final LoanTransaction loanTransaction,
             final LoanRepaymentScheduleInstallment installment, final BigDecimal principalPortion, final BigDecimal interestPortion,
-            final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion, final BigDecimal amount) {
+            final BigDecimal feeChargesPortion, final BigDecimal penaltyChargesPortion, final BigDecimal taxChargesPortion,
+            final BigDecimal amount) {
         this.loanTransaction = loanTransaction;
         this.installment = installment;
         this.principalPortion = principalPortion;
         this.interestPortion = interestPortion;
         this.feeChargesPortion = feeChargesPortion;
         this.penaltyChargesPortion = penaltyChargesPortion;
+        this.taxChargesPortion = taxChargesPortion;
         this.amount = amount;
     }
 
     public static LoanTransactionToRepaymentScheduleMapping createFrom(final LoanTransaction loanTransaction,
             final LoanRepaymentScheduleInstallment installment, final Money principalPortion, final Money interestPortion,
             final Money feeChargesPortion, final Money penaltyChargesPortion) {
+        return createFrom(loanTransaction, installment, principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, null);
+    }
+
+    /**
+     * Same as the 4-portion overload, plus the tax component paid/waived against this installment by this
+     * transaction. Callers that allocate a tax charge (e.g. {@code FineractStyleLoanRepaymentScheduleTransactionProcessor},
+     * {@code PrincipalInterestPenaltyFeesOrderLoanRepaymentScheduleTransactionProcessor}) must use this overload so the
+     * per-installment tax split can be replayed exactly later, instead of being re-derived from the transaction-level
+     * total.
+     */
+    public static LoanTransactionToRepaymentScheduleMapping createFrom(final LoanTransaction loanTransaction,
+            final LoanRepaymentScheduleInstallment installment, final Money principalPortion, final Money interestPortion,
+            final Money feeChargesPortion, final Money penaltyChargesPortion, final Money taxChargesPortion) {
         return new LoanTransactionToRepaymentScheduleMapping(loanTransaction, installment, defaultToNullIfZero(principalPortion),
                 defaultToNullIfZero(interestPortion), defaultToNullIfZero(feeChargesPortion), defaultToNullIfZero(penaltyChargesPortion),
-                defaultToNullIfZero(MathUtil.plus(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion)));
+                defaultToNullIfZero(taxChargesPortion), defaultToNullIfZero(
+                        MathUtil.plus(principalPortion, interestPortion, feeChargesPortion, penaltyChargesPortion, taxChargesPortion)));
     }
 
     private static BigDecimal defaultToNullIfZero(final Money value) {
@@ -95,20 +114,32 @@ public class LoanTransactionToRepaymentScheduleMapping extends AbstractPersistab
     }
 
     public void updateComponents(Money principal, Money interest, Money feeCharges, Money penaltyCharges) {
+        updateComponents(principal, interest, feeCharges, penaltyCharges, null);
+    }
+
+    /** Same as the 4-portion overload, plus the tax component to add to this mapping's running tax total. */
+    public void updateComponents(Money principal, Money interest, Money feeCharges, Money penaltyCharges, Money taxCharges) {
         updateComponents(MathUtil.toBigDecimal(principal), MathUtil.toBigDecimal(interest), MathUtil.toBigDecimal(feeCharges),
-                MathUtil.toBigDecimal(penaltyCharges));
+                MathUtil.toBigDecimal(penaltyCharges), MathUtil.toBigDecimal(taxCharges));
     }
 
     void updateComponents(final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
             final BigDecimal penaltyCharges) {
+        updateComponents(principal, interest, feeCharges, penaltyCharges, null);
+    }
+
+    void updateComponents(final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
+            final BigDecimal penaltyCharges, final BigDecimal taxCharges) {
         this.principalPortion = MathUtil.zeroToNull(MathUtil.add(getPrincipalPortion(), principal));
         this.interestPortion = MathUtil.zeroToNull(MathUtil.add(getInterestPortion(), interest));
         updateChargesComponents(feeCharges, penaltyCharges);
+        this.taxChargesPortion = MathUtil.zeroToNull(MathUtil.add(getTaxChargesPortion(), taxCharges));
         updateAmount();
     }
 
     private void updateAmount() {
-        this.amount = MathUtil.add(getPrincipalPortion(), getInterestPortion(), getFeeChargesPortion(), getPenaltyChargesPortion());
+        this.amount = MathUtil.add(getPrincipalPortion(), getInterestPortion(), getFeeChargesPortion(), getPenaltyChargesPortion(),
+                getTaxChargesPortion());
     }
 
     public void setComponents(final BigDecimal principal, final BigDecimal interest, final BigDecimal feeCharges,
@@ -139,6 +170,10 @@ public class LoanTransactionToRepaymentScheduleMapping extends AbstractPersistab
 
     public Money getPenaltyChargesPortion(final MonetaryCurrency currency) {
         return Money.of(currency, this.penaltyChargesPortion);
+    }
+
+    public Money getTaxChargesPortion(final MonetaryCurrency currency) {
+        return Money.of(currency, this.taxChargesPortion);
     }
 
 }

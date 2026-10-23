@@ -119,6 +119,8 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
             final Integer penaltyGracePeriod = command.integerValueOfParameterNamed(LoanProductConstants.PENALTY_GRACE_PERIOD_PARAM_NAME);
             loanProduct.setPenaltyGracePeriod(
                     penaltyGracePeriod != null ? penaltyGracePeriod : LoanProductConstants.DEFAULT_PENALTY_GRACE_PERIOD);
+            loanProduct.setEnableDpdStrategySwitch(
+                    command.booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME));
             loanProduct.updateLoanProductInRelatedClasses();
             loanProduct.setTransactionProcessingStrategyName(
                     loanRepaymentScheduleTransactionProcessorFactory.determineProcessor(loanTransactionProcessingStrategyCode).getName());
@@ -275,6 +277,14 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                         .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME);
                 changes.put(LoanProductConstants.ENABLE_LOC_RECEIVABLE_PARAM_NAME, newValue);
                 product.setEnableLocReceivable(newValue);
+            }
+
+            if (command.isChangeInBooleanParameterNamed(LoanProductConstants.ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME,
+                    product.isEnableDpdStrategySwitch())) {
+                final boolean newValue = command
+                        .booleanPrimitiveValueOfParameterNamed(LoanProductConstants.ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME);
+                changes.put(LoanProductConstants.ENABLE_DPD_STRATEGY_SWITCH_PARAM_NAME, newValue);
+                product.setEnableDpdStrategySwitch(newValue);
             }
 
             // accounting related changes

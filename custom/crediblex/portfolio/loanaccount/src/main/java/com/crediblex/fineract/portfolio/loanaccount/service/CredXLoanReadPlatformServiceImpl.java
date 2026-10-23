@@ -34,6 +34,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedWi
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.DpdStrategySwitchConstants;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureOriginalSchedulePeriodData;
@@ -43,6 +44,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties;
 import com.crediblex.fineract.portfolio.loanaccount.data.LoanInterestVariationsData;
 import com.crediblex.fineract.portfolio.loanaccount.domain.CredibleXLoanPenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.domain.LoanDpdStrategySwitch;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
 import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.CredXTargetedLoanChargeRefundProcessor;
@@ -216,6 +218,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final ConfigurationDomainService configurationDomainService;
     private final AccountAssociationsRepository accountAssociationsRepository;
     private final CustomReversedChargeCalculationService customReversedChargeCalculationService;
+    private final DpdStrategySwitchService dpdStrategySwitchService;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -239,7 +242,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl,
             LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, AccountAssociationsRepository accountAssociationsRepository,
-            CustomReversedChargeCalculationService customReversedChargeCalculationService) {
+            CustomReversedChargeCalculationService customReversedChargeCalculationService,
+            DpdStrategySwitchService dpdStrategySwitchService) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -261,6 +265,32 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.customLoanChargeReadPlatformServiceImpl = customLoanChargeReadPlatformServiceImpl;
         this.accountAssociationsRepository = accountAssociationsRepository;
         this.customReversedChargeCalculationService = customReversedChargeCalculationService;
+        this.dpdStrategySwitchService = dpdStrategySwitchService;
+    }
+
+    /**
+     * Publishes the loan's DPD strategy switch state so the UI can show which strategy is really in force and whether
+     * it was applied automatically. Read-only: it reports the stored state and never triggers a switch.
+     */
+    private void enrichDpdStrategySwitchState(final ExtendedLoanAccountData extended, final Long loanId) {
+        if (dpdStrategySwitchService == null) {
+            return;
+        }
+        try {
+            final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+            final Optional<LoanDpdStrategySwitch> switchState = dpdStrategySwitchService.findSwitchState(loanId);
+            extended.addCustomParameter(DpdStrategySwitchConstants.SWITCH_ACTIVE,
+                    switchState.map(LoanDpdStrategySwitch::isSwitched).orElse(false));
+            extended.addCustomParameter(DpdStrategySwitchConstants.SWITCH_THRESHOLD, dpdStrategySwitchService.getThresholdDays());
+            extended.addCustomParameter(DpdStrategySwitchConstants.SWITCH_MAX_DPD,
+                    dpdStrategySwitchService.calculateMaxDpd(loanId, businessDate));
+            switchState.filter(LoanDpdStrategySwitch::isSwitched).ifPresent(state -> {
+                extended.addCustomParameter(DpdStrategySwitchConstants.SWITCH_ORIGINAL_STRATEGY_NAME, state.getOriginalStrategyName());
+                extended.addCustomParameter(DpdStrategySwitchConstants.SWITCH_ON_DATE, state.getSwitchedOnDate());
+            });
+        } catch (final RuntimeException e) {
+            log.warn("Could not read the DPD strategy switch state for loan {}", loanId, e);
+        }
     }
 
     @Override
@@ -1151,6 +1181,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 } else {
                     extended.addCustomParameter("buyerDetails", retrieveCounterpartyDetails(loanId));
                 }
+
+                enrichDpdStrategySwitchState(extended, loanId);
             }
             return loanAccountData;
         } catch (final EmptyResultDataAccessException e) {

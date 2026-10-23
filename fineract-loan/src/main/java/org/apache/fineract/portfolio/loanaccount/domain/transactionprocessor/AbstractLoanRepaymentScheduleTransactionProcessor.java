@@ -180,9 +180,18 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             }
 
             if (loanTransaction.isRepaymentLikeType() || loanTransaction.isInterestWaiver() || loanTransaction.isRecoveryRepayment()) {
-                // pass through for new transactions
-                if (loanTransaction.getId() == null) {
-                    processLatestTransaction(loanTransaction, new TransactionCtx(currency, installments, charges, overpaymentHolder, null));
+                // A stamped repayment or foreclosure keeps the portions its journals were posted with. Recalculating
+                // it under the loan's current strategy would reverse those journals.
+                if (loanTransaction.isDpdAllocationLocked()) {
+                    reapplyManuallyAdjustedTransaction(loanTransaction, currency, installments, charges);
+                } else if (loanTransaction.getId() == null) {
+                    final LoanRepaymentScheduleTransactionProcessor allocationProcessor = loanTransaction.getDpdAllocationProcessor();
+                    final TransactionCtx transactionCtx = new TransactionCtx(currency, installments, charges, overpaymentHolder, null);
+                    if (allocationProcessor != null) {
+                        allocationProcessor.processLatestTransaction(loanTransaction, transactionCtx);
+                    } else {
+                        processLatestTransaction(loanTransaction, transactionCtx);
+                    }
                     loanTransaction.adjustInterestComponent();
                 } else if (loanTransaction.isManuallyAdjustedOrReversed()) {
                     // SQL/manual repayment corrections set this flag so reprocess (e.g. LPI job) must not reverse
@@ -590,6 +599,13 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             if (penaltyPortion.isGreaterThanZero()) {
                 installment.payPenaltyChargesComponent(transactionDate, penaltyPortion);
             }
+            // Tax is replayed from this mapping's own persisted per-installment amount (LMS-139 fix), the same way
+            // as the four components above - not re-derived greedily from the transaction-level total, which could
+            // land the replayed tax on a different installment than the one it was originally posted against.
+            final Money taxPortion = mapping.getTaxChargesPortion(currency);
+            if (taxPortion.isGreaterThanZero()) {
+                installment.payTaxChargesComponent(transactionDate, taxPortion);
+            }
         }
 
         final Set<LoanCharge> loanFees = extractFeeCharges(charges);
@@ -601,6 +617,18 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
         final Money penaltyChargesPortion = loanTransaction.getPenaltyChargesPortion(currency);
         if (penaltyChargesPortion.isGreaterThanZero()) {
             updateChargesPaidAmountBy(loanTransaction, penaltyChargesPortion, loanPenalties, null);
+        }
+
+        final Money taxChargesPortion = loanTransaction.getTaxChargesPortion(currency);
+        if (taxChargesPortion.isGreaterThanZero()) {
+            final Set<LoanCharge> loanFeeTaxCharges = extractFeeTaxCharges(charges);
+            if (!loanFeeTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxChargesPortion, loanFeeTaxCharges, null);
+            }
+            final Set<LoanCharge> loanPenaltyTaxCharges = extractPenaltyTaxCharges(charges);
+            if (!loanPenaltyTaxCharges.isEmpty()) {
+                updateTaxChargesPaidAmountBy(loanTransaction, taxChargesPortion, loanPenaltyTaxCharges, null);
+            }
         }
     }
 
