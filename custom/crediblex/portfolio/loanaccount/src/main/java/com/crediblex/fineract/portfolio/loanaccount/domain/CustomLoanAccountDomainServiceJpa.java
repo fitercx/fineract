@@ -279,6 +279,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // loan's last non-waiver transaction date" check just above - see BackdatedRepaymentValidator javadoc and
         // BUG_REPORT.md "Backdate limit" finding.
         BackdatedRepaymentValidator.validateWithinBackdateLimit(loan, foreClosureDate, "foreclosure");
+        // Same floor as make repayment: a foreclosure cannot be dated before the latest non-accrual value date.
+        // Accruals do not count. The foreclosure calendar uses this same date as its minimum.
+        BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, foreClosureDate, "foreclosure");
 
         // Waive LPI dated on/after the foreclosure date BEFORE schedule rewrite and settlement. This is the write-path
         // complement of ForeclosurePenaltyCalculator#computePenaltyQuotedForSettlementDate (charges strictly before the

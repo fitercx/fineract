@@ -41,9 +41,9 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
  * all of them and only guards the (currently unused in prod) interest-recalculation configuration.</li>
  * <li>{@link #validateWithinBackdateLimit}: a general "how far back is too far back" guard, applied regardless of
  * product configuration - see its javadoc.</li>
- * <li>{@link #validateNotBeforeLatestNonAccrualValueDate}: a repayment value date cannot be earlier than the latest
- * value date already on the loan, ignoring accrual transactions. A repayment, waiver, disbursement, refund, or any
- * other non-accrual transaction dated after the chosen value date blocks the backdate. The same date is still allowed.
+ * <li>{@link #validateNotBeforeLatestNonAccrualValueDate}: a repayment or foreclosure value date cannot be earlier than
+ * the latest value date already on the loan, ignoring accrual transactions. A repayment, waiver, disbursement, refund,
+ * or any other non-accrual transaction dated after the chosen value date blocks it. The same date is still allowed.
  * Reversed rows are ignored.</li>
  * </ol>
  * See BUG_REPORT.md Finding #1 (backdated transfer bypassed the interest-recalculation check) and the "Backdate limit"
@@ -81,15 +81,24 @@ public final class BackdatedRepaymentValidator {
      * it. A value date equal to that latest date is allowed.
      */
     public static void validateNotBeforeLatestNonAccrualValueDate(final Loan loan, final LocalDate transactionDate) {
+        validateNotBeforeLatestNonAccrualValueDate(loan, transactionDate, "repayment");
+    }
+
+    /**
+     * @param actionLabel
+     *            user-facing name of the action, such as {@code repayment} or {@code foreclosure}
+     */
+    public static void validateNotBeforeLatestNonAccrualValueDate(final Loan loan, final LocalDate transactionDate,
+            final String actionLabel) {
         if (transactionDate == null) {
             return;
         }
         final LocalDate latestValueDate = latestNonAccrualValueDate(loan);
         if (latestValueDate != null && DateUtils.isBefore(transactionDate, latestValueDate)) {
             throw new GeneralPlatformDomainRuleException("error.msg.loan.repayment.before.latest.non.accrual.transaction",
-                    "The repayment date (" + transactionDate + ") for loan " + loan.getId()
-                            + " is before the latest transaction value date (" + latestValueDate
-                            + "). A backdated repayment cannot be dated earlier than an existing transaction. "
+                    "The " + actionLabel + " date (" + transactionDate + ") for loan " + loan.getId()
+                            + " is before the latest transaction value date (" + latestValueDate + "). A backdated " + actionLabel
+                            + " cannot be dated earlier than an existing transaction. "
                             + "Accrual transactions are ignored; every other transaction dated after the chosen value date blocks it. "
                             + "The earliest allowed value date is " + latestValueDate + ".",
                     loan.getId(), transactionDate, latestValueDate);
@@ -118,9 +127,9 @@ public final class BackdatedRepaymentValidator {
     }
 
     /**
-     * Earliest value date a repayment or savings-to-loan transfer may use. This is the later of the configured backdate
-     * window ({@link #computeEarliestAllowedTransactionDate}) and the latest non-accrual transaction value date, so the
-     * make-repayment calendar can disable every earlier day.
+     * Earliest value date a repayment, savings-to-loan transfer, or foreclosure may use. This is the later of the
+     * configured backdate window ({@link #computeEarliestAllowedTransactionDate}) and the latest non-accrual
+     * transaction value date, so those calendars can disable every earlier day.
      */
     public static LocalDate computeEarliestAllowedRepaymentDate(final Loan loan) {
         final LocalDate windowFloor = computeEarliestAllowedTransactionDate(loan);

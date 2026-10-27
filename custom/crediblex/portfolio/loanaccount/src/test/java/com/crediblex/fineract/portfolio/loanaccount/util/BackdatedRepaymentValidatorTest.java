@@ -189,6 +189,16 @@ class BackdatedRepaymentValidatorTest {
     }
 
     @Test
+    void foreclosureBeforeTheLatestNonAccrualValueDateIsRejected() {
+        final LocalDate latestPayment = BUSINESS_DATE.minusDays(5);
+        final Loan loan = loanWithTransactions(transaction(latestPayment, false), accrual(BUSINESS_DATE));
+
+        assertThatThrownBy(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, latestPayment.minusDays(1),
+                "foreclosure")).isInstanceOf(GeneralPlatformDomainRuleException.class).hasMessageContaining("foreclosure date")
+                .hasMessageContaining(latestPayment.toString());
+    }
+
+    @Test
     void laterRepaymentBlocksAnEarlierValueDate() {
         final LocalDate latestPayment = BUSINESS_DATE.minusDays(5);
         final Loan loan = loanWithTransactions(transaction(latestPayment, false), accrual(BUSINESS_DATE));

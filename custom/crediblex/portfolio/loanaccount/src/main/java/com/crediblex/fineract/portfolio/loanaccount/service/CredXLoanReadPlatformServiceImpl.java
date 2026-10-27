@@ -3419,15 +3419,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
                 ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
 
-        // Informational only (never throws here) - lets the foreclosure calendar's minDate reflect the same
-        // "MAX_BACKDATE_DAYS before business date, or disbursement date if later" rule that
-        // CustomLoanAccountDomainServiceJpa#foreCloseLoan enforces at actual submission time, so the UI can stop the
-        // operator from ever picking an invalid date rather than only rejecting it after the fact. The separate
-        // "not before the loan's last non-waiver transaction date" rule (LoanForeclosureValidator, checked above via
-        // validateForForeclosure) is loan-history-dependent and changes after every transaction, so it is left as a
-        // hard backend validation with a clear error message rather than folded into this minDate.
+        // Informational only (never throws here). The foreclosure calendar's minDate is the later of the configured
+        // backdate window and the latest non-accrual transaction value date, matching
+        // CustomLoanAccountDomainServiceJpa#foreCloseLoan. Accrual rows do not move this floor. Dates before it are
+        // disabled in the calendar and rejected on submit.
         loanTransactionData.getAdditionalAttributes().put("earliestAllowedTransactionDate",
-                BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan));
+                BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan));
 
         final LocalDate maturityDate = loan.getMaturityDate();
         if (maturityDate != null) {
