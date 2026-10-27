@@ -6,6 +6,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXSavingsAccountLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.FutureLPIChargesData;
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanReadPlatformServiceImpl;
 import io.micrometer.common.util.StringUtils;
@@ -124,6 +125,21 @@ public class CredibleXLoanTransactionsApiResource extends LoanTransactionsApiRes
 
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
         return this.credibleXLoanReadPlatformService.searchLoanRecords(type, value);
+    }
+
+    @GET
+    @Path("search/savings-account")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Search CREDX loan records by savings account number", description = "Resolves a savings account by account number and returns every loan (active and closed) "
+            + "whose own linked savings account it is. An exact account number match wins; purely numeric input also matches ignoring leading zeros "
+            + "(e.g. 1234 finds 000001234). savingsAccountFound distinguishes an unknown account from an account with no linked loans. "
+            + "In-progress loans (active, overpaid, approved, submitted) are listed first, newest first.")
+    public CredXSavingsAccountLoanSearchResultData searchLoanRecordsBySavingsAccountNo(
+            @QueryParam("accountNo") @Parameter(description = "Savings account number", required = true) final String accountNo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
+        return this.credibleXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo(accountNo);
     }
 
     @GET

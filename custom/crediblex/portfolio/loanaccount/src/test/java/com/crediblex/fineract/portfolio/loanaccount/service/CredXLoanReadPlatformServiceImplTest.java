@@ -6,11 +6,13 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueClientData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedSummaryData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXSavingsAccountLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.queries.LoanQueries.RapaymentStatusQuery;
 import com.crediblex.fineract.portfolio.loanaccount.repository.CredXLoanTransactionRepository;
@@ -20,8 +22,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
@@ -795,6 +799,91 @@ public class CredXLoanReadPlatformServiceImplTest {
                 any(org.apache.fineract.portfolio.loanaccount.service.LoanReadPlatformServiceImpl.MusoniOverdueLoanScheduleMapper.class),
                 eq(1L), eq(42L));
         assertPenaltyJobEligibleOverdueInstallmentSql(sqlCaptor.getValue(), true, true);
+    }
+
+    @Test
+    void searchLoanRecordsBySavingsAccountNo_blankInput_returnsNotFoundWithoutQuerying() {
+        final CredXSavingsAccountLoanSearchResultData result = credXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo("   ");
+
+        Assertions.assertFalse(result.isSavingsAccountFound());
+        Assertions.assertNull(result.getSavingsAccountNo());
+        Assertions.assertTrue(result.getLoans().isEmpty());
+        Mockito.verifyNoInteractions(jdbcTemplate);
+    }
+
+    @Test
+    void searchLoanRecordsBySavingsAccountNo_unknownAccount_returnsNotFoundAndSkipsLoanQuery() {
+        final List<String> executedSql = new ArrayList<>();
+        stubSavingsSearchQueries(executedSql, new ArrayList<>(), null, List.of());
+
+        final CredXSavingsAccountLoanSearchResultData result = credXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo("999");
+
+        Assertions.assertFalse(result.isSavingsAccountFound());
+        Assertions.assertTrue(result.getLoans().isEmpty());
+        assertEquals(1, executedSql.size());
+        Assertions.assertTrue(executedSql.get(0).contains("from m_savings_account sa"));
+    }
+
+    @Test
+    void searchLoanRecordsBySavingsAccountNo_numericInput_bindsZeroStrippedFallback() {
+        final List<String> executedSql = new ArrayList<>();
+        final List<Object[]> boundParams = new ArrayList<>();
+        stubSavingsSearchQueries(executedSql, boundParams, null, List.of());
+
+        credXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo(" 0001234 ");
+
+        Assertions.assertTrue(executedSql.get(0).contains("trim(leading '0' from sa.account_no) = ?"));
+        Assertions.assertArrayEquals(new Object[] { "0001234", "1234", "0001234" }, boundParams.get(0));
+    }
+
+    @Test
+    void searchLoanRecordsBySavingsAccountNo_nonNumericInput_usesExactMatchOnly() {
+        final List<String> executedSql = new ArrayList<>();
+        final List<Object[]> boundParams = new ArrayList<>();
+        stubSavingsSearchQueries(executedSql, boundParams, null, List.of());
+
+        credXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo("SA-12");
+
+        Assertions.assertFalse(executedSql.get(0).contains("trim(leading"));
+        Assertions.assertArrayEquals(new Object[] { "SA-12", "SA-12" }, boundParams.get(0));
+    }
+
+    @Test
+    void searchLoanRecordsBySavingsAccountNo_foundAccount_returnsLinkedLoansInProgressFirst() {
+        final List<String> executedSql = new ArrayList<>();
+        final List<Object[]> boundParams = new ArrayList<>();
+        final CredXLoanSearchResultData loan = new CredXLoanSearchResultData(5L, "000000005", 12L, null, "Acme", "Invoice Discounting",
+                new BigDecimal("1000"), "AED", "Active", "INV-1");
+        stubSavingsSearchQueries(executedSql, boundParams, Pair.of(77L, "000001234"), List.of(loan));
+
+        final CredXSavingsAccountLoanSearchResultData result = credXLoanReadPlatformService.searchLoanRecordsBySavingsAccountNo("1234");
+
+        Assertions.assertTrue(result.isSavingsAccountFound());
+        assertEquals("000001234", result.getSavingsAccountNo());
+        assertEquals(List.of(loan), result.getLoans());
+        assertEquals(2, executedSql.size());
+        final String loanSql = executedSql.get(1);
+        Assertions.assertTrue(loanSql.contains("join m_portfolio_account_associations paa on paa.loan_account_id = l.id"));
+        Assertions.assertTrue(loanSql.contains("paa.association_type_enum = 1 and paa.is_active = true"));
+        Assertions.assertTrue(loanSql.contains("where paa.linked_savings_account_id = ?"));
+        Assertions.assertTrue(loanSql.contains("order by case when l.loan_status_id in (300, 700, 200, 100) then 0 else 1 end, l.id desc"));
+        Assertions.assertArrayEquals(new Object[] { 77L }, boundParams.get(1));
+    }
+
+    private void stubSavingsSearchQueries(final List<String> executedSql, final List<Object[]> boundParams,
+            final Pair<Long, String> savingsAccount, final List<CredXLoanSearchResultData> loans) {
+        when(sqlGenerator.limit(1)).thenReturn("limit 1");
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    final Object[] args = invocation.getArguments();
+                    final String sql = (String) args[0];
+                    executedSql.add(sql);
+                    boundParams.add(Arrays.copyOfRange(args, 2, args.length));
+                    if (sql.contains("from m_savings_account sa")) {
+                        return savingsAccount == null ? List.of() : List.of(savingsAccount);
+                    }
+                    return loans;
+                });
     }
 
     private void assertPenaltyJobEligibleOverdueInstallmentSql(final String sql, final boolean backdatePenalties,

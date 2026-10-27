@@ -47,6 +47,7 @@ public class LOCAccountingHelper {
 
     // Payment Type Code Names (from m_payment_type.code_name)
     public static final String DISBURSEMENT_OF_INVOICE_CODE_NAME = "DISBURSEMENT_OF_INVOICE";
+    public static final String PAYABLES_DISBURSEMENT_CODE_NAME = "PAYABLES_DISBURSEMENT";
     public static final String RBF_LOAN_DISBURSEMENT_CODE_NAME = "RBF_LOAN_DISBURSEMENT";
     public static final String PROCESSING_FEE_CODE_NAME = "PROCESSING_FEE";
 
@@ -109,6 +110,19 @@ public class LOCAccountingHelper {
     public boolean isDisbursementOfInvoicePaymentType(Long paymentTypeId) {
         String codeName = getPaymentTypeCodeName(paymentTypeId);
         return DISBURSEMENT_OF_INVOICE_CODE_NAME.equals(codeName);
+    }
+
+    /**
+     * Check if the given payment type disburses a Payable LOC drawdown out of the settlement savings account. Both
+     * "Disbursement of Invoice" and "Payables Disbursement" are used for this.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return true if code_name matches DISBURSEMENT_OF_INVOICE or PAYABLES_DISBURSEMENT
+     */
+    public boolean isPayableLOCDisbursementPaymentType(Long paymentTypeId) {
+        String codeName = getPaymentTypeCodeName(paymentTypeId);
+        return DISBURSEMENT_OF_INVOICE_CODE_NAME.equals(codeName) || PAYABLES_DISBURSEMENT_CODE_NAME.equals(codeName);
     }
 
     /**
