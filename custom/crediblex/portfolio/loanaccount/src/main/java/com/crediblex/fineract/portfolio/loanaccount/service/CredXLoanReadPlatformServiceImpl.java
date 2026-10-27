@@ -34,6 +34,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueCollectedWi
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueInstallmentData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoanData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueLoansSummaryData;
+import com.crediblex.fineract.portfolio.loanaccount.data.CredXSavingsAccountLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanAccountData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ExtendedLoanSchedulePeriodData;
 import com.crediblex.fineract.portfolio.loanaccount.data.ForeclosureOriginalSchedulePeriodData;
@@ -84,6 +85,7 @@ import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.antlr.v4.runtime.misc.NotNull;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.fineract.infrastructure.codes.data.CodeValueData;
 import org.apache.fineract.infrastructure.codes.service.CodeValueReadPlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
@@ -318,7 +320,59 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         final String trimmedValue = StringUtils.trimToEmpty(value);
         final boolean invoiceSearch = "invoiceNo".equalsIgnoreCase(type) || "invoiceNumber".equalsIgnoreCase(type);
 
-        final StringBuilder sqlBuilder = new StringBuilder()
+        final StringBuilder sqlBuilder = loanSearchSelect();
+
+        if (invoiceSearch) {
+            sqlBuilder.append("where llocp.invoice_no = ? order by l.id desc");
+            return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
+        }
+
+        sqlBuilder.append("where l.account_no = ? order by l.id desc ");
+        sqlBuilder.append(this.sqlGenerator.limit(1, 0));
+        return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
+    }
+
+    /**
+     * Resolves a savings account by account_no and returns every loan whose own linked savings account (association
+     * type 1) it is. An exact account_no match wins; purely numeric input also matches ignoring leading zeros, so
+     * "1234" finds "000001234". In-progress loans (active, overpaid, approved, submitted) come first, newest first.
+     */
+    public CredXSavingsAccountLoanSearchResultData searchLoanRecordsBySavingsAccountNo(final String accountNo) {
+        final String trimmedAccountNo = StringUtils.trimToNull(accountNo);
+        if (trimmedAccountNo == null) {
+            return CredXSavingsAccountLoanSearchResultData.notFound();
+        }
+
+        final String strippedAccountNo = StringUtils.isNumeric(trimmedAccountNo) ? StringUtils.stripStart(trimmedAccountNo, "0") : "";
+        final List<Object> savingsParams = new ArrayList<>();
+        final StringBuilder savingsSql = new StringBuilder("select sa.id as id, sa.account_no as accountNo from m_savings_account sa ")
+                .append("where sa.account_no = ? ");
+        savingsParams.add(trimmedAccountNo);
+        if (!strippedAccountNo.isEmpty()) {
+            savingsSql.append("or trim(leading '0' from sa.account_no) = ? ");
+            savingsParams.add(strippedAccountNo);
+        }
+        savingsSql.append("order by case when sa.account_no = ? then 0 else 1 end, sa.id ");
+        savingsParams.add(trimmedAccountNo);
+        savingsSql.append(this.sqlGenerator.limit(1));
+
+        final List<Pair<Long, String>> savingsAccounts = this.jdbcTemplate.query(savingsSql.toString(),
+                (rs, rowNum) -> Pair.of(rs.getLong("id"), rs.getString("accountNo")), savingsParams.toArray());
+        if (savingsAccounts.isEmpty()) {
+            return CredXSavingsAccountLoanSearchResultData.notFound();
+        }
+        final Pair<Long, String> savingsAccount = savingsAccounts.get(0);
+
+        final StringBuilder loanSql = loanSearchSelect().append("join m_portfolio_account_associations paa on paa.loan_account_id = l.id ")
+                .append("and paa.association_type_enum = 1 and paa.is_active = true ").append("where paa.linked_savings_account_id = ? ")
+                .append("order by case when l.loan_status_id in (300, 700, 200, 100) then 0 else 1 end, l.id desc");
+        final List<CredXLoanSearchResultData> loans = this.jdbcTemplate.query(loanSql.toString(), new CredXLoanSearchResultMapper(),
+                savingsAccount.getLeft());
+        return new CredXSavingsAccountLoanSearchResultData(true, savingsAccount.getRight(), loans);
+    }
+
+    private static StringBuilder loanSearchSelect() {
+        return new StringBuilder()
                 .append("select l.id as loanId, l.account_no as loanAccountNo, l.client_id as clientId, l.group_id as groupId, ")
                 .append("coalesce(c.display_name, g.display_name) as borrowerName, ")
                 .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
@@ -334,15 +388,6 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("left join m_group g on g.id = l.group_id ").append("left join m_product_loan pl on pl.id = l.product_id ")
                 .append("left join m_loan_line_of_credit_params llocp on llocp.loan_id = l.id ")
                 .append("left join m_line_of_credit loc on loc.id = llocp.line_of_credit_id ");
-
-        if (invoiceSearch) {
-            sqlBuilder.append("where llocp.invoice_no = ? order by l.id desc");
-            return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
-        }
-
-        sqlBuilder.append("where l.account_no = ? order by l.id desc ");
-        sqlBuilder.append(this.sqlGenerator.limit(1, 0));
-        return this.jdbcTemplate.query(sqlBuilder.toString(), new CredXLoanSearchResultMapper(), trimmedValue);
     }
 
     /**
