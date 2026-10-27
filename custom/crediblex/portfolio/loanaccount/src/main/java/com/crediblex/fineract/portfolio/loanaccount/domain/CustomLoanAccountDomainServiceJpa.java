@@ -346,13 +346,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
                 AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION.getValue());
         final SavingsAccount linkedSavingsAccount = accountAssociation == null ? null : accountAssociation.linkedSavingsAccount();
 
-        // The quote nets prepaid future-installment income from principal. Execution must first settle the gross
-        // rewritten schedule and then refund that credit through a new loan-to-savings transfer. Keeping the two legs
-        // explicit preserves the historical repayment allocation and gives savings the same net debit as the quote.
-        if (linkedSavingsAccount != null && prepaidFutureInstallmentCredit.isGreaterThanZero()) {
-            payPrincipal = payPrincipal.plus(prepaidFutureInstallmentCredit);
-        }
-
         // The rewritten final installment must reflect principal/interest already settled on the installments it
         // merges (mid-period repayment, LPI-reversal reallocation) and credit any un-earned PRE-paid interest to
         // principal - otherwise the single-transaction settlement path double-counts and overpays. That carry now
@@ -360,6 +353,15 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
         // it here.
         if (!loan.isFactorRateEnabled()) {
             updateInstallmentsPostDate(loan, foreClosureDate);
+        }
+
+        // The quote already subtracts interest paid beyond the foreclosure date from principal. That net total is
+        // what the foreclosure screen shows and what must leave the linked savings account. The rewrite still bills
+        // gross principal, so reduce that bill by the same credit and pay the quote once. Withdrawing the gross
+        // principal and refunding the credit debits a different amount, and that refund is rejected unless the loan
+        // is already Overpaid.
+        if (prepaidFutureInstallmentCredit.isGreaterThanZero()) {
+            applyPrepaidCreditToForeclosurePrincipal(loan, foreClosureDate, prepaidFutureInstallmentCredit);
         }
 
         // Overpayment guard (all products). The components above are assembled from sources that do not always line up
@@ -442,8 +444,6 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
             }
             newTransactions.add(payment);
             // Loan-side foreclosure allocation already ran inside transferFunds (LOAN_FORECLOSURE branch).
-
-            refundPrepaidFutureInstallmentCredit(loan, linkedSavingsAccount, foreClosureDate, prepaidFutureInstallmentCredit);
 
         } else {
 
@@ -689,9 +689,9 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
      * {@link Loan#fetchLoanForeclosureDetail(LocalDate)} derives net principal from the same summary principal used by
      * execution. Other product workflows retain their existing calculation.
      * <p>
-     * The value is kept separate from repayment-schedule allocation because foreclosure, later repayment, LPI refund,
-     * and transaction reprocessing all replay the historical transaction components. Marking this value as synthetic
-     * principal paid would count the same cash twice.
+     * This credit is interest the borrower already paid for days after the foreclosure date. It is not unpaid principal
+     * and it is not a second cash movement. {@link #applyPrepaidCreditToForeclosurePrincipal} counts it as principal
+     * already repaid so the single savings debit equals the quote and contractual principal still clears.
      */
     private Money calculatePrepaidFutureInstallmentCredit(final Loan loan, final Money quotedPrincipal, final MonetaryCurrency currency) {
         if (loan.isFactorRateEnabled() || loan.isMultiDisburmentLoan() || loan.getSummary() == null) {
@@ -703,29 +703,40 @@ public class CustomLoanAccountDomainServiceJpa extends LoanAccountDomainServiceJ
     }
 
     /**
-     * Completes the prepaid-income undo as an explicit loan refund and linked-savings deposit after the gross
-     * foreclosure settlement. This is required so foreclosure, LPI reversal, repayment, and later transaction
-     * reprocessing observe immutable historical allocations and the same net cash movement.
+     * Counts interest already paid for days after the foreclosure date as principal repaid. The quote has already
+     * subtracted that credit from the cash to collect. Paying the quote then clears the remaining principal, and the
+     * linked-savings debit stays equal to the amount on the foreclosure screen.
      * <p>
-     * Only the expected prepaid credit is refunded. The standard loan-transfer refund validator independently verifies
-     * that this amount is overpaid; any mismatch rolls back the foreclosure atomically instead of concealing a genuine
-     * calculation bug. Any unrelated residual remains for the final post-condition guard to reject.
+     * The principal bill is not reduced. Contractual principal is disbursed principal, so only principal repaid (or
+     * written off) can bring the outstanding to zero.
      */
-    private void refundPrepaidFutureInstallmentCredit(final Loan loan, final SavingsAccount linkedSavingsAccount,
-            final LocalDate transactionDate, final Money prepaidCredit) {
-        if (!prepaidCredit.isGreaterThanZero()) {
+    private void applyPrepaidCreditToForeclosurePrincipal(final Loan loan, final LocalDate transactionDate, final Money prepaidCredit) {
+        if (prepaidCredit == null || !prepaidCredit.isGreaterThanZero()) {
             return;
         }
-        final AccountTransferDTO refundTransfer = new AccountTransferDTO(transactionDate, prepaidCredit.getAmount(),
-                PortfolioAccountType.LOAN, PortfolioAccountType.SAVINGS, loan.getId(), linkedSavingsAccount.getId(),
-                "Foreclosure refund of prepaid future-installment income", null, null, null, LoanTransactionType.REFUND.getValue(), null,
-                null, null, AccountTransferType.ACCOUNT_TRANSFER.getValue(), null, "Foreclosure prepaid-income refund",
-                externalIdFactory.create(), loan, linkedSavingsAccount, null, true, false);
-        accountTransfersWritePlatformService.transferFunds(refundTransfer);
-
-        org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class).info(
-                "Foreclosure on loan {} as of {}: refunded prepaid future-installment credit {} to linked savings {}.", loan.getId(),
-                transactionDate, prepaidCredit.getAmount(), linkedSavingsAccount.getId());
+        final MonetaryCurrency currency = loan.getCurrency();
+        LoanRepaymentScheduleInstallment foreclosureInstallment = null;
+        for (final LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
+            if (DateUtils.isEqual(transactionDate, installment.getDueDate())) {
+                foreclosureInstallment = installment;
+                break;
+            }
+        }
+        if (foreclosureInstallment == null) {
+            return;
+        }
+        final Money principalOutstanding = foreclosureInstallment.getPrincipalOutstanding(currency);
+        final Money creditApplied = prepaidCredit.isGreaterThan(principalOutstanding) ? principalOutstanding : prepaidCredit;
+        if (!creditApplied.isGreaterThanZero()) {
+            return;
+        }
+        // Recognize interest already collected as principal repaid. Shrinking the principal bill leaves
+        // disbursed principal - principal repaid short by the same credit, so the loan stays open.
+        foreclosureInstallment.payPrincipalComponent(transactionDate, creditApplied);
+        org.slf4j.LoggerFactory.getLogger(CustomLoanAccountDomainServiceJpa.class)
+                .info("Foreclosure on loan {} as of {}: applied prepaid interest {} to principal already repaid "
+                        + "so the savings debit matches the quote (principal still outstanding {}).", loan.getId(), transactionDate,
+                        creditApplied.getAmount(), foreclosureInstallment.getPrincipalOutstanding(currency).getAmount());
     }
 
     private static Money orZero(final Money value, final Money zero) {

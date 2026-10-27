@@ -25,8 +25,6 @@ import org.apache.fineract.organisation.monetary.data.CurrencyData;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
-import org.apache.fineract.portfolio.account.PortfolioAccountType;
-import org.apache.fineract.portfolio.account.data.AccountTransferDTO;
 import org.apache.fineract.portfolio.account.domain.AccountAssociationsRepository;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
@@ -36,17 +34,14 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleIns
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanSummary;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDownPaymentTransactionValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanForeclosureValidator;
 import org.apache.fineract.portfolio.loanaccount.service.LoanAccrualsProcessingService;
 import org.apache.fineract.portfolio.loanaccount.service.LoanChargeService;
-import org.apache.fineract.portfolio.savings.domain.SavingsAccount;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -406,26 +401,22 @@ class CustomLoanAccountDomainServiceForeclosureTest {
     }
 
     @Test
-    @DisplayName("Foreclosure refunds prepaid credit through a loan-to-linked-savings transfer")
-    void refundPrepaidFutureInstallmentCreditCreatesLoanToSavingsTransfer() {
-        final SavingsAccount linkedSavings = mock(SavingsAccount.class);
-        final Money prepaidCredit = Money.of(currency, new BigDecimal("259.61"));
-        when(linkedSavings.getId()).thenReturn(14998L);
-        when(loan.getTotalOverpaidAsMoney()).thenReturn(prepaidCredit);
+    @DisplayName("Foreclosure counts prepaid interest as principal repaid and does not debit it again")
+    void applyPrepaidCreditLowersForeclosurePrincipalWithoutASecondTransfer() {
+        final MonetaryCurrency realCurrency = new MonetaryCurrency(CURRENCY_CODE, 2, 0);
+        final LoanRepaymentScheduleInstallment foreclosureInstallment = new LoanRepaymentScheduleInstallment(loan, 5,
+                FORECLOSURE_DATE.minusMonths(1), FORECLOSURE_DATE, new BigDecimal("17772.35"), new BigDecimal("588.73"), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, false, null, BigDecimal.ZERO);
+        when(loan.getCurrency()).thenReturn(realCurrency);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(new ArrayList<>(List.of(foreclosureInstallment)));
 
-        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "refundPrepaidFutureInstallmentCredit", loan, linkedSavings,
-                FORECLOSURE_DATE, prepaidCredit);
+        ReflectionTestUtils.invokeMethod(customLoanAccountDomainServiceJpa, "applyPrepaidCreditToForeclosurePrincipal", loan,
+                FORECLOSURE_DATE, Money.of(realCurrency, new BigDecimal("135.86")));
 
-        final ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
-        verify(accountTransfersWritePlatformService).transferFunds(transferCaptor.capture());
-        final AccountTransferDTO refundTransfer = transferCaptor.getValue();
-        assertThat(refundTransfer.getFromAccountType()).isEqualTo(PortfolioAccountType.LOAN);
-        assertThat(refundTransfer.getToAccountType()).isEqualTo(PortfolioAccountType.SAVINGS);
-        assertThat(refundTransfer.getFromAccountId()).isEqualTo(1882L);
-        assertThat(refundTransfer.getToAccountId()).isEqualTo(14998L);
-        assertThat(refundTransfer.getTransactionAmount()).isEqualByComparingTo("259.61");
-        assertThat(refundTransfer.getFromTransferType()).isEqualTo(LoanTransactionType.REFUND.getValue());
-        assertThat(refundTransfer.getDescription()).isEqualTo("Foreclosure refund of prepaid future-installment income");
+        assertThat(foreclosureInstallment.getPrincipal(realCurrency).getAmount()).isEqualByComparingTo("17772.35");
+        assertThat(foreclosureInstallment.getPrincipalCompleted(realCurrency).getAmount()).isEqualByComparingTo("135.86");
+        assertThat(foreclosureInstallment.getPrincipalOutstanding(realCurrency).getAmount()).isEqualByComparingTo("17636.49");
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any());
     }
 
     /**

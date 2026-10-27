@@ -53,6 +53,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValid
 import com.crediblex.fineract.portfolio.loanaccount.util.EarlyRepaymentInterestDayCountEnricher;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureStrategySplit;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInterestCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
@@ -3412,6 +3413,16 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         penaltyChargesOutstanding = quote.penalty();
         taxChargesAmount = quote.tax();
         Money totalOutstandingAmount = quote.total();
+        // mifos-standard-strategy posts penalties, then fees, then tax, then interest, then principal on each open
+        // installment. Show that split. The cash total stays the amount that will be deducted.
+        final ForeclosureStrategySplit.Split strategySplit = ForeclosureStrategySplit.allocate(loan, transactionDate,
+                totalOutstandingAmount, principalOutstanding, interestOutstanding, feeChargesAmount, penaltyChargesOutstanding,
+                taxChargesAmount);
+        principalOutstanding = strategySplit.principal();
+        interestOutstanding = strategySplit.interest();
+        feeChargesAmount = strategySplit.fee();
+        penaltyChargesOutstanding = strategySplit.penalty();
+        taxChargesAmount = strategySplit.tax();
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
                 earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
