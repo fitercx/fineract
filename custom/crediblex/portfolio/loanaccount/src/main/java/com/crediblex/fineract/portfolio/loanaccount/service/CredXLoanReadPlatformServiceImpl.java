@@ -54,6 +54,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValid
 import com.crediblex.fineract.portfolio.loanaccount.util.EarlyRepaymentInterestDayCountEnricher;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureAmountReconciler;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosurePenaltyCalculator;
+import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureStrategySplit;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureUnearnedInterestCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureWaivedPeriodCalculator.CurrentInstallmentRow;
@@ -2083,10 +2084,11 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         BigDecimal installmentPrincipalAmountDue = penaltyCalculator.calculateTotalOutstandingPrincipal(transactionDate);
         BigDecimal installmentInterestAmountDue = penaltyCalculator.calculateTotalOutstandingInterest(transactionDate);
         BigDecimal remainingPrincipalOutstanding = penaltyCalculator.calculateRemainingPrincipalOutstanding(transactionDate);
-        final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan);
+        final LocalDate earliestAllowedTransactionDate = BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan);
 
         final BackdatedRepaymentPenaltyDTO dto = new BackdatedRepaymentPenaltyDTO(penaltySum, installmentPrincipalAmountDue,
                 installmentInterestAmountDue, remainingPrincipalOutstanding, earliestAllowedTransactionDate);
+        dto.setLatestNonAccrualTransactionDate(BackdatedRepaymentValidator.latestNonAccrualValueDate(loan));
         final boolean onInstallmentDueDate = LocDueDateRepaymentUtils.isOnInstallmentDueDate(loan, transactionDate);
         dto.setOnInstallmentDueDate(onInstallmentDueDate);
         if (transactionDate != null && (onInstallmentDueDate || transactionDate.isBefore(businessDate))) {
@@ -3456,6 +3458,16 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         penaltyChargesOutstanding = quote.penalty();
         taxChargesAmount = quote.tax();
         Money totalOutstandingAmount = quote.total();
+        // mifos-standard-strategy posts penalties, then fees, then tax, then interest, then principal on each open
+        // installment. Show that split. The cash total stays the amount that will be deducted.
+        final ForeclosureStrategySplit.Split strategySplit = ForeclosureStrategySplit.allocate(loan, transactionDate,
+                totalOutstandingAmount, principalOutstanding, interestOutstanding, feeChargesAmount, penaltyChargesOutstanding,
+                taxChargesAmount);
+        principalOutstanding = strategySplit.principal();
+        interestOutstanding = strategySplit.interest();
+        feeChargesAmount = strategySplit.fee();
+        penaltyChargesOutstanding = strategySplit.penalty();
+        taxChargesAmount = strategySplit.tax();
 
         LoanTransactionData loanTransactionData = new LoanTransactionData(null, null, null, transactionType, null, currencyData,
                 earliestUnpaidInstallmentDate, totalOutstandingAmount.getAmount(), loan.getNetDisbursalAmount(),
@@ -3463,15 +3475,12 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 penaltyChargesOutstanding.getAmount(), taxChargesAmount.getAmount(), null, unrecognizedIncomePortion, paymentTypeOptions,
                 ExternalId.empty(), null, null, outstandingLoanBalance, isReversed, loanId, loan.getExternalId());
 
-        // Informational only (never throws here) - lets the foreclosure calendar's minDate reflect the same
-        // "MAX_BACKDATE_DAYS before business date, or disbursement date if later" rule that
-        // CustomLoanAccountDomainServiceJpa#foreCloseLoan enforces at actual submission time, so the UI can stop the
-        // operator from ever picking an invalid date rather than only rejecting it after the fact. The separate
-        // "not before the loan's last non-waiver transaction date" rule (LoanForeclosureValidator, checked above via
-        // validateForForeclosure) is loan-history-dependent and changes after every transaction, so it is left as a
-        // hard backend validation with a clear error message rather than folded into this minDate.
+        // Informational only (never throws here). The foreclosure calendar's minDate is the later of the configured
+        // backdate window and the latest non-accrual transaction value date, matching
+        // CustomLoanAccountDomainServiceJpa#foreCloseLoan. Accrual rows do not move this floor. Dates before it are
+        // disabled in the calendar and rejected on submit.
         loanTransactionData.getAdditionalAttributes().put("earliestAllowedTransactionDate",
-                BackdatedRepaymentValidator.computeEarliestAllowedTransactionDate(loan));
+                BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan));
 
         final LocalDate maturityDate = loan.getMaturityDate();
         if (maturityDate != null) {

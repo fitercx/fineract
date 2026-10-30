@@ -120,8 +120,9 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
      * savings-to-loan "Transfer funds" settlement is allowed to post as a backdated (value date in the past) repayment.
      * Previously this path did not call this check at all, silently accepting backdated transfers onto
      * interest-recalculation-enabled loans that would be rejected outright as a direct repayment - see BUG_REPORT.md
-     * Finding #1. This is a no-op (throws nothing) for every loan product that does not have interest recalculation
-     * enabled, which today is every real production loan product.
+     * Finding #1. The same call also rejects a value date earlier than the latest non-accrual transaction on the loan.
+     * Accrual transactions do not count. The interest-recalculation part is a no-op for every real production loan
+     * product, which does not have interest recalculation enabled.
      */
     private void validateBackdatedTransferAllowed(final Loan loan, final LocalDate transactionDate) {
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();

@@ -1753,7 +1753,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
      * <p>
      * Delegates to {@link BackdatedRepaymentValidator} so the savings-to-loan "Transfer funds" settlement path
      * ({@code CustomAccountTransfersWritePlatformServiceImpl}) enforces the identical rule instead of silently
-     * bypassing it (see BUG_REPORT.md Finding #1).
+     * bypassing it (see BUG_REPORT.md Finding #1). That includes the rule that the value date cannot be earlier than
+     * the latest non-accrual transaction already on the loan.
      */
     private void validateBackdatedRepaymentAllowed(final Loan loan, final LocalDate transactionDate) {
         BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, transactionDate);

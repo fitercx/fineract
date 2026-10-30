@@ -1132,22 +1132,76 @@ public class LoanAccrualsProcessingServiceImpl implements LoanAccrualsProcessing
         ExternalId accrualExternalId = externalIdFactory.create();
         LoanTransaction accrualTransaction = LoanTransaction.accrueTransaction(loan, loan.getOffice(), foreClosureDate, total.getAmount(),
                 interestPortion.getAmount(), feePortion.getAmount(), penaltyPortion.getAmount(), taxPortion.getAmount(), accrualExternalId);
-        LocalDate fromDate = loan.getDisbursementDate();
-        if (loan.getAccruedTill() != null) {
-            fromDate = loan.getAccruedTill();
-        }
         newAccrualTransactions.add(accrualTransaction);
         loan.addLoanTransaction(accrualTransaction);
+        linkUnaccruedChargesToForeclosureAccrual(loan, accrualTransaction, foreClosureDate, currency, feePortion, penaltyPortion);
+    }
+
+    /**
+     * The foreclosure accrual's fee and penalty portions are only the income not already recognized. Charge rows must
+     * sum to those portions. Linking every unpaid charge, or only charges due after {@code accruedTill}, books a
+     * different total and advanced accounting rejects the transaction.
+     */
+    private void linkUnaccruedChargesToForeclosureAccrual(Loan loan, LoanTransaction accrualTransaction, LocalDate foreClosureDate,
+            MonetaryCurrency currency, Money feePortion, Money penaltyPortion) {
+        List<LoanCharge> charges = new ArrayList<>(loan.getActiveCharges());
+        charges.sort(Comparator.comparing(LoanCharge::getDueLocalDate, Comparator.nullsLast(Comparator.naturalOrder())));
         Set<LoanChargePaidBy> accrualCharges = accrualTransaction.getLoanChargesPaid();
-        for (LoanCharge loanCharge : loan.getActiveCharges()) {
-            boolean isDue = loanCharge.isDueInPeriod(fromDate, foreClosureDate, DateUtils.isEqual(fromDate, loan.getDisbursementDate()));
-            if (loanCharge.isActive() && !loanCharge.isPaid() && (isDue || loanCharge.isInstalmentFee())) {
-                final LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(accrualTransaction, loanCharge,
-                        loanCharge.getAmountOutstanding(currency).getAmount(), null);
-                accrualCharges.add(loanChargePaidBy);
-                loanCharge.getLoanChargePaidBySet().add(loanChargePaidBy);
+        Money feeLeft = feePortion == null ? Money.zero(currency) : feePortion;
+        Money penaltyLeft = penaltyPortion == null ? Money.zero(currency) : penaltyPortion;
+        LocalDate disbursementDate = loan.getDisbursementDate();
+        for (LoanCharge loanCharge : charges) {
+            if (!loanCharge.isActive() || loanCharge.isPaid()) {
+                continue;
+            }
+            boolean isDue = disbursementDate != null && loanCharge.isDueInPeriod(disbursementDate, foreClosureDate, true);
+            if (!isDue && !loanCharge.isInstalmentFee()) {
+                continue;
+            }
+            Money budget = loanCharge.isPenaltyCharge() ? penaltyLeft : feeLeft;
+            if (!budget.isGreaterThanZero()) {
+                continue;
+            }
+            Money unaccrued = loanCharge.getAmountOutstanding(currency)
+                    .minus(penaltyOrFeeAlreadyAccrued(loan, loanCharge, accrualTransaction, currency));
+            if (!unaccrued.isGreaterThanZero()) {
+                continue;
+            }
+            Money amount = unaccrued.isGreaterThan(budget) ? budget : unaccrued;
+            LoanChargePaidBy loanChargePaidBy = new LoanChargePaidBy(accrualTransaction, loanCharge, amount.getAmount(), null);
+            accrualCharges.add(loanChargePaidBy);
+            loanCharge.getLoanChargePaidBySet().add(loanChargePaidBy);
+            if (loanCharge.isPenaltyCharge()) {
+                penaltyLeft = penaltyLeft.minus(amount);
+            } else {
+                feeLeft = feeLeft.minus(amount);
             }
         }
+    }
+
+    private Money penaltyOrFeeAlreadyAccrued(Loan loan, LoanCharge loanCharge, LoanTransaction currentAccrual, MonetaryCurrency currency) {
+        Money accrued = Money.zero(currency);
+        for (LoanTransaction transaction : loan.getLoanTransactions()) {
+            if (transaction == currentAccrual || !transaction.isNotReversed() || !transaction.isAccrual()) {
+                continue;
+            }
+            for (LoanChargePaidBy paidBy : transaction.getLoanChargesPaid()) {
+                if (paidBy.getAmount() != null && sameCharge(paidBy.getLoanCharge(), loanCharge)) {
+                    accrued = accrued.plus(paidBy.getAmount());
+                }
+            }
+        }
+        return accrued;
+    }
+
+    private boolean sameCharge(LoanCharge left, LoanCharge right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left == right) {
+            return true;
+        }
+        return left.getId() != null && left.getId().equals(right.getId());
     }
 
     private void postJournalEntries(final Loan loan, final List<Long> existingTransactionIds,
