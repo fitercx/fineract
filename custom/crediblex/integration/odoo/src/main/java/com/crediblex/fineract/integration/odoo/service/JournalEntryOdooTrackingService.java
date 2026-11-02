@@ -142,8 +142,15 @@ public class JournalEntryOdooTrackingService {
         }
     }
 
+    /**
+     * Throws when the loan or savings account behind the entry cannot be resolved, so no tracking record is created for
+     * an entry that might belong to a non-recourse LOC.
+     */
     boolean isNonRecourseLocJournalEntry(JournalEntry journalEntry, Long loanId) {
         if (journalEntry.getLoanTransactionId() != null) {
+            if (loanId == null) {
+                throw new IllegalStateException("Could not resolve loan for loan transaction " + journalEntry.getLoanTransactionId());
+            }
             return locAccountingHelper.isNonRecourseLocLoan(loanId);
         }
         if (journalEntry.getSavingsTransactionId() != null) {
@@ -157,14 +164,8 @@ public class JournalEntryOdooTrackingService {
     }
 
     private Long getSavingsAccountIdFromTransactionId(Long savingsTransactionId) {
-        try {
-            String sql = "SELECT savings_account_id FROM m_savings_account_transaction WHERE id = ?";
-            List<Long> ids = accountDetailsService.getJdbcTemplate().queryForList(sql, Long.class, savingsTransactionId);
-            return ids.isEmpty() ? null : ids.get(0);
-        } catch (Exception e) {
-            log.warn("Failed to get savings account ID for savings transaction ID: {}", savingsTransactionId, e);
-            return null;
-        }
+        String sql = "SELECT savings_account_id FROM m_savings_account_transaction WHERE id = ?";
+        return accountDetailsService.getJdbcTemplate().queryForObject(sql, Long.class, savingsTransactionId);
     }
 
     /**

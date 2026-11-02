@@ -496,7 +496,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Check if the loan is a drawdown on a Receivable Non-Recourse LOC ({@code m_line_of_credit.product_type}).
+     * Check if the loan is a drawdown on a Receivable Non-Recourse LOC ({@code m_line_of_credit.product_type}). Lookup
+     * failures propagate: callers must not treat an unknown loan as recourse.
      *
      * @param loanId
      *            The loan ID
@@ -506,24 +507,20 @@ public class LOCAccountingHelper {
         if (loanId == null) {
             return false;
         }
-        try {
-            String sql = """
-                    SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp
-                    JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
-                    WHERE mlcp.loan_id = ? AND loc.product_type = ?
-                    """;
-            Integer count = jdbcTemplate.queryForObject(sql, Integer.class, loanId, RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE);
-            return count != null && count > 0;
-        } catch (Exception e) {
-            log.warn("LOCAccountingHelper: Error checking non-recourse LOC for loanId {}: {}", loanId, e.getMessage());
-            return false;
-        }
+        String sql = """
+                SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp
+                JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                WHERE mlcp.loan_id = ? AND loc.product_type = ?
+                """;
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, loanId, RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE);
+        return count != null && count > 0;
     }
 
     /**
-     * Check if the savings account belongs exclusively to Receivable Non-Recourse LOCs: either it is the settlement
-     * account of a non-recourse LOC, or every LOC loan linked to it is a non-recourse drawdown. A savings account
-     * shared with other LOC types is not treated as non-recourse.
+     * Check if the savings account belongs exclusively to Receivable Non-Recourse LOCs. Every LOC that uses it as the
+     * settlement account and every loan associated with it must be non-recourse; a loan without a LOC counts as another
+     * type. A savings account shared with other LOC types or plain loans is not treated as non-recourse. Lookup
+     * failures propagate.
      *
      * @param savingsAccountId
      *            The savings account ID
@@ -533,25 +530,17 @@ public class LOCAccountingHelper {
         if (savingsAccountId == null) {
             return false;
         }
-        try {
-            String settlementSql = "SELECT product_type FROM m_line_of_credit WHERE settlement_savings_account_id = ?";
-            List<String> settlementTypes = jdbcTemplate.queryForList(settlementSql, String.class, savingsAccountId);
-            if (!settlementTypes.isEmpty()) {
-                return settlementTypes.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
-            }
-
-            String linkedLoansSql = """
-                    SELECT DISTINCT loc.product_type FROM m_portfolio_account_associations paa
-                    JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = paa.loan_account_id
-                    JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
-                    WHERE paa.linked_savings_account_id = ?
-                    """;
-            List<String> linkedTypes = jdbcTemplate.queryForList(linkedLoansSql, String.class, savingsAccountId);
-            return !linkedTypes.isEmpty() && linkedTypes.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
-        } catch (Exception e) {
-            log.warn("LOCAccountingHelper: Error checking non-recourse LOC for savingsAccountId {}: {}", savingsAccountId, e.getMessage());
-            return false;
-        }
+        String sql = """
+                SELECT loc.product_type FROM m_line_of_credit loc
+                WHERE loc.settlement_savings_account_id = ?
+                UNION
+                SELECT COALESCE(loc.product_type, 'NONE') FROM m_portfolio_account_associations paa
+                LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = paa.loan_account_id
+                LEFT JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                WHERE paa.linked_savings_account_id = ? AND paa.loan_account_id IS NOT NULL
+                """;
+        List<String> types = jdbcTemplate.queryForList(sql, String.class, savingsAccountId, savingsAccountId);
+        return !types.isEmpty() && types.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
     }
 
     /**
