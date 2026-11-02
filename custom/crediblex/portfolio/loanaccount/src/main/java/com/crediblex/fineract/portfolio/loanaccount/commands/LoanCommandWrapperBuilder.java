@@ -60,6 +60,23 @@ public class LoanCommandWrapperBuilder {
     }
 
     /**
+     * Creates a command wrapper for a manual repayment strategy change. Permission {@code UPDATEREPAYMENTSTRATEGY_LOAN}
+     * is maker-checker enabled.
+     *
+     * @param loanId
+     *            The ID of the loan
+     * @return this builder
+     */
+    public LoanCommandWrapperBuilder updateRepaymentStrategy(final Long loanId) {
+        this.actionName = "UPDATEREPAYMENTSTRATEGY";
+        this.entityName = "LOAN";
+        this.entityId = loanId;
+        this.loanId = loanId;
+        this.href = "/loan-repayment-strategy/" + loanId;
+        return this;
+    }
+
+    /**
      * Creates a command wrapper for reversing a paid loan charge.
      *
      * @param loanId
