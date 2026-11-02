@@ -1900,7 +1900,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                     // never added to consumed (FGF LOC 2294). computeLocBalance also re-anchors to total outstanding.
                     amount = receivableLocCreditReleaseAmount(loanTransaction);
                 } else {
-                    // PAYABLE: principal portion only
+                    // PAYABLE / RECEIVABLE_NON_RECOURSE reserve principal only (interest sits on top): principal
+                    // portion only
                     amount = loanTransaction.getPrincipalPortion();
                 }
             }
@@ -1970,7 +1971,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                         // receivableLocCreditReleaseAmount)
                         amount = receivableLocCreditReleaseAmount(loanTransaction);
                     } else {
-                        // PAYABLE consumes principal only. A payment of LPI and interest leaves principal null,
+                        // PAYABLE / RECEIVABLE_NON_RECOURSE consume principal only. A payment of LPI and interest
+                        // leaves principal null,
                         // and a null amount cannot be inserted on m_line_of_credit_transactions.
                         amount = loanTransaction.getPrincipalPortion();
                     }

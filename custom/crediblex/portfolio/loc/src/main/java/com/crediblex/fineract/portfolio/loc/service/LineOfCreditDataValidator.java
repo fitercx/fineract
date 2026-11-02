@@ -24,12 +24,14 @@ import static com.crediblex.fineract.portfolio.loc.api.LineOfCreditApiConstants.
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LocCashMarginType;
 import com.crediblex.fineract.portfolio.loc.data.LocInterestChargeTime;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -92,6 +94,11 @@ public class LineOfCreditDataValidator {
 
         // Always validate required fields for both create and edit operations
         validateRequiredFields(request, baseDataValidator);
+
+        if (request.getProductType() != null) {
+            baseDataValidator.reset().parameter("productType").value(request.getProductType())
+                    .isOneOfTheseValues(Arrays.stream(LocProductType.values()).map(LocProductType::getValue).toArray(Object[]::new));
+        }
 
         if (request.getCashMarginType() != null) {
             baseDataValidator.reset().parameter("cashMarginType").value(request.getCashMarginType())

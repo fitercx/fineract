@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.loanschedule.service;
 
+import static com.crediblex.fineract.portfolio.loanaccount.data.LoanAccountAdditionalProperties.LINE_OF_CREDIT_ID;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.APPROVED_ON_DATE;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.DATE_FORMAT;
 import static org.apache.fineract.portfolio.loanaccount.domain.Loan.EVENT_DATE;
@@ -9,6 +10,8 @@ import static org.apache.fineract.portfolio.loanaccount.domain.Loan.PARAM_STATUS
 
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParams;
 import com.crediblex.fineract.portfolio.loanaccount.domain.LoanLineOfCreditParamsRepository;
+import com.crediblex.fineract.portfolio.loc.data.LocProductType;
+import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import java.math.BigDecimal;
@@ -73,6 +76,7 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
 
     private final PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator;
     private final LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository;
+    private final LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper;
 
     public CustomLoanScheduleAssembler(FromJsonHelper fromApiJsonHelper, LoanProductRepository loanProductRepository,
             ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository, LoanChargeAssembler loanChargeAssembler,
@@ -86,7 +90,8 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
             LoanLifecycleStateMachine defaultLoanLifecycleStateMachine, LoanAccrualsProcessingService loanAccrualsProcessingService,
             LoanDisbursementService loanDisbursementService, LoanChargeService loanChargeService, LoanScheduleService loanScheduleService,
             LoanProductRelatedDetailUpdateUtil relatedDetailUpdateUtil, PaymentPeriodsInOneYearCalculator paymentPeriodsInOneYearCalculator,
-            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository) {
+            LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository,
+            LineOfCreditRepositoryWrapper lineOfCreditRepositoryWrapper) {
         super(fromApiJsonHelper, loanProductRepository, applicationCurrencyRepository, loanChargeAssembler, loanScheduleFactory,
                 aprCalculator, calendarRepository, holidayRepository, configurationDomainService, clientRepository, groupRepository,
                 workingDaysRepository, floatingRatesReadPlatformService, variableLoanScheduleFromApiJsonValidator,
@@ -95,29 +100,26 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
                 loanScheduleService, relatedDetailUpdateUtil);
         this.paymentPeriodsInOneYearCalculator = paymentPeriodsInOneYearCalculator;
         this.loanLineOfCreditParamsRepository = loanLineOfCreditParamsRepository;
+        this.lineOfCreditRepositoryWrapper = lineOfCreditRepositoryWrapper;
     }
 
     @Override
     protected LoanApplicationTerms assembleLoanApplicationTermsFrom(JsonElement element, LoanProduct loanProduct) {
 
-        boolean isReceivableLOC = loanProduct.isEnableLocReceivable();
+        final boolean isReceivableProduct = loanProduct.isEnableLocReceivable();
+        final boolean isNonRecourseLOC = isReceivableProduct && isNonRecourseLineOfCredit(element);
+        final boolean isReceivableLOC = isReceivableProduct && !isNonRecourseLOC;
+
+        if (isNonRecourseLOC) {
+            // Non-recourse: principal is the full funded amount, interest is repaid at maturity (no upfront deduction)
+            element.getAsJsonObject().addProperty("principal", extractFundedAmount(element));
+        }
 
         if (isReceivableLOC) {
             LoanApplicationTerms term = super.assembleLoanApplicationTermsFrom(element, loanProduct);
             term.setIsReceivableLineOfCredit(true);
 
-            // We'll override amountAfterAdvance with amountInFacilityCurrency to calculate schedule for receivable only
-            // as it comes from Funded Amount field in Frontend / SDK API
-            // Frontend / SDK API calculates: min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit)
-            // Fall back to amountAfterAdvance if amountInFacilityCurrency is not provided (for backward compatibility)
-            BigDecimal amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
-            if (amountAfterAdvance == null) {
-                amountAfterAdvance = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
-            }
-            if (amountAfterAdvance == null) {
-                throw new GeneralPlatformDomainRuleException("loan.amount.in.facility.currency.or.amount.after.advance.is.required",
-                        "Either amountInFacilityCurrency or amountAfterAdvance is required for receivable line of credit.", List.of());
-            }
+            BigDecimal amountAfterAdvance = extractFundedAmount(element);
             BigDecimal proposedPrincipal = getProposedPrincipal(element, amountAfterAdvance, term.getPrincipal().getMc());
 
             term.setPrincipal(Money.of(term.getCurrency(), proposedPrincipal));
@@ -172,6 +174,32 @@ public class CustomLoanScheduleAssembler extends LoanScheduleAssembler {
         }
 
         return terms;
+    }
+
+    /**
+     * Funded amount of a receivable-family LOC drawdown: min(amountAfterAdvanceInAED, requestedAmountInAED,
+     * availableLimit), sent by Frontend / SDK API as amountInFacilityCurrency. Falls back to amountAfterAdvance for
+     * backward compatibility.
+     */
+    private BigDecimal extractFundedAmount(JsonElement element) {
+        BigDecimal fundedAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountInFacilityCurrency", element);
+        if (fundedAmount == null) {
+            fundedAmount = this.fromApiJsonHelper.extractBigDecimalWithLocaleNamed("amountAfterAdvance", element);
+        }
+        if (fundedAmount == null) {
+            throw new GeneralPlatformDomainRuleException("loan.amount.in.facility.currency.or.amount.after.advance.is.required",
+                    "Either amountInFacilityCurrency or amountAfterAdvance is required for receivable line of credit.", List.of());
+        }
+        return fundedAmount;
+    }
+
+    private boolean isNonRecourseLineOfCredit(JsonElement element) {
+        final Long lineOfCreditId = this.fromApiJsonHelper.extractLongNamed(LINE_OF_CREDIT_ID, element);
+        if (lineOfCreditId == null) {
+            return false;
+        }
+        final LocProductType productType = lineOfCreditRepositoryWrapper.findOneWithNotFoundDetection(lineOfCreditId).getProductType();
+        return productType != null && productType.isReceivableNonRecourse();
     }
 
     @Override

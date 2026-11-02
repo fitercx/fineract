@@ -40,7 +40,7 @@ public class LineOfCreditApiResourceSwagger {
         public Long clientId;
         @Schema(example = "John Doe")
         public String clientName;
-        @Schema(example = "RECEIVABLE")
+        @Schema(example = "RECEIVABLE", description = "One of RECEIVABLE, PAYABLE, RECEIVABLE_NON_RECOURSE")
         public String productType;
         @Schema(example = "100000.00")
         public BigDecimal maximumAmount;
@@ -196,7 +196,7 @@ public class LineOfCreditApiResourceSwagger {
         public String accountNumber;
         @Schema(example = "1")
         public Long clientId;
-        @Schema(example = "RECEIVABLE")
+        @Schema(example = "RECEIVABLE", description = "One of RECEIVABLE, PAYABLE, RECEIVABLE_NON_RECOURSE")
         public String productType;
         @Schema(example = "100000.00")
         public BigDecimal maximumAmount;
@@ -344,7 +344,7 @@ public class LineOfCreditApiResourceSwagger {
 
         private GetLineOfCreditChangesResponse() {}
 
-        @Schema(example = "TRADE_FINANCE")
+        @Schema(example = "3", description = "LocProductType id: 1 RECEIVABLE, 2 PAYABLE, 3 RECEIVABLE_NON_RECOURSE")
         public String productType;
         @Schema(example = "100000.00")
         public BigDecimal maximumAmount;

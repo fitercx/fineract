@@ -72,6 +72,18 @@ public class LineOfCreditStepDef extends AbstractStepDef {
     private Long drawdownLoanId;
     private String currentLocType; // Track the current LOC type (receivable/payable)
 
+    /**
+     * Maps the feature-file LOC type to the LocProductType id: 1=RECEIVABLE, 2=PAYABLE, 3=RECEIVABLE_NON_RECOURSE.
+     */
+    private static Integer resolveLocProductType(String locType) {
+        return switch (locType.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "receivable" -> 1;
+            case "payable" -> 2;
+            case "non-recourse", "receivable non-recourse", "receivable_non_recourse" -> 3;
+            default -> throw new IllegalArgumentException("Unknown line of credit type: " + locType);
+        };
+    }
+
     @When("Client creates a new line of credit with start date {string} and max limit {int}")
     public void clientCreatesNewLineOfCredit(String startDate, int maxLimit) throws IOException {
         // Default to RECEIVABLE type for backward compatibility
@@ -97,11 +109,11 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         // Use a future date for interim review (30 days from now) to avoid validation failures
         String interimReviewDate = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern(DATE_FORMAT, java.util.Locale.ENGLISH));
 
-        // Determine product type based on string parameter
-        Integer productType = locType.equalsIgnoreCase("payable") ? 2 : 1; // 1=RECEIVABLE, 2=PAYABLE
+        Integer productType = resolveLocProductType(locType);
+        boolean isReceivableFamily = productType != 2;
 
-        // Set tenor to 30 days for receivable line of credit, 10 days for others
-        Integer tenorDays = locType.equalsIgnoreCase("receivable") ? 30 : 10;
+        // Set tenor to 30 days for receivable / non-recourse line of credit, 10 days for others
+        Integer tenorDays = isReceivableFamily ? 30 : 10;
 
         ApprovedBuyer approvedBuyer = new ApprovedBuyer();
         approvedBuyer.setName(externalId);
@@ -129,7 +141,7 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .advancePercentage("100") // Updated to match payload example
                 .cashMarginType(1)
                 .cashMarginValue(10.5f)
-                .interestChargeTime(1)
+                .interestChargeTime(productType == 3 ? 2 : 1) // non-recourse charges interest post disbursement
                 .loanOfficerId(null) // optional
                 .distributionPartner("Partner X")
                 .approvedBuyers(List.of(approvedBuyer)) // Added approved buyers as in payload
@@ -326,7 +338,9 @@ public class LineOfCreditStepDef extends AbstractStepDef {
         Map<String, String> drawdownDetails = dataTable.asMap(String.class, String.class);
 
         String locType = getOptionalValue(drawdownDetails, "locType", currentLocType);
-        String productContextKey = locType.equalsIgnoreCase("receivable") ? "receivableLOCProduct" : "payableLOCProduct";
+        // Non-recourse drawdowns reuse the receivable loan product; the LOC type decides short disbursal
+        boolean isReceivableFamily = resolveLocProductType(locType) != 2;
+        String productContextKey = isReceivableFamily ? "receivableLOCProduct" : "payableLOCProduct";
 
         final Long customLoanProductId = testContext().get(productContextKey);
         assertThat(customLoanProductId)
@@ -427,8 +441,8 @@ public class LineOfCreditStepDef extends AbstractStepDef {
                 .datatables(Set.of(new TableData().registeredTableName("dt_loan_additional_data")
                         .data(Map.of("dp_name", "Partner X","locale", DEFAULT_LOCALE,"remitter_name","Jane Contact","agreed_cash_margin_amount",0))));
 
-        // Add receivable-specific fields if this is a receivable LOC
-        if (locType.equalsIgnoreCase("receivable")) {
+        // Add receivable-specific fields if this is a receivable / non-recourse LOC
+        if (isReceivableFamily) {
             BigDecimal advancePercentage = advancePercentageStr != null && !advancePercentageStr.isEmpty() ? new BigDecimal(advancePercentageStr) : new BigDecimal(90);
             // Set advance percentage
             loanRequest.setAdvancePercentage(advancePercentage);

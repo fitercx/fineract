@@ -19,6 +19,7 @@
 package com.crediblex.fineract.accounting.journalentry.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
@@ -44,6 +45,9 @@ public class LOCAccountingHelper {
     // LOC Product External IDs
     public static final String LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID = "LOC_INVOICE_DISCOUNTING";
     public static final String PAYABLE_LOC_PRODUCT_EXTERNAL_ID = "LOC_PAYABLE_FINANCING";
+
+    // m_line_of_credit.product_type value (LocProductType name) for Receivable Non-Recourse LOCs
+    public static final String RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE = "RECEIVABLE_NON_RECOURSE";
 
     // Payment Type Code Names (from m_payment_type.code_name)
     public static final String DISBURSEMENT_OF_INVOICE_CODE_NAME = "DISBURSEMENT_OF_INVOICE";
@@ -487,6 +491,65 @@ public class LOCAccountingHelper {
         } catch (Exception e) {
             log.debug("LOCAccountingHelper: Error checking LOC Receivable loan product for loanProductId {}: {}", loanProductId,
                     e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if the loan is a drawdown on a Receivable Non-Recourse LOC ({@code m_line_of_credit.product_type}).
+     *
+     * @param loanId
+     *            The loan ID
+     * @return true if the loan's LOC is RECEIVABLE_NON_RECOURSE
+     */
+    public boolean isNonRecourseLocLoan(Long loanId) {
+        if (loanId == null) {
+            return false;
+        }
+        try {
+            String sql = """
+                    SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp
+                    JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                    WHERE mlcp.loan_id = ? AND loc.product_type = ?
+                    """;
+            Integer count = jdbcTemplate.queryForObject(sql, Integer.class, loanId, RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE);
+            return count != null && count > 0;
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Error checking non-recourse LOC for loanId {}: {}", loanId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if the savings account belongs exclusively to Receivable Non-Recourse LOCs: either it is the settlement
+     * account of a non-recourse LOC, or every LOC loan linked to it is a non-recourse drawdown. A savings account
+     * shared with other LOC types is not treated as non-recourse.
+     *
+     * @param savingsAccountId
+     *            The savings account ID
+     * @return true if the savings account only serves RECEIVABLE_NON_RECOURSE LOCs
+     */
+    public boolean isNonRecourseLocSavingsAccount(Long savingsAccountId) {
+        if (savingsAccountId == null) {
+            return false;
+        }
+        try {
+            String settlementSql = "SELECT product_type FROM m_line_of_credit WHERE settlement_savings_account_id = ?";
+            List<String> settlementTypes = jdbcTemplate.queryForList(settlementSql, String.class, savingsAccountId);
+            if (!settlementTypes.isEmpty()) {
+                return settlementTypes.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
+            }
+
+            String linkedLoansSql = """
+                    SELECT DISTINCT loc.product_type FROM m_portfolio_account_associations paa
+                    JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = paa.loan_account_id
+                    JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                    WHERE paa.linked_savings_account_id = ?
+                    """;
+            List<String> linkedTypes = jdbcTemplate.queryForList(linkedLoansSql, String.class, savingsAccountId);
+            return !linkedTypes.isEmpty() && linkedTypes.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
+        } catch (Exception e) {
+            log.warn("LOCAccountingHelper: Error checking non-recourse LOC for savingsAccountId {}: {}", savingsAccountId, e.getMessage());
             return false;
         }
     }

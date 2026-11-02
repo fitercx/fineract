@@ -125,6 +125,12 @@ public class JournalEntryOdooTrackingService {
                 return;
             }
 
+            // Receivable Non-Recourse LOC entries are not posted to Odoo (yet), so no tracking record is created.
+            if (isNonRecourseLocJournalEntry(journalEntry, loanId)) {
+                log.debug("Skipping tracking record creation for journal entry ID: {} - Receivable Non-Recourse LOC", journalEntry.getId());
+                return;
+            }
+
             JournalEntryOdooSync trackingRecord = new JournalEntryOdooSync(journalEntry, loanId, businessEventType);
             journalEntryOdooSyncRepository.save(trackingRecord);
 
@@ -133,6 +139,31 @@ public class JournalEntryOdooTrackingService {
                     transactionType, journalEntry.getId(), loanId, businessEventType);
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
+        }
+    }
+
+    boolean isNonRecourseLocJournalEntry(JournalEntry journalEntry, Long loanId) {
+        if (journalEntry.getLoanTransactionId() != null) {
+            return locAccountingHelper.isNonRecourseLocLoan(loanId);
+        }
+        if (journalEntry.getSavingsTransactionId() != null) {
+            if (loanId != null && locAccountingHelper.isNonRecourseLocLoan(loanId)) {
+                return true;
+            }
+            final Long savingsAccountId = getSavingsAccountIdFromTransactionId(journalEntry.getSavingsTransactionId());
+            return locAccountingHelper.isNonRecourseLocSavingsAccount(savingsAccountId);
+        }
+        return false;
+    }
+
+    private Long getSavingsAccountIdFromTransactionId(Long savingsTransactionId) {
+        try {
+            String sql = "SELECT savings_account_id FROM m_savings_account_transaction WHERE id = ?";
+            List<Long> ids = accountDetailsService.getJdbcTemplate().queryForList(sql, Long.class, savingsTransactionId);
+            return ids.isEmpty() ? null : ids.get(0);
+        } catch (Exception e) {
+            log.warn("Failed to get savings account ID for savings transaction ID: {}", savingsTransactionId, e);
+            return null;
         }
     }
 

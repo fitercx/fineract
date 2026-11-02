@@ -42,7 +42,7 @@ public interface LineOfCreditReadPlatformService {
 
     Integer getTotalOfActiveLoans(Long lineOfCreditId);
 
-    List<LineOfCreditSummary> retrieveSummary(String lineOfCreditId, Long clientId, LocProductType locProductType);
+    List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId, Collection<LocProductType> locProductTypes);
 
     Collection<VendorResponse> retrieveAllVendors(Long lineOfCreditId);
 
