@@ -32,6 +32,7 @@ import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditTransactionType;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBalanceUpdateService;
+import com.crediblex.fineract.portfolio.savings.service.CredXSavingsAssociatedLoanService;
 import com.google.common.collect.Lists;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -230,6 +231,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
     private final LoanLifecycleStateMachine customLoanLifecycleStateMachine;
     private final LoanTransactionProcessingService customLoanTransactionProcessingService;
     private final ReprocessLoanTransactionsService customReprocessLoanTransactionsService;
+    private final CredXSavingsAssociatedLoanService associatedLoanService;
 
     public CustomLoanWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanTransactionValidator loanTransactionValidator,
@@ -275,7 +277,8 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
             LoanChargeWritePlatformService loanChargeWritePlatformService, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             PlatformTransactionManager platformTransactionManager, LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher,
             LocStatusAggregationUtils locStatusAggregationUtils, CustomLoanDisbursementService customLoanDisbursementService,
-            SavingsAccountWritePlatformService savingsAccountWritePlatformService, JdbcTemplate jdbcTemplate) {
+            SavingsAccountWritePlatformService savingsAccountWritePlatformService, JdbcTemplate jdbcTemplate,
+            CredXSavingsAssociatedLoanService associatedLoanService) {
         super(context, loanTransactionValidator, loanUpdateCommandFromApiJsonDeserializer, loanRepositoryWrapper, loanAccountDomainService,
                 noteRepository, loanTransactionRepository, loanTransactionRelationRepository, loanAssembler,
                 journalEntryWritePlatformService, calendarInstanceRepository, paymentDetailWritePlatformService, holidayRepository,
@@ -314,6 +317,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         this.customLoanLifecycleStateMachine = loanLifecycleStateMachine;
         this.customLoanTransactionProcessingService = loanTransactionProcessingService;
         this.customReprocessLoanTransactionsService = reprocessLoanTransactionsService;
+        this.associatedLoanService = associatedLoanService;
     }
 
     @PostConstruct
@@ -937,10 +941,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
 
         final CommandProcessingResult withdrawalResult = this.savingsAccountWritePlatformService.withdrawal(savingsAccountId,
                 withdrawalCommand);
-        markSavingsWithdrawalAsDisbursal(withdrawalResult.getResourceId());
+        markSavingsWithdrawalAsDisbursal(withdrawalResult.getResourceId(), originalCommand.getLoanId());
     }
 
-    private void markSavingsWithdrawalAsDisbursal(final Long savingsTransactionId) {
+    private void markSavingsWithdrawalAsDisbursal(final Long savingsTransactionId, final Long loanId) {
         if (savingsTransactionId == null) {
             return;
         }
@@ -950,6 +954,7 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
                 WHERE id = ?
                   AND transaction_type_enum = 2
                 """, savingsTransactionId);
+        this.associatedLoanService.recordLoanLink(savingsTransactionId, loanId);
     }
 
     private void updateNetDisbursalAmountForMultiDisbursalLoan(final Loan loan) {

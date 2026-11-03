@@ -1,6 +1,8 @@
 package com.crediblex.fineract.portfolio.savings.api;
 
+import com.crediblex.fineract.portfolio.savings.data.CredXSavingsAssociatedLoanData;
 import com.crediblex.fineract.portfolio.savings.data.CredXSavingsTransactionSubTypeData;
+import com.crediblex.fineract.portfolio.savings.service.CredXSavingsAssociatedLoanService;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -21,7 +23,9 @@ public class CredXSavingsAccountTransactionsApiResource {
 
     private final PlatformSecurityContext context;
     private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
+    private final CredXSavingsAssociatedLoanService associatedLoanService;
     private final DefaultToApiJsonSerializer<Map<Long, CredXSavingsTransactionSubTypeData>> toApiJsonSerializer;
+    private final DefaultToApiJsonSerializer<Map<Long, CredXSavingsAssociatedLoanData>> associatedLoanApiJsonSerializer;
 
     @GET
     @Path("subtypes")
@@ -38,5 +42,13 @@ public class CredXSavingsAccountTransactionsApiResource {
             @PathParam("transactionId") final Long transactionId) {
         this.context.authenticatedUser().validateHasReadPermission(SavingsApiConstants.SAVINGS_ACCOUNT_RESOURCE_NAME);
         return this.toApiJsonSerializer.serialize(this.transactionSubTypeService.retrieveSubType(savingsId, transactionId));
+    }
+
+    @GET
+    @Path("associated-loans")
+    @Produces({ MediaType.APPLICATION_JSON })
+    public String retrieveAssociatedLoans(@PathParam("savingsId") final Long savingsId) {
+        this.context.authenticatedUser().validateHasReadPermission(SavingsApiConstants.SAVINGS_ACCOUNT_RESOURCE_NAME);
+        return this.associatedLoanApiJsonSerializer.serialize(this.associatedLoanService.retrieveAssociatedLoans(savingsId));
     }
 }
