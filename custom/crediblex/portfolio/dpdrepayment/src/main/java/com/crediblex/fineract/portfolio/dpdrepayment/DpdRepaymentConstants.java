@@ -1,14 +1,8 @@
 package com.crediblex.fineract.portfolio.dpdrepayment;
 
-import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
-
 public final class DpdRepaymentConstants {
 
-    /**
-     * Must stay identical to the loan product API parameter name, otherwise the product command payload is rejected as
-     * an unsupported parameter before {@code DpdRepaymentProductConfigService} ever sees it.
-     */
-    public static final String ENABLE_DPD_PRINCIPAL_ONLY_REPAYMENT = LoanProductConstants.ENABLE_DPD_PRINCIPAL_ONLY_REPAYMENT_PARAM_NAME;
+    public static final String ENABLE_DPD_PRINCIPAL_ONLY_REPAYMENT = "enableDpdPrincipalOnlyRepayment";
     public static final String DPD_PRINCIPAL_ONLY_THRESHOLD = "dpdPrincipalOnlyThreshold";
 
     /** {@code c_configuration.name} for fleet-wide DPD principal-only threshold (days). */
