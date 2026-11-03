@@ -45,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 @ConditionalOnProperty(name = "odoo.enabled", havingValue = "true")
 public class JournalEntryOdooTrackingService {
 
+    static final String EARLY_CLOSURE_EVENT = "EARLY_CLOSURE";
+    static final String EARLY_CLOSURE_REFUND_EVENT = "EARLY_CLOSURE_REFUND";
+
     private final BusinessEventNotifierService businessEventNotifierService;
     private final JournalEntryOdooSyncRepository journalEntryOdooSyncRepository;
     private final LoanTransactionRepository loanTransactionRepository;
@@ -101,7 +104,8 @@ public class JournalEntryOdooTrackingService {
 
             if (journalEntry.getLoanTransactionId() != null) {
                 loanId = getLoanIdFromTransactionId(journalEntry.getLoanTransactionId());
-                businessEventType = getBusinessEventTypeFromLoanTransaction(journalEntry.getLoanTransactionId());
+                businessEventType = resolveForeclosureRefundEvent(
+                        getBusinessEventTypeFromLoanTransaction(journalEntry.getLoanTransactionId()), journalEntry.getTransactionId());
             } else if (journalEntry.getSavingsTransactionId() != null) {
                 // For savings transactions, try to get linked loan ID from savings account
                 loanId = getLoanIdFromSavingsTransactionId(journalEntry.getSavingsTransactionId());
@@ -130,6 +134,18 @@ public class JournalEntryOdooTrackingService {
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
         }
+    }
+
+    /**
+     * Foreclosure refund entries ({@code L<txn>-R}) share the foreclosure loan transaction but are posted to Odoo as
+     * their own move.
+     */
+    static String resolveForeclosureRefundEvent(String businessEventType, String journalTransactionId) {
+        if (EARLY_CLOSURE_EVENT.equals(businessEventType) && journalTransactionId != null
+                && journalTransactionId.endsWith(LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX)) {
+            return EARLY_CLOSURE_REFUND_EVENT;
+        }
+        return businessEventType;
     }
 
     /**
@@ -222,7 +238,8 @@ public class JournalEntryOdooTrackingService {
             if (!transactionTypes.isEmpty()) {
                 Integer transactionTypeEnum = transactionTypes.get(0);
 
-                // Check for early closure/foreclosure only
+                // True foreclosure transfer only (transfer_type = 6). Normal closing repayments fall through to
+                // REPAYMENT.
                 String earlyClosureCheck = checkForEarlyClosureTransaction(loanTransactionId);
                 if (earlyClosureCheck != null) {
                     return earlyClosureCheck;
@@ -261,8 +278,12 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Separate method to check if a loan transaction is an early closure/foreclosure This method is only called when
-     * the transaction doesn't match standard business event types
+     * Returns {@code EARLY_CLOSURE} only for true loan foreclosure transfers
+     * ({@code AccountTransferType.LOAN_FORECLOSURE} = transfer_type 6).
+     * <p>
+     * Closing-day repayments that close a matured/overdue loan must NOT be treated as early closure — those are normal
+     * {@code REPAYMENT} events (including LPI). The previous rule that flagged any repayment on {@code closedon_date}
+     * misclassified normal closures.
      */
     private String checkForEarlyClosureTransaction(Long loanTransactionId) {
         try {
@@ -276,7 +297,7 @@ public class JournalEntryOdooTrackingService {
                 if (isForeclosure == 1) {
                     log.debug("Loan transaction {} with type {} identified as EARLY_CLOSURE business event", loanTransactionId,
                             transactionTypeEnum);
-                    return "EARLY_CLOSURE";
+                    return EARLY_CLOSURE_EVENT;
                 }
             }
         } catch (Exception e) {
@@ -287,16 +308,12 @@ public class JournalEntryOdooTrackingService {
     }
 
     /**
-     * Query to get foreclosure/early closure transaction details Separated into its own method for better
-     * maintainability
+     * True foreclosure only: account transfer with transfer_type = 6 (LOAN_FORECLOSURE).
      */
     private List<Map<String, Object>> getForeclosureTransactionDetails(Long loanTransactionId) {
-        String sql = "SELECT mlt.transaction_type_enum, " + "CASE WHEN matd.transfer_type = 6 THEN 1 "
-                + "     WHEN ml.closedon_date IS NOT NULL AND mlt.transaction_date = ml.closedon_date "
-                + "          AND ml.loan_status_id = 600 AND mlt.transaction_type_enum = 2 THEN 1 " + "     ELSE 0 END as is_foreclosure "
+        String sql = "SELECT mlt.transaction_type_enum, " + "CASE WHEN matd.transfer_type = 6 THEN 1 ELSE 0 END as is_foreclosure "
                 + "FROM m_loan_transaction mlt " + "LEFT JOIN m_account_transfer_transaction matt ON matt.to_loan_transaction_id = mlt.id "
-                + "LEFT JOIN m_account_transfer_details matd ON matd.id = matt.account_transfer_details_id "
-                + "LEFT JOIN m_loan ml ON ml.id = mlt.loan_id " + "WHERE mlt.id = ?";
+                + "LEFT JOIN m_account_transfer_details matd ON matd.id = matt.account_transfer_details_id " + "WHERE mlt.id = ?";
 
         return accountDetailsService.getJdbcTemplate().queryForList(sql, loanTransactionId);
     }

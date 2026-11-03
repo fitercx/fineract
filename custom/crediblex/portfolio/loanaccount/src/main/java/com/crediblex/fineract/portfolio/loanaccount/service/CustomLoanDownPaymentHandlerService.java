@@ -89,7 +89,7 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
 
         loanTransaction.updateLoan(loan);
 
-        final boolean isTransactionChronologicallyLatest = loan.isChronologicallyLatestRepaymentOrWaiver(loanTransaction);
+        final boolean isTransactionChronologicallyLatest = isChronologicallyLatestIgnoringAccruals(loan, loanTransaction);
 
         if (loanTransaction.isNotZero()) {
             loan.addLoanTransaction(loanTransaction);
@@ -193,6 +193,38 @@ public class CustomLoanDownPaymentHandlerService implements LoanDownPaymentHandl
                 throw new InvalidLoanStateTransitionException("transaction", "amount.exceeds.threshold", errorMessage);
             }
         }
+    }
+
+    /**
+     * Same rule as {@link Loan#isChronologicallyLatestRepaymentOrWaiver}, except accrual and accrual-adjustment rows
+     * dated after the transaction do not count. Those rows are not replayed by {@code reprocessTransactions}, so their
+     * date alone would rebuild every earlier repayment and let a backdated partial pull later LPI onto an earlier
+     * repayment. The accrual job posts the difference for the reduced balance. Every other type, including accrual
+     * activity, still forces the replay. Interest-recalculation loans keep the core rule because a backdated payment
+     * changes interest on later periods.
+     */
+    static boolean isChronologicallyLatestIgnoringAccruals(final Loan loan, final LoanTransaction loanTransaction) {
+        if (loan.isInterestBearingAndInterestRecalculationEnabled()) {
+            return loan.isChronologicallyLatestRepaymentOrWaiver(loanTransaction);
+        }
+        final LocalDate currentTransactionDate = loanTransaction.getTransactionDate();
+        for (final LoanTransaction previousTransaction : loan.getLoanTransactions()) {
+            if (previousTransaction.isDisbursement() || previousTransaction.isReversed() || previousTransaction.isAccrual()
+                    || previousTransaction.isAccrualAdjustment()) {
+                continue;
+            }
+            final LocalDate previousDate = previousTransaction.getTransactionDate();
+            if (DateUtils.isBefore(currentTransactionDate, previousDate)) {
+                return false;
+            }
+            if (DateUtils.isEqual(currentTransactionDate, previousDate)
+                    && ((loanTransaction.getId() == null && previousTransaction.getId() == null)
+                            || (loanTransaction.getId() != null && (previousTransaction.getId() == null
+                                    || loanTransaction.getId().compareTo(previousTransaction.getId()) < 0)))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

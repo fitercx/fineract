@@ -29,6 +29,7 @@ import com.crediblex.fineract.portfolio.loc.data.LineOfCreditRequest;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditTransactionData;
 import com.crediblex.fineract.portfolio.loc.data.LineOfCreditWithLoansData;
 import com.crediblex.fineract.portfolio.loc.data.UpdateVendorRequest;
+import com.crediblex.fineract.portfolio.loc.data.VendorExposureResponse;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBulkDisbursementService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
@@ -87,6 +88,7 @@ public class LineOfCreditApiResource {
     private final DefaultToApiJsonSerializer<LineOfCreditWithLoansData> toApiWithLoansJsonSerializer;
     private final DefaultToApiJsonSerializer<LineOfCreditTransactionData> transactionToApiJsonSerializer;
     private final ToApiJsonSerializer<VendorResponse> vendorResponseSerializer;
+    private final ToApiJsonSerializer<VendorExposureResponse> vendorExposureResponseSerializer;
     private final ToApiJsonSerializer<BulkLoanDisbursementResponse> bulkDisbursementResponseSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
@@ -366,6 +368,27 @@ public class LineOfCreditApiResource {
         final VendorResponse vendor = this.readPlatformService.retrieveVendorByLosExternalId(losExternalId);
 
         return this.vendorResponseSerializer.serialize(settings, vendor);
+    }
+
+    @GET
+    @Path("vendors/exposure")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Get Vendor Exposure (Utilization)", description = "Returns utilization for one or more vendors by Fineract vendor id. "
+            + "Utilization is the sum of principal outstanding on linked drawdowns (pending submitted/approved applications "
+            + "count at proposed principal). Same rule for receivable and payable. "
+            + "Fails with 404 if any requested id does not exist (missing ids are listed in the error).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = VendorExposureResponse.class))) })
+    public String retrieveVendorsExposure(@QueryParam("ids") @Parameter(description = "Comma-separated vendor ids") final String ids,
+            @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+
+        final Collection<VendorExposureResponse> exposures = this.readPlatformService.retrieveVendorsExposure(ids);
+
+        return this.vendorExposureResponseSerializer.serialize(settings, exposures);
     }
 
     @PUT

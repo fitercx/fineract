@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
  * savings.
  *
  * Hardcoded LOC Receivable logic: For LOC Receivable products, skips journal entries for account transfers (handled on
- * loan side) and creates custom entries for normal deposits (DR 100062, CR 200086).
+ * loan side) and creates custom entries for normal deposits (DR 100062, CR 200080).
  */
 @Slf4j
 @Primary
@@ -188,10 +188,12 @@ public class CustomAccrualBasedAccountingProcessorForSavings extends AccrualBase
                     // Do NOT mark as processed - let parent handle it
                 }
             } else if (savingsTransactionDTO.getTransactionType().isWithdrawal() && !savingsTransactionDTO.isAccountTransfer()
-                    && paymentTypeId != null && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
-                // LOC Receivable Manual withdrawal (payment type identified by code_name DISBURSEMENT_OF_INVOICE)
+                    && paymentTypeId != null && locAccountingHelper.isPayableLOCDisbursementPaymentType(paymentTypeId)) {
+                // LOC Manual withdrawal (payment type identified by code_name DISBURSEMENT_OF_INVOICE, or
+                // PAYABLES_DISBURSEMENT for LOC Payable)
                 Long linkedLoanProductId = getLinkedLoanProductId(savingsId);
-                if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)) {
+                if (linkedLoanProductId != null && locAccountingHelper.isLOCReceivableLoanProduct(linkedLoanProductId)
+                        && locAccountingHelper.isDisbursementOfInvoicePaymentType(paymentTypeId)) {
                     // LOC Receivable Loan Repayment withdrawal: DR 200041 (Loan Payable - Invoice Discounting), CR
                     // 100003 (Bank)
                     log.info("CustomAccrualBasedAccountingProcessorForSavings: LOC Receivable manual withdrawal - DR 200041, CR Bank");

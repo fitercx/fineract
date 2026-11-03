@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
@@ -72,4 +73,25 @@ public interface CredXLoanChargeWritePlatformService extends LoanChargeWritePlat
      * that LPI instead of treating the same amount as an overpayment.
      */
     void syncOutstandingOverduePenaltyOntoSchedule(Long loanId);
+
+    /**
+     * Partial backdated repayment: put only LPI dated strictly before {@code settlementDate} on the payable schedule,
+     * and park later LPI off it so this payment collects the earlier days without paying or waiving the rest.
+     */
+    void alignSchedulePenaltyForPartialBackdatedRepayment(Long loanId, LocalDate settlementDate);
+
+    /**
+     * Backdated partial that finishes one or more installments and still has a remainder. Waives LPI dated on or after
+     * {@code settlementDate} for each finished installment only. LPI strictly before that date stays payable. LPI on an
+     * installment this amount does not finish is left outstanding. The remainder is then allocated to the next
+     * installment as LPI, interest, then principal.
+     */
+    Map<String, Object> waivePostValueDateLpiOnInstallmentsClearedByPartial(Long loanId, LocalDate settlementDate,
+            BigDecimal transactionAmount);
+
+    /**
+     * After a partial backdated repayment: reprice unpaid LPI dated on or after the value date from the reduced
+     * principal, then copy that outstanding back onto the schedule so accrual continues.
+     */
+    void restoreLpiAfterPartialBackdatedRepayment(Long loanId, LocalDate settlementDate);
 }

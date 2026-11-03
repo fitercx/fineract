@@ -23,6 +23,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountRepository;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntryType;
+import org.apache.fineract.portfolio.account.domain.AccountTransferType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -45,6 +47,7 @@ public class LOCAccountingHelper {
 
     // Payment Type Code Names (from m_payment_type.code_name)
     public static final String DISBURSEMENT_OF_INVOICE_CODE_NAME = "DISBURSEMENT_OF_INVOICE";
+    public static final String PAYABLES_DISBURSEMENT_CODE_NAME = "PAYABLES_DISBURSEMENT";
     public static final String RBF_LOAN_DISBURSEMENT_CODE_NAME = "RBF_LOAN_DISBURSEMENT";
     public static final String PROCESSING_FEE_CODE_NAME = "PROCESSING_FEE";
 
@@ -53,16 +56,21 @@ public class LOCAccountingHelper {
     public static final String LOC_ACTIVATION_FEE_INCOME_GL_CODE = "300004";
     public static final String LOC_ACTIVATION_VAT_GL_CODE = "200065";
     public static final String LOC_RECEIVABLE_DEBIT_GL_CODE = "100062";
-    public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200086";
+    public static final String LOC_RECEIVABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_DEBIT_GL_CODE = "100062";
     public static final String LOC_PAYABLE_CREDIT_GL_CODE = "200080";
     public static final String LOC_PAYABLE_EARLY_CLOSURE_GL_CODE = "200080"; // Same as LOC_PAYABLE_CREDIT_GL_CODE -
                                                                              // used for early/foreclosure closure debit
     public static final String LOC_PAYABLE_NORMAL_CLOSURE_GL_CODE = "200080"; // Used for normal closure (regular EMI)
                                                                               // debit
-    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Overdue Interest - LPI - LOC (Payable and
-                                                                  // Receivable)
+    public static final String LOC_LPI_INCOME_GL_CODE = "300017"; // Over Due Interest - LPI - Payable Financing
+    public static final String LOC_RECEIVABLE_LPI_INCOME_GL_CODE = "300014"; // Over Due Interest - LPI - Invoice
+                                                                             // Discounting
     public static final String LOC_RECEIVABLE_LOAN_PAYABLE_GL_CODE = "200041";
+    public static final String LOC_RECEIVABLE_UNEARNED_INTEREST_REFUND_GL_CODE = "100001";
+    public static final String LOC_RECEIVABLE_DEFERRED_INTEREST_GL_CODE = "200084";
+    // Journal entry transaction id suffix for the foreclosure refund group (e.g. L117416-R)
+    public static final String FORECLOSURE_REFUND_TRANSACTION_SUFFIX = "-R";
     public static final String RBF_GL_CODE = "200040";
     public static final String PAYABLE_LOC_GL_CODE = "200042"; // Loan Payable - Payable LOC
 
@@ -102,6 +110,19 @@ public class LOCAccountingHelper {
     public boolean isDisbursementOfInvoicePaymentType(Long paymentTypeId) {
         String codeName = getPaymentTypeCodeName(paymentTypeId);
         return DISBURSEMENT_OF_INVOICE_CODE_NAME.equals(codeName);
+    }
+
+    /**
+     * Check if the given payment type disburses a Payable LOC drawdown out of the settlement savings account. Both
+     * "Disbursement of Invoice" and "Payables Disbursement" are used for this.
+     *
+     * @param paymentTypeId
+     *            The payment type ID
+     * @return true if code_name matches DISBURSEMENT_OF_INVOICE or PAYABLES_DISBURSEMENT
+     */
+    public boolean isPayableLOCDisbursementPaymentType(Long paymentTypeId) {
+        String codeName = getPaymentTypeCodeName(paymentTypeId);
+        return DISBURSEMENT_OF_INVOICE_CODE_NAME.equals(codeName) || PAYABLES_DISBURSEMENT_CODE_NAME.equals(codeName);
     }
 
     /**
@@ -188,8 +209,8 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 200086 account (Invoice Discounting - Clearing - Current Liability) for LOC Receivable deposits. Looks up
-     * by GL code to avoid hardcoding account ID.
+     * Get GL 200080 account (LOC - Clearing Account - Current Liability) for LOC Receivable deposits. Looks up by GL
+     * code to avoid hardcoding account ID.
      *
      * @return The GLAccount for LOC Receivable Credit, or null if not found
      */
@@ -248,16 +269,78 @@ public class LOCAccountingHelper {
     }
 
     /**
-     * Get GL 300017 account (Overdue Interest - LPI - LOC) for LOC penalty income. Used for both Payable LOC and
-     * Receivable LOC products instead of the default INCOME_FROM_PENALTIES account.
+     * Get GL 300017 (Over Due Interest - LPI - Payable Financing) for Payable LOC penalty income.
      *
-     * @return The GLAccount for LOC LPI Income, or null if not found
+     * @return The GLAccount for Payable Financing LPI income, or null if not found
      */
     public GLAccount getLOCLPIIncomeGLAccount() {
+        return findGlAccountByCode(LOC_LPI_INCOME_GL_CODE);
+    }
+
+    /**
+     * Get GL 300014 (Over Due Interest - LPI - Invoice Discounting) for Receivable LOC penalty income.
+     *
+     * @return The GLAccount for Invoice Discounting LPI income, or null if not found
+     */
+    public GLAccount getReceivableLOCLPIIncomeGLAccount() {
+        return findGlAccountByCode(LOC_RECEIVABLE_LPI_INCOME_GL_CODE);
+    }
+
+    /**
+     * Get GL 100001 (bank) credited with the unearned upfront interest refunded on Receivable LOC foreclosure.
+     *
+     * @return The GLAccount for the unearned interest refund, or null if not found
+     */
+    public GLAccount getReceivableLOCUnearnedInterestRefundGLAccount() {
+        return findGlAccountByCode(LOC_RECEIVABLE_UNEARNED_INTEREST_REFUND_GL_CODE);
+    }
+
+    /**
+     * Get GL 200084 (Deferred Interest Income - Invoice Discounting) debited for unearned interest on Receivable LOC
+     * foreclosure.
+     *
+     * @return The GLAccount for deferred interest income, or null if not found
+     */
+    public GLAccount getReceivableLOCDeferredInterestGLAccount() {
+        return findGlAccountByCode(LOC_RECEIVABLE_DEFERRED_INTEREST_GL_CODE);
+    }
+
+    /**
+     * Invoice value of a Receivable LOC loan from {@code m_loan_line_of_credit_params}.
+     *
+     * @param loanId
+     *            The loan ID
+     * @return The invoice amount, or null when the loan has no invoice params
+     */
+    public BigDecimal getInvoiceAmount(Long loanId) {
+        String sql = "SELECT invoice_amount FROM m_loan_line_of_credit_params WHERE loan_id = ?";
+        return jdbcTemplate.query(sql, rs -> rs.next() ? rs.getBigDecimal("invoice_amount") : null, loanId);
+    }
+
+    /**
+     * Ledger balance (credits minus debits) of the given GL account across all journal entries of a loan's
+     * transactions. Reversal entries are written with {@code reversed = false} while only the original is flagged, so
+     * every entry is summed to let originals and reversals cancel out.
+     *
+     * @param loanId
+     *            The loan ID
+     * @param glAccountId
+     *            The GL account ID (e.g. the product's Deferred Income account)
+     * @return The credit balance, or ZERO when there are no entries
+     */
+    public BigDecimal getLoanCreditBalanceForGLAccount(Long loanId, Long glAccountId) {
+        String sql = "SELECT COALESCE(SUM(CASE WHEN je.type_enum = ? THEN je.amount ELSE -je.amount END), 0) "
+                + "FROM acc_gl_journal_entry je " + "JOIN m_loan_transaction lt ON lt.id = je.loan_transaction_id "
+                + "WHERE lt.loan_id = ? AND je.account_id = ?";
+        BigDecimal balance = jdbcTemplate.queryForObject(sql, BigDecimal.class, JournalEntryType.CREDIT.getValue(), loanId, glAccountId);
+        return balance != null ? balance : BigDecimal.ZERO;
+    }
+
+    private GLAccount findGlAccountByCode(String glCode) {
         try {
-            return glAccountRepository.findOneByGlCode(LOC_LPI_INCOME_GL_CODE).orElse(null);
+            return glAccountRepository.findOneByGlCode(glCode).orElse(null);
         } catch (Exception e) {
-            log.error("LOCAccountingHelper: Error finding GL account {}: {}", LOC_LPI_INCOME_GL_CODE, e.getMessage());
+            log.error("LOCAccountingHelper: Error finding GL account {}: {}", glCode, e.getMessage());
             return null;
         }
     }
@@ -265,7 +348,7 @@ public class LOCAccountingHelper {
     /**
      * Check if a loan transaction originated from a foreclosure (early closure) account transfer. Queries the
      * m_account_transfer_transaction and m_account_transfer_details tables to determine the transfer type. Returns true
-     * if the transfer type is LOAN_FORECLOSURE (type 4).
+     * if the transfer type is {@link AccountTransferType#LOAN_FORECLOSURE}.
      *
      * @param transactionId
      *            The loan transaction ID string (e.g., "L12345")
@@ -283,8 +366,7 @@ public class LOCAccountingHelper {
                     + "JOIN m_account_transfer_details atd ON att.account_transfer_details_id = atd.id "
                     + "WHERE att.to_loan_transaction_id = ?";
             Integer transferType = jdbcTemplate.queryForObject(sql, Integer.class, transactionNumericId);
-            // LOAN_FORECLOSURE = 4
-            return transferType != null && transferType == 4;
+            return transferType != null && transferType.equals(AccountTransferType.LOAN_FORECLOSURE.getValue());
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             log.debug("LOCAccountingHelper: No account transfer found for loan transaction {}", transactionId);
             return false;

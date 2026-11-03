@@ -116,7 +116,10 @@ public class LineOfCreditStatusWebhookPublisher {
         final Map<String, Object> response = new HashMap<>();
         final Map<String, Object> payload = new HashMap<>();
 
-        customStatus.put("newStatus", newCustomStatus);
+        // INVALID means "no delinquency overlay" — the line's real status is the core status (ACTIVE).
+        // Publish that so LOS applies active instead of treating the overlay as the case status.
+        final String publishedStatus = statusPublishedToLos(defaultLocStatus, newCustomStatus);
+        customStatus.put("newStatus", publishedStatus);
         customStatus.put("oldStatus", oldCustomStatus);
 
         changes.put("customStatus", customStatus);
@@ -137,8 +140,19 @@ public class LineOfCreditStatusWebhookPublisher {
         final WebhookTrailEntry.WebhookTrailEntryBuilder trail = WebhookTrailEntry.builder().entityName(ENTITY).actionName(ACTION)
                 .resourceId(locIdOpt.orElse(null)).loanId(loan.getId()).clientId(loan.getClientId()).officeId(loan.getOfficeId())
                 .isDrawdown(isDrawdown).locId(locIdOpt.orElse(null)).newCoreStatus(defaultLocStatus).oldCustomStatus(oldCustomStatus)
-                .newCustomStatus(newCustomStatus).triggerSource(TRIGGER_LOC);
+                .newCustomStatus(publishedStatus).triggerSource(TRIGGER_LOC);
         dispatchAndRecord(payload, trail);
+    }
+
+    /**
+     * Status string LOS should apply. A cleared overlay ({@code null} / {@code INVALID}) is the active (or other core)
+     * line status, not a delinquency state.
+     */
+    static String statusPublishedToLos(final String defaultLocStatus, final String newCustomStatus) {
+        if (newCustomStatus == null || "INVALID".equals(newCustomStatus)) {
+            return defaultLocStatus;
+        }
+        return newCustomStatus;
     }
 
     private void dispatchAndRecord(final Map<String, Object> payload, final WebhookTrailEntry.WebhookTrailEntryBuilder trail) {

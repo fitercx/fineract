@@ -214,7 +214,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Find journal code for RBF product GL codes
      */
-    private String findRbfJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    String findRbfJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType) && Set.of("100031", "300004", "200065", "200040").contains(glCode)) {
             return "BNK5";
@@ -268,8 +268,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK2";
         }
 
-        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes
-        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("200065", "300002", "100034", "100031", "210003").contains(glCode)) {
+        // BNK8 journal for EARLY_CLOSURE business events with specific GL codes.
+        // 300015 is the LPI collected when an overdue loan is foreclosed.
+        if ("EARLY_CLOSURE".equals(businessEventType)
+                && Set.of("200065", "300002", "100034", "100031", "210003", "300015").contains(glCode)) {
             return "BNK8";
         }
 
@@ -279,7 +281,7 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Find journal code for Payable LOC (LPLL) product GL codes
      */
-    private String findPayableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    String findPayableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType) && Set.of("100033", "200042").contains(glCode)) {
             return "BNK5";
@@ -313,10 +315,10 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
     /**
      * Find journal code for Receivable LOC product GL codes
      */
-    private String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
+    String findReceivableLOCJournalCodeForGlCode(String glCode, String businessEventType, boolean isDebit) {
         // BNK5 journal for DISBURSEMENT business events with specific GL codes
         if ("DISBURSEMENT".equals(businessEventType)
-                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041").contains(glCode)) {
+                && Set.of("100032", "100035", "300008", "100063", "300013", "200065", "200041", "200084").contains(glCode)) {
             return "BNK5";
         }
         if ("SAVINGS_WITHDRAWAL".equals(businessEventType) && Set.of("200041", "100003").contains(glCode)) {
@@ -331,12 +333,18 @@ public class OdooIntegrationReadPlatformServiceImpl implements OdooIntegrationRe
             return "BNK6";
         }
 
-        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100032", "100035", "200080").contains(glCode)) {
+        if ("EARLY_CLOSURE".equals(businessEventType) && Set.of("100032", "100035", "200080", "300014").contains(glCode)) {
             return "BNK8";
         }
 
-        // BNK2 journal for REPAYMENT business events with specific GL codes
-        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100032", "100035", "300017").contains(glCode)) {
+        // Foreclosure refund group (L<txn>-R): invoice refund and unearned interest, posted as its own BNK8 move
+        if ("EARLY_CLOSURE_REFUND".equals(businessEventType) && Set.of("200080", "100001", "200084", "100035").contains(glCode)) {
+            return "BNK8";
+        }
+
+        // BNK2 journal for REPAYMENT business events with specific GL codes.
+        // 300014 is Invoice Discounting LPI. Payable Financing LPI (300017) stays on the payable map.
+        if ("REPAYMENT".equals(businessEventType) && Set.of("200080", "100032", "100035", "300014").contains(glCode)) {
             return "BNK2";
         }
 

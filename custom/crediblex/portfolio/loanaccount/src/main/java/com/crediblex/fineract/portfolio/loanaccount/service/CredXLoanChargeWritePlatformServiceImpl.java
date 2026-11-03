@@ -13,6 +13,8 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedClearedInstallments;
+import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReprice;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepository;
 import com.google.gson.JsonArray;
@@ -1146,7 +1148,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         // On an installment due date the payment is on-time. LPI for that EMI is posted after midnight
         // (charge dated the next day); the waiver window starts on the due date so that overnight LPI is
         // waived when the operator backdates to the due date.
-        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan);
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan, null);
     }
 
     @Override
@@ -1157,7 +1159,7 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
         // Window inclusive of the value date so a backdated repayment settles exactly: paid LPI = charges strictly
         // before the value date (penalties preview), waived LPI = charges on/after the value date up to today.
-        return waiveOverdueChargesInWindow(loanId, valueDate, null);
+        return waiveOverdueChargesInWindow(loanId, valueDate, null, null);
     }
 
     private Map<String, Object> emptyWaiveSummary() {
@@ -1168,7 +1170,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         return summary;
     }
 
-    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate, final Loan assembledLoan) {
+    private Map<String, Object> waiveOverdueChargesInWindow(final Long loanId, final LocalDate fromDate, final Loan assembledLoan,
+            final Set<Integer> onlyInstallments) {
         final Map<String, Object> summary = emptyWaiveSummary();
 
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
@@ -1192,6 +1195,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         final MonetaryCurrency currency = loan.getCurrency();
         final ScheduleGeneratorDTO scheduleGeneratorDTO = this.loanUtilService.buildScheduleGeneratorDTO(loan, null);
 
+        // Snapshot before the waive loop. postJournalEntries journals every transaction whose id is missing from
+        // these lists, so an empty list re-posts disbursement, accruals, repayments and older waivers. The new waive
+        // (and any reversal or replay created inside the loop) is absent from this snapshot and is journaled once.
+        // customWaiveLoanCharge still receives fresh empty lists: passing this snapshot in would record earlier
+        // waives in the same loop as already journaled and skip them.
+        final List<Long> existingTransactionIds = new ArrayList<>(loan.findExistingTransactionIds());
+        final List<Long> existingReversedTransactionIds = new ArrayList<>(loan.findExistingReversedTransactionIds());
+
         int chargesWaived = 0;
         BigDecimal totalAmountWaived = BigDecimal.ZERO;
         final Set<LocalDate> daysWaived = new HashSet<>();
@@ -1200,6 +1211,9 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             final LoanCharge loanCharge = candidate.getId() != null ? loanChargeRepository.findById(candidate.getId()).orElse(null) : null;
             if (loanCharge == null || !loanCharge.isActive() || loanCharge.isWaived() || loanCharge.isPaid()
                     || !loanCharge.getAmountOutstanding(currency).isGreaterThanZero()) {
+                continue;
+            }
+            if (onlyInstallments != null && !onlyInstallments.contains(owningInstallmentNumber(loanCharge))) {
                 continue;
             }
 
@@ -1235,11 +1249,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
         }
 
         if (chargesWaived > 0) {
-            // Post the journal entries for all waive transactions in a single pass instead of once per charge. The
-            // resulting accounting state is identical, but the operation stays linear (avoids re-posting the whole
-            // loan's journal entries N times) when a backdated settlement waives many daily LPI charges.
-            final List<Long> existingTransactionIds = new ArrayList<>();
-            postJournalEntries(loan, existingTransactionIds, new ArrayList<>());
+            // Single pass for every waive in the window. The pre-loop snapshot keeps historical transactions out of
+            // this post; a transaction reversed during the waive is still in existingTransactionIds and not yet in
+            // existingReversedTransactionIds, so its reversal is posted once.
+            postJournalEntries(loan, existingTransactionIds, existingReversedTransactionIds);
             loanAccrualTransactionBusinessEventService.raiseBusinessEventForAccrualTransactions(loan, existingTransactionIds);
             // Always rebuild installment penalty portions from the surviving active charges. Relying on the mismatch
             // heuristic alone is not enough after a multi-day LPI waive window: wrapper.reprocess may leave the
@@ -2560,5 +2573,60 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
             this.loanArrearsAgingService.updateLoanArrearsAgeingDetails(loan);
         }
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> waivePostValueDateLpiOnInstallmentsClearedByPartial(final Long loanId, final LocalDate settlementDate,
+            final BigDecimal transactionAmount) {
+        if (loanId == null || settlementDate == null || transactionAmount == null) {
+            return emptyWaiveSummary();
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        final Set<Integer> cleared = PartialBackdatedClearedInstallments.installmentNumbersClearedBy(loan, settlementDate,
+                transactionAmount);
+        if (cleared.isEmpty()) {
+            return emptyWaiveSummary();
+        }
+        return waiveOverdueChargesInWindow(loanId, LocDueDateRepaymentUtils.overdueChargeWaiverFromDate(loan, settlementDate), loan,
+                cleared);
+    }
+
+    private static Integer owningInstallmentNumber(final LoanCharge loanCharge) {
+        if (loanCharge == null) {
+            return null;
+        }
+        final LoanOverdueInstallmentCharge link = loanCharge.getOverdueInstallmentCharge();
+        if (link == null || link.getInstallment() == null) {
+            return null;
+        }
+        return link.getInstallment().getInstallmentNumber();
+    }
+
+    @Override
+    @Transactional
+    public void alignSchedulePenaltyForPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
+        if (loanId == null || settlementDate == null) {
+            return;
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        if (InstallmentPenaltySyncUtils.alignSchedulePenaltyToChargesBefore(loan, settlementDate)) {
+            loan.updateLoanSummaryDerivedFields();
+            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void restoreLpiAfterPartialBackdatedRepayment(final Long loanId, final LocalDate settlementDate) {
+        if (loanId == null || settlementDate == null) {
+            return;
+        }
+        final Loan loan = this.loanAssembler.assembleFrom(loanId);
+        if (PartialBackdatedLpiReprice.repriceUnpaidChargesOnOrAfter(loan, settlementDate)) {
+            loan.updateLoanSummaryDerivedFields();
+            this.loanAccountService.saveAndFlushLoanWithDataIntegrityViolationChecks(loan);
+        }
+        syncOutstandingOverduePenaltyOntoSchedule(loanId);
     }
 }

@@ -13,11 +13,13 @@ import org.apache.fineract.accounting.common.AccountingConstants;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
 import org.apache.fineract.accounting.journalentry.data.LoanDTO;
 import org.apache.fineract.accounting.journalentry.data.LoanTransactionDTO;
+import org.apache.fineract.accounting.journalentry.domain.JournalEntryType;
 import org.apache.fineract.accounting.journalentry.service.AccountingProcessorHelper;
 import org.apache.fineract.accounting.journalentry.service.AccrualBasedAccountingProcessorForLoan;
 import org.apache.fineract.accounting.journalentry.service.JournalEntryWritePlatformService;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMapping;
 import org.apache.fineract.accounting.producttoaccountmapping.domain.ProductToGLAccountMappingRepository;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.portfolio.PortfolioProductType;
@@ -369,7 +371,8 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     accountMap.put(account, penaltiesAmount);
                 }
             } else if (loanTransactionDTO.getTransactionType().isRepayment()) {
-                // For repayments: Use INCOME_FROM_RECOVERY, but for RBF use GL 300015, for LOC products use GL 300017
+                // For repayments: RBF uses GL 300015, Payable Financing uses GL 300017,
+                // Invoice Discounting uses GL 300014. Other products use INCOME_FROM_RECOVERY.
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income on repayments
@@ -385,19 +388,30 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income on repayment, amount: {}",
                                 penaltiesAmount);
                     }
-                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
-                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
-                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
                     account = locAccountingHelper.getLOCLPIIncomeGLAccount();
                     if (account == null) {
                         log.warn(
-                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Over Due Interest - LPI - Payable Financing) not found for product {}. Falling back to default INCOME_FROM_RECOVERY.",
                                 loanProductId);
                         account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                                 AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
                     } else {
                         log.info(
-                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income on repayment, amount: {}",
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Over Due Interest - LPI - Payable Financing) for penalty income on repayment, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    account = locAccountingHelper.getReceivableLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300014 (Over Due Interest - LPI - Invoice Discounting) not found for product {}. Falling back to default INCOME_FROM_RECOVERY.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_RECOVERY.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300014 (Over Due Interest - LPI - Invoice Discounting) for penalty income on repayment, amount: {}",
                                 penaltiesAmount);
                     }
                 } else {
@@ -412,10 +426,7 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     accountMap.put(account, penaltiesAmount);
                 }
             } else if (isIncomeFromFee) {
-                // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
-                // For LOC Payable (LPLL) and LOC Receivable (LRL) products, use GL 300017 (Overdue Interest - LPI -
-                // LOC)
-                // instead of the default INCOME_FROM_PENALTIES account
+                // RBF uses GL 300015. Payable Financing uses GL 300017. Invoice Discounting uses GL 300014.
                 GLAccount account;
                 if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                     // Use hardcoded GL 300015 for RBF overdue interest penalty income
@@ -431,19 +442,30 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                                 "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300015 (Over Due Interest - LPI - RBF) for RBF penalty income, amount: {}",
                                 penaltiesAmount);
                     }
-                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
-                        || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
-                    // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+                } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
                     account = locAccountingHelper.getLOCLPIIncomeGLAccount();
                     if (account == null) {
                         log.warn(
-                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300017 (Over Due Interest - LPI - Payable Financing) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
                                 loanProductId);
                         account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
                                 AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
                     } else {
                         log.info(
-                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income, amount: {}",
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300017 (Over Due Interest - LPI - Payable Financing) for penalty income, amount: {}",
+                                penaltiesAmount);
+                    }
+                } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                    account = locAccountingHelper.getReceivableLOCLPIIncomeGLAccount();
+                    if (account == null) {
+                        log.warn(
+                                "CustomAccrualBasedAccountingProcessorForLoan: GL 300014 (Over Due Interest - LPI - Invoice Discounting) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                                loanProductId);
+                        account = this.helper.getLinkedGLAccountForLoanProduct(loanProductId,
+                                AccountingConstants.AccrualAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), paymentTypeId);
+                    } else {
+                        log.info(
+                                "CustomAccrualBasedAccountingProcessorForLoan: Using GL 300014 (Over Due Interest - LPI - Invoice Discounting) for penalty income, amount: {}",
                                 penaltiesAmount);
                     }
                 } else {
@@ -645,6 +667,101 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                     AccountingConstants.AccrualAccountsForLoan.FUND_SOURCE.getValue(), loanProductId, paymentTypeId, loanId, transactionId,
                     transactionDate, totalDebitAmount);
         }
+    }
+
+    /**
+     * The foreclosure refund group runs after every transaction in the batch is posted, so the Deferred Income balance
+     * it reads already includes accruals and reversals created alongside the foreclosure, whatever their order.
+     */
+    @Override
+    public void createJournalEntriesForLoan(final LoanDTO loanDTO) {
+        super.createJournalEntriesForLoan(loanDTO);
+        postForeclosureRefundGroups(loanDTO);
+    }
+
+    void postForeclosureRefundGroups(final LoanDTO loanDTO) {
+        if (!(loanDTO instanceof CustomLoanDTO customLoanDTO) || !customLoanDTO.isLocReceivable()
+                || !customLoanDTO.isPeriodicAccrualBasedAccountingEnabled()) {
+            return;
+        }
+        for (final LoanTransactionDTO loanTransactionDTO : loanDTO.getNewLoanTransactions()) {
+            if (!loanTransactionDTO.getTransactionType().isRepayment()) {
+                continue;
+            }
+            if (loanTransactionDTO.isReversed()) {
+                this.journalEntryWritePlatformService.createJournalEntryForReversedLoanTransaction(loanTransactionDTO.getTransactionDate(),
+                        loanTransactionDTO.getTransactionId() + LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX,
+                        loanDTO.getOfficeId());
+            } else if (locAccountingHelper.isForeclosureAccountTransfer(loanTransactionDTO.getTransactionId())) {
+                postForeclosureRefundGroup(loanDTO, loanTransactionDTO);
+            }
+        }
+    }
+
+    /**
+     * Second, self-balancing journal entry group for a Receivable LOC foreclosure, posted under {@code L<txn>-R}:
+     * <ul>
+     * <li>DR LOC Clearing (200080) / CR bank (100001): refund of invoice value not needed to settle the loan</li>
+     * <li>DR Deferred Interest Income (200084) / CR Interest Receivable (100035): unearned upfront interest</li>
+     * </ul>
+     */
+    private void postForeclosureRefundGroup(final LoanDTO loanDTO, final LoanTransactionDTO loanTransactionDTO) {
+        final Long loanId = loanDTO.getLoanId();
+        final String currencyCode = loanDTO.getCurrencyCode();
+        final Long loanTransactionId = Long.valueOf(loanTransactionDTO.getTransactionId());
+        final LocalDate transactionDate = loanTransactionDTO.getTransactionDate();
+
+        final GLAccount deferredIncomeMapping = this.helper.getLinkedGLAccountForLoanProduct(loanDTO.getLoanProductId(),
+                AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME.getValue(), loanTransactionDTO.getPaymentTypeId());
+        final BigDecimal unearnedInterest = locAccountingHelper.getLoanCreditBalanceForGLAccount(loanId, deferredIncomeMapping.getId());
+
+        final BigDecimal invoiceAmount = locAccountingHelper.getInvoiceAmount(loanId);
+        if (invoiceAmount == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.invoice.amount.missing",
+                    "Invoice amount is not recorded for loan " + loanId + "; cannot post the foreclosure refund entries", loanId);
+        }
+        final BigDecimal refundAmount = invoiceAmount.subtract(loanTransactionDTO.getAmount());
+
+        final boolean postRefund = MathUtil.isGreaterThanZero(refundAmount);
+        final boolean postUnearned = MathUtil.isGreaterThanZero(unearnedInterest);
+        if (!postRefund && !postUnearned) {
+            return;
+        }
+
+        final GLAccount clearingAccount = requireGlAccount(locAccountingHelper.getLOCPayableCreditGLAccount(),
+                LOCAccountingHelper.LOC_PAYABLE_CREDIT_GL_CODE, loanId);
+        final GLAccount bankAccount = requireGlAccount(locAccountingHelper.getReceivableLOCUnearnedInterestRefundGLAccount(),
+                LOCAccountingHelper.LOC_RECEIVABLE_UNEARNED_INTEREST_REFUND_GL_CODE, loanId);
+        final GLAccount deferredInterestAccount = requireGlAccount(locAccountingHelper.getReceivableLOCDeferredInterestGLAccount(),
+                LOCAccountingHelper.LOC_RECEIVABLE_DEFERRED_INTEREST_GL_CODE, loanId);
+        final GLAccount interestReceivableAccount = this.helper.getLinkedGLAccountForLoanProduct(loanDTO.getLoanProductId(),
+                AccountingConstants.AccrualAccountsForLoan.INTEREST_RECEIVABLE.getValue(), loanTransactionDTO.getPaymentTypeId());
+
+        final Office office = this.helper.getOfficeById(loanDTO.getOfficeId());
+        final String suffix = LOCAccountingHelper.FORECLOSURE_REFUND_TRANSACTION_SUFFIX;
+        if (postRefund) {
+            customAccountingProcessorHelper.createLoanJournalEntryUnderSuffixedId(office, currencyCode, clearingAccount, loanId,
+                    loanTransactionId, suffix, transactionDate, refundAmount, JournalEntryType.DEBIT);
+            customAccountingProcessorHelper.createLoanJournalEntryUnderSuffixedId(office, currencyCode, bankAccount, loanId,
+                    loanTransactionId, suffix, transactionDate, refundAmount, JournalEntryType.CREDIT);
+        }
+        if (postUnearned) {
+            customAccountingProcessorHelper.createLoanJournalEntryUnderSuffixedId(office, currencyCode, deferredInterestAccount, loanId,
+                    loanTransactionId, suffix, transactionDate, unearnedInterest, JournalEntryType.DEBIT);
+            customAccountingProcessorHelper.createLoanJournalEntryUnderSuffixedId(office, currencyCode, interestReceivableAccount, loanId,
+                    loanTransactionId, suffix, transactionDate, unearnedInterest, JournalEntryType.CREDIT);
+        }
+        log.info("Receivable LOC foreclosure L{}{} on loan {}: refund {}, unearned interest {}", loanTransactionId, suffix, loanId,
+                postRefund ? refundAmount : BigDecimal.ZERO, postUnearned ? unearnedInterest : BigDecimal.ZERO);
+    }
+
+    private static GLAccount requireGlAccount(final GLAccount account, final String glCode, final Long loanId) {
+        if (account == null) {
+            throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.refund.gl.missing",
+                    "GL account " + glCode + " is not configured; cannot post the foreclosure refund entries for loan " + loanId, loanId,
+                    glCode);
+        }
+        return account;
     }
 
     private boolean isDebitAccountEntryPermitted(final LoanTransactionDTO loanTransactionDTO) {

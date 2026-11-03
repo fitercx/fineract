@@ -69,20 +69,21 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
     // Product Short Names
     private static final String RBF_PRODUCT_SHORT_NAME = "RBF";
-    private static final String LPLL_PRODUCT_SHORT_NAME = "LPLL";
-    private static final String LRL_PRODUCT_SHORT_NAME = "LRL";
+    private static final String PF_PRODUCT_SHORT_NAME = "PF";
+    private static final String RF_PRODUCT_SHORT_NAME = "RF";
 
     // GL Account codes for RBF accrual journal entries (default)
     private static final String RBF_INTEREST_INCOME_GL_CODE = "300000";
     private static final String RBF_INTEREST_RECEIVABLE_GL_CODE = "100034";
 
     // GL Account codes for LPLL (LOC Payable) accrual journal entries
-    private static final String LPLL_INTEREST_INCOME_GL_CODE = "300009";
-    private static final String LPLL_INTEREST_RECEIVABLE_GL_CODE = "100036";
+    private static final String PF_INTEREST_INCOME_GL_CODE = "300009";
+    private static final String PF_INTEREST_RECEIVABLE_GL_CODE = "100036";
 
-    // GL Account codes for LRL (LOC Receivable) accrual journal entries
-    private static final String LRL_INTEREST_INCOME_GL_CODE = "300008";
-    private static final String LRL_INTEREST_RECEIVABLE_GL_CODE = "100035";
+    // GL Account codes for LRL / ID (Receivables Facility) accrual journal entries
+    // Finance: debit Deferred Interest Income (200084), not Interest Receivable (100035)
+    private static final String RF_INTEREST_INCOME_GL_CODE = "300008";
+    private static final String RF_DEFERRED_INTEREST_INCOME_GL_CODE = "200084";
 
     private static final String ODOO_ACCRUAL_JOURNAL_CODE = "ACCR";
     private static final String ODOO_EARLY_CLOSURE_JOURNAL_CODE = "BNK8";
@@ -319,19 +320,19 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
                     // Get GL codes based on product type
                     String interestIncomeGlCode = getInterestIncomeGlCodeForProduct(productShortName);
-                    String interestReceivableGlCode = getInterestReceivableGlCodeForProduct(productShortName);
+                    String accrualDebitGlCode = getAccrualDebitGlCodeForProduct(productShortName);
 
-                    log.info("Processing accrual for Loan ID: {}, Product: {}, using GL codes: Income={}, Receivable={}",
-                            accrualAudit.getLoanId(), productShortName, interestIncomeGlCode, interestReceivableGlCode);
+                    log.info("Processing accrual for Loan ID: {}, Product: {}, using GL codes: Income(CR)={}, Debit={}",
+                            accrualAudit.getLoanId(), productShortName, interestIncomeGlCode, accrualDebitGlCode);
 
                     // Validate GL accounts exist before posting
                     glAccountRepository.findOneByGlCode(interestIncomeGlCode).orElseThrow(
                             () -> new RuntimeException("Interest Income GL Account with code " + interestIncomeGlCode + " not found"));
 
-                    glAccountRepository.findOneByGlCode(interestReceivableGlCode).orElseThrow(() -> new RuntimeException(
-                            "Interest Receivable GL Account with code " + interestReceivableGlCode + " not found"));
+                    glAccountRepository.findOneByGlCode(accrualDebitGlCode).orElseThrow(
+                            () -> new RuntimeException("Accrual debit GL Account with code " + accrualDebitGlCode + " not found"));
 
-                    createAccrualJournalEntries(accrualAudit, interestIncomeGlCode, interestReceivableGlCode);
+                    createAccrualJournalEntries(accrualAudit, interestIncomeGlCode, accrualDebitGlCode);
 
                     // Mark as posted to Odoo
                     accrualAudit.setPostedToOdoo(true);
@@ -369,8 +370,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         }
 
         return switch (productShortName) {
-            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_INCOME_GL_CODE;
-            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_INCOME_GL_CODE;
+            case PF_PRODUCT_SHORT_NAME -> PF_INTEREST_INCOME_GL_CODE;
+            case RF_PRODUCT_SHORT_NAME -> RF_INTEREST_INCOME_GL_CODE;
             case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_INCOME_GL_CODE;
             default -> {
                 log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
@@ -380,21 +381,25 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     }
 
     /**
-     * Get the Interest Receivable GL code based on the loan product short name.
+     * Get the debit-side accrual GL code based on the loan product short name.
+     * <ul>
+     * <li>RBF / PF → Interest Receivable</li>
+     * <li>RF (ID) → Deferred Interest Income (200084)</li>
+     * </ul>
      *
      * @param productShortName
      *            The loan product short name
-     * @return The appropriate Interest Receivable GL code
+     * @return The appropriate debit GL code for the accrual entry
      */
-    private String getInterestReceivableGlCodeForProduct(String productShortName) {
+    private String getAccrualDebitGlCodeForProduct(String productShortName) {
         if (productShortName == null) {
             log.warn("Product short name is null, using default RBF GL code");
             return RBF_INTEREST_RECEIVABLE_GL_CODE;
         }
 
         return switch (productShortName) {
-            case LPLL_PRODUCT_SHORT_NAME -> LPLL_INTEREST_RECEIVABLE_GL_CODE;
-            case LRL_PRODUCT_SHORT_NAME -> LRL_INTEREST_RECEIVABLE_GL_CODE;
+            case PF_PRODUCT_SHORT_NAME -> PF_INTEREST_RECEIVABLE_GL_CODE;
+            case RF_PRODUCT_SHORT_NAME -> RF_DEFERRED_INTEREST_INCOME_GL_CODE;
             case RBF_PRODUCT_SHORT_NAME -> RBF_INTEREST_RECEIVABLE_GL_CODE;
             default -> {
                 log.debug("Unknown product short name '{}', using default RBF GL code", productShortName);
@@ -432,13 +437,16 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
      *            The accrual audit record containing loan and amount details
      * @param interestIncomeGlCode
      *            The GL code for interest income (credit account)
-     * @param interestReceivableGlCode
-     *            The GL code for interest receivable (debit account)
+     * @param accrualDebitGlCode
+     *            The product-specific debit GL code (Interest Receivable for RBF/PF; Deferred Interest Income for
+     *            RF/ID)
      */
     private void createAccrualJournalEntries(LoanMonthlyAccrualJobAudit accrualAudit, String interestIncomeGlCode,
-            String interestReceivableGlCode) {
+            String accrualDebitGlCode) {
 
-        String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getId() + "_" + System.currentTimeMillis();
+        // Finance only knows the loan id. The accrual audit id is an internal row key and must not appear in the Odoo
+        // ref.
+        String transactionId = ODOO_ACCRUAL_JOURNAL_CODE + "_" + accrualAudit.getLoanId() + "_" + System.currentTimeMillis();
         BigDecimal accrualAmount = accrualAudit.getTotalInterestAccrualDerived();
         LocalDate transactionDate = accrualAudit.getGeneratedOnDate();
         String description = "Interest Accrual - Loan ID: " + accrualAudit.getLoanId();
@@ -446,9 +454,8 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
         try {
             // Post accrual journal entries directly to Odoo without creating database records
             Long odooMoveId = odooJournalEntryService.postAccrualJournalEntriesToOdoo(accrualAudit.getLoanId(), transactionId,
-                    transactionDate, description, accrualAmount, interestIncomeGlCode, // Credit account
-                                                                                       // (product-specific)
-                    interestReceivableGlCode, // Debit account (product-specific)
+                    transactionDate, description, accrualAmount, interestIncomeGlCode, // Credit (product-specific)
+                    accrualDebitGlCode, // Debit (product-specific)
                     ODOO_ACCRUAL_JOURNAL_CODE);
 
             if (odooMoveId != null) {
@@ -639,7 +646,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             log.debug("Validating {} journal entries for GL account existence in Odoo with detailed results", journalEntries.size());
 
             // Array of GL codes that should be skipped during validation
-            String[] skipValidationGlCodes = { "Liability Transfer" };
+            String[] skipValidationGlCodes = { "Liability Transfer", "Write-off Savings" };
 
             for (JournalEntryOdooSync entrySync : journalEntries) {
                 if (entrySync == null || entrySync.getJournalEntry() == null || entrySync.getJournalEntry().getGlAccount() == null) {

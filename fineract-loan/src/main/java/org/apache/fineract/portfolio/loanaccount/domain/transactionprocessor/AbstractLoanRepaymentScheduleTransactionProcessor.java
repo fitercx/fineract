@@ -739,6 +739,12 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
             final List<LoanRepaymentScheduleInstallment> installments, final Set<LoanCharge> charges, Money amountToProcess) {
         int installmentIndex = 0;
 
+        // Last/single EMI: LPI after the due date sits on a later row. Fold it onto the EMI before this
+        // repayment is split, so penalty is taken before interest. Foreclosure does not use this hook.
+        if (loanTransaction.isRepayment() && loanTransaction.getLoan() != null && !loanTransaction.getLoan().isForeclosure()) {
+            LastEmiSpillPenaltyHookRegistry.foldOntoLastEmi(loanTransaction.getLoan(), loanTransaction.getTransactionDate());
+        }
+
         final LocalDate transactionDate = loanTransaction.getTransactionDate();
         Money transactionAmountUnprocessed = loanTransaction.getAmount(currency);
         if (amountToProcess != null) {
@@ -890,6 +896,12 @@ public abstract class AbstractLoanRepaymentScheduleTransactionProcessor implemen
     }
 
     protected LoanCharge findEarliestUnpaidChargeFromUnOrderedSet(final Set<LoanCharge> charges, final MonetaryCurrency currency) {
+        // More than one overdue installment: pay the oldest installment's LPI charges before the next installment's.
+        // No-op unless the custom module registers an order. Fees and single-installment penalties stay date-ordered.
+        final LoanCharge orderedPenalty = OverduePenaltyChargeOrderRegistry.nextUnpaid(charges, currency);
+        if (orderedPenalty != null) {
+            return orderedPenalty;
+        }
         LoanCharge earliestUnpaidCharge = null;
         LoanCharge installemntCharge = null;
         LoanInstallmentCharge chargePerInstallment = null;

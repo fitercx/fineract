@@ -325,9 +325,7 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
         if (penaltiesAmount != null && penaltiesAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalDebitAmount = totalDebitAmount.add(penaltiesAmount);
 
-            // For RBF products, use GL 300015 (Over Due Interest - LPI - RBF) for penalty income
-            // For LOC Payable (LPLL) and LOC Receivable (LRL) products, use GL 300017 (Overdue Interest - LPI - LOC)
-            // instead of the default INCOME_FROM_PENALTIES account
+            // RBF uses GL 300015. Payable Financing uses GL 300017. Invoice Discounting uses GL 300014.
             if (locAccountingHelper.isRBFLoanProduct(loanProductId)) {
                 // Use hardcoded GL 300015 for RBF overdue interest penalty income
                 GLAccount rbfPenaltyIncomeAccount = glAccountRepository.findOneByGlCode("300015").orElse(null);
@@ -345,19 +343,33 @@ public class CustomCashBasedAccountingProcessorForLoan extends CashBasedAccounti
                             AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
                             transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
                 }
-            } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)
-                    || locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
-                // LOC Payable (LPLL) and LOC Receivable (LRL): Use GL 300017 for overdue interest (LPI) income
+            } else if (locAccountingHelper.isPayableLOCProduct(loanProductId)) {
                 GLAccount locLPIIncomeAccount = locAccountingHelper.getLOCLPIIncomeGLAccount();
                 if (locLPIIncomeAccount != null) {
                     log.info(
-                            "CustomCashBasedAccountingProcessorForLoan: Using GL 300017 (Overdue Interest - LPI - LOC) for LOC penalty income, product {}, amount: {}",
+                            "CustomCashBasedAccountingProcessorForLoan: Using GL 300017 (Over Due Interest - LPI - Payable Financing) for penalty income, product {}, amount: {}",
                             loanProductId, penaltiesAmount);
                     this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
                             penaltiesAmount, locLPIIncomeAccount);
                 } else {
                     log.warn(
-                            "CustomCashBasedAccountingProcessorForLoan: GL 300017 (Overdue Interest - LPI - LOC) not found for LOC product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                            "CustomCashBasedAccountingProcessorForLoan: GL 300017 (Over Due Interest - LPI - Payable Financing) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
+                            loanProductId);
+                    this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
+                            AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
+                            transactionDate, penaltiesAmount, loanTransactionDTO.getPenaltyPayments());
+                }
+            } else if (locAccountingHelper.isLOCReceivableLoanProduct(loanProductId)) {
+                GLAccount receivableLpiIncomeAccount = locAccountingHelper.getReceivableLOCLPIIncomeGLAccount();
+                if (receivableLpiIncomeAccount != null) {
+                    log.info(
+                            "CustomCashBasedAccountingProcessorForLoan: Using GL 300014 (Over Due Interest - LPI - Invoice Discounting) for penalty income, product {}, amount: {}",
+                            loanProductId, penaltiesAmount);
+                    this.helper.createCreditJournalEntryForLoan(office, currencyCode, loanId, transactionId, transactionDate,
+                            penaltiesAmount, receivableLpiIncomeAccount);
+                } else {
+                    log.warn(
+                            "CustomCashBasedAccountingProcessorForLoan: GL 300014 (Over Due Interest - LPI - Invoice Discounting) not found for product {}. Falling back to default INCOME_FROM_PENALTIES.",
                             loanProductId);
                     this.helper.createCreditJournalEntryForLoanCharges(office, currencyCode,
                             AccountingConstants.CashAccountsForLoan.INCOME_FROM_PENALTIES.getValue(), loanProductId, loanId, transactionId,
