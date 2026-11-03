@@ -165,9 +165,10 @@ public class StandingInstructionHistoryReadPlatformServiceImpl implements Standi
 
         StandingInstructionHistoryMapper() {
             final StringBuilder sqlBuilder = new StringBuilder(400);
-            sqlBuilder.append("atsi.id as id,atsi.name as name, ");
+            sqlBuilder.append("atsih.id as historyId, atsi.id as id, atsi.name as name, ");
             sqlBuilder.append("atsih.status as status, atsih.execution_time as executionTime, ");
             sqlBuilder.append("atsih.amount as amount, atsih.error_log as errorLog, ");
+            sqlBuilder.append("atsih.is_reversed as isReversed, atsih.reversed_at as reversedAt, ");
             sqlBuilder.append("fromoff.id as fromOfficeId, fromoff.name as fromOfficeName,");
             sqlBuilder.append("tooff.id as toOfficeId, tooff.name as toOfficeName,");
             sqlBuilder.append("fromclient.id as fromClientId, fromclient.display_name as fromClientName,");
@@ -206,6 +207,7 @@ public class StandingInstructionHistoryReadPlatformServiceImpl implements Standi
         @Override
         public StandingInstructionHistoryData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
 
+            final Long historyId = rs.getLong("historyId");
             final Long id = rs.getLong("id");
             final String name = rs.getString("name");
 
@@ -213,6 +215,8 @@ public class StandingInstructionHistoryReadPlatformServiceImpl implements Standi
             final LocalDate executionTime = JdbcSupport.getLocalDate(rs, "executionTime");
             final BigDecimal transferAmount = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs, "amount");
             final String errorLog = rs.getString("errorLog");
+            final boolean isReversed = rs.getBoolean("isReversed");
+            final LocalDate reversedAt = JdbcSupport.getLocalDate(rs, "reversedAt");
 
             final Long fromOfficeId = JdbcSupport.getLong(rs, "fromOfficeId");
             final String fromOfficeName = rs.getString("fromOfficeName");
@@ -272,7 +276,7 @@ public class StandingInstructionHistoryReadPlatformServiceImpl implements Standi
             }
 
             return new StandingInstructionHistoryData(id, name, fromOffice, fromClient, fromAccountType, fromAccount, toAccountType,
-                    toAccount, toOffice, toClient, transferAmount, status, executionTime, errorLog);
+                    toAccount, toOffice, toClient, transferAmount, status, executionTime, errorLog, historyId, isReversed, reversedAt);
         }
     }
 
