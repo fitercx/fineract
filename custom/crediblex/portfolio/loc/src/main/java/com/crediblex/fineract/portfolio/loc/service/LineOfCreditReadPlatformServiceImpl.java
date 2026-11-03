@@ -479,7 +479,8 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
             // Populate buyers vs suppliers based on product type
             if (LocProductType.PAYABLE.name().equalsIgnoreCase(productType)) {
                 builder.approvedSuppliers(buyerSupplierList);
-            } else if (LocProductType.RECEIVABLE.name().equalsIgnoreCase(productType)) {
+            } else if (LocProductType.RECEIVABLE.name().equalsIgnoreCase(productType)
+                    || LocProductType.RECEIVABLE_NON_RECOURSE.name().equalsIgnoreCase(productType)) {
                 builder.approvedBuyers(buyerSupplierList);
             }
 
@@ -708,7 +709,12 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
     }
 
     @Override
-    public List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId, LocProductType locProductType) {
+    public List<LineOfCreditSummary> retrieveSummary(String currencyCode, Long clientId, Collection<LocProductType> locProductTypes) {
+        if (locProductTypes == null || locProductTypes.isEmpty()) {
+            return List.of();
+        }
+        final List<String> productTypeNames = locProductTypes.stream().map(LocProductType::name).toList();
+        final String productTypePlaceholders = String.join(", ", Collections.nCopies(productTypeNames.size(), "?"));
         final String sql = """
                 SELECT
                     l.id,
@@ -726,14 +732,16 @@ public class LineOfCreditReadPlatformServiceImpl implements LineOfCreditReadPlat
                 WHERE l.activation_status = 'ACTIVE'
                   AND l.currency  = ?
                   AND l.client_id = ?
-                  AND l.product_type = ?
+                  AND l.product_type IN (%s)
                 ORDER BY l.id
-                """;
+                """.formatted(productTypePlaceholders);
 
         return this.jdbcTemplate.query(sql, ps -> {
             ps.setString(1, currencyCode);
             ps.setLong(2, clientId);
-            ps.setString(3, locProductType.name());
+            for (int i = 0; i < productTypeNames.size(); i++) {
+                ps.setString(3 + i, productTypeNames.get(i));
+            }
         }, rs -> {
             Map<Long, LineOfCreditSummary> map = new LinkedHashMap<>();
 

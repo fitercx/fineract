@@ -19,6 +19,7 @@
 package com.crediblex.fineract.accounting.journalentry.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.glaccount.domain.GLAccount;
@@ -44,6 +45,9 @@ public class LOCAccountingHelper {
     // LOC Product External IDs
     public static final String LOC_RECEIVABLE_PRODUCT_EXTERNAL_ID = "LOC_INVOICE_DISCOUNTING";
     public static final String PAYABLE_LOC_PRODUCT_EXTERNAL_ID = "LOC_PAYABLE_FINANCING";
+
+    // m_line_of_credit.product_type value (LocProductType name) for Receivable Non-Recourse LOCs
+    public static final String RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE = "RECEIVABLE_NON_RECOURSE";
 
     // Payment Type Code Names (from m_payment_type.code_name)
     public static final String DISBURSEMENT_OF_INVOICE_CODE_NAME = "DISBURSEMENT_OF_INVOICE";
@@ -489,6 +493,54 @@ public class LOCAccountingHelper {
                     e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Check if the loan is a drawdown on a Receivable Non-Recourse LOC ({@code m_line_of_credit.product_type}). Lookup
+     * failures propagate: callers must not treat an unknown loan as recourse.
+     *
+     * @param loanId
+     *            The loan ID
+     * @return true if the loan's LOC is RECEIVABLE_NON_RECOURSE
+     */
+    public boolean isNonRecourseLocLoan(Long loanId) {
+        if (loanId == null) {
+            return false;
+        }
+        String sql = """
+                SELECT COUNT(*) FROM m_loan_line_of_credit_params mlcp
+                JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                WHERE mlcp.loan_id = ? AND loc.product_type = ?
+                """;
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, loanId, RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE);
+        return count != null && count > 0;
+    }
+
+    /**
+     * Check if the savings account belongs exclusively to Receivable Non-Recourse LOCs. Every LOC that uses it as the
+     * settlement account and every loan associated with it must be non-recourse; a loan without a LOC counts as another
+     * type. A savings account shared with other LOC types or plain loans is not treated as non-recourse. Lookup
+     * failures propagate.
+     *
+     * @param savingsAccountId
+     *            The savings account ID
+     * @return true if the savings account only serves RECEIVABLE_NON_RECOURSE LOCs
+     */
+    public boolean isNonRecourseLocSavingsAccount(Long savingsAccountId) {
+        if (savingsAccountId == null) {
+            return false;
+        }
+        String sql = """
+                SELECT loc.product_type FROM m_line_of_credit loc
+                WHERE loc.settlement_savings_account_id = ?
+                UNION
+                SELECT COALESCE(loc.product_type, 'NONE') FROM m_portfolio_account_associations paa
+                LEFT JOIN m_loan_line_of_credit_params mlcp ON mlcp.loan_id = paa.loan_account_id
+                LEFT JOIN m_line_of_credit loc ON loc.id = mlcp.line_of_credit_id
+                WHERE paa.linked_savings_account_id = ? AND paa.loan_account_id IS NOT NULL
+                """;
+        List<String> types = jdbcTemplate.queryForList(sql, String.class, savingsAccountId, savingsAccountId);
+        return !types.isEmpty() && types.stream().allMatch(RECEIVABLE_NON_RECOURSE_LOC_PRODUCT_TYPE::equals);
     }
 
     /**

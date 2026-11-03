@@ -18,6 +18,7 @@
  */
 package com.crediblex.fineract.integration.job;
 
+import com.crediblex.fineract.accounting.journalentry.service.LOCAccountingHelper;
 import com.crediblex.fineract.integration.odoo.domain.FailedEntryDetail;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSync;
 import com.crediblex.fineract.integration.odoo.domain.JournalEntryOdooSyncRepository;
@@ -58,6 +59,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
     private final LoanMonthlyAccrualJobAuditRepository loanMonthlyAccrualJobAuditRepository;
     private final GLAccountRepository glAccountRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final LOCAccountingHelper locAccountingHelper;
 
     // Optional: Slack notification service (only available if slack.enabled=true)
     private SlackNotificationService slackNotificationService;
@@ -97,7 +99,7 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
             processLoanAccrualJournalEntries();
 
             // Step 2: Get all pending journal entries that need to be synced to Odoo
-            List<JournalEntryOdooSync> pendingEntries = journalEntryOdooSyncRepository.findPendingEntries();
+            List<JournalEntryOdooSync> pendingEntries = excludeNonRecourseLocEntries(journalEntryOdooSyncRepository.findPendingEntries());
             log.info("Found {} pending journal entries to sync to Odoo", pendingEntries.size());
 
             // Group entries by loan ID (entries without loan ID will be processed individually)
@@ -294,6 +296,32 @@ public class OdooJournalEntriesSyncJobTasklet implements Tasklet {
 
         log.info("Completed Odoo Journal Entries Sync Job execution");
         return RepeatStatus.FINISHED;
+    }
+
+    /**
+     * Receivable Non-Recourse LOC entries are not posted to Odoo yet. Tracking records are not created for them, this
+     * guards against rows created before that rule existed. They are left pending (not marked posted or failed). A loan
+     * whose LOC type cannot be checked is skipped too and retried on the next run.
+     */
+    private List<JournalEntryOdooSync> excludeNonRecourseLocEntries(List<JournalEntryOdooSync> pendingEntries) {
+        Map<Long, Boolean> excludeByLoanId = new HashMap<>();
+        List<JournalEntryOdooSync> filtered = pendingEntries.stream().filter(
+                entry -> entry.getLoanId() == null || !excludeByLoanId.computeIfAbsent(entry.getLoanId(), this::isNonRecourseOrUnknown))
+                .toList();
+        if (filtered.size() != pendingEntries.size()) {
+            log.info("Skipped {} pending journal entries belonging to Receivable Non-Recourse LOC loans",
+                    pendingEntries.size() - filtered.size());
+        }
+        return filtered;
+    }
+
+    private boolean isNonRecourseOrUnknown(Long loanId) {
+        try {
+            return locAccountingHelper.isNonRecourseLocLoan(loanId);
+        } catch (Exception e) {
+            log.warn("Could not check LOC type for loan {}; leaving its journal entries pending", loanId, e);
+            return true;
+        }
     }
 
     /**

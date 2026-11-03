@@ -151,7 +151,7 @@ public class LoanLineOfCreditParams {
 
     // Business logic: Approved Receivable Amount = Invoice Amount - Disapproved Amount
     private void computeApprovedReceivableAmount() {
-        if (this.loan != null && this.disapprovedAmount != null && lineOfCredit.getProductType().isReceivable()) {
+        if (this.loan != null && this.disapprovedAmount != null && lineOfCredit.getProductType().isReceivableFamily()) {
             this.approvedReceivableAmount = invoiceAmount.subtract(this.disapprovedAmount);
 
         }
@@ -160,7 +160,7 @@ public class LoanLineOfCreditParams {
     // Business logic: For receivable products, Amount After Advance = Amount in facility current which is
     // min(amountAfterAdvanceInAED, requestedAmountInAED, availableLimit) from Frontend Calculation
     private void computeAmountAfterAdvance() {
-        if (this.amountInFacilityCurrency != null && this.lineOfCredit != null && lineOfCredit.getProductType().isReceivable()) {
+        if (this.amountInFacilityCurrency != null && this.lineOfCredit != null && lineOfCredit.getProductType().isReceivableFamily()) {
             this.amountAfterAdvance = this.amountInFacilityCurrency;
         }
     }
