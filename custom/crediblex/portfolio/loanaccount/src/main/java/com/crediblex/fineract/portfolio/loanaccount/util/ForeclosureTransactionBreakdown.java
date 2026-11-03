@@ -52,6 +52,24 @@ public final class ForeclosureTransactionBreakdown {
             }
         }
 
+        // The transaction amount is the cash already withdrawn from linked savings. Replacing it with a freshly
+        // quoted principal (which can still be the gross figure after the schedule rewrite) books an overpayment
+        // the savings account never paid.
+        final Money cashAmount = loanTransaction.getAmount(currency);
+        Money componentTotal = principal.plus(interest).plus(fees).plus(penalties).plus(taxes);
+        if (cashAmount.isGreaterThanZero() && componentTotal.isGreaterThan(cashAmount)) {
+            Money excess = componentTotal.minus(cashAmount);
+            if (principal.isGreaterThan(excess)) {
+                principal = principal.minus(excess);
+            } else {
+                principal = Money.zero(currency);
+            }
+            componentTotal = principal.plus(interest).plus(fees).plus(penalties).plus(taxes);
+        }
+        if (cashAmount.isGreaterThanZero() && componentTotal.isEqualTo(cashAmount)) {
+            loanTransaction.updateComponents(principal, interest, fees, penalties, taxes);
+            return;
+        }
         loanTransaction.updateComponentsAndTotal(principal, interest, fees, penalties, taxes);
     }
 

@@ -34,6 +34,7 @@ import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRu
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,5 +168,108 @@ class BackdatedRepaymentValidatorTest {
 
         assertThatCode(() -> BackdatedRepaymentValidator.validateWithinBackdateLimit(oldLoan, null, "foreclosure"))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void laterAccrualDoesNotMoveTheRepaymentFloor() {
+        final LocalDate repaymentDate = BUSINESS_DATE.minusDays(10);
+        final Loan loan = loanWithTransactions(transaction(repaymentDate, false), accrual(BUSINESS_DATE.minusDays(1)));
+
+        assertThat(BackdatedRepaymentValidator.latestNonAccrualValueDate(loan)).isEqualTo(repaymentDate);
+        assertThat(BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan)).isEqualTo(repaymentDate);
+    }
+
+    @Test
+    void laterAccrualActivityDoesNotBlockABackdatedRepayment() {
+        final LocalDate repaymentDate = BUSINESS_DATE.minusDays(10);
+        final Loan loan = loanWithTransactions(transaction(repaymentDate, false), accrual(BUSINESS_DATE));
+
+        assertThatCode(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, repaymentDate))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void foreclosureBeforeTheLatestNonAccrualValueDateIsRejected() {
+        final LocalDate latestPayment = BUSINESS_DATE.minusDays(5);
+        final Loan loan = loanWithTransactions(transaction(latestPayment, false), accrual(BUSINESS_DATE));
+
+        assertThatThrownBy(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, latestPayment.minusDays(1),
+                "foreclosure")).isInstanceOf(GeneralPlatformDomainRuleException.class).hasMessageContaining("foreclosure date")
+                .hasMessageContaining(latestPayment.toString());
+    }
+
+    @Test
+    void laterRepaymentBlocksAnEarlierValueDate() {
+        final LocalDate latestPayment = BUSINESS_DATE.minusDays(5);
+        final Loan loan = loanWithTransactions(transaction(latestPayment, false), accrual(BUSINESS_DATE));
+
+        assertThatThrownBy(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, latestPayment.minusDays(1)))
+                .isInstanceOf(GeneralPlatformDomainRuleException.class).hasMessageContaining("latest transaction value date")
+                .hasMessageContaining(latestPayment.toString());
+    }
+
+    @Test
+    void sameValueDateAsTheLatestNonAccrualTransactionIsAllowed() {
+        final LocalDate latestPayment = BUSINESS_DATE.minusDays(5);
+        final Loan loan = loanWithTransactions(transaction(latestPayment, false));
+
+        assertThatCode(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, latestPayment))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void waiverAfterTheChosenDateBlocksTheBackdate() {
+        final LocalDate waiverDate = BUSINESS_DATE.minusDays(3);
+        final Loan loan = loanWithTransactions(transaction(BUSINESS_DATE.minusDays(12), false), transaction(waiverDate, false));
+
+        assertThat(BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan)).isEqualTo(waiverDate);
+        assertThatThrownBy(() -> BackdatedRepaymentValidator.validateBackdatedRepaymentAllowed(loan, waiverDate.minusDays(1)))
+                .isInstanceOf(GeneralPlatformDomainRuleException.class).hasMessageContaining("before the latest transaction value date");
+    }
+
+    @Test
+    void reversedLaterTransactionDoesNotBlock() {
+        final LocalDate keptPayment = BUSINESS_DATE.minusDays(12);
+        final Loan loan = loanWithTransactions(transaction(keptPayment, false), transaction(BUSINESS_DATE.minusDays(2), true));
+
+        assertThat(BackdatedRepaymentValidator.latestNonAccrualValueDate(loan)).isEqualTo(keptPayment);
+        assertThatCode(() -> BackdatedRepaymentValidator.validateNotBeforeLatestNonAccrualValueDate(loan, keptPayment))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void backdateWindowStillWinsWhenTheLatestTransactionIsOlder() {
+        final Loan loan = loanWithTransactions(transaction(BUSINESS_DATE.minusMonths(4), false));
+
+        assertThat(BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan)).isEqualTo(DEFAULT_FLOOR);
+    }
+
+    @Test
+    void onlyAccrualsLeaveTheFloorAtTheBackdateWindow() {
+        final Loan loan = loanWithTransactions(accrual(BUSINESS_DATE), accrual(BUSINESS_DATE.minusDays(1)));
+
+        assertThat(BackdatedRepaymentValidator.latestNonAccrualValueDate(loan)).isNull();
+        assertThat(BackdatedRepaymentValidator.computeEarliestAllowedRepaymentDate(loan)).isEqualTo(DEFAULT_FLOOR);
+    }
+
+    private Loan loanWithTransactions(final LoanTransaction... transactions) {
+        final Loan withTransactions = loan(BUSINESS_DATE.minusMonths(8), BUSINESS_DATE.minusMonths(8));
+        when(withTransactions.getLoanTransactions()).thenReturn(List.of(transactions));
+        when(withTransactions.isInterestBearingAndInterestRecalculationEnabled()).thenReturn(false);
+        return withTransactions;
+    }
+
+    private static LoanTransaction transaction(final LocalDate valueDate, final boolean reversed) {
+        final LoanTransaction transaction = mock(LoanTransaction.class);
+        when(transaction.getTransactionDate()).thenReturn(valueDate);
+        when(transaction.isReversed()).thenReturn(reversed);
+        when(transaction.isAccrualRelated()).thenReturn(false);
+        return transaction;
+    }
+
+    private static LoanTransaction accrual(final LocalDate valueDate) {
+        final LoanTransaction transaction = transaction(valueDate, false);
+        when(transaction.isAccrualRelated()).thenReturn(true);
+        return transaction;
     }
 }
