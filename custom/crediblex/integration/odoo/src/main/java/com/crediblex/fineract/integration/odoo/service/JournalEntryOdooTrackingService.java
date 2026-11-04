@@ -125,6 +125,12 @@ public class JournalEntryOdooTrackingService {
                 return;
             }
 
+            // Receivable Non-Recourse LOC entries are not posted to Odoo (yet), so no tracking record is created.
+            if (isNonRecourseLocJournalEntry(journalEntry, loanId)) {
+                log.debug("Skipping tracking record creation for journal entry ID: {} - Receivable Non-Recourse LOC", journalEntry.getId());
+                return;
+            }
+
             JournalEntryOdooSync trackingRecord = new JournalEntryOdooSync(journalEntry, loanId, businessEventType);
             journalEntryOdooSyncRepository.save(trackingRecord);
 
@@ -134,6 +140,32 @@ public class JournalEntryOdooTrackingService {
         } else {
             log.debug("Tracking record already exists for journal entry ID: {}", journalEntry.getId());
         }
+    }
+
+    /**
+     * Throws when the loan or savings account behind the entry cannot be resolved, so no tracking record is created for
+     * an entry that might belong to a non-recourse LOC.
+     */
+    boolean isNonRecourseLocJournalEntry(JournalEntry journalEntry, Long loanId) {
+        if (journalEntry.getLoanTransactionId() != null) {
+            if (loanId == null) {
+                throw new IllegalStateException("Could not resolve loan for loan transaction " + journalEntry.getLoanTransactionId());
+            }
+            return locAccountingHelper.isNonRecourseLocLoan(loanId);
+        }
+        if (journalEntry.getSavingsTransactionId() != null) {
+            if (loanId != null && locAccountingHelper.isNonRecourseLocLoan(loanId)) {
+                return true;
+            }
+            final Long savingsAccountId = getSavingsAccountIdFromTransactionId(journalEntry.getSavingsTransactionId());
+            return locAccountingHelper.isNonRecourseLocSavingsAccount(savingsAccountId);
+        }
+        return false;
+    }
+
+    private Long getSavingsAccountIdFromTransactionId(Long savingsTransactionId) {
+        String sql = "SELECT savings_account_id FROM m_savings_account_transaction WHERE id = ?";
+        return accountDetailsService.getJdbcTemplate().queryForObject(sql, Long.class, savingsTransactionId);
     }
 
     /**

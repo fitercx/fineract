@@ -244,6 +244,19 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
 
     }
 
+    private void validateProductTypeChangeAllowed(LineOfCredit lineOfCredit, JsonCommand command) {
+        final Integer currentProductType = lineOfCredit.getProductType() == null ? null : lineOfCredit.getProductType().getValue();
+        if (!command.isChangeInIntegerParameterNamed("productType", currentProductType)) {
+            return;
+        }
+        final Integer linkedLoans = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM m_loan_line_of_credit_params WHERE line_of_credit_id = ?", Integer.class, lineOfCredit.getId());
+        if (linkedLoans != null && linkedLoans > 0) {
+            throw new PlatformDataIntegrityException("error.msg.loc.product.type.change.not.allowed.with.loans",
+                    "Line of Credit product type cannot be changed because it has " + linkedLoans + " linked loan(s)", "productType");
+        }
+    }
+
     @Override
     @Transactional
     public CommandProcessingResult updateLineOfCredit(Long lineOfCreditId, JsonCommand command) {
@@ -256,6 +269,7 @@ public class LineOfCreditWritePlatformServiceImpl implements LineOfCreditWritePl
         }
 
         this.dataValidator.validateForUpdate(command.json());
+        validateProductTypeChangeAllowed(lineOfCredit, command);
 
         final Map<String, Object> changes = lineOfCredit.update(command);
         final JsonElement root = fromJsonHelper.parse(command.json());

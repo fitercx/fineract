@@ -383,6 +383,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("select l.id as loanId, l.account_no as loanAccountNo, l.client_id as clientId, l.group_id as groupId, ")
                 .append("coalesce(c.display_name, g.display_name) as borrowerName, ")
                 .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
+                .append("when loc.product_type = 'RECEIVABLE_NON_RECOURSE' then 'Invoice Discounting (Non-Recourse)' ")
                 .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
                 .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as product, ")
                 .append("l.total_outstanding_derived as outstanding, l.currency_code as currencyCode, ").append("case l.loan_status_id ")
@@ -488,6 +489,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append("coalesce(c.display_name, g.display_name) as borrowerName, l.loan_officer_id as loanOfficerId, ")
                 .append("s.display_name as loanOfficerName, l.product_id as productId, ")
                 .append("case when loc.product_type = 'RECEIVABLE' then 'Invoice Discounting' ")
+                .append("when loc.product_type = 'RECEIVABLE_NON_RECOURSE' then 'Invoice Discounting (Non-Recourse)' ")
                 .append("when loc.product_type = 'PAYABLE' then 'Payables Finance' ")
                 .append("when l.is_factor_rate_enabled = true then 'RBF' else pl.name end as productName, ")
                 .append("llocp.invoice_no as invoiceNumber, l.currency_code as currencyCode, l.disbursedon_date as disbursementDate, ")
@@ -2415,7 +2417,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         List<LineOfCreditSummary> lineOfCreditSummaries = null;
         if (loanProduct.getEnableLineOfCreditPayable() || loanProduct.getEnableLineOfCreditReceivable()) {
             lineOfCreditSummaries = this.lineOfCreditReadPlatformService.retrieveSummary(loanProduct.getCurrency().getCode(), clientId,
-                    loanProduct.getEnableLineOfCreditPayable() ? LocProductType.PAYABLE : LocProductType.RECEIVABLE);
+                    loanProduct.getEnableLineOfCreditPayable() ? List.of(LocProductType.PAYABLE)
+                            : List.of(LocProductType.RECEIVABLE, LocProductType.RECEIVABLE_NON_RECOURSE));
         }
 
         ExtendedLoanAccountData loanAccountData = new ExtendedLoanAccountData();

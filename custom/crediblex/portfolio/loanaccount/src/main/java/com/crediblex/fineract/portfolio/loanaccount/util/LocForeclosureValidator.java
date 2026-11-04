@@ -41,7 +41,7 @@ public final class LocForeclosureValidator {
 
     public static void validateNotDueOrOverdue(final Loan loan, final LocalDate foreclosureDate,
             final Optional<LoanLineOfCreditParams> locParams) {
-        // Non-LOC loan: no-op (presence of the LOC params row = payable-or-receivable, the only two LocProductTypes).
+        // Non-LOC loan: no-op (presence of the LOC params row = any LocProductType).
         if (locParams.isEmpty()) {
             return;
         }

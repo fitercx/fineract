@@ -26,7 +26,8 @@ import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 @Schema(description = "Enum for line of credit product types")
 public enum LocProductType {
 
-    RECEIVABLE(1, "Receivable product type"), PAYABLE(2, "Payable product type");
+    RECEIVABLE(1, "Receivable product type"), PAYABLE(2, "Payable product type"), RECEIVABLE_NON_RECOURSE(3,
+            "Receivable non recourse product type");
 
     private final Integer value;
     private final String description;
@@ -53,11 +54,29 @@ public enum LocProductType {
         return locProductType;
     }
 
+    /**
+     * Receivable financing with short disbursal (interest deducted upfront). Does not include non-recourse.
+     */
     public boolean isReceivable() {
         return this == RECEIVABLE;
     }
 
     public boolean isPayable() {
         return this == PAYABLE;
+    }
+
+    public boolean isReceivableNonRecourse() {
+        return this == RECEIVABLE_NON_RECOURSE;
+    }
+
+    /**
+     * Invoice / buyer / advance semantics shared by receivable and receivable non-recourse.
+     */
+    public boolean isReceivableFamily() {
+        return isReceivable() || isReceivableNonRecourse();
+    }
+
+    public boolean isShortDisbursed() {
+        return isReceivable();
     }
 }

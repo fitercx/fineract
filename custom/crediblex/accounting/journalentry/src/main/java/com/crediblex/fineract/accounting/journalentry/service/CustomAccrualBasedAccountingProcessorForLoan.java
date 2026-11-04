@@ -701,7 +701,9 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
     /**
      * Second, self-balancing journal entry group for a Receivable LOC foreclosure, posted under {@code L<txn>-R}:
      * <ul>
-     * <li>DR LOC Clearing (200080) / CR bank (100001): refund of invoice value not needed to settle the loan</li>
+     * <li>DR LOC Clearing (200080) / CR bank (100001): refund of invoice value not needed to settle the loan. Not
+     * posted for Receivable Non-Recourse loans: interest was never deducted upfront, so there is nothing to
+     * refund.</li>
      * <li>DR Deferred Interest Income (200084) / CR Interest Receivable (100035): unearned upfront interest</li>
      * </ul>
      */
@@ -715,12 +717,16 @@ public class CustomAccrualBasedAccountingProcessorForLoan extends AccrualBasedAc
                 AccountingConstants.AccrualAccountsForLoan.DEFERRED_INCOME.getValue(), loanTransactionDTO.getPaymentTypeId());
         final BigDecimal unearnedInterest = locAccountingHelper.getLoanCreditBalanceForGLAccount(loanId, deferredIncomeMapping.getId());
 
-        final BigDecimal invoiceAmount = locAccountingHelper.getInvoiceAmount(loanId);
-        if (invoiceAmount == null) {
-            throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.invoice.amount.missing",
-                    "Invoice amount is not recorded for loan " + loanId + "; cannot post the foreclosure refund entries", loanId);
+        final boolean isNonRecourse = locAccountingHelper.isNonRecourseLocLoan(loanId);
+        BigDecimal refundAmount = BigDecimal.ZERO;
+        if (!isNonRecourse) {
+            final BigDecimal invoiceAmount = locAccountingHelper.getInvoiceAmount(loanId);
+            if (invoiceAmount == null) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.foreclosure.invoice.amount.missing",
+                        "Invoice amount is not recorded for loan " + loanId + "; cannot post the foreclosure refund entries", loanId);
+            }
+            refundAmount = invoiceAmount.subtract(loanTransactionDTO.getAmount());
         }
-        final BigDecimal refundAmount = invoiceAmount.subtract(loanTransactionDTO.getAmount());
 
         final boolean postRefund = MathUtil.isGreaterThanZero(refundAmount);
         final boolean postUnearned = MathUtil.isGreaterThanZero(unearnedInterest);

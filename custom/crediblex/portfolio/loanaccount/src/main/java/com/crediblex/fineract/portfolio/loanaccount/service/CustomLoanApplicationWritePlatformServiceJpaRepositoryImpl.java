@@ -9,7 +9,6 @@ import com.crediblex.fineract.portfolio.loanaccount.exception.LineOfCreditIsNotA
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditCounterpartyType;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetail;
 import com.crediblex.fineract.portfolio.loc.charge.domain.LineOfCreditLoanBuyerSupplierDetailRepository;
-import com.crediblex.fineract.portfolio.loc.data.LocProductType;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditApprovedBuyersRepository;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCreditRepositoryWrapper;
@@ -340,7 +339,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
             LineOfCredit lineOfCredit = entity.getLineOfCredit();
             final Loan loan = entity.getLoan();
 
-            if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+            if (lineOfCredit.getProductType().isReceivableFamily()) {
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
             } else {
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
@@ -366,7 +365,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                     entity = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
                     loanLocParamsRepository.saveAndFlush(entity);
 
-                    if (lineOfCredit.getProductType() == LocProductType.RECEIVABLE) {
+                    if (lineOfCredit.getProductType().isReceivableFamily()) {
                         processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
                     } else {
                         processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.SUPPLIER);
@@ -485,8 +484,8 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
                 loanLocParams = LoanLineOfCreditParams.fromJson(loan, lineOfCredit, command);
             }
 
-            boolean isReceivable = lineOfCredit.getProductType() == LocProductType.RECEIVABLE;
-            if (isReceivable) {
+            boolean isReceivableFamily = lineOfCredit.getProductType().isReceivableFamily();
+            if (isReceivableFamily) {
 
                 processCounterpartyDetails(command, loan, LineOfCreditCounterpartyType.BUYER);
 
@@ -500,7 +499,7 @@ public class CustomLoanApplicationWritePlatformServiceJpaRepositoryImpl extends 
 
             loanLocParamsRepository.save(loanLocParams);
 
-            final Money amount = isReceivable ? Money.of(loan.getCurrency(), loan.getProposedPrincipal()) : loan.getPrincipal();
+            final Money amount = isReceivableFamily ? Money.of(loan.getCurrency(), loan.getProposedPrincipal()) : loan.getPrincipal();
             if (amount.isGreaterThanZero()) {
                 // For repayments, we reduce the LOC balance (i.e. free up credit)
                 lineOfCreditBalanceUpdateService.computeLocBalance(loan.getId(), amount.getAmount(), lineOfCredit,

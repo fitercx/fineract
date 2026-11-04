@@ -581,6 +581,7 @@ public class LineOfCreditBalanceUpdateService {
             throw new IllegalArgumentException("LineOfCredit cannot be null");
         }
 
+        // Only short-disbursed RECEIVABLE reserves P+I; PAYABLE and RECEIVABLE_NON_RECOURSE reserve principal only.
         final boolean receivable = lineOfCredit.getProductType() != null && lineOfCredit.getProductType().isReceivable();
         final String outstandingColumn = receivable ? "total_outstanding_derived" : "principal_outstanding_derived";
         // Per-loan exposure against the LOC:

@@ -131,6 +131,19 @@ class CustomAccrualBasedAccountingProcessorForLoanForeclosureTest {
     }
 
     @Test
+    void nonRecourseForeclosurePostsUnearnedPairWithoutRefund() {
+        when(locAccountingHelper.isNonRecourseLocLoan(LOAN_ID)).thenReturn(true);
+
+        processor.postForeclosureRefundGroups(receivableLoan(repayment(false)));
+
+        verifyNotPosted(clearingAccount);
+        verifyNotPosted(bankAccount);
+        verifyPosted(deferredInterestAccount, UNEARNED, JournalEntryType.DEBIT);
+        verifyPosted(interestReceivableAccount, UNEARNED, JournalEntryType.CREDIT);
+        verify(locAccountingHelper, never()).getInvoiceAmount(anyLong());
+    }
+
+    @Test
     void noDeferredBalanceSkipsUnearnedPairOnly() {
         when(locAccountingHelper.getLoanCreditBalanceForGLAccount(LOAN_ID, DEFERRED_INCOME_GL_ID)).thenReturn(BigDecimal.ZERO);
 

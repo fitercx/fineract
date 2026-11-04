@@ -20,6 +20,8 @@
 package com.crediblex.fineract.portfolio.loc.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,6 +42,7 @@ import java.util.Collections;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -145,5 +148,42 @@ class LineOfCreditBalanceUpdateServiceReservationTest {
         assertEquals(0, new BigDecimal("85000").compareTo(summary.getConsumedAmount()), "consumed should climb by disbursed principal");
         assertEquals(0, new BigDecimal("665000").compareTo(summary.getAvailableBalance()), "available should drop by disbursed principal");
         verify(jdbcTemplate, never()).queryForObject(anyString(), eq(BigDecimal.class), any());
+    }
+
+    @Test
+    @DisplayName("RECEIVABLE_NON_RECOURSE repayment releases principal without re-anchoring to total outstanding")
+    void nonRecourseRepayment_releasesPrincipal_withoutReconcile() {
+        // Given a non-recourse LOC with 81,000 (funded principal) consumed
+        final LineOfCreditSummary summary = summaryWith(new BigDecimal("81000"), new BigDecimal("4919000"));
+        commonStubs(summary, LocProductType.RECEIVABLE_NON_RECOURSE);
+
+        // When the principal portion of a repayment (81,000) is released
+        service.computeLocBalance(LOAN_ID, LOAN_ID, new BigDecimal("81000"), lineOfCredit, LocalDate.of(2026, 9, 1),
+                LineOfCreditTransactionType.REPAYMENT);
+
+        // Then consumed drops by principal only and the total-outstanding re-anchor never runs
+        assertEquals(0, BigDecimal.ZERO.compareTo(summary.getConsumedAmount()), "consumed should drop by released principal");
+        assertEquals(0, new BigDecimal("5000000").compareTo(summary.getAvailableBalance()), "available should be fully restored");
+        verify(jdbcTemplate, never()).queryForObject(anyString(), eq(BigDecimal.class), any());
+    }
+
+    @Test
+    @DisplayName("RECEIVABLE_NON_RECOURSE reconcile uses principal outstanding, not total outstanding")
+    void nonRecourseReconcile_usesPrincipalOutstanding() {
+        final LineOfCreditSummary summary = summaryWith(new BigDecimal("81000"), new BigDecimal("4919000"));
+        when(lineOfCredit.getId()).thenReturn(LOC_ID);
+        when(lineOfCredit.getSummary()).thenReturn(summary);
+        when(lineOfCredit.getProductType()).thenReturn(LocProductType.RECEIVABLE_NON_RECOURSE);
+        when(lineOfCredit.getMaximumAmount()).thenReturn(new BigDecimal("5000000"));
+        when(lineOfCredit.getEffectiveDrawableLimit()).thenReturn(new BigDecimal("5000000"));
+        final ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        when(jdbcTemplate.queryForObject(sqlCaptor.capture(), eq(BigDecimal.class), any())).thenReturn(new BigDecimal("81000"));
+        service = new LineOfCreditBalanceUpdateService(transactionRepository, jdbcTemplate);
+
+        service.reconcileConsumedAmountFromLoanData(lineOfCredit);
+
+        assertTrue(sqlCaptor.getValue().contains("principal_outstanding_derived"), "non-recourse must reconcile on principal");
+        assertFalse(sqlCaptor.getValue().contains("total_outstanding_derived"), "non-recourse must not count interest against the limit");
+        assertEquals(0, new BigDecimal("81000").compareTo(summary.getConsumedAmount()));
     }
 }
