@@ -22,7 +22,10 @@ import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.infrastructure.commands.utils.LoanTransactionInstallmentUtils;
+import com.crediblex.fineract.portfolio.account.data.SkippedStandingInstruction;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
+import com.crediblex.fineract.portfolio.account.repository.LoanLpiOutstandingReader;
+import com.crediblex.fineract.portfolio.account.service.StandingInstructionLpiSkipNotifier;
 import com.crediblex.fineract.portfolio.loanaccount.data.LocStatusAggregationData;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -69,6 +72,7 @@ import org.apache.fineract.portfolio.savings.exception.InsufficientAccountBalanc
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -98,6 +102,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
     private final TransactionTemplate transactionTemplate;
     private final EzySqlLoanLocRepository ezySqlLoanLocRepository;
     private final LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+    private final LoanLpiOutstandingReader loanLpiOutstandingReader;
+    private final ObjectProvider<StandingInstructionLpiSkipNotifier> lpiSkipNotifierProvider;
 
     @Autowired(required = false)
     private LineOfCreditRepository lineOfCreditRepository;
@@ -110,7 +116,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             PlatformTransactionManager transactionManager, CredXSynchronousCommandProcessingService customCommandProcessingService,
             FromJsonHelper fromApiJsonHelper, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             TransactionTemplate transactionTemplate, EzySqlLoanLocRepository ezySqlLoanLocRepository,
-            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher, LoanLpiOutstandingReader loanLpiOutstandingReader,
+            ObjectProvider<StandingInstructionLpiSkipNotifier> lpiSkipNotifierProvider) {
 
         super(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator, accountTransfersWritePlatformService);
         this.standingInstructionReadPlatformService = standingInstructionReadPlatformService;
@@ -125,6 +132,8 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         this.transactionTemplate = transactionTemplate;
         this.ezySqlLoanLocRepository = ezySqlLoanLocRepository;
         this.lineOfCreditStatusWebhookPublisher = lineOfCreditStatusWebhookPublisher;
+        this.loanLpiOutstandingReader = loanLpiOutstandingReader;
+        this.lpiSkipNotifierProvider = lpiSkipNotifierProvider;
     }
 
     @Override
@@ -150,6 +159,7 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         AtomicInteger successCount = new AtomicInteger();
         AtomicInteger failureCount = new AtomicInteger();
         int dueCount = 0;
+        List<SkippedStandingInstruction> lpiSkipped = new ArrayList<>();
 
         for (StandingInstructionData data : instructionData) {
             boolean isDueForTransfer = false;
@@ -191,6 +201,21 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
 
             if (isDueForTransfer && transactionAmount != null && transactionAmount.compareTo(BigDecimal.ZERO) > 0) {
                 dueCount++;
+                if (data.getFromAccountType().isSavingsAccount() && data.getToAccountType().isLoanAccount()) {
+                    try {
+                        Optional<SkippedStandingInstruction> lpiSkip = findLpiSkip(data, transactionAmount, transactionDate);
+                        if (lpiSkip.isPresent()) {
+                            recordLpiSkipHistory(lpiSkip.get());
+                            lpiSkipped.add(lpiSkip.get());
+                            continue;
+                        }
+                    } catch (Exception e) {
+                        log.error("LPI check failed for standing instruction {}; not executing it in this run", data.getId(), e);
+                        failureCount.getAndIncrement();
+                        errors.add(new Exception("LPI check failed for standing Instruction id " + data.getId(), e));
+                        continue;
+                    }
+                }
                 final SavingsAccount fromSavingsAccount = null;
                 final boolean isRegularTransaction = true;
                 final boolean isExceptionForBalanceCheck = false;
@@ -298,8 +323,12 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
             }
         }
 
-        log.info("Standing instructions processing completed. Processed: {}, Success: {}, Failed: {}, Due: {}", processedCount,
-                successCount, failureCount, dueCount);
+        log.info("Standing instructions processing completed. Processed: {}, Success: {}, Failed: {}, Skipped (LPI): {}, Due: {}",
+                processedCount, successCount, failureCount, lpiSkipped.size(), dueCount);
+
+        if (!lpiSkipped.isEmpty()) {
+            notifyLpiSkips(lpiSkipped);
+        }
 
         if (!errors.isEmpty()) {
             // Log all errors with context before throwing
@@ -427,6 +456,50 @@ public class CustomExecuteStandingInstructionsTasklet extends ExecuteStandingIns
         jdbcTemplate.update(updateQuery.toString());
 
         return transferCompleted;
+    }
+
+    /**
+     * A savings-to-loan instruction is held back only when the source account has funds AND the loan has unpaid LPI;
+     * with a zero balance it follows the normal path so no LPI alert is raised.
+     */
+    private Optional<SkippedStandingInstruction> findLpiSkip(StandingInstructionData data, BigDecimal scheduledAmount, LocalDate runDate) {
+        BigDecimal availableBalance = getAvailableBalance(data.getFromAccount().getId());
+        if (availableBalance.compareTo(BigDecimal.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        Long loanId = data.getToAccount().getId();
+        BigDecimal outstandingLpi = loanLpiOutstandingReader.outstandingLpi(loanId);
+        if (outstandingLpi.compareTo(BigDecimal.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        String clientName = data.getToClient() != null ? data.getToClient().getDisplayName()
+                : data.getFromClient() != null ? data.getFromClient().getDisplayName() : null;
+        return Optional.of(new SkippedStandingInstruction(data.getId(), loanId, data.getToAccount().getAccountNo(), clientName,
+                data.getFromAccount().getAccountNo(), availableBalance, scheduledAmount, outstandingLpi, runDate));
+    }
+
+    private void recordLpiSkipHistory(SkippedStandingInstruction skipped) {
+        String errorLog = "Skipped - LPI outstanding: " + skipped.outstandingLpi().toPlainString() + "; available balance: "
+                + skipped.availableBalance().toPlainString();
+        jdbcTemplate.update(
+                "INSERT INTO m_account_transfer_standing_instructions_history (standing_instruction_id, " + sqlGenerator.escape("status")
+                        + ", amount, execution_time, error_log) VALUES (?, ?, ?, now(), ?)",
+                skipped.standingInstructionId(), "skipped", skipped.scheduledAmount(), errorLog);
+        log.info("Standing instruction {} skipped: loan {} has outstanding LPI {} with available balance {}",
+                skipped.standingInstructionId(), skipped.loanId(), skipped.outstandingLpi(), skipped.availableBalance());
+    }
+
+    private void notifyLpiSkips(List<SkippedStandingInstruction> lpiSkipped) {
+        try {
+            StandingInstructionLpiSkipNotifier notifier = lpiSkipNotifierProvider.getIfAvailable();
+            if (notifier == null) {
+                log.warn("No LPI skip notifier configured; {} skipped standing instruction(s) not alerted", lpiSkipped.size());
+                return;
+            }
+            notifier.notifySkipped(lpiSkipped);
+        } catch (Exception e) {
+            log.warn("Failed to send LPI skip digest for {} standing instruction(s)", lpiSkipped.size(), e);
+        }
     }
 
     /**
