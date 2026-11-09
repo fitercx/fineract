@@ -25,13 +25,17 @@ import static org.mockito.Mockito.*;
 import com.crediblex.fineract.commands.CredXSynchronousCommandProcessingService;
 import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
+import com.crediblex.fineract.portfolio.account.data.SkippedStandingInstruction;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
+import com.crediblex.fineract.portfolio.account.repository.LoanLpiOutstandingReader;
+import com.crediblex.fineract.portfolio.account.service.StandingInstructionLpiSkipNotifier;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.MonthDay;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
@@ -60,6 +64,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -79,6 +84,8 @@ class CustomExecuteStandingInstructionsTaskletTest {
     private TransactionTemplate transactionTemplate;
     private EzySqlLoanLocRepository ezySqlLoanLocRepository;
     private LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher;
+    private LoanLpiOutstandingReader loanLpiOutstandingReader;
+    private StandingInstructionLpiSkipNotifier lpiSkipNotifier;
 
     @BeforeEach
     void setUp() {
@@ -94,6 +101,12 @@ class CustomExecuteStandingInstructionsTaskletTest {
         transactionTemplate = new TransactionTemplate(platformTransactionManager);
         ezySqlLoanLocRepository = mock(EzySqlLoanLocRepository.class);
         lineOfCreditStatusWebhookPublisher = mock(LineOfCreditStatusWebhookPublisher.class);
+        loanLpiOutstandingReader = mock(LoanLpiOutstandingReader.class);
+        when(loanLpiOutstandingReader.outstandingLpi(anyLong())).thenReturn(BigDecimal.ZERO);
+        lpiSkipNotifier = mock(StandingInstructionLpiSkipNotifier.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<StandingInstructionLpiSkipNotifier> lpiSkipNotifierProvider = mock(ObjectProvider.class);
+        when(lpiSkipNotifierProvider.getIfAvailable()).thenReturn(lpiSkipNotifier);
 
         ThreadLocalContextUtil
                 .setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, DateUtils.parseLocalDate("2025-05-20"))));
@@ -103,7 +116,7 @@ class CustomExecuteStandingInstructionsTaskletTest {
         tasklet = new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, platformTransactionManager, customCommandProcessingService,
                 fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, ezySqlLoanLocRepository,
-                lineOfCreditStatusWebhookPublisher);
+                lineOfCreditStatusWebhookPublisher, loanLpiOutstandingReader, lpiSkipNotifierProvider);
     }
 
     @Test
@@ -377,6 +390,129 @@ class CustomExecuteStandingInstructionsTaskletTest {
         verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
                 eq(LocalDate.of(2025, 5, 20)), eq(60L));
         verify(jdbcTemplate, times(2)).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"));
+    }
+
+    @Test
+    void skipsWhenBalanceAvailableAndLpiOutstanding() throws Exception {
+        StandingInstructionData instruction = loanRepaymentInstruction(70L, 1L, 2L, new BigDecimal("100.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+        givenAvailableBalance(1L, "1000.00");
+        when(loanLpiOutstandingReader.outstandingLpi(2L)).thenReturn(new BigDecimal("25.50"));
+
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate, never()).update(contains("SET last_run_date"), any(), any());
+        verify(jdbcTemplate).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"), eq(70L), eq("skipped"),
+                eq(new BigDecimal("100.00")), eq("Skipped - LPI outstanding: 25.50; available balance: 1000.00"));
+
+        List<SkippedStandingInstruction> skipped = captureNotifiedSkips();
+        assertThat(skipped).hasSize(1);
+        SkippedStandingInstruction skip = skipped.get(0);
+        assertThat(skip.standingInstructionId()).isEqualTo(70L);
+        assertThat(skip.loanId()).isEqualTo(2L);
+        assertThat(skip.loanAccountNo()).isEqualTo("toAcc");
+        assertThat(skip.savingsAccountNo()).isEqualTo("fromAcc");
+        assertThat(skip.availableBalance()).isEqualByComparingTo("1000.00");
+        assertThat(skip.scheduledAmount()).isEqualByComparingTo("100.00");
+        assertThat(skip.outstandingLpi()).isEqualByComparingTo("25.50");
+        assertThat(skip.runDate()).isEqualTo(LocalDate.of(2025, 5, 20));
+    }
+
+    @Test
+    void executesNormallyWhenNoLpiOutstanding() throws Exception {
+        StandingInstructionData instruction = loanRepaymentInstruction(71L, 1L, 2L, new BigDecimal("100.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+        givenAvailableBalance(1L, "1000.00");
+
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        verify(accountTransfersWritePlatformService).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate).update(eq("UPDATE m_account_transfer_standing_instructions SET last_run_date = ? where id = ?"),
+                eq(LocalDate.of(2025, 5, 20)), eq(71L));
+        verify(lpiSkipNotifier, never()).notifySkipped(any());
+    }
+
+    @Test
+    void zeroBalanceFollowsExistingPathWithoutLpiAlert() throws Exception {
+        StandingInstructionData instruction = loanRepaymentInstruction(72L, 1L, 2L, new BigDecimal("100.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+        givenAvailableBalance(1L, "0");
+        when(loanLpiOutstandingReader.outstandingLpi(2L)).thenReturn(new BigDecimal("25.50"));
+
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any(AccountTransferDTO.class));
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO m_account_transfer_standing_instructions_history"), any(), any(), any(),
+                any());
+        verify(loanLpiOutstandingReader, never()).outstandingLpi(anyLong());
+        verify(lpiSkipNotifier, never()).notifySkipped(any());
+    }
+
+    @Test
+    void evaluatesEachLoanSeparatelyWhenOneSavingsAccountFundsSeveralLoans() throws Exception {
+        StandingInstructionData lpiLoanInstruction = loanRepaymentInstruction(73L, 1L, 2L, new BigDecimal("100.00"));
+        StandingInstructionData cleanLoanInstruction = loanRepaymentInstruction(74L, 1L, 4L, new BigDecimal("60.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Arrays.asList(lpiLoanInstruction, cleanLoanInstruction));
+        givenAvailableBalance(1L, "1000.00");
+        when(loanLpiOutstandingReader.outstandingLpi(2L)).thenReturn(new BigDecimal("10.00"));
+
+        tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class));
+
+        ArgumentCaptor<AccountTransferDTO> transferCaptor = ArgumentCaptor.forClass(AccountTransferDTO.class);
+        verify(accountTransfersWritePlatformService).transferFunds(transferCaptor.capture());
+        assertThat(transferCaptor.getValue().getToAccountId()).isEqualTo(4L);
+        assertThat(captureNotifiedSkips()).extracting(SkippedStandingInstruction::loanId).containsExactly(2L);
+    }
+
+    @Test
+    void notifierFailureDoesNotFailTheJob() throws Exception {
+        StandingInstructionData instruction = loanRepaymentInstruction(75L, 1L, 2L, new BigDecimal("100.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+        givenAvailableBalance(1L, "1000.00");
+        when(loanLpiOutstandingReader.outstandingLpi(2L)).thenReturn(new BigDecimal("10.00"));
+        doThrow(new RuntimeException("Slack down")).when(lpiSkipNotifier).notifySkipped(any());
+
+        assertThatCode(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class))).doesNotThrowAnyException();
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any(AccountTransferDTO.class));
+    }
+
+    @Test
+    void lpiCheckFailureDoesNotTransferAndFailsTheJob() throws Exception {
+        StandingInstructionData instruction = loanRepaymentInstruction(76L, 1L, 2L, new BigDecimal("100.00"));
+        when(standingInstructionReadPlatformService.retrieveAll(StandingInstructionStatus.ACTIVE.getValue()))
+                .thenReturn(Collections.singletonList(instruction));
+        givenAvailableBalance(1L, "1000.00");
+        when(loanLpiOutstandingReader.outstandingLpi(2L)).thenThrow(new RuntimeException("db down"));
+
+        assertThatThrownBy(() -> tasklet.execute(mock(StepContribution.class), mock(ChunkContext.class)))
+                .isInstanceOf(JobExecutionException.class);
+        verify(accountTransfersWritePlatformService, never()).transferFunds(any(AccountTransferDTO.class));
+        verify(lpiSkipNotifier, never()).notifySkipped(any());
+    }
+
+    private StandingInstructionData loanRepaymentInstruction(Long id, Long savingsId, Long loanId, BigDecimal amount) {
+        return realStandingInstructionData(id, "SI " + id, amount, PortfolioAccountType.SAVINGS, savingsId, PortfolioAccountType.LOAN,
+                loanId, StandingInstructionType.FIXED, AccountTransferRecurrenceType.PERIODIC, PeriodFrequencyType.MONTHS, 1, 20,
+                LocalDate.of(2025, 5, 20));
+    }
+
+    private void givenAvailableBalance(Long savingsId, String balance) {
+        SavingsAccount savingsAccount = mock(SavingsAccount.class);
+        when(savingsAccount.getWithdrawableBalance()).thenReturn(new BigDecimal(balance));
+        when(savingsAccountAssembler.assembleFrom(savingsId, false)).thenReturn(savingsAccount);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<SkippedStandingInstruction> captureNotifiedSkips() {
+        ArgumentCaptor<List<SkippedStandingInstruction>> captor = ArgumentCaptor.forClass(List.class);
+        verify(lpiSkipNotifier).notifySkipped(captor.capture());
+        return captor.getValue();
     }
 
     private EnumOptionData enumOptionData(int id, String code) {
