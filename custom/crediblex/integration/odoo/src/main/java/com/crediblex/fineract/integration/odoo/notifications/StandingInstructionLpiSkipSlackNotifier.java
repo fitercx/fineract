@@ -97,8 +97,8 @@ public class StandingInstructionLpiSkipSlackNotifier implements StandingInstruct
                 header += String.format(" (%d/%d)", part + 1, parts);
             }
             blocks.add(headerBlock(header));
-            blocks.add(sectionBlock(String.format("*Run date:* %s\n*Skipped:* %d loan(s) with available balance and outstanding LPI",
-                    runDate, skipped.size())));
+            blocks.add(sectionBlock(String.join("\n", "*Run date:* " + runDate,
+                    String.format("*Skipped:* %d loan(s) with available balance and outstanding LPI", skipped.size()))));
             blocks.add(dividerBlock());
             for (int i = 0; i < chunk.size(); i++) {
                 blocks.add(sectionBlock(formatEntry(chunk.get(i), from + i + 1)));
@@ -120,13 +120,12 @@ public class StandingInstructionLpiSkipSlackNotifier implements StandingInstruct
     }
 
     private String formatEntry(SkippedStandingInstruction entry, int index) {
-        return String.format("""
-                *%d. Loan `%s`* | %s
-                Savings: `%s` | Available balance: `%s`
-                SI amount: `%s` | Outstanding LPI: `%s`
-                Scheduled: %s | _%s_""", index, entry.loanAccountNo(), entry.clientName() != null ? entry.clientName() : "-",
-                entry.savingsAccountNo(), amount(entry.availableBalance()), amount(entry.scheduledAmount()), amount(entry.outstandingLpi()),
-                entry.runDate(), SkippedStandingInstruction.REASON);
+        // Slack mrkdwn needs a literal \n; %n would be platform-dependent.
+        return String.join("\n",
+                String.format("*%d. Loan `%s`* | %s", index, entry.loanAccountNo(), entry.clientName() != null ? entry.clientName() : "-"),
+                String.format("Savings: `%s` | Available balance: `%s`", entry.savingsAccountNo(), amount(entry.availableBalance())),
+                String.format("SI amount: `%s` | Outstanding LPI: `%s`", amount(entry.scheduledAmount()), amount(entry.outstandingLpi())),
+                String.format("Scheduled: %s | _%s_", entry.runDate(), SkippedStandingInstruction.REASON));
     }
 
     private static String amount(BigDecimal value) {
