@@ -1,6 +1,7 @@
 package com.crediblex.fineract.portfolio.loanaccount.service.configuration;
 
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanRescheduleRequestDataValidator;
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor;
 import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.ExternalIdFactory;
@@ -17,6 +18,12 @@ public class CustomLoanAccountStarter {
     @Primary
     public ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor proRataInterestProcessor(ExternalIdFactory externalIdFactory) {
         return new ProRataFineractStyleLoanRepaymentScheduleTransactionProcessor(externalIdFactory);
+    }
+
+    @Bean
+    public CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor crossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor(
+            ExternalIdFactory externalIdFactory) {
+        return new CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor(externalIdFactory);
     }
 
     @Bean("loanRescheduleRequestDataValidator")

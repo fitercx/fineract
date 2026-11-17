@@ -77,6 +77,9 @@ public class CredXLoanReadPlatformServiceImplTest {
     private org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator sqlGenerator;
 
     @Mock
+    private com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentStrategyResolver dpdRepaymentStrategyResolver;
+
+    @Mock
     private LoanRepositoryWrapper loanRepositoryWrapper;
 
     @InjectMocks
