@@ -13,6 +13,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.LoanChargeSettlementUti
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.OverdueChargeScheduleAllocationUtils;
+import com.crediblex.fineract.portfolio.loanaccount.util.PaidOverduePenaltyAttribution;
 import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedClearedInstallments;
 import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReprice;
 import com.crediblex.fineract.portfolio.loc.domain.LineOfCredit;
@@ -29,6 +30,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -668,6 +670,10 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             final LoanRepaymentScheduleProcessingWrapper wrapper = new LoanRepaymentScheduleProcessingWrapper();
             wrapper.reprocess(loan.getCurrency(), loan.getDisbursementDate(), loan.getRepaymentScheduleInstallments(),
                     loan.getActiveCharges());
+            final List<LoanRepaymentScheduleInstallment> byDueDate = loan.getRepaymentScheduleInstallments().stream()
+                    .sorted(Comparator.comparing(LoanRepaymentScheduleInstallment::getDueDate)).toList();
+            PaidOverduePenaltyAttribution.apply(loan,
+                    charge -> OverdueChargeScheduleAllocationUtils.resolveInstallmentNumber(charge.getDueLocalDate(), byDueDate));
         }
 
         loan.updateLoanSummaryDerivedFields();
@@ -2173,6 +2179,8 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
 
             log.debug("Updated installment {} - Fee: {}, Penalty: {}", installment.getInstallmentNumber(), totalFee, totalPenalty);
         }
+
+        PaidOverduePenaltyAttribution.apply(loan, charge -> resolveInstallmentNumberForOverdueCharge(charge, sortedInstallments));
     }
 
     /**
@@ -2365,9 +2373,14 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
             return 0;
         });
 
+        final boolean paidLpiMayShift = PaidOverduePenaltyAttribution.hasPaidLinkedOverduePenalty(loan.getLoanCharges(), currency);
+        final Map<LoanRepaymentScheduleInstallment, Money> expectedPenaltyByInstallment = new IdentityHashMap<>();
+        final Map<Integer, Money> projectedPenaltyOutstanding = new HashMap<>();
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
             Money expectedFee = Money.zero(currency);
             Money expectedPenalty = Money.zero(currency);
+            Money expectedPenaltyWaived = Money.zero(currency);
+            Money expectedPenaltyWrittenOff = Money.zero(currency);
 
             // Get the target installment ID and number for matching (use the actual installment from loan's schedule)
             Integer targetInstallmentNumber = installment.getInstallmentNumber();
@@ -2398,14 +2411,31 @@ public class CredXLoanChargeWritePlatformServiceImpl extends LoanChargeWritePlat
                 if (appliesToInstallment) {
                     if (loanCharge.isPenaltyCharge()) {
                         expectedPenalty = expectedPenalty.plus(loanCharge.getAmount(currency));
+                        expectedPenaltyWaived = expectedPenaltyWaived.plus(loanCharge.getAmountWaived(currency));
+                        expectedPenaltyWrittenOff = expectedPenaltyWrittenOff.plus(loanCharge.getAmountWrittenOff(currency));
                     } else {
                         expectedFee = expectedFee.plus(loanCharge.getAmount(currency));
                     }
                 }
             }
 
-            if (!installment.getFeeChargesCharged(currency).isEqualTo(expectedFee)
-                    || !installment.getPenaltyChargesCharged(currency).isEqualTo(expectedPenalty)) {
+            if (!installment.getFeeChargesCharged(currency).isEqualTo(expectedFee)) {
+                return true;
+            }
+            expectedPenaltyByInstallment.put(installment, expectedPenalty);
+            if (paidLpiMayShift && targetInstallmentNumber != null) {
+                projectedPenaltyOutstanding.put(targetInstallmentNumber, expectedPenalty.minus(installment.getPenaltyChargesPaid(currency))
+                        .minus(expectedPenaltyWaived).minus(expectedPenaltyWrittenOff));
+            }
+        }
+
+        final Map<Integer, Money> paidPenaltyShifts = paidLpiMayShift ? PaidOverduePenaltyAttribution.shifts(loan.getLoanCharges(),
+                projectedPenaltyOutstanding, charge -> resolveInstallmentNumberForOverdueCharge(charge, sortedInstallments), currency)
+                : Map.of();
+        for (Map.Entry<LoanRepaymentScheduleInstallment, Money> expected : expectedPenaltyByInstallment.entrySet()) {
+            final Money shift = paidPenaltyShifts.get(expected.getKey().getInstallmentNumber());
+            final Money expectedPenalty = shift == null ? expected.getValue() : expected.getValue().plus(shift);
+            if (!expected.getKey().getPenaltyChargesCharged(currency).isEqualTo(expectedPenalty)) {
                 return true;
             }
         }
