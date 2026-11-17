@@ -26,16 +26,29 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.crediblex.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
+import org.apache.fineract.infrastructure.core.domain.ActionContext;
+import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
+import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
+import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.loanproduct.data.TransactionProcessingStrategyData;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +63,8 @@ class LoanRepaymentStrategyUpdateServiceTest {
     private static final String STANDARD_NAME = "Penalties, Fees, Interest, Principal order";
     private static final String PRINCIPAL_FIRST = "principal-interest-penalties-fees-order-strategy";
     private static final String PRINCIPAL_FIRST_NAME = "Principal, Interest, Penalties, Fees Order";
+    private static final String CROSS_EMI = CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor.STRATEGY_CODE;
+    private static final String CROSS_EMI_NAME = CrossEmiPrincipalInterestFeesLoanRepaymentScheduleTransactionProcessor.STRATEGY_NAME;
 
     @Mock
     private LoanRepositoryWrapper loanRepositoryWrapper;
@@ -61,6 +76,14 @@ class LoanRepaymentStrategyUpdateServiceTest {
     @BeforeEach
     void setUp() {
         this.service = new LoanRepaymentStrategyUpdateService(this.loanRepositoryWrapper, this.processorFactory);
+        ThreadLocalContextUtil.setTenant(new FineractPlatformTenant(1L, "default", "Default", "Asia/Dubai", null));
+        ThreadLocalContextUtil.setActionContext(ActionContext.DEFAULT);
+        ThreadLocalContextUtil.setBusinessDates(new HashMap<>(Map.of(BusinessDateType.BUSINESS_DATE, LocalDate.of(2026, 11, 4))));
+    }
+
+    @AfterEach
+    void tearDown() {
+        ThreadLocalContextUtil.reset();
     }
 
     @Test
@@ -77,6 +100,22 @@ class LoanRepaymentStrategyUpdateServiceTest {
                 .containsEntry(LoanRepaymentStrategyUpdateService.TRANSACTION_PROCESSING_STRATEGY_CODE, PRINCIPAL_FIRST)
                 .containsEntry("previousTransactionProcessingStrategyCode", STANDARD)
                 .containsEntry(LoanRepaymentStrategyUpdateService.NOTE, "Switch before settlement");
+    }
+
+    @Test
+    void updateKeepsPostedRepaymentPortionsWhenTheStrategyChanges() {
+        final Loan loan = activeLoan(STANDARD, STANDARD_NAME);
+        final LoanTransaction postedRepayment = mock(LoanTransaction.class);
+        when(postedRepayment.getId()).thenReturn(900L);
+        when(postedRepayment.isReversed()).thenReturn(false);
+        when(postedRepayment.isRepaymentLikeType()).thenReturn(true);
+        when(loan.getLoanTransactions()).thenReturn(new ArrayList<>(List.of(postedRepayment)));
+        when(this.processorFactory.getStrategies()).thenReturn(strategies());
+
+        this.service.update(LOAN_ID, command(PRINCIPAL_FIRST, null));
+
+        verify(postedRepayment).setManuallyAdjustedOrReversed();
+        verify(loan).updateTransactionProcessingStrategy(PRINCIPAL_FIRST, PRINCIPAL_FIRST_NAME);
     }
 
     @Test
@@ -129,7 +168,7 @@ class LoanRepaymentStrategyUpdateServiceTest {
 
         @SuppressWarnings("unchecked")
         final List<Map<String, String>> options = (List<Map<String, String>>) template.get("transactionProcessingStrategyOptions");
-        assertThat(options).extracting(option -> option.get("code")).containsExactly(STANDARD, PRINCIPAL_FIRST);
+        assertThat(options).extracting(option -> option.get("code")).containsExactly(STANDARD, PRINCIPAL_FIRST, CROSS_EMI);
         assertThat(template.get("unsupportedReason")).isNotNull();
     }
 
@@ -139,6 +178,7 @@ class LoanRepaymentStrategyUpdateServiceTest {
         lenient().when(loan.getId()).thenReturn(LOAN_ID);
         lenient().when(loan.getTransactionProcessingStrategyCode()).thenReturn(code);
         lenient().when(loan.getTransactionProcessingStrategyName()).thenReturn(name);
+        lenient().when(loan.getLoanTransactions()).thenReturn(new ArrayList<>());
         when(this.loanRepositoryWrapper.findOneWithNotFoundDetection(LOAN_ID)).thenReturn(loan);
         return loan;
     }
@@ -152,9 +192,41 @@ class LoanRepaymentStrategyUpdateServiceTest {
         return command;
     }
 
+    @Test
+    void updateRejectsCrossEmiWhenTheLoanIsNotOverdue() {
+        final Loan loan = activeLoan(STANDARD, STANDARD_NAME);
+        when(this.processorFactory.getStrategies()).thenReturn(strategies());
+
+        assertThatThrownBy(() -> this.service.update(LOAN_ID, command(CROSS_EMI, null)))
+                .isInstanceOf(PlatformApiDataValidationException.class);
+        verify(loan, never()).updateTransactionProcessingStrategy(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(this.loanRepositoryWrapper, never()).saveAndFlush(loan);
+    }
+
+    @Test
+    void updateAcceptsCrossEmiWhenAnInstallmentIsOverdue() {
+        final Loan loan = activeLoan(STANDARD, STANDARD_NAME);
+        final MonetaryCurrency currency = new MonetaryCurrency("AED", 2, 1);
+        final LoanRepaymentScheduleInstallment installment = mock(LoanRepaymentScheduleInstallment.class);
+        final Money outstanding = mock(Money.class);
+        when(outstanding.isGreaterThanZero()).thenReturn(true);
+        when(loan.getCurrency()).thenReturn(currency);
+        when(loan.getRepaymentScheduleInstallments()).thenReturn(List.of(installment));
+        when(installment.isDownPayment()).thenReturn(false);
+        when(installment.isAdditional()).thenReturn(false);
+        when(installment.getDueDate()).thenReturn(LocalDate.of(2026, 10, 1));
+        when(installment.getPrincipalOutstanding(currency)).thenReturn(outstanding);
+        when(this.processorFactory.getStrategies()).thenReturn(strategies());
+
+        this.service.update(LOAN_ID, command(CROSS_EMI, null));
+
+        verify(loan).updateTransactionProcessingStrategy(CROSS_EMI, CROSS_EMI_NAME);
+    }
+
     private List<TransactionProcessingStrategyData> strategies() {
         return List.of(new TransactionProcessingStrategyData(1L, STANDARD, STANDARD_NAME),
-                new TransactionProcessingStrategyData(2L, PRINCIPAL_FIRST, PRINCIPAL_FIRST_NAME), new TransactionProcessingStrategyData(3L,
+                new TransactionProcessingStrategyData(2L, PRINCIPAL_FIRST, PRINCIPAL_FIRST_NAME),
+                new TransactionProcessingStrategyData(4L, CROSS_EMI, CROSS_EMI_NAME), new TransactionProcessingStrategyData(3L,
                         LoanProductConstants.ADVANCED_PAYMENT_ALLOCATION_STRATEGY, "Advanced payment allocation"));
     }
 }
