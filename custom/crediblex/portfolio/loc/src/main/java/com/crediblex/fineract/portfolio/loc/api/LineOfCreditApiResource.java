@@ -32,9 +32,14 @@ import com.crediblex.fineract.portfolio.loc.data.UpdateVendorRequest;
 import com.crediblex.fineract.portfolio.loc.data.VendorExposureResponse;
 import com.crediblex.fineract.portfolio.loc.data.VendorResponse;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditBulkDisbursementService;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditExpiryChangeService;
+import com.crediblex.fineract.portfolio.loc.service.LineOfCreditExpiryPendingLock;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditReadPlatformService;
 import com.crediblex.fineract.portfolio.loc.service.LineOfCreditTransactionReadPlatformService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -58,8 +63,10 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.UriInfo;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
+import org.apache.fineract.commands.exception.RollbackTransactionNotApprovedException;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
@@ -94,6 +101,8 @@ public class LineOfCreditApiResource {
     @Qualifier("portfolioCommandSourceWritePlatformServiceImpl")
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
     private final LineOfCreditBulkDisbursementService bulkDisbursementService;
+    private final LineOfCreditExpiryChangeService expiryChangeService;
+    private final LineOfCreditExpiryPendingLock expiryPendingLock;
 
     @GET
     @Path("{clientId}/creditlines/template")
@@ -247,6 +256,83 @@ public class LineOfCreditApiResource {
 
         final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
 
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @POST
+    @Path("{clientId}/creditlines/{lineOfCreditId}/changeexpirydate")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Request an expiry date change", description = "Submits a Line of Credit End Date change for checker approval. The facility status is left unchanged.")
+    public String changeExpiryDate(@PathParam("clientId") final Long clientId, @PathParam("lineOfCreditId") final Long lineOfCreditId,
+            final String requestBody) {
+        final String commandJson = this.expiryChangeService.prepareCommandJson(clientId, lineOfCreditId, requestBody);
+        final CommandWrapper commandRequest = new LineOfCreditCommandWrapperBuilder().changeExpiryDate(lineOfCreditId, clientId)
+                .withJson(commandJson).build();
+        this.expiryPendingLock.reserve(clientId, lineOfCreditId);
+        boolean keepSlot = false;
+        try {
+            final CommandProcessingResult result;
+            try {
+                result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
+            } catch (RuntimeException ex) {
+                final RollbackTransactionNotApprovedException rollback = LineOfCreditExpiryPendingLock.rollbackCause(ex);
+                if (rollback == null) {
+                    throw ex;
+                }
+                keepSlot = true;
+                final Long commandId = rollback.getResult() == null ? null : rollback.getResult().getCommandId();
+                this.expiryPendingLock.attach(lineOfCreditId, commandId);
+                throw ex;
+            }
+            return this.toApiJsonSerializer.serialize(result);
+        } finally {
+            if (!keepSlot) {
+                this.expiryPendingLock.release(lineOfCreditId);
+            }
+        }
+    }
+
+    @GET
+    @Path("{clientId}/creditlines/{lineOfCreditId}/changeexpirydate/pending")
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Pending expiry date change", description = "Returns the expiry change awaiting approval for this facility, or an empty object.")
+    public String pendingExpiryDateChange(@PathParam("clientId") final Long clientId,
+            @PathParam("lineOfCreditId") final Long lineOfCreditId) {
+        this.context.authenticatedUser().validateHasReadPermission(LineOfCreditApiConstants.LINE_OF_CREDIT);
+        final Map<String, Object> pending = this.expiryChangeService.pending(clientId, lineOfCreditId);
+        return new Gson().toJson(pending);
+    }
+
+    @POST
+    @Path("{clientId}/creditlines/{lineOfCreditId}/changeexpirydate/{commandId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Reject an expiry date change", description = "Rejects a pending expiry change. A comment is required.")
+    public String rejectExpiryDateChange(@PathParam("clientId") final Long clientId, @PathParam("lineOfCreditId") final Long lineOfCreditId,
+            @PathParam("commandId") final Long commandId, @QueryParam("command") final String command, final String requestBody) {
+        if (!"reject".equalsIgnoreCase(command)) {
+            throw new PlatformApiDataValidationException("error.msg.lineofcredit.invalid.action",
+                    "The action `" + command + "` is not valid for an expiry change", List.of());
+        }
+        String rejectionComment = null;
+        if (requestBody != null && !requestBody.isBlank()) {
+            final JsonObject body = JsonParser.parseString(requestBody).getAsJsonObject();
+            if (body.has("rejectionComment") && !body.get("rejectionComment").isJsonNull()) {
+                rejectionComment = body.get("rejectionComment").getAsString();
+            }
+        }
+        final CommandProcessingResult result = this.expiryChangeService.reject(clientId, lineOfCreditId, commandId, rejectionComment);
+        return this.toApiJsonSerializer.serialize(result);
+    }
+
+    @DELETE
+    @Path("{clientId}/creditlines/{lineOfCreditId}/changeexpirydate/{commandId}")
+    @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Withdraw an expiry date change", description = "The maker withdraws their pending expiry change.")
+    public String withdrawExpiryDateChange(@PathParam("clientId") final Long clientId,
+            @PathParam("lineOfCreditId") final Long lineOfCreditId, @PathParam("commandId") final Long commandId) {
+        final CommandProcessingResult result = this.expiryChangeService.withdraw(clientId, lineOfCreditId, commandId);
         return this.toApiJsonSerializer.serialize(result);
     }
 

@@ -198,6 +198,15 @@ public class LineOfCreditCommandWrapperBuilder {
         return this;
     }
 
+    public LineOfCreditCommandWrapperBuilder changeExpiryDate(final Long lineOfCreditId, final Long clientId) {
+        this.clientId = clientId;
+        this.actionName = "CHANGEEXPIRYDATE";
+        this.entityName = LineOfCreditApiConstants.LINE_OF_CREDIT;
+        this.entityId = lineOfCreditId;
+        this.href = "/v1/clients/" + clientId + "/creditlines/" + lineOfCreditId + "/changeexpirydate";
+        return this;
+    }
+
     public LineOfCreditCommandWrapperBuilder withJson(final String json) {
         this.json = json;
         return this;
