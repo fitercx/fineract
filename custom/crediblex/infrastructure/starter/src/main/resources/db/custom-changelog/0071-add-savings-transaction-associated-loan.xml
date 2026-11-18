@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet author="CredibleX" id="0071-add-savings-transaction-associated-loan-columns">
+        <preConditions onFail="MARK_RAN" onError="HALT">
+            <not>
+                <columnExists tableName="m_savings_account_transaction" columnName="associated_loan_id"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="m_savings_account_transaction">
+            <column name="associated_loan_id" type="BIGINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="associated_from_installment" type="SMALLINT">
+                <constraints nullable="true"/>
+            </column>
+            <column name="associated_to_installment" type="SMALLINT">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+        <createIndex tableName="m_savings_account_transaction" indexName="idx_sat_associated_loan_id">
+            <column name="associated_loan_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0071-backfill-associated-loan-for-deposits">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <columnExists tableName="m_savings_account_transaction" columnName="associated_loan_id"/>
+        </preConditions>
+        <sql>
+            UPDATE m_savings_account_transaction tx
+            SET associated_loan_id = d.from_loan_account_id
+            FROM m_account_transfer_transaction att
+            JOIN m_account_transfer_details d ON d.id = att.account_transfer_details_id
+            WHERE att.to_savings_transaction_id = tx.id
+              AND d.from_loan_account_id IS NOT NULL
+              AND tx.associated_loan_id IS NULL
+        </sql>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0071-backfill-associated-loan-for-emi-transfers">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <columnExists tableName="m_savings_account_transaction" columnName="associated_loan_id"/>
+        </preConditions>
+        <sql>
+            UPDATE m_savings_account_transaction tx
+            SET associated_loan_id = src.loan_id,
+                associated_from_installment = src.from_installment,
+                associated_to_installment = src.to_installment
+            FROM (
+                SELECT
+                    att.from_savings_transaction_id AS savings_tx_id,
+                    d.to_loan_account_id AS loan_id,
+                    MIN(CASE WHEN pl.short_name = 'RBF' THEN rs.installment END) AS from_installment,
+                    MAX(CASE WHEN pl.short_name = 'RBF' THEN rs.installment END) AS to_installment
+                FROM m_account_transfer_transaction att
+                JOIN m_account_transfer_details d ON d.id = att.account_transfer_details_id
+                JOIN m_loan l ON l.id = d.to_loan_account_id
+                JOIN m_product_loan pl ON pl.id = l.product_id
+                LEFT JOIN m_loan_transaction_repayment_schedule_mapping map
+                       ON map.loan_transaction_id = att.to_loan_transaction_id
+                LEFT JOIN m_loan_repayment_schedule rs ON rs.id = map.loan_repayment_schedule_id
+                WHERE att.from_savings_transaction_id IS NOT NULL
+                  AND d.to_loan_account_id IS NOT NULL
+                GROUP BY att.from_savings_transaction_id, d.to_loan_account_id
+            ) src
+            WHERE tx.id = src.savings_tx_id
+              AND tx.associated_loan_id IS NULL
+        </sql>
+    </changeSet>
+
+    <changeSet author="CredibleX" id="0071-update-savings-accounts-transactions-report-sql">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM stretchy_report WHERE report_name = 'Savings Accounts Transactions Report'
+            </sqlCheck>
+        </preConditions>
+        <update tableName="stretchy_report">
+            <column name="report_sql"><![CDATA[
+SELECT
+    c.id AS "Client Id",
+    CONCAT(c.firstname, ' ', COALESCE(c.middlename, ''), ' ', COALESCE(c.lastname, '')) AS "Client Name",
+    sa.id AS "Saving Account Id",
+    sa.account_no AS "Savings account no.",
+    t.id AS "Transaction Id",
+    to_char(COALESCE(t.submitted_on_date, t.created_date::date, t.transaction_date), 'DD Month YYYY') AS "Value Date",
+    to_char(t.transaction_date, 'DD Month YYYY') AS "Transaction Date",
+    sa.external_id AS "External Id",
+    CASE t.transaction_type_enum
+        WHEN 1 THEN 'Deposit'
+        WHEN 2 THEN 'Withdrawal'
+        WHEN 3 THEN 'Interest Posting'
+        WHEN 4 THEN 'Withdrawal Fee'
+        WHEN 5 THEN 'Annual Fee'
+        WHEN 12 THEN 'Dividend Payout'
+        WHEN 13 THEN 'Overdraft Interest'
+        WHEN 21 THEN 'Withhold Tax'
+        WHEN 23 THEN 'Charge Reversal'
+        ELSE 'Other'
+    END AS "Parent Transaction Type",
+    CASE t.transaction_sub_type
+        WHEN 1 THEN 'Disbursal'
+        WHEN 2 THEN 'Refund'
+        WHEN 3 THEN 'EMI Transfer'
+        WHEN 4 THEN 'Foreclosure Refund'
+        ELSE NULL
+    END AS "Transaction Sub-Type",
+    CASE
+        WHEN t.transaction_sub_type IS NOT NULL THEN CONCAT(
+            CASE t.transaction_type_enum
+                WHEN 1 THEN 'Deposit'
+                WHEN 2 THEN 'Withdrawal'
+                WHEN 3 THEN 'Interest Posting'
+                WHEN 4 THEN 'Withdrawal Fee'
+                WHEN 5 THEN 'Annual Fee'
+                WHEN 12 THEN 'Dividend Payout'
+                WHEN 13 THEN 'Overdraft Interest'
+                WHEN 21 THEN 'Withhold Tax'
+                WHEN 23 THEN 'Charge Reversal'
+                ELSE 'Other'
+            END,
+            ' - ',
+            CASE t.transaction_sub_type
+                WHEN 1 THEN 'Disbursal'
+                WHEN 2 THEN 'Refund'
+                WHEN 3 THEN 'EMI Transfer'
+                WHEN 4 THEN 'Foreclosure Refund'
+            END
+        )
+        ELSE CASE t.transaction_type_enum
+            WHEN 1 THEN 'Deposit'
+            WHEN 2 THEN 'Withdrawal'
+            WHEN 3 THEN 'Interest Posting'
+            WHEN 4 THEN 'Withdrawal Fee'
+            WHEN 5 THEN 'Annual Fee'
+            WHEN 12 THEN 'Dividend Payout'
+            WHEN 13 THEN 'Overdraft Interest'
+            WHEN 21 THEN 'Withhold Tax'
+            WHEN 23 THEN 'Charge Reversal'
+            ELSE 'Other'
+        END
+    END AS "Transaction Type",
+    CASE
+        WHEN t.associated_loan_id IS NULL THEN NULL
+        WHEN t.associated_from_installment IS NOT NULL
+             AND t.associated_to_installment IS NOT NULL
+             AND t.associated_from_installment = t.associated_to_installment
+            THEN CONCAT(t.associated_loan_id, '-EMI', t.associated_from_installment)
+        WHEN t.associated_from_installment IS NOT NULL
+             AND t.associated_to_installment IS NOT NULL
+            THEN CONCAT(t.associated_loan_id, '-EMI', t.associated_from_installment, '-', t.associated_to_installment)
+        ELSE CAST(t.associated_loan_id AS TEXT)
+    END AS "Associated Loan",
+    CASE WHEN t.transaction_type_enum IN (2, 4, 5, 13, 21) THEN t.amount ELSE NULL END AS "Debit",
+    CASE WHEN t.transaction_type_enum IN (1, 3, 12, 23) THEN t.amount ELSE NULL END AS "Credit",
+    t.running_balance_derived AS "Balance",
+    pt.value AS "Payment Type"
+FROM m_savings_account_transaction t
+JOIN m_savings_account sa ON sa.id = t.savings_account_id
+JOIN m_client c ON c.id = sa.client_id
+LEFT JOIN m_payment_detail pd ON pd.id = t.payment_detail_id
+LEFT JOIN m_payment_type pt ON pt.id = pd.payment_type_id
+WHERE t.is_reversed = FALSE
+  AND t.transaction_type_enum <> 10
+  AND (${clientId} = -1 OR c.id = ${clientId})
+  AND (${savingsId} = -1 OR sa.id = ${savingsId})
+  AND (pd.payment_type_id IS NULL OR pd.payment_type_id <> 5)
+ORDER BY c.id ASC, sa.id ASC, t.transaction_date DESC, t.id DESC
+            ]]></column>
+            <where>report_name = 'Savings Accounts Transactions Report'</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>
