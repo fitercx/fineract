@@ -23,12 +23,15 @@ import com.crediblex.fineract.commands.LineOfCreditStatusWebhookPublisher;
 import com.crediblex.fineract.commands.LoanStatusWebhookPublisher;
 import com.crediblex.fineract.portfolio.account.jobs.executestandinginstructions.CustomExecuteStandingInstructionsTasklet;
 import com.crediblex.fineract.portfolio.account.repository.EzySqlLoanLocRepository;
+import com.crediblex.fineract.portfolio.account.repository.LoanLpiOutstandingReader;
+import com.crediblex.fineract.portfolio.account.service.StandingInstructionLpiSkipNotifier;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.portfolio.account.jobs.executestandinginstructions.ExecuteStandingInstructionsTasklet;
 import org.apache.fineract.portfolio.account.service.AccountTransfersWritePlatformService;
 import org.apache.fineract.portfolio.account.service.StandingInstructionReadPlatformService;
 import org.apache.fineract.portfolio.savings.domain.SavingsAccountAssembler;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,11 +59,12 @@ public class CrediblexStandingInstructionsOverrideConfiguration {
             DatabaseSpecificSQLGenerator sqlGenerator, AccountTransfersWritePlatformService accountTransfersWritePlatformService,
             PlatformTransactionManager transactionManager, LoanStatusWebhookPublisher loanStatusWebhookPublisher,
             TransactionTemplate transactionTemplate, EzySqlLoanLocRepository loanLocLookupRepository,
-            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher) {
+            LineOfCreditStatusWebhookPublisher lineOfCreditStatusWebhookPublisher, LoanLpiOutstandingReader loanLpiOutstandingReader,
+            ObjectProvider<StandingInstructionLpiSkipNotifier> lpiSkipNotifierProvider) {
 
         return new CustomExecuteStandingInstructionsTasklet(standingInstructionReadPlatformService, jdbcTemplate, sqlGenerator,
                 accountTransfersWritePlatformService, savingsAccountAssembler, transactionManager, customCommandProcessingService,
                 fromApiJsonHelper, loanStatusWebhookPublisher, transactionTemplate, loanLocLookupRepository,
-                lineOfCreditStatusWebhookPublisher);
+                lineOfCreditStatusWebhookPublisher, loanLpiOutstandingReader, lpiSkipNotifierProvider);
     }
 }

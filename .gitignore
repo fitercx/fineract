@@ -35,3 +35,8 @@ gradleExp/
 .java-version
 allure-results
 WARP.md
+
+
+.agents
+.claude
+.skills-lock.json

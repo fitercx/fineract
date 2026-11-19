@@ -55,6 +55,17 @@ public class SlackProperties {
     private String settlementsChannel = "#daily-banktransfers-update";
 
     /**
+     * Incoming webhook for the Ops digest of standing instructions skipped for outstanding LPI. Set via
+     * {@code SLACK_OPS_WEBHOOK_URL}; do not commit the secret.
+     */
+    private String opsWebhookUrl;
+
+    /**
+     * Slack channel override for the Ops digest.
+     */
+    private String opsChannel;
+
+    /**
      * Bot username displayed in Slack
      */
     private String username = "Fineract Odoo Sync Bot";
@@ -114,6 +125,22 @@ public class SlackProperties {
 
     public void setSettlementsChannel(String settlementsChannel) {
         this.settlementsChannel = settlementsChannel;
+    }
+
+    public String getOpsWebhookUrl() {
+        return opsWebhookUrl;
+    }
+
+    public void setOpsWebhookUrl(String opsWebhookUrl) {
+        this.opsWebhookUrl = opsWebhookUrl;
+    }
+
+    public String getOpsChannel() {
+        return opsChannel;
+    }
+
+    public void setOpsChannel(String opsChannel) {
+        this.opsChannel = opsChannel;
     }
 
     public void setChannel(String channel) {
