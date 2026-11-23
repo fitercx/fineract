@@ -57,7 +57,7 @@ public class LineOfCreditExpiryPendingLock {
             this.jdbcTemplate.update("INSERT INTO m_loc_expiry_change_guard (line_of_credit_id, command_id) VALUES (?, NULL)",
                     lineOfCreditId);
         } catch (DataIntegrityViolationException ex) {
-            throw pending();
+            throw pending(ex);
         }
     }
 
@@ -125,7 +125,11 @@ public class LineOfCreditExpiryPendingLock {
     }
 
     private static PlatformApiDataValidationException pending() {
+        return pending(null);
+    }
+
+    private static PlatformApiDataValidationException pending(final Throwable cause) {
         return new PlatformApiDataValidationException(List.of(ApiParameterError.parameterError("validation.msg.loc.expiry.pending",
-                LineOfCreditExpiryDateRules.PENDING_MESSAGE, "endDate")));
+                LineOfCreditExpiryDateRules.PENDING_MESSAGE, "endDate")), cause);
     }
 }
