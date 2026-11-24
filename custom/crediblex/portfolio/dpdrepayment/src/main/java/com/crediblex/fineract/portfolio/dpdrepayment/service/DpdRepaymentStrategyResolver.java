@@ -1,6 +1,5 @@
 package com.crediblex.fineract.portfolio.dpdrepayment.service;
 
-import com.crediblex.fineract.portfolio.dpdrepayment.DpdRepaymentConstants;
 import com.crediblex.fineract.portfolio.dpdrepayment.data.DpdRepaymentProductConfigData;
 import com.crediblex.fineract.portfolio.dpdrepayment.data.DpdRepaymentStatusData;
 import com.crediblex.fineract.portfolio.dpdrepayment.domain.transactionprocessor.DpdPrincipalOnlyLoanRepaymentScheduleTransactionProcessor;
@@ -49,9 +48,8 @@ public class DpdRepaymentStrategyResolver {
             return inactiveStatus(baseStrategyCode, loanProductId);
         }
 
-        final DpdRepaymentProductConfigData productConfig = productConfigService.findByLoanProductId(loanProductId)
-                .orElse(DpdRepaymentProductConfigData.builder().loanProductId(loanProductId).enableDpdPrincipalOnlyRepayment(false)
-                        .build());
+        final DpdRepaymentProductConfigData productConfig = productConfigService.findByLoanProductId(loanProductId).orElse(
+                DpdRepaymentProductConfigData.builder().loanProductId(loanProductId).enableDpdPrincipalOnlyRepayment(false).build());
 
         final int threshold = globalConfigService.getPrincipalOnlyThreshold();
         final int maxDpd = maxDaysPastDueService.calculateMaxDpd(loanId, effectiveDate);
