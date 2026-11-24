@@ -21,7 +21,6 @@ package org.apache.fineract.commands.data.request;
 import jakarta.ws.rs.QueryParam;
 import java.io.Serial;
 import java.io.Serializable;
-import java.time.ZonedDateTime;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -43,15 +42,19 @@ public class AuditRequest implements Serializable {
     @QueryParam("makerId")
     private Long makerId;
     @QueryParam("makerDateTimeFrom")
-    private ZonedDateTime makerDateTimeFrom;
+    private String makerDateTimeFrom;
     @QueryParam("makerDateTimeTo")
-    private ZonedDateTime makerDateTimeTo;
+    private String makerDateTimeTo;
     @QueryParam("checkerId")
     private Long checkerId;
     @QueryParam("checkerDateTimeFrom")
-    private ZonedDateTime checkerDateTimeFrom;
+    private String checkerDateTimeFrom;
     @QueryParam("checkerDateTimeTo")
-    private ZonedDateTime checkerDateTimeTo;
+    private String checkerDateTimeTo;
+    @QueryParam("dateFormat")
+    private String dateFormat;
+    @QueryParam("locale")
+    private String locale;
     @QueryParam("status")
     private String status;
     @QueryParam("clientId")

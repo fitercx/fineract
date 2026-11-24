@@ -104,8 +104,9 @@ public class DatabaseSpecificSQLGenerator {
     }
 
     public String countQueryResult(@NotNull String sql) {
-        // Needs to remove the limit and offset
-        sql = sql.replaceAll("LIMIT \\d+", "").replaceAll("OFFSET \\d+", "").trim();
+        // PaginationParameters.limitSql() emits lowercase "limit" / "offset".
+        // Strip either case so the count is not taken from the already limited page.
+        sql = sql.replaceAll("(?i)LIMIT \\d+", "").replaceAll("(?i)OFFSET \\d+", "").trim();
         return format("SELECT COUNT(*) FROM (%s) AS temp", sql);
     }
 
