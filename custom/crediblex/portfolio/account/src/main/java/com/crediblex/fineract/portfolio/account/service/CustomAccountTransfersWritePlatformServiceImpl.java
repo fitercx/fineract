@@ -17,6 +17,7 @@ import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionB
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.PartialBackdatedLpiReplay;
+import com.crediblex.fineract.portfolio.savings.service.CredXSavingsAssociatedLoanService;
 import com.crediblex.fineract.portfolio.savings.service.CredXSavingsTransactionSubTypeService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -83,6 +84,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
     private final LoanLifecycleStateMachine defaultLoanLifecycleStateMachine;
     protected final BusinessEventNotifierService businessEventNotifierService;
     private final CredXSavingsTransactionSubTypeService transactionSubTypeService;
+    private final CredXSavingsAssociatedLoanService associatedLoanService;
     private final CredXLoanChargeWritePlatformService credXLoanChargeWritePlatformService;
 
     public CustomAccountTransfersWritePlatformServiceImpl(AccountTransfersDataValidator accountTransfersDataValidator,
@@ -95,6 +97,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             FineractProperties fineractProperties, LoanDownPaymentHandlerService loanDownPaymentHandlerService,
             LoanUtilService loanUtilService, LoanLifecycleStateMachine defaultLoanLifecycleStateMachine,
             BusinessEventNotifierService businessEventNotifierService, CredXSavingsTransactionSubTypeService transactionSubTypeService,
+            CredXSavingsAssociatedLoanService associatedLoanService,
             @Lazy CredXLoanChargeWritePlatformService credXLoanChargeWritePlatformService) {
         super(accountTransfersDataValidator, accountTransferAssembler, accountTransferRepository, savingsAccountAssembler,
                 savingsAccountDomainService, loanAccountAssembler, loanAccountDomainService, savingsAccountWritePlatformService,
@@ -105,6 +108,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
         this.defaultLoanLifecycleStateMachine = defaultLoanLifecycleStateMachine;
         this.businessEventNotifierService = businessEventNotifierService;
         this.transactionSubTypeService = transactionSubTypeService;
+        this.associatedLoanService = associatedLoanService;
         this.credXLoanChargeWritePlatformService = credXLoanChargeWritePlatformService;
     }
 
@@ -267,6 +271,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     fromSavingsAccount, toLoanAccount, withdrawal, loanRepaymentTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);
             transferDetailId = accountTransferDetails.getId();
+            this.associatedLoanService.recordEmiTransfer(withdrawal.getId(), toLoanAccount.getId(), loanRepaymentTransaction.getId());
 
             this.businessEventNotifierService
                     .notifyPostBusinessEvent(new SavingsToLoanAccountTransferBusinessEvent(accountTransferDetails));
@@ -286,6 +291,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
 
             final SavingsAccountTransaction deposit = this.savingsAccountDomainService.handleDeposit(toSavingsAccount, fmt, transactionDate,
                     transactionAmount, paymentDetail, isAccountTransfer, isRegularTransaction, backdatedTxnsAllowedTill);
+            this.associatedLoanService.recordLoanLink(deposit.getId(), fromLoanAccount.getId());
 
             final AccountTransferDetails accountTransferDetails = this.accountTransferAssembler.assembleLoanToSavingsTransfer(command,
                     fromLoanAccount, toSavingsAccount, deposit, loanRefundTransaction);
@@ -461,6 +467,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     toLoanAccount, withdrawal, loanTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);
             transferTransactionId = accountTransferDetails.getId();
+            this.associatedLoanService.recordEmiTransfer(withdrawal.getId(), toLoanAccount.getId(), loanTransaction.getId());
 
             if (!AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()) {
                 this.businessEventNotifierService
@@ -566,6 +573,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                     accountTransferDTO.getFmt(), accountTransferDTO.getTransactionDate(), netLoanDisbursementAmount,
                     accountTransferDTO.getPaymentDetail(), isAccountTransfer, isRegularTransaction, backdatedTxnsAllowedTill);
             markForeclosureRefundDeposit(accountTransferDTO, deposit);
+            this.associatedLoanService.recordLoanLink(deposit.getId(), fromLoanAccount.getId());
             accountTransferDetails = this.accountTransferAssembler.assembleLoanToSavingsTransfer(accountTransferDTO, fromLoanAccount,
                     toSavingsAccount, deposit, loanTransaction);
             this.accountTransferDetailRepository.saveAndFlush(accountTransferDetails);
