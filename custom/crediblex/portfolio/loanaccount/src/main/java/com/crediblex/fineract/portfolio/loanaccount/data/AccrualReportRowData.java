@@ -18,27 +18,12 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.data;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
 /**
- * One row of the accrual report (month-wise), aligned with "Generate Loan Monthly Accrual Summations" job logic.
- * Interest amounts are derived from accrual transactions (m_loan_transaction, type ACCRUAL).
+ * One month row of the loan Accrual Report. Amounts are formatted exactly as the frontend download writes them (two
+ * decimals, JavaScript {@code toFixed(2)} rounding); a blank amount is the empty string.
  */
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class AccrualReportRowData {
-
-    private int index;
-    private LocalDate endOfMonth;
-    private BigDecimal openingPrincipal;
-    private BigDecimal closingPrincipal;
-    private BigDecimal interestAccrued;
-    private BigDecimal actualInterestAccrued;
+public record AccrualReportRowData(int index, LocalDate endOfMonth, String openingPrincipal, String closingPrincipal,
+        String interestAccruedActual, String interestForecast) {
 }
