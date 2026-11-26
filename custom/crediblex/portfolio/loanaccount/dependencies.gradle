@@ -42,4 +42,8 @@ dependencies {
     implementation('com.google.code.gson:gson:2.10.1') // Added Gson for JsonElement
 
     implementation('org.springframework.security:spring-security-core:5.8.0')
+
+    implementation('org.apache.poi:poi')
+    implementation('org.apache.poi:poi-ooxml')
+    implementation('software.amazon.awssdk:s3')
 }
