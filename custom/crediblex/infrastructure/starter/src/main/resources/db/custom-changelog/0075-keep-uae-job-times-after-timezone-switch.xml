@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements. See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership. The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied. See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <!--
+        LMS-184: cron expressions are evaluated in the tenant timezone, which custom-tenant-store-changelog 0001 moves from
+        Asia/Kolkata to Asia/Dubai. Every fixed-time job is moved 1h30 earlier so it keeps firing at the same
+        UAE wall-clock time as before the switch. Interval jobs (every N minutes) are timezone independent.
+
+        Each update only matches the previous Asia/Kolkata expression, so an environment where a job was
+        rescheduled by hand is left untouched. Jobs that crossed midnight IST (00:00-01:00) now fire before
+        midnight UAE, so they run with that day's business date instead of the next day's.
+    -->
+    <changeSet author="crediblex" id="lms-184-keep-uae-job-times-after-timezone-switch" context="postgresql,mysql">
+        <comment>Shift fixed-time job crons 1h30 earlier to keep their UAE run times under the Asia/Dubai tenant timezone</comment>
+
+        <!-- 0074 moves the standing instruction job to 04:45 IST; both previous values land on 22:30 UAE. -->
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 22 * * ?"/>
+            <where>name = 'Execute Standing Instruction' AND cron_expression IN ('0 0 0 1/1 * ? *', '0 45 4 * * ?')</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 23 * * ?"/>
+            <where>name = 'Apply penalty to overdue loans' AND cron_expression = '0 0 1 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 20 * * ?"/>
+            <where>name = 'Loan Delinquency Classification' AND cron_expression = '0 0 22 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 50 20 * * ?"/>
+            <where>name = 'Apply Annual Fee For Savings' AND cron_expression = '0 20 22 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 22 * * ?"/>
+            <where>name IN ('Generate Loan Loss Provisioning', 'Post Dividends For Shares', 'Post Interest For Savings',
+                'Update Deposit Accounts Maturity details', 'Update Savings Dormant Accounts')
+                AND cron_expression = '0 0 0 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 31 22 * * ?"/>
+            <where>name IN ('Execute All Dirty Jobs', 'Update Accounting Running Balances', 'Update Trial Balance Details')
+                AND cron_expression = '0 1 0 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 32 22 * * ?"/>
+            <where>name IN ('Add Periodic Accrual Transactions', 'Transfer Interest To Savings')
+                AND cron_expression = '0 2 0 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 35 22 * * ?"/>
+            <where>name = 'Generate Mandatory Savings Schedule' AND cron_expression = '0 5 0 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 3 * * ?"/>
+            <where>name IN ('Get Delivery Reports from SMS Gateway', 'Send Messages to SMS Gateway',
+                'Update SMS Outbound with Campaign Message') AND cron_expression = '0 0 5 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 3 * * ?"/>
+            <where>name = 'Update Loan Arrears Ageing' AND cron_expression = '0 0 5 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 0 4 * * ?"/>
+            <where>name = 'Update Non Performing Assets' AND cron_expression = '0 30 5 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 4 * * ?"/>
+            <where>name = 'Recalculate Interest For Loans' AND cron_expression = '0 0 6 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 0 5 * * ?"/>
+            <where>name = 'Transfer Fee For Loans From Savings' AND cron_expression = '0 30 6 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 5 * * ?"/>
+            <where>name = 'Add Accrual Transactions' AND cron_expression = '0 0 7 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 0 6 * * ?"/>
+            <where>name = 'Add Accrual Transactions For Loans With Income Posted As Transactions' AND cron_expression = '0 30 7 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 10 * * ?"/>
+            <where>name IN ('Apply Holidays To Loans', 'Pay Due Savings Charges') AND cron_expression = '0 0 12 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 10 * * ?"/>
+            <where>name = 'Generate AdhocClient Schedule' AND cron_expression = '0 0 12 1/1 * ? *'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 0 13,16 * * ?"/>
+            <where>name = 'Settlements Report Job' AND cron_expression = '0 30 14,17 * * ?'</where>
+        </update>
+
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 * * * ?"/>
+            <where>name = 'Odoo Journal Entries Sync Job' AND cron_expression = '0 0 * * * ?'</where>
+        </update>
+
+        <!-- Moved from the second-to-last day (midnight IST on the last day) to the last day of the month. -->
+        <update tableName="job">
+            <column name="cron_expression" value="0 30 22 L * ?"/>
+            <where>name = 'Generate Loan Monthly Accrual Summations' AND cron_expression = '0 0 0 L * ?'</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>
