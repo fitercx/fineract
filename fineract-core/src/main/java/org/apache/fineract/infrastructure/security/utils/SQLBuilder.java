@@ -37,6 +37,8 @@ public class SQLBuilder {
 
     private static final Pattern ATOZ = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_-]*\\.)?[a-zA-Z_-][a-zA-Z0-9_-]*");
 
+    private static final Pattern DATE_EXPRESSION = Pattern.compile("CAST\\(COALESCE\\([a-z_]+\\.[a-z_]+, [a-z_]+\\.[a-z_]+\\) AS date\\)");
+
     // This holds the query string, with the '?' placeholders, but no argument
     // values
     private final StringBuilder sb = new StringBuilder();
@@ -108,6 +110,31 @@ public class SQLBuilder {
         if (argument != null) {
             addCriteria(criteria, argument);
         }
+    }
+
+    /**
+     * Adds a fixed date expression such as {@code CAST(COALESCE(aud.made_on_date_utc, aud.made_on_date) AS date) >=}.
+     * The expression is not a user-supplied column name, so {@link #addCriteria(String, Object)} cannot accept it. A
+     * null argument is ignored.
+     */
+    public void addDateExpressionCriteria(String expression, String operator, Object argument) {
+        if (argument == null) {
+            return;
+        }
+        if (expression == null || !DATE_EXPRESSION.matcher(expression).matches()) {
+            throw new IllegalArgumentException("unsupported date criteria expression: " + expression);
+        }
+        if (!"=".equals(operator) && !"<".equals(operator) && !">".equals(operator) && !"<=".equals(operator) && !">=".equals(operator)) {
+            throw new IllegalArgumentException("unsupported date criteria operator: " + operator);
+        }
+        if (sb.length() > 0) {
+            sb.append("  AND  ");
+        }
+        String criteria = expression + " " + operator;
+        sb.append(criteria);
+        sb.append(" ?");
+        crts.add(criteria);
+        args.add(argument);
     }
 
     /**

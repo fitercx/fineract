@@ -66,8 +66,8 @@ public class AuditsApiResource {
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "List Audits", description = "Get a 200 list of audits that match the criteria supplied and sorted by audit id in descending order, and are within the requestors' data scope. Also it supports pagination and sorting\n"
             + "\n" + "Example Requests:\n" + "\n" + "audits\n" + "\n" + "audits?fields=madeOnDate,maker,processingResult\n" + "\n"
-            + "audits?makerDateTimeFrom=2013-03-25 08:00:00&makerDateTimeTo=2013-04-04 18:00:00\n" + "\n" + "audits?officeId=1\n" + "\n"
-            + "audits?officeId=1&includeJson=true")
+            + "audits?makerDateTimeFrom=15 October 2026&makerDateTimeTo=18 November 2026&dateFormat=dd MMMM yyyy&locale=en\n" + "\n"
+            + "audits?officeId=1\n" + "\n" + "audits?officeId=1&includeJson=true")
     public String retrieveAuditEntries(@Context final UriInfo uriInfo, @BeanParam AuditRequest auditRequest,
             @QueryParam("offset") @Parameter(description = "offset") final Integer offset,
             @QueryParam("limit") @Parameter(description = "limit") final Integer limit,
@@ -78,7 +78,7 @@ public class AuditsApiResource {
         context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
         final PaginationParameters parameters = PaginationParameters.builder().paged(Boolean.TRUE.equals(paged)).limit(limit).offset(offset)
                 .orderBy(orderBy).sortOrder(sortOrder).build();
-        final SQLBuilder extraCriteria = getExtraCriteria(auditRequest);
+        final SQLBuilder extraCriteria = AuditSearchCriteria.build(auditRequest);
         final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
 
         return toApiJsonSerializer.serialize(parameters.isPaged()
@@ -107,29 +107,5 @@ public class AuditsApiResource {
     public AuditSearchData retrieveAuditSearchTemplate() {
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
         return this.auditReadPlatformService.retrieveSearchTemplate("audit");
-    }
-
-    private SQLBuilder getExtraCriteria(AuditRequest auditRequest) {
-
-        SQLBuilder extraCriteria = new SQLBuilder();
-        extraCriteria.addNonNullCriteria("aud.action_name = ", auditRequest.getActionName());
-        if (auditRequest.getEntityName() != null) {
-            extraCriteria.addCriteria("aud.entity_name like", auditRequest.getEntityName() + "%");
-        }
-        extraCriteria.addNonNullCriteria("aud.resource_id = ", auditRequest.getResourceId());
-        extraCriteria.addNonNullCriteria("aud.maker_id = ", auditRequest.getMakerId());
-        extraCriteria.addNonNullCriteria("aud.checker_id = ", auditRequest.getCheckerId());
-        extraCriteria.addNonNullCriteria("aud.made_on_date >= ", auditRequest.getMakerDateTimeFrom());
-        extraCriteria.addNonNullCriteria("aud.made_on_date <= ", auditRequest.getMakerDateTimeTo());
-        extraCriteria.addNonNullCriteria("aud.checked_on_date >= ", auditRequest.getCheckerDateTimeFrom());
-        extraCriteria.addNonNullCriteria("aud.checked_on_date <= ", auditRequest.getCheckerDateTimeTo());
-        extraCriteria.addNonNullCriteria("aud.status = ", auditRequest.getStatus());
-        extraCriteria.addNonNullCriteria("aud.office_id = ", auditRequest.getOfficeId());
-        extraCriteria.addNonNullCriteria("aud.group_id = ", auditRequest.getGroupId());
-        extraCriteria.addNonNullCriteria("aud.client_id = ", auditRequest.getClientId());
-        extraCriteria.addNonNullCriteria("aud.loan_id = ", auditRequest.getLoanId());
-        extraCriteria.addNonNullCriteria("aud.savings_account_id = ", auditRequest.getSavingsAccountId());
-
-        return extraCriteria;
     }
 }
