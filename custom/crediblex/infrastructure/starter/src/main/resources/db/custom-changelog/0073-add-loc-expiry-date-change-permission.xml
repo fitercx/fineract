@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">
+
+    <changeSet id="lms-176-change-expiry-date-permission" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM m_permission WHERE code = 'CHANGEEXPIRYDATE_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <comment>Maker permission for a Line of Credit expiry date change. Maker-checker is enabled on this command only.</comment>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="CHANGEEXPIRYDATE_LINE_OF_CREDIT"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="CHANGEEXPIRYDATE"/>
+            <column name="can_maker_checker" valueBoolean="true"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="lms-176-change-expiry-date-checker-permission" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_permission"/>
+            <sqlCheck expectedResult="0">
+                SELECT COUNT(1) FROM m_permission WHERE code = 'CHANGEEXPIRYDATE_LINE_OF_CREDIT_CHECKER'
+            </sqlCheck>
+        </preConditions>
+        <comment>Checker permission for approving or rejecting a Line of Credit expiry date change.</comment>
+        <insert tableName="m_permission">
+            <column name="grouping" value="portfolio"/>
+            <column name="code" value="CHANGEEXPIRYDATE_LINE_OF_CREDIT_CHECKER"/>
+            <column name="entity_name" value="LINE_OF_CREDIT"/>
+            <column name="action_name" value="CHANGEEXPIRYDATE_CHECKER"/>
+            <column name="can_maker_checker" valueBoolean="false"/>
+        </insert>
+    </changeSet>
+
+    <changeSet id="lms-176-grant-expiry-date-permissions" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_role_permission"/>
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(1) FROM m_permission WHERE code = 'UPDATE_LINE_OF_CREDIT'
+            </sqlCheck>
+        </preConditions>
+        <comment>Give the new maker and checker permissions to roles that can already update a line of credit.</comment>
+        <sql>
+            INSERT INTO m_role_permission (role_id, permission_id)
+            SELECT rp.role_id, maker.id
+            FROM m_role_permission rp
+            JOIN m_permission existing ON existing.id = rp.permission_id AND existing.code = 'UPDATE_LINE_OF_CREDIT'
+            JOIN m_permission maker ON maker.code = 'CHANGEEXPIRYDATE_LINE_OF_CREDIT'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM m_role_permission already
+                WHERE already.role_id = rp.role_id AND already.permission_id = maker.id
+            );
+
+            INSERT INTO m_role_permission (role_id, permission_id)
+            SELECT rp.role_id, checker.id
+            FROM m_role_permission rp
+            JOIN m_permission existing ON existing.id = rp.permission_id AND existing.code = 'UPDATE_LINE_OF_CREDIT'
+            JOIN m_permission checker ON checker.code = 'CHANGEEXPIRYDATE_LINE_OF_CREDIT_CHECKER'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM m_role_permission already
+                WHERE already.role_id = rp.role_id AND already.permission_id = checker.id
+            );
+        </sql>
+    </changeSet>
+
+    <changeSet id="lms-176-register-expiry-date-hook" author="crediblex">
+        <preConditions onFail="MARK_RAN">
+            <tableExists tableName="m_hook"/>
+            <tableExists tableName="m_hook_registered_events"/>
+        </preConditions>
+        <comment>Send CHANGEEXPIRYDATE to active hooks that already receive Line of Credit events, so LOS gets the updated dates.</comment>
+        <sql>
+            INSERT INTO m_hook_registered_events (hook_id, entity_name, action_name)
+            SELECT DISTINCT h.id, 'LINE_OF_CREDIT', 'CHANGEEXPIRYDATE'
+            FROM m_hook h
+            JOIN m_hook_registered_events re ON re.hook_id = h.id
+            WHERE h.is_active = true
+              AND re.entity_name = 'LINE_OF_CREDIT'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM m_hook_registered_events existing
+                  WHERE existing.hook_id = h.id
+                    AND existing.entity_name = 'LINE_OF_CREDIT'
+                    AND existing.action_name = 'CHANGEEXPIRYDATE'
+              );
+        </sql>
+    </changeSet>
+</databaseChangeLog>
