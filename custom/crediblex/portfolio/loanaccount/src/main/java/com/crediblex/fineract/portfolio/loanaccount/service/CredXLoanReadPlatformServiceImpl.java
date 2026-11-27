@@ -22,6 +22,9 @@ package com.crediblex.fineract.portfolio.loanaccount.service;
 import static org.apache.fineract.portfolio.account.domain.AccountAssociationType.LINKED_ACCOUNT_ASSOCIATION;
 import static org.apache.fineract.portfolio.loanproduct.service.LoanEnumerations.interestType;
 
+import com.crediblex.fineract.portfolio.dpdrepayment.DpdRepaymentConstants;
+import com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentStrategyResolver;
+import com.crediblex.fineract.portfolio.dpdrepayment.service.OverdueInstallmentBalanceSql;
 import com.crediblex.fineract.portfolio.loanaccount.data.BackdatedRepaymentPenaltyDTO;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXLoanSearchResultData;
 import com.crediblex.fineract.portfolio.loanaccount.data.CredXOverdueAmountBreakdown;
@@ -219,6 +222,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
     private final ConfigurationDomainService configurationDomainService;
     private final AccountAssociationsRepository accountAssociationsRepository;
     private final CustomReversedChargeCalculationService customReversedChargeCalculationService;
+    private final DpdRepaymentStrategyResolver dpdRepaymentStrategyResolver;
 
     public CredXLoanReadPlatformServiceImpl(JdbcTemplate jdbcTemplate, PlatformSecurityContext context,
             LoanRepositoryWrapper loanRepositoryWrapper, ApplicationCurrencyRepositoryWrapper applicationCurrencyRepository,
@@ -242,7 +246,8 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
             CustomLoanChargeReadPlatformServiceImpl customLoanChargeReadPlatformServiceImpl,
             LineOfCreditReadPlatformService lineOfCreditReadPlatformService,
             LoanLineOfCreditParamsRepository loanLineOfCreditParamsRepository, AccountAssociationsRepository accountAssociationsRepository,
-            CustomReversedChargeCalculationService customReversedChargeCalculationService) {
+            CustomReversedChargeCalculationService customReversedChargeCalculationService,
+            DpdRepaymentStrategyResolver dpdRepaymentStrategyResolver) {
         super(jdbcTemplate, context, loanRepositoryWrapper, applicationCurrencyRepository, loanProductReadPlatformService,
                 clientReadPlatformService, groupReadPlatformService, loanDropdownReadPlatformService, fundReadPlatformService,
                 chargeReadPlatformService, codeValueReadPlatformService, calendarReadPlatformService, staffReadPlatformService,
@@ -264,6 +269,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         this.customLoanChargeReadPlatformServiceImpl = customLoanChargeReadPlatformServiceImpl;
         this.accountAssociationsRepository = accountAssociationsRepository;
         this.customReversedChargeCalculationService = customReversedChargeCalculationService;
+        this.dpdRepaymentStrategyResolver = dpdRepaymentStrategyResolver;
     }
 
     @Override
@@ -1199,6 +1205,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 } else {
                     extended.addCustomParameter("buyerDetails", retrieveCounterpartyDetails(loanId));
                 }
+                enrichDpdRepaymentStatus(extended);
             }
             return loanAccountData;
         } catch (final EmptyResultDataAccessException e) {
@@ -2330,7 +2337,7 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
                 .append(" and ls.completed_derived <> true and mc.charge_applies_to_enum =1 ")
                 .append(" and ls.recalculated_interest_component <> true ")
                 .append(" and mc.charge_time_enum = 9 and ml.loan_status_id = 300 ").append(" and ")
-                .append(hasChargeableInstallmentOutstanding("ls")).append(" ");
+                .append(OverdueInstallmentBalanceSql.hasChargeableOutstanding("ls")).append(" ");
         if (loanId != null) {
             sqlBuilder.append(" and ml.id = ? ");
         }
@@ -2339,13 +2346,14 @@ public class CredXLoanReadPlatformServiceImpl extends LoanReadPlatformServiceImp
         }
     }
 
-    private static String hasChargeableInstallmentOutstanding(final String alias) {
-        return "((coalesce(" + alias + ".principal_amount, 0) - coalesce(" + alias + ".principal_completed_derived, 0) - coalesce(" + alias
-                + ".principal_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".interest_amount, 0) - coalesce(" + alias
-                + ".interest_completed_derived, 0) - coalesce(" + alias + ".interest_waived_derived, 0) - coalesce(" + alias
-                + ".interest_writtenoff_derived, 0)) > 0 or " + "(coalesce(" + alias + ".penalty_charges_amount, 0) - coalesce(" + alias
-                + ".penalty_charges_completed_derived, 0) - coalesce(" + alias + ".penalty_charges_waived_derived, 0) - coalesce(" + alias
-                + ".penalty_charges_writtenoff_derived, 0)) > 0)";
+    private void enrichDpdRepaymentStatus(final ExtendedLoanAccountData extended) {
+        final var dpdStatus = dpdRepaymentStrategyResolver.resolveStatus(extended.getId(), extended.getLoanProductId(),
+                extended.getTransactionProcessingStrategyCode(), DateUtils.getBusinessLocalDate());
+        extended.addCustomParameter(DpdRepaymentConstants.MAX_DPD, dpdStatus.getMaxDpd());
+        extended.addCustomParameter(DpdRepaymentConstants.DPD_PRINCIPAL_ONLY_ACTIVE, dpdStatus.isDpdPrincipalOnlyActive());
+        extended.addCustomParameter(DpdRepaymentConstants.EFFECTIVE_REPAYMENT_STRATEGY_CODE, dpdStatus.getEffectiveRepaymentStrategyCode());
+        extended.addCustomParameter(DpdRepaymentConstants.EFFECTIVE_REPAYMENT_STRATEGY_NAME, dpdStatus.getEffectiveRepaymentStrategyName());
+        extended.addCustomParameter(DpdRepaymentConstants.DPD_PRINCIPAL_ONLY_THRESHOLD, dpdStatus.getDpdThreshold());
     }
 
     @Override

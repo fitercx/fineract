@@ -1,5 +1,6 @@
 package com.crediblex.fineract.portfolio.loanproduct.service;
 
+import com.crediblex.fineract.portfolio.dpdrepayment.service.DpdRepaymentProductConfigService;
 import com.google.gson.JsonArray;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
@@ -58,6 +59,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends LoanProductWritePlatformServiceJpaRepositoryImpl {
 
     private final ConfigurationDomainService configurationDomainService;
+    private final DpdRepaymentProductConfigService dpdRepaymentProductConfigService;
 
     public CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl(PlatformSecurityContext context,
             LoanProductDataValidator fromApiJsonDeserializer, LoanProductRepository loanProductRepository, AprCalculator aprCalculator,
@@ -69,12 +71,13 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
             LoanRepaymentScheduleTransactionProcessorFactory loanRepaymentScheduleTransactionProcessorFactory,
             AdvancedPaymentAllocationsJsonParser advancedPaymentJsonParser, CreditAllocationsJsonParser creditAllocationsJsonParser,
             LoanProductAssembler loanProductAssembler, LoanProductUpdateUtil loanProductUpdateUtil,
-            ConfigurationDomainService configurationDomainService) {
+            ConfigurationDomainService configurationDomainService, DpdRepaymentProductConfigService dpdRepaymentProductConfigService) {
         super(context, fromApiJsonDeserializer, loanProductRepository, aprCalculator, fundRepository, chargeRepository, rateRepository,
                 accountMappingWritePlatformService, fineractEntityAccessUtil, floatingRateRepository, loanRepositoryWrapper,
                 businessEventNotifierService, delinquencyBucketRepository, loanRepaymentScheduleTransactionProcessorFactory,
                 advancedPaymentJsonParser, creditAllocationsJsonParser, loanProductAssembler, loanProductUpdateUtil);
         this.configurationDomainService = configurationDomainService;
+        this.dpdRepaymentProductConfigService = dpdRepaymentProductConfigService;
     }
 
     @Transactional
@@ -139,9 +142,12 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
 
             businessEventNotifierService.notifyPostBusinessEvent(new LoanProductCreateBusinessEvent(loanProduct));
 
+            final Map<String, Object> dpdConfigChanges = dpdRepaymentProductConfigService.upsertFromCommand(loanProduct.getId(), command);
+
             return new CommandProcessingResultBuilder() //
                     .withCommandId(command.commandId()) //
                     .withEntityId(loanProduct.getId()) //
+                    .with(dpdConfigChanges) //
                     .build();
 
         } catch (final JpaSystemException | DataIntegrityViolationException dve) {
@@ -307,6 +313,7 @@ public class CredibleXLoanProductWritePlatformServiceJpaRepositoryImpl extends L
                 product.validateLoanProductPreSave();
                 this.loanProductRepository.saveAndFlush(product);
             }
+            changes.putAll(dpdRepaymentProductConfigService.upsertFromCommand(loanProductId, command));
             return new CommandProcessingResultBuilder() //
                     .withCommandId(command.commandId()) //
                     .withEntityId(loanProductId) //

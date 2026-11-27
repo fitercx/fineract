@@ -12,6 +12,7 @@ import com.crediblex.fineract.portfolio.loanaccount.data.CustomAccountTransferDT
 import com.crediblex.fineract.portfolio.loanaccount.service.CredXLoanChargeWritePlatformService;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
+import com.crediblex.fineract.portfolio.loanaccount.util.CrossEmiOverdueRepayment;
 import com.crediblex.fineract.portfolio.loanaccount.util.ForeclosureTransactionBreakdown;
 import com.crediblex.fineract.portfolio.loanaccount.util.InstallmentPenaltySyncUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
@@ -227,6 +228,7 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
             final String chargeRefundChargeType = null;
 
             validateBackdatedTransferAllowed(toLoanAccount, transactionDate);
+            CrossEmiOverdueRepayment.validateRepayment(toLoanAccount, transactionDate, transactionAmount);
 
             // Partial settlement (backdated, or on the installment due date) leaves the loan active: collect LPI
             // strictly before the value date and keep later rows outstanding. A full close still waives.
@@ -413,6 +415,12 @@ public class CustomAccountTransfersWritePlatformServiceImpl extends AccountTrans
                 final HolidayDetailDTO holidayDetailDto = null;
                 final String chargeRefundChargeType = null;
                 validateBackdatedTransferAllowed(toLoanAccount, accountTransferDTO.getTransactionDate());
+                if (!AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanForeclosure()
+                        && !AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isChargePayment()
+                        && !AccountTransferType.fromInt(accountTransferDTO.getTransferType()).isLoanDownPayment()) {
+                    CrossEmiOverdueRepayment.validateRepayment(toLoanAccount, accountTransferDTO.getTransactionDate(),
+                            accountTransferDTO.getTransactionAmount());
+                }
 
                 // Backdated settlement: waive post-value-date LPI BEFORE the repayment posts (same ordering fix as
                 // the create path and the direct-repayment path). Waiving first prevents post-value-date charges

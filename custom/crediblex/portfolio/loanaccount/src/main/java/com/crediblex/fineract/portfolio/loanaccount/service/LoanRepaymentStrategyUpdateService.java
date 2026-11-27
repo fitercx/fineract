@@ -18,6 +18,7 @@
  */
 package com.crediblex.fineract.portfolio.loanaccount.service;
 
+import com.crediblex.fineract.portfolio.loanaccount.util.CrossEmiOverdueRepayment;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,9 +30,11 @@ import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResultBuilder;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.portfolio.loanproduct.data.TransactionProcessingStrategyData;
 import org.springframework.stereotype.Service;
@@ -66,6 +69,7 @@ public class LoanRepaymentStrategyUpdateService {
         } else if (!loan.isOpen()) {
             template.put("unsupportedReason", "Repayment strategy can be changed only while the loan is active.");
         }
+        template.put("loanHasOverdueInstallments", CrossEmiOverdueRepayment.hasOverdueOutstanding(loan, DateUtils.getBusinessLocalDate()));
         return template;
     }
 
@@ -90,6 +94,9 @@ public class LoanRepaymentStrategyUpdateService {
         }
 
         final TransactionProcessingStrategyData strategy = findStrategy(requestedCode);
+        if (CrossEmiOverdueRepayment.isThisStrategy(strategy.getCode())) {
+            CrossEmiOverdueRepayment.validateCanSelect(loan, DateUtils.getBusinessLocalDate());
+        }
         if (strategy.getCode().equalsIgnoreCase(currentCode)) {
             throw validationError("validation.msg.loan.repayment.strategy.unchanged", "The loan already uses this repayment strategy.",
                     TRANSACTION_PROCESSING_STRATEGY_CODE);
@@ -104,6 +111,7 @@ public class LoanRepaymentStrategyUpdateService {
         final String previousCode = currentCode;
         final String previousName = loan.getTransactionProcessingStrategyName();
         loan.updateTransactionProcessingStrategy(strategy.getCode(), strategy.getName());
+        keepPostedRepaymentAllocations(loan);
         this.loanRepositoryWrapper.saveAndFlush(loan);
 
         final Map<String, Object> changes = new LinkedHashMap<>();
@@ -117,6 +125,25 @@ public class LoanRepaymentStrategyUpdateService {
 
         return new CommandProcessingResultBuilder().withCommandId(command.getCommandId()).withEntityId(loan.getId())
                 .withLoanId(loan.getId()).with(changes).build();
+    }
+
+    /**
+     * A later reprocess allocates with the strategy now stored on the loan. Mark repayments already posted so that
+     * reprocess reapplies their saved portions instead of moving cash between principal, interest, fees, and penalties.
+     */
+    private void keepPostedRepaymentAllocations(final Loan loan) {
+        final List<LoanTransaction> transactions = loan.getLoanTransactions();
+        if (transactions == null) {
+            return;
+        }
+        for (final LoanTransaction transaction : transactions) {
+            if (transaction == null || transaction.getId() == null || transaction.isReversed()) {
+                continue;
+            }
+            if (transaction.isRepaymentLikeType() || transaction.isRecoveryRepayment()) {
+                transaction.setManuallyAdjustedOrReversed();
+            }
+        }
     }
 
     private List<Map<String, String>> selectableStrategies() {

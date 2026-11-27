@@ -23,6 +23,7 @@ import com.crediblex.fineract.portfolio.loanaccount.serialization.CustomLoanDisb
 import com.crediblex.fineract.portfolio.loanaccount.util.AdjustInstallmentDateOverdueChargeBypassContext;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedRepaymentValidator;
 import com.crediblex.fineract.portfolio.loanaccount.util.BackdatedSettlementLpiPolicy;
+import com.crediblex.fineract.portfolio.loanaccount.util.CrossEmiOverdueRepayment;
 import com.crediblex.fineract.portfolio.loanaccount.util.LoanTrancheValidationHelper;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocDueDateRepaymentUtils;
 import com.crediblex.fineract.portfolio.loanaccount.util.LocStatusAggregationUtils;
@@ -1687,6 +1688,10 @@ public class CustomLoanWritePlatformServiceJpaRepositoryImpl extends LoanWritePl
         final Loan loan = this.loanAssembler.assembleFrom(loanId);
         final LocalDate transactionDate = command.localDateValueOfParameterNamed("transactionDate");
         final BigDecimal transactionAmount = command.bigDecimalValueOfParameterNamed("transactionAmount");
+        if (repaymentTransactionType != null && repaymentTransactionType.isRepayment() && !isRecoveryRepayment
+                && chargeRefundChargeType == null) {
+            CrossEmiOverdueRepayment.validateRepayment(loan, transactionDate, transactionAmount);
+        }
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
         final boolean isBackdatedSettlement = transactionDate != null && transactionDate.isBefore(businessDate);
         // Same-day due-date pays are on-time (not backdated) and still auto-waive overnight/legacy due-date LPI.

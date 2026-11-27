@@ -24,6 +24,7 @@ dependencies {
     implementation(project(':custom:crediblex:portfolio:client'))
     implementation(project(':custom:crediblex:portfolio:loanaccount'))
     implementation(project(':custom:crediblex:portfolio:loanproduct'))
+    implementation(project(':custom:crediblex:portfolio:dpdrepayment'))
     implementation(project(':custom:crediblex:portfolio:loc'))
     implementation(project(':custom:crediblex:portfolio:tax'))
     implementation(project(':fineract-savings'))
